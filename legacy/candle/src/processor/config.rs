@@ -49,7 +49,7 @@ impl ProcessorConfig {
             }
         };
 
-        let seed = self.seed.unwrap_or(rand::thread_rng().gen());
+        let seed = self.seed.unwrap_or_else(|| rand::rng().random::<u64>());
         Processor {
             processor: LogitsProcessor::from_sampling(seed, sampling),
             device: crate::device::detect(!self.gpu).unwrap_or(Device::Cpu),

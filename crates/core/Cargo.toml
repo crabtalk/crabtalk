@@ -1,0 +1,17 @@
+[package]
+name = "ullm-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+derive_more.workspace = true
+serde.workspace = true
+futures-core.workspace = true
+reqwest.workspace = true
+schemars.workspace = true
