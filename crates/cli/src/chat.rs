@@ -125,7 +125,7 @@ impl ChatCmd {
                 println!("REASONING\n{reasoning_content}");
             }
 
-            if let Some(content) = response.message() {
+            if let Some(content) = response.content() {
                 println!("\n\nCONTENT\n{content}");
             }
         }

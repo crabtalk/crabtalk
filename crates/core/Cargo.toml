@@ -19,3 +19,4 @@ futures-core.workspace = true
 futures-util.workspace = true
 reqwest.workspace = true
 schemars.workspace = true
+tracing.workspace = true

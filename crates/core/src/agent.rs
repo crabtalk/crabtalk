@@ -10,6 +10,9 @@ pub trait Agent: Clone {
     /// The parsed chunk from [StreamChunk]
     type Chunk;
 
+    /// The name of the agent
+    const NAME: &str;
+
     /// The system prompt for the agent
     const SYSTEM_PROMPT: &str;
 
@@ -21,6 +24,17 @@ pub trait Agent: Clone {
     /// Filter the messages to match required tools for the agent
     fn filter(&self, _message: &str) -> ToolChoice {
         ToolChoice::Auto
+    }
+
+    /// Compact the chat history to reduce token usage.
+    ///
+    /// This method is called before each LLM request (both `send` and `stream`).
+    /// Agents can override this to remove redundant data from historical messages,
+    /// such as outdated candle data or large context that's no longer relevant.
+    ///
+    /// The default implementation returns messages unchanged.
+    fn compact(&self, messages: Vec<Message>) -> Vec<Message> {
+        messages
     }
 
     /// Dispatch tool calls
@@ -44,6 +58,8 @@ pub trait Agent: Clone {
 
 impl Agent for () {
     type Chunk = StreamChunk;
+
+    const NAME: &str = "Default";
 
     const SYSTEM_PROMPT: &str = "You are a helpful assistant.";
 

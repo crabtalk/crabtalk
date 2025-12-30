@@ -4,7 +4,7 @@ use crate::{FinishReason, Role, tool::ToolCall};
 use serde::Deserialize;
 
 /// A streaming chat completion chunk
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct StreamChunk {
     /// A unique identifier for the chat completion
     pub id: String,
@@ -29,6 +29,20 @@ pub struct StreamChunk {
 }
 
 impl StreamChunk {
+    /// Create a new tool chunk
+    pub fn tool(calls: &[ToolCall]) -> Self {
+        Self {
+            choices: vec![StreamChoice {
+                delta: Delta {
+                    tool_calls: Some(calls.to_vec()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
     /// Get the content of the first choice
     pub fn content(&self) -> Option<&str> {
         self.choices
@@ -61,7 +75,7 @@ impl StreamChunk {
 }
 
 /// A completion choice in a streaming response
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct StreamChoice {
     /// The index of this choice in the list
     pub index: u32,
@@ -77,7 +91,7 @@ pub struct StreamChoice {
 }
 
 /// Delta content in a streaming response
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct Delta {
     /// The role of the message author
     pub role: Option<Role>,

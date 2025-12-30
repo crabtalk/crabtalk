@@ -42,7 +42,6 @@ impl LLM for DeepSeek {
             .text()
             .await?;
 
-        tracing::debug!("response: {text}");
         serde_json::from_str(&text).map_err(Into::into)
         // self.client
         //     .request(Method::POST, ENDPOINT)
@@ -63,10 +62,6 @@ impl LLM for DeepSeek {
         usage: bool,
     ) -> impl Stream<Item = Result<StreamChunk>> {
         let body = req.messages(messages).stream(usage);
-        tracing::debug!(
-            "request: {}",
-            serde_json::to_string(&body).unwrap_or_default()
-        );
         let request = self
             .client
             .request(Method::POST, ENDPOINT)
@@ -74,14 +69,19 @@ impl LLM for DeepSeek {
             .json(&body);
 
         try_stream! {
-            let mut stream = request.send().await?.bytes_stream();
-            while let Some(chunk) = stream.next().await {
-                let text = String::from_utf8_lossy(&chunk?).into_owned();
+            let response = request.send().await?;
+            let mut stream = response.bytes_stream();
+            while let Some(Ok(bytes)) = stream.next().await {
+                let text = String::from_utf8_lossy(&bytes).into_owned();
+                tracing::debug!("chunk: {}", text);
                 for data in text.split("data: ").skip(1).filter(|s| !s.starts_with("[DONE]")) {
-                    tracing::debug!("response: {}", data.trim());
-                    match serde_json::from_str::<StreamChunk>(data.trim()) {
+                    let trimmed = data.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    match serde_json::from_str::<StreamChunk>(trimmed) {
                         Ok(chunk) => yield chunk,
-                        Err(e) => tracing::warn!("failed to parse chunk: {e}, data: {}", data.trim()),
+                        Err(e) => tracing::warn!("Failed to parse chunk: {e}, data: {}", trimmed),
                     }
                 }
             }

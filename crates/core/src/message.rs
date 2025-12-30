@@ -1,6 +1,8 @@
 //! Turbofish LLM message
 
-use crate::ToolCall;
+use std::collections::BTreeMap;
+
+use crate::{StreamChunk, ToolCall};
 use serde::{Deserialize, Serialize};
 
 /// A message in the chat
@@ -76,6 +78,63 @@ impl Message {
             tool_call_id: call.into(),
             ..Default::default()
         }
+    }
+
+    /// Create a new message builder
+    pub fn builder(role: Role) -> MessageBuilder {
+        MessageBuilder::new(role)
+    }
+}
+
+/// A builder for messages
+pub struct MessageBuilder {
+    /// The message
+    message: Message,
+
+    /// The tool calls
+    calls: BTreeMap<u32, ToolCall>,
+}
+
+impl MessageBuilder {
+    /// Create a new message builder
+    pub fn new(role: Role) -> Self {
+        Self {
+            message: Message {
+                role,
+                ..Default::default()
+            },
+            calls: BTreeMap::new(),
+        }
+    }
+
+    /// Accept a chunk from the stream
+    pub fn accept(&mut self, chunk: &StreamChunk) -> bool {
+        if let Some(calls) = chunk.tool_calls() {
+            for call in calls {
+                let entry = self.calls.entry(call.index).or_default();
+                entry.merge(call);
+            }
+        }
+
+        let mut has_content = false;
+        if let Some(content) = chunk.content() {
+            self.message.content.push_str(content);
+            has_content = true;
+        }
+
+        if let Some(reason) = chunk.reasoning_content() {
+            self.message.reasoning_content.push_str(reason);
+        }
+
+        has_content
+    }
+
+    /// Build the message
+    pub fn build(mut self) -> Message {
+        if !self.calls.is_empty() {
+            self.message.tool_calls = self.calls.into_values().collect();
+        }
+        self.message
     }
 }
 

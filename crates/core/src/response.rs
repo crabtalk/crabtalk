@@ -1,6 +1,6 @@
 //! Chat response abstractions for the unified LLM Interfaces
 
-use crate::{Role, tool::ToolCall};
+use crate::{Message, Role, tool::ToolCall};
 use serde::{Deserialize, Serialize};
 
 /// A chat completion response from the LLM
@@ -29,8 +29,17 @@ pub struct Response {
 }
 
 impl Response {
+    pub fn message(&self) -> Option<Message> {
+        let choice = self.choices.first()?;
+        Some(Message::assistant(
+            choice.message.content.clone().unwrap_or_default(),
+            choice.message.reasoning_content.clone(),
+            choice.message.tool_calls.as_deref(),
+        ))
+    }
+
     /// Get the first message from the response
-    pub fn message(&self) -> Option<&String> {
+    pub fn content(&self) -> Option<&String> {
         self.choices
             .first()
             .and_then(|choice| choice.message.content.as_ref())

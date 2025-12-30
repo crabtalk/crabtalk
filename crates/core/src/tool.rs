@@ -38,6 +38,22 @@ pub struct ToolCall {
     pub function: FunctionCall,
 }
 
+impl ToolCall {
+    /// Merge two tool calls into one
+    pub fn merge(&mut self, call: &Self) {
+        if !call.id.is_empty() {
+            self.id.clone_from(&call.id);
+        }
+        if !call.call_type.is_empty() {
+            self.call_type.clone_from(&call.call_type);
+        }
+        if !call.function.name.is_empty() {
+            self.function.name.clone_from(&call.function.name);
+        }
+        self.function.arguments.push_str(&call.function.arguments);
+    }
+}
+
 /// A function call within a tool call
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct FunctionCall {
@@ -67,24 +83,11 @@ pub enum ToolChoice {
     Required,
 
     /// Model must call the specified function
-    Function {
-        r#type: String,
-        function: ToolChoiceFunction,
-    },
-}
-
-/// A specific function to call
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ToolChoiceFunction {
-    /// The name of the function to call
-    pub name: String,
+    Function(String),
 }
 
 impl From<&str> for ToolChoice {
     fn from(value: &str) -> Self {
-        ToolChoice::Function {
-            r#type: "function".into(),
-            function: ToolChoiceFunction { name: value.into() },
-        }
+        ToolChoice::Function(value.into())
     }
 }

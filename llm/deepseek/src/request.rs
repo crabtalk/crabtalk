@@ -140,7 +140,15 @@ impl Config for Request {
 
     fn with_tool_choice(&self, tool_choice: ToolChoice) -> Self {
         Self {
-            tool_choice: Some(json!(tool_choice)),
+            tool_choice: match tool_choice {
+                ToolChoice::Function(name) => Some(json!({
+                    "type": "function",
+                    "function": json!({
+                        "name": name
+                    })
+                })),
+                _ => None,
+            },
             ..self.clone()
         }
     }

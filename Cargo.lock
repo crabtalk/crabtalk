@@ -515,6 +515,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

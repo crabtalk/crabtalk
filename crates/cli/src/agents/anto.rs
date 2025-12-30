@@ -21,6 +21,8 @@ struct GetTimeParams {
 impl Agent for Anto {
     type Chunk = StreamChunk;
 
+    const NAME: &str = "Anto";
+
     const SYSTEM_PROMPT: &str = "You are Anto, a helpful assistant. You can get the current time.";
 
     fn tools() -> Vec<Tool> {
