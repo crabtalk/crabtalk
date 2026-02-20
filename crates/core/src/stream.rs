@@ -2,7 +2,7 @@
 
 use crate::{
     FinishReason,
-    response::{CompletionMeta, Delta, LogProbs},
+    response::{Choice, CompletionMeta, Delta},
     tool::ToolCall,
 };
 use serde::Deserialize;
@@ -15,7 +15,7 @@ pub struct StreamChunk {
     pub meta: CompletionMeta,
 
     /// The list of completion choices (with delta content)
-    pub choices: Vec<StreamChoice>,
+    pub choices: Vec<Choice>,
 
     /// Token usage statistics (only in final chunk)
     pub usage: Option<crate::Usage>,
@@ -25,7 +25,7 @@ impl StreamChunk {
     /// Create a new tool chunk
     pub fn tool(calls: &[ToolCall]) -> Self {
         Self {
-            choices: vec![StreamChoice {
+            choices: vec![Choice {
                 delta: Delta {
                     tool_calls: Some(calls.to_vec()),
                     ..Default::default()
@@ -65,20 +65,4 @@ impl StreamChunk {
             .first()
             .and_then(|choice| choice.finish_reason.as_ref())
     }
-}
-
-/// A completion choice in a streaming response
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct StreamChoice {
-    /// The index of this choice in the list
-    pub index: u32,
-
-    /// The delta content for this chunk
-    pub delta: Delta,
-
-    /// The reason the model stopped generating
-    pub finish_reason: Option<FinishReason>,
-
-    /// Log probability information
-    pub logprobs: Option<LogProbs>,
 }

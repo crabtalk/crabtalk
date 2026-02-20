@@ -15,14 +15,6 @@ pub struct Message {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub content: String,
 
-    /// The name of the message
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub name: String,
-
-    /// Whether to prefix the message
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prefix: Option<bool>,
-
     /// The reasoning content
     #[serde(skip_serializing_if = "String::is_empty")]
     pub reasoning_content: String,

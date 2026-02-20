@@ -134,22 +134,22 @@ impl Config for Request {
             .collect::<Vec<_>>();
         Self {
             tools: Some(json!(tools)),
-            ..self.clone()
+            ..self
         }
     }
 
-    fn with_tool_choice(&self, tool_choice: ToolChoice) -> Self {
+    fn with_tool_choice(self, tool_choice: ToolChoice) -> Self {
         Self {
             tool_choice: match tool_choice {
+                ToolChoice::None => Some(json!("none")),
+                ToolChoice::Auto => Some(json!("auto")),
+                ToolChoice::Required => Some(json!("required")),
                 ToolChoice::Function(name) => Some(json!({
                     "type": "function",
-                    "function": json!({
-                        "name": name
-                    })
+                    "function": { "name": name }
                 })),
-                _ => None,
             },
-            ..self.clone()
+            ..self
         }
     }
 }

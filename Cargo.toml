@@ -18,14 +18,13 @@ model = { path = "legacy/model", package = "cydonia-model", version = "0.0.9" }
 cydonia = { path = "crates/cydonia", version = "0.0.9" }
 ccore = { path = "crates/core", package = "cydonia-core", version = "0.0.9" }
 memory = { path = "crates/memory", package = "cydonia-memory", version = "0.0.9" }
+team = { path = "crates/team", package = "cydonia-team", version = "0.0.9" }
 
 # crates.io
 anyhow = "1"
 chrono = "0.4"
 async-stream = "0.3"
-bytes = "1.11.0"
 clap = { version = "4.5", features = ["derive"] }
-derive_more = { version = "2.1", features = ["display", "try_from"] }
 dirs = "6"
 futures-core = "0.3"
 futures-util = "0.3"

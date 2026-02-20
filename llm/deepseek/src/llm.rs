@@ -43,15 +43,6 @@ impl LLM for DeepSeek {
             .await?;
 
         serde_json::from_str(&text).map_err(Into::into)
-        // self.client
-        //     .request(Method::POST, ENDPOINT)
-        //     .headers(self.headers.clone())
-        //     .json(&Request::from(config).messages(messages))
-        //     .send()
-        //     .await?
-        //     .json::<Response>()
-        //     .await
-        //     .map_err(Into::into)
     }
 
     /// Send a message to the LLM with streaming

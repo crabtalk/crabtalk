@@ -28,7 +28,7 @@
 //! let chat = Chat::new(config, provider, agent, messages);
 //! ```
 
-pub use agent::WithMemory;
+pub use agent::{MemoryLayer, WithMemory};
 pub use store::InMemory;
 
 mod agent;

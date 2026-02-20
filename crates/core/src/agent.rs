@@ -8,13 +8,23 @@ pub trait Agent: Clone {
     /// The parsed chunk from [StreamChunk]
     type Chunk;
 
+    /// Agent identifier used for tool registration in teams.
+    fn name(&self) -> &str {
+        ""
+    }
+
+    /// Human-readable description shown to LLMs as tool description.
+    fn description(&self) -> &str {
+        ""
+    }
+
     /// Build the system prompt for this agent.
     ///
     /// Called before each LLM request. Never stored in memory.
     fn system_prompt(&self) -> String;
 
     /// The tools for the agent
-    fn tools() -> Vec<Tool> {
+    fn tools(&self) -> Vec<Tool> {
         Vec::new()
     }
 

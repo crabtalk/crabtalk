@@ -34,7 +34,7 @@ impl<P: LLM, A: Agent> Chat<P, A> {
     pub fn new(config: General, provider: P, agent: A, messages: Vec<Message>) -> Self {
         let usage = config.usage;
         let config_typed: P::ChatConfig = config.into();
-        let config_typed = config_typed.with_tools(A::tools());
+        let config_typed = config_typed.with_tools(agent.tools());
         Self {
             messages,
             provider,
@@ -47,7 +47,8 @@ impl<P: LLM, A: Agent> Chat<P, A> {
     /// Build the message list for an API request.
     ///
     /// Prepends the system prompt, applies agent-specific compaction,
-    /// then strips reasoning content from non-tool-call messages.
+    /// and strips reasoning content from non-tool-call messages (LLMs
+    /// reject reasoning content on follow-up messages).
     fn api_messages(&self) -> Vec<Message> {
         let mut messages = self.messages.clone();
 
@@ -70,7 +71,7 @@ impl<P: LLM, A: Agent> Chat<P, A> {
 
     /// Send a message to the LLM
     pub async fn send(&mut self, message: Message) -> Result<Response> {
-        let mut config = self.config.with_tool_choice(ToolChoice::Auto);
+        let mut config = self.config.clone().with_tool_choice(ToolChoice::Auto);
         self.messages.push(message);
 
         for _ in 0..MAX_TOOL_CALLS {
@@ -99,7 +100,7 @@ impl<P: LLM, A: Agent> Chat<P, A> {
         &mut self,
         message: Message,
     ) -> impl Stream<Item = Result<A::Chunk>> + use<'_, P, A> {
-        let config = self.config.with_tool_choice(ToolChoice::Auto);
+        let config = self.config.clone().with_tool_choice(ToolChoice::Auto);
 
         async_stream::try_stream! {
             self.messages.push(message);

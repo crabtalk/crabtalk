@@ -25,7 +25,7 @@ impl Agent for Anto {
         "You are Anto, a helpful assistant. You can get the current time.".into()
     }
 
-    fn tools() -> Vec<Tool> {
+    fn tools(&self) -> Vec<Tool> {
         vec![Tool {
             name: "get_time".into(),
             description: "Gets the current UTC time in ISO 8601 format.".into(),

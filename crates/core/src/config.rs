@@ -11,7 +11,7 @@ pub trait Config: From<General> + Sized + Clone {
     /// Create a new configuration with tool choice
     ///
     /// This should be used for per-message level.
-    fn with_tool_choice(&self, tool_choice: ToolChoice) -> Self;
+    fn with_tool_choice(self, tool_choice: ToolChoice) -> Self;
 }
 
 /// Chat configuration

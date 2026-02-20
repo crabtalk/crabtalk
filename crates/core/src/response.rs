@@ -58,9 +58,9 @@ impl Response {
     pub fn message(&self) -> Option<Message> {
         let choice = self.choices.first()?;
         Some(Message::assistant(
-            choice.message.content.clone().unwrap_or_default(),
-            choice.message.reasoning_content.clone(),
-            choice.message.tool_calls.as_deref(),
+            choice.delta.content.clone().unwrap_or_default(),
+            choice.delta.reasoning_content.clone(),
+            choice.delta.tool_calls.as_deref(),
         ))
     }
 
@@ -68,21 +68,21 @@ impl Response {
     pub fn content(&self) -> Option<&String> {
         self.choices
             .first()
-            .and_then(|choice| choice.message.content.as_ref())
+            .and_then(|choice| choice.delta.content.as_ref())
     }
 
     /// Get the first message from the response
     pub fn reasoning(&self) -> Option<&String> {
         self.choices
             .first()
-            .and_then(|choice| choice.message.reasoning_content.as_ref())
+            .and_then(|choice| choice.delta.reasoning_content.as_ref())
     }
 
     /// Get the tool calls from the response
     pub fn tool_calls(&self) -> Option<&[ToolCall]> {
         self.choices
             .first()
-            .and_then(|choice| choice.message.tool_calls.as_deref())
+            .and_then(|choice| choice.delta.tool_calls.as_deref())
     }
 
     /// Get the reason the model stopped generating
@@ -93,14 +93,15 @@ impl Response {
     }
 }
 
-/// A completion choice in a non-streaming response
-#[derive(Debug, Clone, Deserialize)]
+/// A completion choice (used for both streaming and non-streaming responses).
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct Choice {
     /// The index of this choice in the list
     pub index: u32,
 
-    /// The generated message
-    pub message: Delta,
+    /// The message content (streaming: `delta`, non-streaming: `message`)
+    #[serde(alias = "message")]
+    pub delta: Delta,
 
     /// The reason the model stopped generating
     pub finish_reason: Option<FinishReason>,
