@@ -61,13 +61,18 @@ impl<E: Embedder> Memory for SqliteMemory<E> {
         let key = key.into();
         let value = value.into();
 
-        let conn = self.conn.lock().unwrap();
-        let now = now_unix() as i64;
+        async move {
+            // Auto-embed when embedder is present.
+            let embedding = if let Some(embedder) = &self.embedder {
+                let emb = embedder.embed(&value).await;
+                if emb.is_empty() { None } else { Some(emb) }
+            } else {
+                None
+            };
 
-        conn.execute(sql::UPSERT, rusqlite::params![key, value, now])
-            .ok();
-
-        async { Ok(()) }
+            self.store_with_metadata(&key, &value, None, embedding.as_deref())?;
+            Ok(())
+        }
     }
 
     fn recall(
@@ -75,19 +80,46 @@ impl<E: Embedder> Memory for SqliteMemory<E> {
         query: &str,
         options: RecallOptions,
     ) -> impl Future<Output = Result<Vec<MemoryEntry>>> + Send {
-        let result = self.recall_sync(query, &options);
-        async move { result }
+        let query = query.to_owned();
+
+        async move {
+            // Embed query when embedder is present.
+            let query_embedding = if let Some(embedder) = &self.embedder {
+                let emb = embedder.embed(&query).await;
+                if emb.is_empty() { None } else { Some(emb) }
+            } else {
+                None
+            };
+
+            self.recall_sync(&query, &options, query_embedding.as_deref())
+        }
     }
 
     fn compile_relevant(&self, query: &str) -> impl Future<Output = String> + Send {
-        let opts = RecallOptions {
-            limit: 5,
-            ..Default::default()
-        };
-        let entries = self.recall_sync(query, &opts).unwrap_or_default();
-        let compiled = if entries.is_empty() {
-            String::new()
-        } else {
+        let query = query.to_owned();
+
+        async move {
+            let opts = RecallOptions {
+                limit: 5,
+                ..Default::default()
+            };
+
+            // Embed query when embedder is present.
+            let query_embedding = if let Some(embedder) = &self.embedder {
+                let emb = embedder.embed(&query).await;
+                if emb.is_empty() { None } else { Some(emb) }
+            } else {
+                None
+            };
+
+            let entries = self
+                .recall_sync(&query, &opts, query_embedding.as_deref())
+                .unwrap_or_default();
+
+            if entries.is_empty() {
+                return String::new();
+            }
+
             let mut out = String::from("<memory>\n");
             for entry in &entries {
                 out.push_str(&format!("<{}>\n", entry.key));
@@ -99,7 +131,6 @@ impl<E: Embedder> Memory for SqliteMemory<E> {
             }
             out.push_str("</memory>");
             out
-        };
-        async move { compiled }
+        }
     }
 }

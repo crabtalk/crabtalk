@@ -9,3 +9,4 @@ pub(crate) const DELETE: &str = include_str!("../sql/delete.sql");
 pub(crate) const UPSERT_FULL: &str = include_str!("../sql/upsert_full.sql");
 pub(crate) const SELECT_ENTRY: &str = include_str!("../sql/select_entry.sql");
 pub(crate) const RECALL_FTS: &str = include_str!("../sql/recall_fts.sql");
+pub(crate) const RECALL_VECTOR: &str = include_str!("../sql/recall_vector.sql");

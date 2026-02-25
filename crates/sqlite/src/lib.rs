@@ -1,17 +1,18 @@
 //! SQLite-backed memory for Walrus agents.
 //!
 //! Provides [`SqliteMemory`], a persistent [`Memory`](agent::Memory) implementation
-//! using SQLite with FTS5 full-text search.
+//! using SQLite with FTS5 full-text search and optional hybrid vector recall.
 //!
 //! All SQL lives in `sql/*.sql` files, loaded via `include_str!`.
 
-use crate::utils::{mmr_rerank, now_unix};
+pub use crate::utils::cosine_similarity;
+use crate::utils::{decode_embedding, mmr_rerank, now_unix};
 use agent::{Embedder, MemoryEntry, RecallOptions};
 use anyhow::Result;
 use compact_str::CompactString;
 use rusqlite::Connection;
 use serde_json::Value;
-use std::{path::Path, sync::Mutex};
+use std::{collections::HashMap, path::Path, sync::Mutex};
 
 mod memory;
 mod sql;
@@ -64,13 +65,15 @@ impl<E: Embedder> SqliteMemory<E> {
 
     /// Execute the recall pipeline synchronously.
     ///
-    /// 1. BM25 via FTS5 MATCH
-    /// 2. Temporal decay (30-day half-life from accessed_at)
-    /// 3. Optional relevance threshold filter
-    /// 4. MMR re-ranking (Jaccard similarity, lambda 0.7)
-    /// 5. Top-k truncation
-    fn recall_sync(&self, query: &str, options: &RecallOptions) -> Result<Vec<MemoryEntry>> {
-        let conn = self.conn.lock().unwrap();
+    /// 1. BM25 via FTS5 MATCH (under lock)
+    /// 2. Vector scan (under lock, if embeddings requested)
+    /// 3. Lock released — scoring, RRF fusion, MMR done without lock
+    fn recall_sync(
+        &self,
+        query: &str,
+        options: &RecallOptions,
+        query_embedding: Option<&[f32]>,
+    ) -> Result<Vec<MemoryEntry>> {
         let now = now_unix();
         let limit = if options.limit == 0 {
             10
@@ -78,77 +81,167 @@ impl<E: Embedder> SqliteMemory<E> {
             options.limit
         };
 
-        let mut stmt = conn.prepare(sql::RECALL_FTS)?;
+        // Phase 1: DB queries under lock. Collect raw rows, release lock.
+        let (bm25_candidates, vec_candidates) = {
+            let conn = self.conn.lock().unwrap();
 
-        let candidates: Vec<(MemoryEntry, f64)> = stmt
-            .query_map([query], |row| {
-                let key_str: String = row.get(0)?;
-                let value: String = row.get(1)?;
-                let meta_str: Option<String> = row.get(2)?;
-                let created_at: i64 = row.get(3)?;
-                let accessed_at: i64 = row.get(4)?;
-                let access_count: i32 = row.get(5)?;
-                let emb_blob: Option<Vec<u8>> = row.get(6)?;
-                let rank: f64 = row.get(7)?;
+            // BM25 path: FTS5 MATCH.
+            let mut fts_stmt = conn.prepare(sql::RECALL_FTS)?;
+            let bm25: Vec<(MemoryEntry, f64)> = fts_stmt
+                .query_map([query], |row| {
+                    let emb_blob: Option<Vec<u8>> = row.get(6)?;
+                    Ok(MemoryEntry {
+                        key: CompactString::new(row.get::<_, String>(0)?),
+                        value: row.get(1)?,
+                        metadata: row
+                            .get::<_, Option<String>>(2)?
+                            .and_then(|s| serde_json::from_str(&s).ok()),
+                        created_at: row.get::<_, i64>(3)? as u64,
+                        accessed_at: row.get::<_, i64>(4)? as u64,
+                        access_count: row.get::<_, i32>(5)? as u32,
+                        embedding: emb_blob.map(|b| decode_embedding(&b)),
+                    })
+                    .map(|entry| (entry, row.get::<_, f64>(7).unwrap_or(0.0)))
+                })?
+                .filter_map(|r| r.ok())
+                .collect();
 
-                let metadata = meta_str.and_then(|s| serde_json::from_str(&s).ok());
-                let embedding = emb_blob.map(|b| {
-                    b.chunks_exact(4)
-                        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                        .collect()
-                });
+            // Vector path (only if query embedding provided).
+            let vec = if query_embedding.is_some() {
+                let mut vec_stmt = conn.prepare(sql::RECALL_VECTOR)?;
+                vec_stmt
+                    .query_map([], |row| {
+                        let emb_blob: Option<Vec<u8>> = row.get(6)?;
+                        Ok(MemoryEntry {
+                            key: CompactString::new(row.get::<_, String>(0)?),
+                            value: row.get(1)?,
+                            metadata: row
+                                .get::<_, Option<String>>(2)?
+                                .and_then(|s| serde_json::from_str(&s).ok()),
+                            created_at: row.get::<_, i64>(3)? as u64,
+                            accessed_at: row.get::<_, i64>(4)? as u64,
+                            access_count: row.get::<_, i32>(5)? as u32,
+                            embedding: emb_blob.map(|b| decode_embedding(&b)),
+                        })
+                    })?
+                    .filter_map(|r| r.ok())
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
 
-                let entry = MemoryEntry {
-                    key: CompactString::new(key_str),
-                    value,
-                    metadata,
-                    created_at: created_at as u64,
-                    accessed_at: accessed_at as u64,
-                    access_count: access_count as u32,
-                    embedding,
-                };
-                Ok((entry, rank))
-            })?
-            .filter_map(|r| r.ok())
-            .collect();
+            (bm25, vec)
+            // conn lock dropped here
+        };
 
-        if candidates.is_empty() {
-            return Ok(Vec::new());
-        }
+        // Phase 2: Scoring and fusion (no lock held).
 
-        // Apply temporal decay: score * e^(-lambda * age_days).
-        // Half-life = 30 days -> lambda = ln(2) / 30.
+        // Temporal decay: score * e^(-lambda * age_days), half-life 30 days.
         let lambda = std::f64::consts::LN_2 / 30.0;
-        let mut scored: Vec<(MemoryEntry, f64)> = candidates
+        let bm25_scored: Vec<(MemoryEntry, f64)> = bm25_candidates
             .into_iter()
             .map(|(entry, bm25_rank)| {
-                // bm25() returns negative values (more negative = more relevant).
-                // Negate to get positive relevance score.
                 let bm25_score = -bm25_rank;
                 let age_days = now.saturating_sub(entry.accessed_at) as f64 / 86400.0;
                 let decay = (-lambda * age_days).exp();
-                let score = bm25_score * decay;
-                (entry, score)
+                (entry, bm25_score * decay)
             })
             .collect();
 
-        // Apply time_range filter on created_at.
-        if let Some((start, end)) = options.time_range {
-            scored.retain(|(entry, _)| entry.created_at >= start && entry.created_at <= end);
-        }
+        let scored = if let Some(q_emb) = query_embedding {
+            // Compute cosine similarity for vector candidates.
+            let vec_scored: Vec<(MemoryEntry, f64)> = vec_candidates
+                .into_iter()
+                .filter_map(|entry| {
+                    let sim = entry
+                        .embedding
+                        .as_ref()
+                        .map(|e| cosine_similarity(e, q_emb))
+                        .unwrap_or(0.0);
+                    if sim > 0.0 { Some((entry, sim)) } else { None }
+                })
+                .collect();
 
-        // Apply relevance threshold filter.
-        if let Some(threshold) = options.relevance_threshold {
-            scored.retain(|(_, score)| *score >= threshold as f64);
-        }
+            // RRF fusion: score = 1/(k + rank_bm25) + 1/(k + rank_vector), k=60.
+            // Borrowed-key HashMaps for O(1) rank lookup, no key cloning.
+            let k = 60.0_f64;
+
+            let mut bm25_ranked = bm25_scored;
+            bm25_ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            let mut vec_ranked = vec_scored;
+            vec_ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            // Compute RRF scores while vecs are borrowed, then drain entries.
+            let rrf_scores: Vec<f64>;
+            let bm25_in_vec: Vec<bool>;
+            {
+                let vec_rank_map: HashMap<&str, usize> = vec_ranked
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (e, _))| (e.key.as_str(), i + 1))
+                    .collect();
+                let bm25_key_set: HashMap<&str, ()> = bm25_ranked
+                    .iter()
+                    .map(|(e, _)| (e.key.as_str(), ()))
+                    .collect();
+
+                // Score BM25 entries (index = rank).
+                rrf_scores = bm25_ranked
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (e, _))| {
+                        1.0 / (k + (i + 1) as f64)
+                            + vec_rank_map
+                                .get(e.key.as_str())
+                                .map(|&r| 1.0 / (k + r as f64))
+                                .unwrap_or(0.0)
+                    })
+                    .collect();
+
+                // Mark which vec entries are also in bm25 (for dedup).
+                bm25_in_vec = vec_ranked
+                    .iter()
+                    .map(|(e, _)| bm25_key_set.contains_key(e.key.as_str()))
+                    .collect();
+                // borrowed maps dropped here
+            }
+
+            // Drain entries and pair with scores.
+            let mut fused = Vec::with_capacity(bm25_ranked.len() + vec_ranked.len());
+            for (score, (entry, _)) in rrf_scores.into_iter().zip(bm25_ranked) {
+                fused.push((entry, score));
+            }
+            for (i, (entry, _)) in vec_ranked.into_iter().enumerate() {
+                if bm25_in_vec[i] {
+                    continue;
+                }
+                fused.push((entry, 1.0 / (k + (i + 1) as f64)));
+            }
+            fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            fused
+        } else {
+            bm25_scored
+        };
 
         if scored.is_empty() {
             return Ok(Vec::new());
         }
 
-        // MMR re-ranking (lambda = 0.7, Jaccard similarity).
-        let reranked = mmr_rerank(scored, limit, 0.7);
-        Ok(reranked)
+        // Phase 3: Filters and MMR (no lock held).
+        let mut filtered = scored;
+        if let Some((start, end)) = options.time_range {
+            filtered.retain(|(entry, _)| entry.created_at >= start && entry.created_at <= end);
+        }
+        if let Some(threshold) = options.relevance_threshold {
+            filtered.retain(|(_, score)| *score >= threshold as f64);
+        }
+        if filtered.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let use_cosine = query_embedding.is_some();
+        Ok(mmr_rerank(filtered, limit, 0.7, use_cosine))
     }
 
     /// Store a key-value pair with optional metadata and embedding.
@@ -176,29 +269,17 @@ impl<E: Embedder> SqliteMemory<E> {
     pub fn get_entry(&self, key: &str) -> Option<MemoryEntry> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(sql::SELECT_ENTRY, [key], |row| {
-            let key_str: String = row.get(0)?;
-            let value: String = row.get(1)?;
-            let meta_str: Option<String> = row.get(2)?;
-            let created_at: i64 = row.get(3)?;
-            let accessed_at: i64 = row.get(4)?;
-            let access_count: i32 = row.get(5)?;
             let emb_blob: Option<Vec<u8>> = row.get(6)?;
-
-            let metadata = meta_str.and_then(|s| serde_json::from_str(&s).ok());
-            let embedding = emb_blob.map(|b| {
-                b.chunks_exact(4)
-                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                    .collect()
-            });
-
             Ok(MemoryEntry {
-                key: CompactString::new(key_str),
-                value,
-                metadata,
-                created_at: created_at as u64,
-                accessed_at: accessed_at as u64,
-                access_count: access_count as u32,
-                embedding,
+                key: CompactString::new(row.get::<_, String>(0)?),
+                value: row.get(1)?,
+                metadata: row
+                    .get::<_, Option<String>>(2)?
+                    .and_then(|s| serde_json::from_str(&s).ok()),
+                created_at: row.get::<_, i64>(3)? as u64,
+                accessed_at: row.get::<_, i64>(4)? as u64,
+                access_count: row.get::<_, i32>(5)? as u32,
+                embedding: emb_blob.map(|b| decode_embedding(&b)),
             })
         })
         .ok()

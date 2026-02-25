@@ -21,6 +21,11 @@ impl Provider {
         }
     }
 
+    /// Create a DeepSeek provider with a default HTTP client.
+    pub fn deepseek(key: &str) -> Result<Self> {
+        Ok(Self::DeepSeek(DeepSeek::new(Client::new(), key)?))
+    }
+
     /// Context window limit for the current provider/model.
     ///
     /// If `config.context_limit` is set, that takes precedence.

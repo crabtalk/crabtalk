@@ -2,40 +2,47 @@
 //!
 //! The [`Runtime`] is the entry point for the agent framework. It holds
 //! the LLM provider, agent configurations, tool handlers, and manages
-//! chat sessions.
+//! sessions internally.
 //!
 //! # Example
 //!
 //! ```rust,ignore
-//! use walrus_core::Agent;
-//! use walrus_runtime::{Runtime, Provider};
-//! use llm::{General, Message};
+//! use walrus_runtime::prelude::*;
 //!
-//! let provider = Provider::new("deepseek-chat", Client::new(), &key)?;
-//! let mut runtime = Runtime::new(General::default(), provider);
+//! let provider = Provider::deepseek(&key)?;
+//! let mut runtime = Runtime::new(General::default(), provider, InMemory::new());
 //! runtime.add_agent(Agent::new("assistant").system_prompt("You are helpful."));
-//! let mut chat = runtime.chat("assistant")?;
-//! let response = runtime.send(&mut chat, Message::user("hello")).await?;
+//! let response = runtime.send_to("assistant", Message::user("hello")).await?;
 //! ```
 
-pub use chat::Chat;
+pub use agent::{Agent, InMemory, Memory, Skill, SkillTier};
+pub use hook::{DEFAULT_COMPACT_PROMPT, DEFAULT_FLUSH_PROMPT, Hook};
+pub use llm::{Client, General, Message, Response, Role, StreamChunk, Tool};
+pub use mcp::McpBridge;
 pub use provider::Provider;
+pub use skills::{SkillRegistry, parse_skill_md};
 pub use team::{build_team, extract_input, worker_tool};
 
-use agent::Agent;
 use anyhow::Result;
 use compact_str::CompactString;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use llm::{
-    Config, FinishReason, General, LLM, Message, Response, Role, StreamChunk, Tool, ToolCall,
-    ToolChoice, estimate_tokens,
-};
+use llm::{Config, FinishReason, LLM, ToolCall, ToolChoice, estimate_tokens};
 use std::{collections::BTreeMap, future::Future, pin::Pin, sync::Arc};
 
-mod chat;
+pub mod hook;
+pub mod mcp;
 mod provider;
+pub mod skills;
 pub mod team;
+
+/// Re-exports of the most commonly used types.
+pub mod prelude {
+    pub use crate::{
+        Agent, General, Hook, InMemory, Message, Provider, Response, Role, Runtime, SkillRegistry,
+        StreamChunk, Tool,
+    };
+}
 
 const MAX_TOOL_CALLS: usize = 16;
 
@@ -43,33 +50,132 @@ const MAX_TOOL_CALLS: usize = 16;
 pub type Handler =
     Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = String> + Send>> + Send + Sync>;
 
-/// A compaction function that trims message history.
-pub type Compactor = Arc<dyn Fn(Vec<Message>) -> Vec<Message> + Send + Sync>;
+/// Private session state, keyed by agent name in the sessions map.
+struct Session {
+    messages: Vec<Message>,
+    compaction_count: usize,
+}
+
+impl Session {
+    fn new() -> Self {
+        Self {
+            messages: Vec::new(),
+            compaction_count: 0,
+        }
+    }
+}
 
 /// The walrus runtime — top-level orchestrator.
 ///
-/// Holds the LLM provider, agent configurations, tool handlers,
-/// compactors, and internal chat sessions.
-pub struct Runtime {
+/// Generic over `H: Hook` for type-level configuration of memory and
+/// compaction prompts. Defaults to [`InMemory`] when no persistence is needed.
+pub struct Runtime<H: Hook> {
     provider: Provider,
     config: General,
+    memory: Arc<H::Memory>,
+    skills: Option<SkillRegistry>,
+    mcp: Option<Arc<McpBridge>>,
     tools: BTreeMap<CompactString, (Tool, Handler)>,
-    compactors: BTreeMap<CompactString, Compactor>,
     agents: BTreeMap<CompactString, Agent>,
-    sessions: BTreeMap<CompactString, Chat>,
+    sessions: BTreeMap<CompactString, Session>,
 }
 
-impl Runtime {
-    /// Create a new runtime with the given config and provider.
-    pub fn new(config: General, provider: Provider) -> Self {
-        Self {
+impl<H: Hook + 'static> Runtime<H> {
+    /// Create a new runtime with the given config, provider, and memory.
+    pub fn new(config: General, provider: Provider, memory: H::Memory) -> Self {
+        let memory = Arc::new(memory);
+        let mut rt = Self {
             provider,
             config,
+            memory: Arc::clone(&memory),
+            skills: None,
+            mcp: None,
             tools: BTreeMap::new(),
-            compactors: BTreeMap::new(),
             agents: BTreeMap::new(),
             sessions: BTreeMap::new(),
+        };
+
+        // Auto-register the "remember" tool (DD#23).
+        let mem = memory;
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "key": { "type": "string", "description": "Memory key" },
+                "value": { "type": "string", "description": "Value to remember" }
+            },
+            "required": ["key", "value"]
+        });
+        let tool = Tool {
+            name: "remember".into(),
+            description: "Store a key-value pair in memory.".into(),
+            parameters: serde_json::from_value(schema).unwrap(),
+            strict: false,
+        };
+        rt.register(tool, move |args| {
+            let mem = Arc::clone(&mem);
+            async move {
+                let parsed: serde_json::Value = match serde_json::from_str(&args) {
+                    Ok(v) => v,
+                    Err(e) => return format!("invalid arguments: {e}"),
+                };
+                let key = parsed["key"].as_str().unwrap_or("");
+                let value = parsed["value"].as_str().unwrap_or("");
+                match mem.store(key.to_owned(), value.to_owned()).await {
+                    Ok(()) => format!("remembered: {key}"),
+                    Err(e) => format!("failed to store: {e}"),
+                }
+            }
+        });
+
+        rt
+    }
+
+    /// Set the skill registry for this runtime (builder-style).
+    pub fn with_skills(mut self, registry: SkillRegistry) -> Self {
+        self.skills = Some(registry);
+        self
+    }
+
+    /// Set the skill registry for this runtime (mutable setter).
+    pub fn set_skills(&mut self, registry: SkillRegistry) {
+        self.skills = Some(registry);
+    }
+
+    /// Connect an MCP bridge to this runtime.
+    pub fn connect_mcp(&mut self, bridge: McpBridge) {
+        self.mcp = Some(Arc::new(bridge));
+    }
+
+    /// Get a reference to the MCP bridge, if connected.
+    pub fn mcp_bridge(&self) -> Option<&McpBridge> {
+        self.mcp.as_deref()
+    }
+
+    /// Register all MCP tools from the connected bridge into the tool registry.
+    ///
+    /// Each MCP tool becomes a regular tool, dispatched via [`McpBridge::call`].
+    pub async fn register_mcp_tools(&mut self) -> anyhow::Result<()> {
+        let bridge = self
+            .mcp
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no MCP bridge connected"))?;
+        let mcp_tools = bridge.tools().await;
+        for tool in mcp_tools {
+            let name = tool.name.clone();
+            let bridge = Arc::clone(bridge);
+            self.tools.insert(
+                name.clone(),
+                (
+                    tool,
+                    Arc::new(move |args: String| {
+                        let bridge = Arc::clone(&bridge);
+                        let name = name.clone();
+                        Box::pin(async move { bridge.call(&name, &args).await })
+                    }),
+                ),
+            );
         }
+        Ok(())
     }
 
     /// Register an agent.
@@ -93,50 +199,48 @@ impl Runtime {
         self.tools.insert(name, (tool, handler));
     }
 
-    /// Set a compaction function for a specific agent.
-    pub fn set_compactor<F>(&mut self, agent: &str, compactor: F)
-    where
-        F: Fn(Vec<Message>) -> Vec<Message> + Send + Sync + 'static,
-    {
-        self.compactors
-            .insert(CompactString::from(agent), Arc::new(compactor));
-    }
-
-    /// Create a new chat session for the named agent.
-    pub fn chat(&self, agent: &str) -> Result<Chat> {
-        if !self.agents.contains_key(agent) {
-            anyhow::bail!("agent '{agent}' not registered");
-        }
-        Ok(Chat::new(agent))
-    }
-
     /// Context window limit for the current provider/model.
     pub fn context_limit(&self) -> usize {
         self.provider.context_limit(&self.config)
     }
 
-    /// Estimate current token usage for a chat session.
-    pub fn estimate_tokens(&self, chat: &Chat) -> usize {
-        let system_tokens = self
-            .agents
-            .get(chat.agent_name())
-            .map(|a| (a.system_prompt.len() / 4).max(1))
-            .unwrap_or(0);
-        system_tokens + estimate_tokens(&chat.messages)
+    /// Clear the session for a named agent, resetting conversation history.
+    pub fn clear_session(&mut self, agent: &str) {
+        self.sessions.remove(agent);
     }
 
-    /// Check if a chat session is approaching the context limit.
-    pub fn needs_compaction(&self, chat: &Chat) -> bool {
-        let usage = self.estimate_tokens(chat);
-        let limit = self.context_limit();
-        usage > (limit * 4 / 5)
+    /// Resolve tool schemas and handlers for the given tool names.
+    ///
+    /// Supports glob prefixes (DD#21): a name ending in `*` expands against
+    /// all registered tool names by prefix match. No-match globs are logged.
+    pub fn resolve_tools(&self, names: &[CompactString]) -> Vec<(Tool, Handler)> {
+        let mut resolved = Vec::new();
+        for name in names {
+            if let Some(prefix) = name.strip_suffix('*') {
+                let mut matched = false;
+                for (tool_name, (tool, handler)) in &self.tools {
+                    if tool_name.starts_with(prefix) {
+                        resolved.push((tool.clone(), Arc::clone(handler)));
+                        matched = true;
+                    }
+                }
+                if !matched {
+                    tracing::warn!("glob pattern '{name}' matched no registered tools");
+                }
+            } else if let Some((tool, handler)) = self.tools.get(name.as_str()) {
+                resolved.push((tool.clone(), Arc::clone(handler)));
+            }
+        }
+        resolved
     }
 
-    /// Resolve tool schemas for the given tool names.
+    /// Resolve tool schemas for the given tool names (schemas only).
+    ///
+    /// Thin wrapper over [`resolve_tools`] that discards handlers.
     pub fn resolve(&self, names: &[CompactString]) -> Vec<Tool> {
-        names
-            .iter()
-            .filter_map(|name| self.tools.get(name.as_str()).map(|(tool, _)| tool.clone()))
+        self.resolve_tools(names)
+            .into_iter()
+            .map(|(tool, _)| tool)
             .collect()
     }
 
@@ -154,115 +258,48 @@ impl Runtime {
         results
     }
 
-    /// Apply compaction for the given agent.
-    pub fn compact(&self, agent: &str, messages: Vec<Message>) -> Vec<Message> {
-        match self.compactors.get(agent) {
-            Some(compactor) => compactor(messages),
-            None => messages,
+    /// Send a message to a named agent, creating or reusing a session.
+    pub async fn send_to(&mut self, agent: &str, message: Message) -> Result<Response> {
+        if !self.agents.contains_key(agent) {
+            anyhow::bail!("agent '{agent}' not registered");
         }
+        let key = CompactString::from(agent);
+        let mut session = self.sessions.remove(&key).unwrap_or_else(Session::new);
+        let result = self.send_inner(agent, &mut session, message).await;
+        self.sessions.insert(key, session);
+        result
     }
 
-    /// Build the message list for an API request.
-    fn api_messages(&self, chat: &Chat) -> Vec<Message> {
-        let agent = match self.agents.get(chat.agent_name()) {
-            Some(a) => a,
-            None => return chat.messages.clone(),
-        };
-
-        let mut messages = chat.messages.clone();
-
-        if messages.first().map(|m| m.role) != Some(Role::System) {
-            messages.insert(0, Message::system(&agent.system_prompt));
-        }
-
-        self.compact(&agent.name, messages)
-            .into_iter()
-            .map(|mut m| {
-                if m.tool_calls.is_empty() {
-                    m.reasoning_content = String::new();
-                }
-                m
-            })
-            .collect()
-    }
-
-    /// Build a config with the given tools and tool choice.
-    fn build_config(&self, tools: Vec<Tool>, tool_choice: ToolChoice) -> General {
-        self.config
-            .clone()
-            .with_tools(tools)
-            .with_tool_choice(tool_choice)
-    }
-
-    /// Send a message through a chat session (non-streaming).
-    pub async fn send(&self, chat: &mut Chat, message: Message) -> Result<Response> {
-        let agent = self
-            .agents
-            .get(chat.agent_name())
-            .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", chat.agent_name))?;
-        let tools = self.resolve(&agent.tools);
-        let mut tool_choice = ToolChoice::Auto;
-        chat.messages.push(message);
-
-        for _ in 0..MAX_TOOL_CALLS {
-            let messages = self.api_messages(chat);
-            let cfg = self.build_config(tools.clone(), tool_choice.clone());
-            let response = self.provider.send(&cfg, &messages).await?;
-            let Some(message) = response.message() else {
-                return Ok(response);
-            };
-
-            if message.tool_calls.is_empty() {
-                chat.messages.push(message);
-                return Ok(response);
-            }
-
-            let result = self.dispatch(&message.tool_calls).await;
-            chat.messages.push(message);
-            chat.messages.extend(result);
-            tool_choice = ToolChoice::None;
-        }
-
-        anyhow::bail!("max tool calls reached");
-    }
-
-    /// Stream a message through a chat session.
-    pub fn stream<'a>(
-        &'a self,
-        chat: &'a mut Chat,
+    /// Stream a message to a named agent, creating or reusing a session.
+    pub fn stream_to<'a>(
+        &'a mut self,
+        agent: &'a str,
         message: Message,
     ) -> impl Stream<Item = Result<StreamChunk>> + 'a {
-        let agent = self.agents.get(chat.agent_name()).cloned();
-        let tools = agent
-            .as_ref()
-            .map(|a| self.resolve(&a.tools))
-            .unwrap_or_default();
-
         async_stream::try_stream! {
-            if agent.is_none() {
-                Err(anyhow::anyhow!("agent '{}' not registered", chat.agent_name))?;
+            if !self.agents.contains_key(agent) {
+                Err(anyhow::anyhow!("agent '{agent}' not registered"))?;
             }
+            let key = CompactString::from(agent);
+            let old_session = self.sessions.remove(&key);
+            let compaction_count = old_session.as_ref().map_or(0, |s| s.compaction_count);
+            let mut messages = old_session.map(|s| s.messages).unwrap_or_default();
 
-            chat.messages.push(message);
+            let agent_config = self.agents.get(agent).cloned().unwrap();
+            let tools = self.resolve(&agent_config.tools);
+            messages.push(message);
             let mut tool_choice = ToolChoice::Auto;
 
-            for _ in 0..MAX_TOOL_CALLS {
-                let messages = self.api_messages(chat);
-                let cfg = self.build_config(tools.clone(), tool_choice.clone());
+            'outer: for _ in 0..MAX_TOOL_CALLS {
+                let api_msgs = self.api_messages_from(agent, &messages).await;
+                let cfg = self.build_config(&tools, tool_choice.clone());
                 let mut builder = Message::builder(Role::Assistant);
 
-                let inner = self.provider.stream(cfg, &messages, self.config.usage);
+                let inner = self.provider.stream(cfg, &api_msgs, self.config.usage);
                 futures_util::pin_mut!(inner);
 
                 while let Some(result) = inner.next().await {
-                    let chunk = match result {
-                        Ok(chunk) => chunk,
-                        Err(e) => {
-                            tracing::error!("Error in LLM stream: {:?}", e);
-                            Err(e)?
-                        }
-                    };
-
+                    let chunk = result?;
                     let reason = chunk.reason().cloned();
 
                     if builder.accept(&chunk) {
@@ -271,7 +308,7 @@ impl Runtime {
 
                     if let Some(reason) = reason {
                         match reason {
-                            FinishReason::Stop => return,
+                            FinishReason::Stop => break 'outer,
                             FinishReason::ToolCalls => break,
                             reason => Err(anyhow::anyhow!("unexpected finish reason: {reason:?}"))?,
                         }
@@ -280,27 +317,219 @@ impl Runtime {
 
                 let message = builder.build();
                 if message.tool_calls.is_empty() {
-                    chat.messages.push(message);
+                    messages.push(message);
                     break;
                 }
 
                 let result = self.dispatch(&message.tool_calls).await;
-                chat.messages.push(message);
-                chat.messages.extend(result);
+                messages.push(message);
+                messages.extend(result);
                 tool_choice = ToolChoice::None;
+
+                // Emit a newline so consumers see a break between
+                // pre-tool-call text and the next response.
+                yield StreamChunk::separator();
+            }
+
+            self.sessions.insert(key, Session { messages, compaction_count });
+        }
+    }
+
+    /// Get a reference to the memory backend.
+    pub fn memory(&self) -> &H::Memory {
+        &self.memory
+    }
+
+    /// Get a clone of the memory Arc (for team delegation).
+    pub fn memory_arc(&self) -> Arc<H::Memory> {
+        Arc::clone(&self.memory)
+    }
+
+    /// Get a reference to the provider.
+    pub fn provider(&self) -> &Provider {
+        &self.provider
+    }
+
+    /// Get a reference to the general config.
+    pub fn config(&self) -> &General {
+        &self.config
+    }
+
+    // --- Private helpers ---
+
+    /// Estimate current token usage for a session.
+    fn estimate_session_tokens(&self, agent: &str, session: &Session) -> usize {
+        let system_tokens = self
+            .agents
+            .get(agent)
+            .map(|a| (a.system_prompt.len() / 4).max(1))
+            .unwrap_or(0);
+        system_tokens + estimate_tokens(&session.messages)
+    }
+
+    /// Check if a session is approaching the context limit.
+    fn needs_compaction(&self, agent: &str, session: &Session) -> bool {
+        let usage = self.estimate_session_tokens(agent, session);
+        let limit = self.context_limit();
+        usage > (limit * 4 / 5)
+    }
+
+    /// Build the message list for an API request.
+    ///
+    /// Injects the agent system prompt (enriched with memory) if not already present.
+    async fn api_messages(&self, agent: &str, session: &Session) -> Vec<Message> {
+        self.api_messages_from(agent, &session.messages).await
+    }
+
+    /// Build the message list for an API request from raw messages.
+    ///
+    /// Constructs the system prompt (base + memory + skills) and prepends it,
+    /// then clones source messages in a single pass stripping reasoning_content.
+    async fn api_messages_from(&self, agent: &str, source: &[Message]) -> Vec<Message> {
+        let agent_config = match self.agents.get(agent) {
+            Some(a) => a,
+            None => return source.to_vec(),
+        };
+
+        // Build system prompt: base + memory context + skill bodies.
+        let mut system_prompt = agent_config.system_prompt.clone();
+        let last_user_msg = source
+            .iter()
+            .rev()
+            .find(|m| m.role == Role::User)
+            .map(|m| m.content.as_str())
+            .unwrap_or("");
+        let memory_context = self.memory.compile_relevant(last_user_msg).await;
+        if !memory_context.is_empty() {
+            system_prompt = format!("{system_prompt}\n\n{memory_context}");
+        }
+
+        if let Some(registry) = &self.skills {
+            for skill in registry.find_by_tags(&agent_config.skill_tags) {
+                if !skill.body.is_empty() {
+                    system_prompt = format!("{system_prompt}\n\n{}", skill.body);
+                }
+            }
+        }
+
+        // Single-pass construction: system prompt + source messages.
+        let needs_system = source.first().map(|m| m.role) != Some(Role::System);
+        let extra = if needs_system { 1 } else { 0 };
+        let mut messages = Vec::with_capacity(source.len() + extra);
+
+        if needs_system {
+            messages.push(Message::system(&system_prompt));
+        }
+        for m in source {
+            let mut cloned = m.clone();
+            if cloned.tool_calls.is_empty() {
+                cloned.reasoning_content = String::new();
+            }
+            messages.push(cloned);
+        }
+
+        messages
+    }
+
+    /// Automatic compaction: flush memory then summarize conversation.
+    ///
+    /// Called at the start of `send_to()` and each loop iteration in `stream_to()`.
+    /// Uses `H::flush()` and `H::compact()` as static calls (no Hook instance).
+    async fn maybe_compact(&self, agent: &str, session: &mut Session) {
+        if !self.needs_compaction(agent, session) {
+            return;
+        }
+
+        // 1. Memory flush: extract durable facts via "remember" tool.
+        let flush_prompt = H::flush();
+        if !flush_prompt.is_empty() {
+            let remember_tool = self.resolve(&["remember".into()]);
+            let mut flush_messages = session.messages.clone();
+            flush_messages.insert(0, Message::system(flush_prompt));
+            let cfg = self
+                .config
+                .clone()
+                .with_tools(remember_tool)
+                .with_tool_choice(ToolChoice::Auto);
+            match self.provider.send(&cfg, &flush_messages).await {
+                Ok(response) => {
+                    if let Some(msg) = response.message()
+                        && !msg.tool_calls.is_empty()
+                    {
+                        self.dispatch(&msg.tool_calls).await;
+                    }
+                }
+                Err(e) => tracing::warn!("memory flush failed during compaction: {e}"),
+            }
+        }
+
+        // 2. Summarize conversation history.
+        let compact_prompt = H::compact();
+        if !compact_prompt.is_empty() {
+            let mut summary_messages = session.messages.clone();
+            summary_messages.insert(0, Message::system(compact_prompt));
+            let cfg = self
+                .config
+                .clone()
+                .with_tools(vec![])
+                .with_tool_choice(ToolChoice::None);
+            match self.provider.send(&cfg, &summary_messages).await {
+                Ok(response) => {
+                    let summary = response.content().cloned().unwrap_or_default();
+                    session.messages.clear();
+                    session
+                        .messages
+                        .push(Message::assistant(&summary, None, None));
+                    session.compaction_count += 1;
+                }
+                Err(e) => tracing::warn!("compaction summarization failed: {e}"),
             }
         }
     }
 
-    /// Convenience: send to a named agent using an internal session.
-    pub async fn send_to(&mut self, agent: &str, message: Message) -> Result<Response> {
-        let key = CompactString::from(agent);
-        let mut chat = self
-            .sessions
-            .remove(&key)
-            .unwrap_or_else(|| Chat::new(agent));
-        let result = self.send(&mut chat, message).await;
-        self.sessions.insert(key, chat);
-        result
+    /// Build a config with the given tools and tool choice.
+    fn build_config(&self, tools: &[Tool], tool_choice: ToolChoice) -> General {
+        self.config
+            .clone()
+            .with_tools(tools.to_vec())
+            .with_tool_choice(tool_choice)
+    }
+
+    /// Internal send loop (non-streaming).
+    async fn send_inner(
+        &self,
+        agent: &str,
+        session: &mut Session,
+        message: Message,
+    ) -> Result<Response> {
+        let agent_config = self
+            .agents
+            .get(agent)
+            .ok_or_else(|| anyhow::anyhow!("agent '{agent}' not registered"))?;
+        let tools = self.resolve(&agent_config.tools);
+        let mut tool_choice = ToolChoice::Auto;
+        session.messages.push(message);
+        self.maybe_compact(agent, session).await;
+
+        for _ in 0..MAX_TOOL_CALLS {
+            let messages = self.api_messages(agent, session).await;
+            let cfg = self.build_config(&tools, tool_choice.clone());
+            let response = self.provider.send(&cfg, &messages).await?;
+            let Some(message) = response.message() else {
+                return Ok(response);
+            };
+
+            if message.tool_calls.is_empty() {
+                session.messages.push(message);
+                return Ok(response);
+            }
+
+            let result = self.dispatch(&message.tool_calls).await;
+            session.messages.push(message);
+            session.messages.extend(result);
+            tool_choice = ToolChoice::None;
+        }
+
+        anyhow::bail!("max tool calls reached");
     }
 }

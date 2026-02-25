@@ -1,7 +1,7 @@
 [package]
-name = "walrus-runtime"
-description = "Walrus runtime"
-documentation = "https://docs.rs/walrus-runtime"
+name = "walrus-telegram"
+description = "Walrus Telegram channel adapter"
+documentation = "https://docs.rs/walrus-telegram"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,28 +10,18 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-llm.workspace = true
-deepseek.workspace = true
 agent.workspace = true
 
 # crates-io dependencies
 anyhow.workspace = true
-compact_str.workspace = true
 async-stream.workspace = true
+compact_str.workspace = true
 futures-core.workspace = true
-futures-util.workspace = true
 reqwest.workspace = true
-rmcp.workspace = true
-schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 
-tokio.workspace = true
-
 [dev-dependencies]
-tempfile.workspace = true
-tracing-subscriber.workspace = true
-dotenvy.workspace = true
-chrono.workspace = true
+tokio.workspace = true

@@ -22,6 +22,8 @@
     - [P2-04: Runtime Skills Integration](./plan/units/P2-04.md)
     - [P2-05: walrus-telegram Crate](./plan/units/P2-05.md)
     - [P2-06: Telegram Channel](./plan/units/P2-06.md)
+    - [P2-07: Team Delegation](./plan/units/P2-07.md)
+    - [P2-08: Hook Trait and Ergonomic API](./plan/units/P2-08.md)
   - [Phase 3: Gateway](./plan/phase3-gateway.md)
     - [P3-01: Gateway Skeleton](./plan/units/P3-01.md)
     - [P3-02: Walrus Protocol Crate](./plan/units/P3-02.md)

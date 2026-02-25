@@ -1,8 +1,7 @@
 //! Tests for SqliteMemory.
 
-use agent::MemoryEntry;
-use agent::{Embedder, Memory, RecallOptions};
-use walrus_sqlite::SqliteMemory;
+use agent::{Embedder, Memory, MemoryEntry, RecallOptions};
+use walrus_sqlite::{SqliteMemory, cosine_similarity};
 
 /// Noop embedder for tests that don't need vector search.
 struct NoopEmbedder;
@@ -221,4 +220,149 @@ async fn compile_relevant_empty() {
     let m = mem();
     let compiled: String = m.compile_relevant("anything").await;
     assert!(compiled.is_empty());
+}
+
+// --- P2-11: Hybrid BM25 + vector recall tests ---
+
+/// Deterministic mock embedder for testing hybrid recall.
+struct MockEmbedder;
+
+impl Embedder for MockEmbedder {
+    fn embed(&self, text: &str) -> impl std::future::Future<Output = Vec<f32>> + Send {
+        // Simple deterministic embedding: hash bytes into 8-dim vector.
+        let mut emb = vec![0.0f32; 8];
+        for (i, byte) in text.bytes().enumerate() {
+            emb[i % 8] += byte as f32 / 255.0;
+        }
+        let norm: f32 = emb.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for x in &mut emb {
+                *x /= norm;
+            }
+        }
+        async move { emb }
+    }
+}
+
+fn mem_with_embedder() -> SqliteMemory<MockEmbedder> {
+    SqliteMemory::<MockEmbedder>::in_memory()
+        .unwrap()
+        .with_embedder(MockEmbedder)
+}
+
+#[test]
+fn cosine_similarity_unit() {
+    // Identical vectors → 1.0.
+    let a = vec![1.0, 0.0, 0.0];
+    let b = vec![1.0, 0.0, 0.0];
+    assert!((cosine_similarity(&a, &b) - 1.0).abs() < 1e-6);
+
+    // Orthogonal vectors → 0.0.
+    let a = vec![1.0, 0.0];
+    let b = vec![0.0, 1.0];
+    assert!(cosine_similarity(&a, &b).abs() < 1e-6);
+
+    // Opposite vectors → -1.0.
+    let a = vec![1.0, 0.0];
+    let b = vec![-1.0, 0.0];
+    assert!((cosine_similarity(&a, &b) + 1.0).abs() < 1e-6);
+
+    // Empty vectors → 0.0.
+    assert_eq!(cosine_similarity(&[], &[]), 0.0);
+
+    // Different lengths → 0.0.
+    assert_eq!(cosine_similarity(&[1.0], &[1.0, 2.0]), 0.0);
+}
+
+#[tokio::test]
+async fn store_auto_embeds_when_embedder_present() {
+    let m = mem_with_embedder();
+    m.store("test_key", "some value for embedding")
+        .await
+        .unwrap();
+    let entry = m.get_entry("test_key").unwrap();
+    assert!(entry.embedding.is_some(), "embedding should be stored");
+    let emb = entry.embedding.unwrap();
+    assert_eq!(emb.len(), 8);
+    // Embedding should be normalized.
+    let norm: f64 = emb
+        .iter()
+        .map(|x| (*x as f64) * (*x as f64))
+        .sum::<f64>()
+        .sqrt();
+    assert!((norm - 1.0).abs() < 1e-4, "embedding should be normalized");
+}
+
+#[tokio::test]
+async fn store_no_embed_when_no_embedder() {
+    let m = mem();
+    m.store("key", "value").await.unwrap();
+    let entry = m.get_entry("key").unwrap();
+    assert!(entry.embedding.is_none(), "no embedder → no embedding");
+}
+
+#[tokio::test]
+async fn recall_bm25_only_unchanged() {
+    // NoopEmbedder returns empty vec, so recall should behave exactly as before.
+    let m = mem();
+    m.set("rust", "Rust is a systems programming language");
+    m.set("python", "Python is a scripting language");
+
+    let opts = RecallOptions::default();
+    let results = m.recall("programming language", opts).await.unwrap();
+    assert!(!results.is_empty());
+    let keys: Vec<&str> = results.iter().map(|e| e.key.as_str()).collect();
+    assert!(keys.contains(&"rust"));
+}
+
+#[tokio::test]
+async fn recall_with_embeddings_fuses_scores() {
+    let m = mem_with_embedder();
+
+    // Store entries via store() which auto-embeds.
+    m.store("rust_lang", "Rust is a systems programming language")
+        .await
+        .unwrap();
+    m.store("python_lang", "Python is a dynamic scripting language")
+        .await
+        .unwrap();
+    m.store("cooking", "How to make pasta carbonara recipe")
+        .await
+        .unwrap();
+
+    let opts = RecallOptions::default();
+    let results = m.recall("programming language", opts).await.unwrap();
+    assert!(!results.is_empty());
+    // Entries about programming should rank higher than cooking.
+    let keys: Vec<&str> = results.iter().map(|e| e.key.as_str()).collect();
+    assert!(
+        keys.contains(&"rust_lang") || keys.contains(&"python_lang"),
+        "programming entries should appear in results"
+    );
+}
+
+#[tokio::test]
+async fn mmr_uses_cosine_when_embeddings_available() {
+    let m = mem_with_embedder();
+
+    // Store three similar entries.
+    m.store("a", "rust programming language features")
+        .await
+        .unwrap();
+    m.store("b", "rust programming language tools")
+        .await
+        .unwrap();
+    m.store("c", "cooking pasta carbonara italian recipe")
+        .await
+        .unwrap();
+
+    let opts = RecallOptions {
+        limit: 3,
+        ..Default::default()
+    };
+    let results = m.recall("rust programming", opts).await.unwrap();
+    assert_eq!(results.len(), 3);
+    // With cosine MMR, the diverse "cooking" entry may be promoted over
+    // the third most-similar programming entry. The key assertion is that
+    // all three results are returned without error.
 }

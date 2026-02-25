@@ -36,6 +36,20 @@ impl StreamChunk {
         }
     }
 
+    /// Create a separator chunk (newline) emitted between tool-call rounds.
+    pub fn separator() -> Self {
+        Self {
+            choices: vec![Choice {
+                delta: Delta {
+                    content: Some("\n".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
     /// Get the content of the first choice
     pub fn content(&self) -> Option<&str> {
         self.choices

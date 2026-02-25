@@ -47,6 +47,14 @@ Add `crates/sqlite` to workspace members.
 
 - **smallvec v1 (not v2)**: Original plan specified v2, but v2 is alpha-only.
   Using v1 which is stable and widely used.
+- **Skill struct aligned with agentskills.io (P1-04)**: Original spec had
+  custom fields (version, tier, tags, triggers, tools, priority). Replaced
+  with agentskills.io-compliant fields: name, description, license,
+  compatibility, metadata (`BTreeMap`), allowed_tools, body. Runtime concepts
+  (tier, priority) moved to SkillRegistry.
+- **Chat relocated to walrus-runtime**: Originally in walrus-core. Moved to
+  walrus-runtime since it composes LLM messages (runtime concern, not shared
+  vocabulary).
 
 ## Completion Checklist
 
