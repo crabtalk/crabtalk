@@ -18,7 +18,7 @@
 //! runtime.add_agent(leader);
 //! ```
 
-use crate::{Handler, Hook, MAX_TOOL_CALLS, Provider};
+use crate::{Handler, Hook, MAX_TOOL_CALLS, SkillRegistry};
 use agent::{Agent, Memory};
 use compact_str::CompactString;
 use llm::{Config, General, LLM, Message, Tool, ToolChoice};
@@ -37,6 +37,7 @@ pub fn build_team<H: Hook + 'static>(
     let provider = runtime.provider().clone();
     let config = runtime.config().clone();
     let memory = runtime.memory_arc();
+    let skills = runtime.skills().map(Arc::clone);
 
     for worker in workers {
         let tool_def = worker_tool(worker.name.clone(), worker.description.to_string());
@@ -55,6 +56,7 @@ pub fn build_team<H: Hook + 'static>(
             provider: provider.clone(),
             config: config.clone(),
             memory: Arc::clone(&memory),
+            skills: skills.clone(),
             agent: worker.clone(),
             tools: worker_tools,
             handlers: worker_handlers,
@@ -78,11 +80,12 @@ pub fn build_team<H: Hook + 'static>(
 }
 
 /// Shared immutable state for a worker handler, wrapped in Arc
-/// to avoid cloning Provider, Agent, Vec<Tool>, and BTreeMap per call.
-struct WorkerCtx<M: Memory> {
-    provider: Provider,
+/// to avoid cloning provider, Agent, `Vec<Tool>`, and BTreeMap per call.
+struct WorkerCtx<P: LLM, M: Memory> {
+    provider: P,
     config: General,
     memory: Arc<M>,
+    skills: Option<Arc<SkillRegistry>>,
     agent: Agent,
     tools: Vec<Tool>,
     handlers: BTreeMap<CompactString, Handler>,
@@ -92,11 +95,21 @@ struct WorkerCtx<M: Memory> {
 ///
 /// Builds the system prompt (base + memory context), sends the input as a
 /// user message, and loops through tool calls up to [`MAX_TOOL_CALLS`].
-async fn worker_send<M: Memory>(ctx: &WorkerCtx<M>, input: String) -> String {
+async fn worker_send<P: LLM, M: Memory>(ctx: &WorkerCtx<P, M>, input: String) -> String {
     let mut system_prompt = ctx.agent.system_prompt.clone();
     let memory_context = ctx.memory.compile_relevant(&input).await;
     if !memory_context.is_empty() {
         system_prompt = format!("{system_prompt}\n\n{memory_context}");
+    }
+
+    // Inject skill bodies matching the agent's skill tags.
+    if let Some(registry) = &ctx.skills {
+        for skill in registry.find_by_tags(&ctx.agent.skill_tags) {
+            if !skill.body.is_empty() {
+                system_prompt.push_str("\n\n");
+                system_prompt.push_str(&skill.body);
+            }
+        }
     }
 
     let mut messages = vec![Message::system(&system_prompt), Message::user(&input)];
@@ -104,7 +117,10 @@ async fn worker_send<M: Memory>(ctx: &WorkerCtx<M>, input: String) -> String {
     let base_cfg = ctx.config.clone().with_tools(ctx.tools.to_vec());
 
     for _ in 0..MAX_TOOL_CALLS {
-        let cfg = base_cfg.clone().with_tool_choice(tool_choice.clone());
+        let cfg: P::ChatConfig = base_cfg
+            .clone()
+            .with_tool_choice(tool_choice.clone())
+            .into();
         let response = match ctx.provider.send(&cfg, &messages).await {
             Ok(r) => r,
             Err(e) => return format!("worker error: {e}"),

@@ -2,7 +2,25 @@
 
 #![allow(dead_code)]
 
-use walrus_runtime::{Memory, prelude::*};
+use deepseek::DeepSeek;
+use llm::LLM;
+use walrus_runtime::{DEFAULT_COMPACT_PROMPT, DEFAULT_FLUSH_PROMPT, Hook, Memory, prelude::*};
+
+/// Example hook wiring DeepSeek as the LLM provider.
+pub struct ExampleHook;
+
+impl Hook for ExampleHook {
+    type Provider = DeepSeek;
+    type Memory = InMemory;
+
+    fn compact() -> &'static str {
+        DEFAULT_COMPACT_PROMPT
+    }
+
+    fn flush() -> &'static str {
+        DEFAULT_FLUSH_PROMPT
+    }
+}
 
 /// Initialize tracing with env-filter support.
 pub fn init_tracing() {
@@ -20,14 +38,14 @@ pub fn load_api_key() -> String {
 }
 
 /// Build a default Runtime with DeepSeek provider and InMemory.
-pub fn build_runtime() -> Runtime<()> {
+pub fn build_runtime() -> Runtime<ExampleHook> {
     let key = load_api_key();
-    let provider = Provider::deepseek(&key).expect("failed to create provider");
+    let provider = DeepSeek::new(llm::Client::new(), &key).expect("failed to create provider");
     Runtime::new(General::default(), provider, InMemory::new())
 }
 
 /// Simple REPL loop: read lines from stdin, stream to agent.
-pub async fn repl(runtime: &mut Runtime<()>, agent: &str) {
+pub async fn repl<H: Hook + 'static>(runtime: &mut Runtime<H>, agent: &str) {
     use futures_util::StreamExt;
     use std::io::{BufRead, Write};
 
@@ -62,7 +80,7 @@ pub async fn repl(runtime: &mut Runtime<()>, agent: &str) {
 }
 
 /// REPL loop that prints memory entries after each exchange.
-pub async fn repl_with_memory(runtime: &mut Runtime<()>, agent: &str) {
+pub async fn repl_with_memory<H: Hook + 'static>(runtime: &mut Runtime<H>, agent: &str) {
     use futures_util::StreamExt;
     use std::io::{BufRead, Write};
 

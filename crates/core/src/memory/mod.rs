@@ -16,7 +16,7 @@
 //! let agent = with_memory(agent, &memory);
 //! ```
 
-pub use embedder::Embedder;
+pub use embedder::{Embedder, NoEmbedder};
 pub use mem::InMemory;
 
 use crate::Agent;

@@ -2,13 +2,9 @@
 
 use agent::{Agent, InMemory, Memory, Skill, SkillTier};
 use compact_str::CompactString;
-use llm::{FunctionCall, General, LLM, Message, Tool, ToolCall};
+use llm::{FunctionCall, General, Message, NoopProvider, Tool, ToolCall};
 use std::collections::BTreeMap;
-use walrus_runtime::{Hook, Provider, Runtime, SkillRegistry};
-
-fn test_provider() -> Provider {
-    Provider::DeepSeek(deepseek::DeepSeek::new(llm::Client::new(), "test-key").unwrap())
-}
+use walrus_runtime::{Hook, Runtime, SkillRegistry};
 
 fn echo_tool() -> Tool {
     Tool {
@@ -21,7 +17,7 @@ fn echo_tool() -> Tool {
 
 #[test]
 fn resolve_returns_registered_tools() {
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     rt.register(echo_tool(), |args| async move { args });
     let tools = rt.resolve(&["echo".into()]);
     assert_eq!(tools.len(), 1);
@@ -30,14 +26,14 @@ fn resolve_returns_registered_tools() {
 
 #[test]
 fn resolve_skips_unknown() {
-    let rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     let tools = rt.resolve(&["missing".into()]);
     assert!(tools.is_empty());
 }
 
 #[tokio::test]
 async fn dispatch_calls_handler() {
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     rt.register(echo_tool(), |args| async move { format!("got: {args}") });
 
     let calls = vec![ToolCall {
@@ -58,7 +54,7 @@ async fn dispatch_calls_handler() {
 
 #[tokio::test]
 async fn dispatch_unknown_tool() {
-    let rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     let calls = vec![ToolCall {
         id: "call_1".into(),
         index: 0,
@@ -75,7 +71,7 @@ async fn dispatch_unknown_tool() {
 
 #[test]
 fn context_limit_default() {
-    let rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     assert_eq!(rt.context_limit(), 64_000);
 }
 
@@ -83,19 +79,19 @@ fn context_limit_default() {
 fn context_limit_override() {
     let mut config = General::default();
     config.context_limit = Some(128_000);
-    let rt = Runtime::<()>::new(config, test_provider(), InMemory::new());
+    let rt = Runtime::<()>::new(config, NoopProvider, InMemory::new());
     assert_eq!(rt.context_limit(), 128_000);
 }
 
 #[test]
 fn runtime_with_inmemory() {
-    let rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     assert!(rt.memory().entries().is_empty());
 }
 
 #[test]
 fn remember_tool_registered() {
-    let rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     let tools = rt.resolve(&["remember".into()]);
     assert_eq!(tools.len(), 1);
     assert_eq!(tools[0].name, "remember");
@@ -103,7 +99,7 @@ fn remember_tool_registered() {
 
 #[tokio::test]
 async fn remember_tool_stores_value() {
-    let rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
 
     let calls = vec![ToolCall {
         id: "call_1".into(),
@@ -127,7 +123,7 @@ async fn system_prompt_includes_memory() {
     let memory = InMemory::new();
     memory.set("user", "Prefers short answers.");
 
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), memory);
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, memory);
     rt.add_agent(Agent::new("test").system_prompt("You are helpful."));
 
     // api_messages is private, so test via memory content.
@@ -156,7 +152,7 @@ fn make_test_skill(name: &str, tags: &str, body: &str) -> Skill {
 
 #[test]
 fn runtime_without_skills_unchanged() {
-    let rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     // No skills set — resolve still works for exact matches.
     let tools = rt.resolve(&["remember".into()]);
     assert_eq!(tools.len(), 1);
@@ -164,7 +160,7 @@ fn runtime_without_skills_unchanged() {
 
 #[test]
 fn resolve_glob_prefix() {
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     rt.register(
         Tool {
             name: "foo_a".into(),
@@ -200,7 +196,7 @@ fn resolve_glob_prefix() {
 
 #[test]
 fn resolve_exact_unchanged() {
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     rt.register(echo_tool(), |args| async move { args });
     let tools = rt.resolve(&["echo".into()]);
     assert_eq!(tools.len(), 1);
@@ -215,8 +211,8 @@ fn skill_body_injected() {
         SkillTier::Bundled,
     );
 
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new())
-        .with_skills(registry);
+    let mut rt =
+        Runtime::<()>::new(General::default(), NoopProvider, InMemory::new()).with_skills(registry);
     rt.add_agent(
         Agent::new("dev")
             .system_prompt("Base prompt.")
@@ -230,7 +226,7 @@ fn skill_body_injected() {
 #[test]
 fn skill_tools_registered() {
     // Verify that skills' allowed_tools are available via resolve.
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     rt.register(echo_tool(), |args| async move { args });
 
     // The skill lists "echo" in allowed_tools — it should resolve.
@@ -254,17 +250,11 @@ fn hook_default_flush_prompt() {
 
 // --- Provider factory tests ---
 
-#[test]
-fn provider_deepseek_factory() {
-    let provider = Provider::deepseek("test-key");
-    assert!(provider.is_ok());
-}
-
 // --- Runtime set_skills tests ---
 
 #[test]
 fn set_skills_on_existing_runtime() {
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     let registry = SkillRegistry::new();
     rt.set_skills(registry);
     // Resolve still works after setting skills.
@@ -276,7 +266,7 @@ fn set_skills_on_existing_runtime() {
 
 #[tokio::test]
 async fn send_to_unknown_agent_fails() {
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     let result = rt.send_to("unknown", Message::user("hello")).await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("not registered"));
@@ -284,7 +274,7 @@ async fn send_to_unknown_agent_fails() {
 
 #[test]
 fn clear_session_removes() {
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     rt.add_agent(Agent::new("test").system_prompt("hello"));
     // clear_session on a non-existent session is a no-op.
     rt.clear_session("test");
@@ -293,7 +283,7 @@ fn clear_session_removes() {
 
 #[test]
 fn resolve_tools_returns_pairs() {
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     rt.register(echo_tool(), |args| async move { args });
     let resolved = rt.resolve_tools(&["echo".into()]);
     assert_eq!(resolved.len(), 1);
@@ -302,7 +292,7 @@ fn resolve_tools_returns_pairs() {
 
 #[test]
 fn resolve_tools_glob() {
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     rt.register(
         Tool {
             name: "foo_a".into(),
@@ -329,7 +319,7 @@ fn resolve_tools_glob() {
 
 #[test]
 fn resolve_returns_schemas_only() {
-    let mut rt = Runtime::<()>::new(General::default(), test_provider(), InMemory::new());
+    let mut rt = Runtime::<()>::new(General::default(), NoopProvider, InMemory::new());
     rt.register(echo_tool(), |args| async move { args });
     let tools = rt.resolve(&["echo".into()]);
     assert_eq!(tools.len(), 1);

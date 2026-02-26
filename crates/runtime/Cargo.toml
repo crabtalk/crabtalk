@@ -11,7 +11,6 @@ keywords.workspace = true
 
 [dependencies]
 llm.workspace = true
-deepseek.workspace = true
 agent.workspace = true
 
 # crates-io dependencies
@@ -26,11 +25,11 @@ schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 
-tokio.workspace = true
-
 [dev-dependencies]
+deepseek.workspace = true
 tempfile.workspace = true
 tracing-subscriber.workspace = true
 dotenvy.workspace = true

@@ -8,7 +8,7 @@ use reqwest::Client;
 /// A trait for LLM providers
 pub trait LLM: Sized + Clone {
     /// The chat configuration.
-    type ChatConfig: Config;
+    type ChatConfig: Config + Send;
 
     /// Create a new LLM provider
     fn new(client: Client, key: &str) -> Result<Self>
@@ -20,7 +20,7 @@ pub trait LLM: Sized + Clone {
         &self,
         config: &Self::ChatConfig,
         messages: &[Message],
-    ) -> impl Future<Output = Result<Response>>;
+    ) -> impl Future<Output = Result<Response>> + Send;
 
     /// Send a message to the LLM with streaming
     fn stream(
@@ -28,5 +28,5 @@ pub trait LLM: Sized + Clone {
         config: Self::ChatConfig,
         messages: &[Message],
         usage: bool,
-    ) -> impl Stream<Item = Result<StreamChunk>>;
+    ) -> impl Stream<Item = Result<StreamChunk>> + Send;
 }

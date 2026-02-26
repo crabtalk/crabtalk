@@ -1,0 +1,13 @@
+[package]
+name = "walrus-protocol"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+compact_str = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

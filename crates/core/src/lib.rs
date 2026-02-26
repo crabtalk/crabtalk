@@ -8,7 +8,7 @@
 
 pub use agent::Agent;
 pub use channel::{Attachment, AttachmentKind, Channel, ChannelMessage, Platform};
-pub use memory::{Embedder, InMemory, Memory, MemoryEntry, RecallOptions, with_memory};
+pub use memory::{Embedder, InMemory, Memory, MemoryEntry, NoEmbedder, RecallOptions, with_memory};
 pub use skill::{Skill, SkillTier};
 
 mod agent;

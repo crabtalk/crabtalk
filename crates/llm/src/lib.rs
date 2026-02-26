@@ -5,6 +5,7 @@
 
 pub use config::{Config, General};
 pub use message::{Message, Role, estimate_tokens};
+pub use noop::NoopProvider;
 pub use provider::LLM;
 pub use reqwest::{self, Client};
 pub use response::{FinishReason, Response, Usage};
@@ -13,6 +14,7 @@ pub use tool::{FunctionCall, Tool, ToolCall, ToolChoice};
 
 mod config;
 mod message;
+mod noop;
 mod provider;
 mod response;
 mod stream;
