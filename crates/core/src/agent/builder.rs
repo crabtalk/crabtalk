@@ -1,8 +1,9 @@
 //! Fluent builder for constructing an [`Agent`].
 
+use super::tool::ToolSender;
 use crate::{
     agent::{Agent, config::AgentConfig},
-    model::Model,
+    model::{Model, Tool},
 };
 
 /// Fluent builder for [`Agent<M>`].
@@ -12,6 +13,8 @@ use crate::{
 pub struct AgentBuilder<M: Model> {
     config: AgentConfig,
     model: M,
+    tools: Vec<Tool>,
+    tool_tx: Option<ToolSender>,
 }
 
 impl<M: Model> AgentBuilder<M> {
@@ -20,15 +23,26 @@ impl<M: Model> AgentBuilder<M> {
         Self {
             config: AgentConfig::default(),
             model,
+            tools: Vec::new(),
+            tool_tx: None,
         }
     }
 
     /// Set the full config, replacing all fields.
-    ///
-    /// Typical usage: build an `AgentConfig` via its fluent methods,
-    /// then pass it here before calling `build()`.
     pub fn config(mut self, config: AgentConfig) -> Self {
         self.config = config;
+        self
+    }
+
+    /// Set the tool schemas advertised to the LLM.
+    pub fn tools(mut self, tools: Vec<Tool>) -> Self {
+        self.tools = tools;
+        self
+    }
+
+    /// Set the tool sender for dispatching tool calls.
+    pub fn tool_tx(mut self, tx: ToolSender) -> Self {
+        self.tool_tx = Some(tx);
         self
     }
 
@@ -38,6 +52,8 @@ impl<M: Model> AgentBuilder<M> {
             config: self.config,
             model: self.model,
             history: Vec::new(),
+            tools: self.tools,
+            tool_tx: self.tool_tx,
         }
     }
 }

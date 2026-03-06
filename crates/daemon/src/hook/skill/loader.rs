@@ -3,7 +3,7 @@
 //! Parses `SKILL.md` files (YAML frontmatter + Markdown body) from skill
 //! directories and builds a [`SkillRegistry`].
 
-use crate::hook::skill::{Skill, SkillRegistry, SkillTier};
+use crate::hook::skill::{Skill, SkillRegistry};
 use compact_str::CompactString;
 use serde::Deserialize;
 use std::{collections::BTreeMap, path::Path};
@@ -57,8 +57,7 @@ pub fn parse_skill_md(content: &str) -> anyhow::Result<Skill> {
 }
 
 /// Load skills from a directory. Each subdirectory should contain a `SKILL.md`.
-/// The given tier is assigned to all loaded skills.
-pub fn load_skills_dir(path: impl AsRef<Path>, tier: SkillTier) -> anyhow::Result<SkillRegistry> {
+pub fn load_skills_dir(path: impl AsRef<Path>) -> anyhow::Result<SkillRegistry> {
     let path = path.as_ref();
     let mut registry = SkillRegistry::new();
 
@@ -81,7 +80,7 @@ pub fn load_skills_dir(path: impl AsRef<Path>, tier: SkillTier) -> anyhow::Resul
             .map_err(|e| anyhow::anyhow!("failed to read {}: {e}", skill_file.display()))?;
 
         let skill = parse_skill_md(&content)?;
-        registry.add(skill, tier);
+        registry.add(skill);
     }
 
     Ok(registry)

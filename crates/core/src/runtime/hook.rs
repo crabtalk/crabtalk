@@ -1,12 +1,12 @@
 //! Hook trait — lifecycle backend for agent building, event observation,
-//! and tool registration.
+//! and tool schema registration.
 //!
 //! All hook crates implement this trait. [`Runtime`](crate) calls these
 //! methods at the appropriate lifecycle points. `DaemonHook` composes
 //! multiple Hook implementations by delegating to each.
 
-use crate::{AgentConfig, AgentEvent, Memory, agent::tool::ToolRegistry, memory::tools};
-use std::{future::Future, sync::Arc};
+use crate::{AgentConfig, AgentEvent, Memory, agent::tool::ToolRegistry};
+use std::future::Future;
 
 /// Lifecycle backend for agent building, event observation, and tool registration.
 ///
@@ -30,10 +30,10 @@ pub trait Hook: Send + Sync {
     /// Default: no-op.
     fn on_event(&self, _agent: &str, _event: &AgentEvent) {}
 
-    /// Called by `Runtime::new()` to register tools into the shared registry.
+    /// Called by `Runtime::new()` to register tool schemas into the registry.
     ///
-    /// Implementations insert `(Tool, Handler)` pairs via `tools.insert()`.
-    /// `DaemonHook` delegates to each sub-hook's `on_register_tools`.
+    /// Implementations call `tools.insert(tool)` with schema-only `Tool` values.
+    /// No handlers or closures are stored — dispatch is handled by the daemon.
     ///
     /// Default: no-op async.
     fn on_register_tools(&self, _tools: &mut ToolRegistry) -> impl Future<Output = ()> + Send {
@@ -46,26 +46,18 @@ impl Hook for () {}
 /// Blanket Hook impl for all Memory types that are Clone + 'static.
 ///
 /// Injects compiled memory into the system prompt via `on_build_agent`
-/// and registers `remember`/`recall` tools via `on_register_tools`.
+/// and registers `remember`/`recall` tool schemas via `on_register_tools`.
 impl<M: Memory + Clone + 'static> Hook for M {
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
-        let has_memory_tool = config
-            .tools
-            .iter()
-            .any(|t| t == "recall" || t == "remember");
-        if has_memory_tool {
-            let compiled = self.compile();
-            config.system_prompt = format!("{}\n\n{compiled}", config.system_prompt);
-        }
+        let compiled = self.compile();
+        config.system_prompt = format!("{}\n\n{compiled}", config.system_prompt);
         config
     }
 
     fn on_register_tools(&self, registry: &mut ToolRegistry) -> impl Future<Output = ()> + Send {
-        let mem = Arc::new(self.clone());
-        let (tool, handler) = tools::remember(Arc::clone(&mem));
-        registry.insert(tool, handler);
-        let (tool, handler) = tools::recall(mem);
-        registry.insert(tool, handler);
+        use crate::memory::tools;
+        registry.insert(tools::remember_schema());
+        registry.insert(tools::recall_schema());
         async {}
     }
 }

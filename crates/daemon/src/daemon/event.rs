@@ -1,18 +1,24 @@
 //! Daemon event types and dispatch.
 //!
-//! All inbound stimuli (socket messages, channel messages, tool side-effects)
-//! are represented as [`DaemonEvent`] variants sent through a single
+//! All inbound stimuli (socket messages, channel messages, tool calls) are
+//! represented as [`DaemonEvent`] variants sent through a single
 //! `mpsc::unbounded_channel`. The [`Daemon`] processes them via
 //! [`handle_events`](Daemon::handle_events).
+//!
+//! Tool call routing is fully delegated to [`DaemonHook::dispatch_tool`] —
+//! no tool name matching happens here.
 
 use crate::daemon::Daemon;
 use compact_str::CompactString;
 use futures_util::{StreamExt, pin_mut};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
-use wcore::protocol::{
-    api::Server,
-    message::{client::ClientMessage, server::ServerMessage},
+use wcore::{
+    ToolRequest,
+    protocol::{
+        api::Server,
+        message::{client::ClientMessage, server::ServerMessage},
+    },
 };
 
 /// Inbound event from any source, processed by the central event loop.
@@ -34,6 +40,8 @@ pub(crate) enum DaemonEvent {
         /// Oneshot channel to send the response back to the channel loop.
         reply: oneshot::Sender<Result<String, String>>,
     },
+    /// A tool call from an agent, routed through `DaemonHook::dispatch_tool`.
+    ToolCall(ToolRequest),
     /// Graceful shutdown request.
     Shutdown,
 }
@@ -57,6 +65,7 @@ impl Daemon {
                     reply,
                 } => self.handle_channel(agent, content, reply),
                 DaemonEvent::Socket { msg, reply } => self.handle_socket(msg, reply),
+                DaemonEvent::ToolCall(req) => self.handle_tool_call(req),
                 DaemonEvent::Shutdown => {
                     tracing::info!("event loop shutting down");
                     break;
@@ -96,6 +105,17 @@ impl Daemon {
                     break;
                 }
             }
+        });
+    }
+
+    /// Route a tool call through `DaemonHook::dispatch_tool`.
+    fn handle_tool_call(&self, req: ToolRequest) {
+        let runtime = self.runtime.clone();
+        tokio::spawn(async move {
+            tracing::debug!(tool = %req.name, "tool dispatch");
+            let rt = runtime.read().await.clone();
+            let result = rt.hook.dispatch_tool(&req.name, &req.args).await;
+            let _ = req.reply.send(result);
         });
     }
 }

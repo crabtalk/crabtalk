@@ -12,16 +12,12 @@ struct AgentFrontmatter {
     #[serde(default)]
     description: String,
     #[serde(default)]
-    tools: Vec<String>,
-    #[serde(default)]
-    skill_tags: Vec<String>,
-    #[serde(default)]
     model: Option<String>,
 }
 
 /// Parse an agent markdown file (YAML frontmatter + body) into an [`AgentConfig`].
 ///
-/// The frontmatter provides name, description, tools, and skill_tags.
+/// The frontmatter provides name, description, and optional model.
 /// The markdown body (trimmed) becomes the agent's system prompt.
 pub fn parse_agent_md(content: &str) -> anyhow::Result<AgentConfig> {
     let (frontmatter, body) = split_yaml_frontmatter(content)?;
@@ -32,8 +28,6 @@ pub fn parse_agent_md(content: &str) -> anyhow::Result<AgentConfig> {
         description: fm.description.into(),
         system_prompt: body.trim().to_owned(),
         model: fm.model.map(Into::into),
-        tools: fm.tools.into_iter().map(Into::into).collect(),
-        skill_tags: fm.skill_tags.into_iter().map(Into::into).collect(),
         ..AgentConfig::default()
     };
 

@@ -5,7 +5,11 @@
 //! daemon from a [`DaemonConfig`]. [`Daemon::reload`] rebuilds the runtime
 //! in-place from disk without restarting transports.
 
-use crate::{DaemonConfig, config, hook, hook::DaemonHook};
+use crate::{
+    DaemonConfig, config,
+    daemon::event::{DaemonEvent, DaemonEventSender},
+    hook::{self, DaemonHook},
+};
 use anyhow::Result;
 use model::ProviderManager;
 use std::{
@@ -13,19 +17,25 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::RwLock;
-use wcore::Runtime;
+use wcore::{Runtime, ToolRequest};
 
 use super::Daemon;
 
 const SYSTEM_AGENT: &str = include_str!("../../prompts/system.md");
 
 impl Daemon {
-    /// Build a fully-configured [`Daemon`] from the given config and config directory.
-    pub(crate) async fn build(config: &DaemonConfig, config_dir: &Path) -> Result<Self> {
-        let runtime = Self::build_runtime(config, config_dir).await?;
+    /// Build a fully-configured [`Daemon`] from the given config, config
+    /// directory, and event sender.
+    pub(crate) async fn build(
+        config: &DaemonConfig,
+        config_dir: &Path,
+        event_tx: DaemonEventSender,
+    ) -> Result<Self> {
+        let runtime = Self::build_runtime(config, config_dir, &event_tx).await?;
         Ok(Self {
             runtime: Arc::new(RwLock::new(Arc::new(runtime))),
             config_dir: config_dir.to_path_buf(),
+            event_tx,
         })
     }
 
@@ -35,7 +45,7 @@ impl Daemon {
     /// complete normally. New requests after the swap see the new runtime.
     pub async fn reload(&self) -> Result<()> {
         let config = DaemonConfig::load(&self.config_dir.join("walrus.toml"))?;
-        let new_runtime = Self::build_runtime(&config, &self.config_dir).await?;
+        let new_runtime = Self::build_runtime(&config, &self.config_dir, &self.event_tx).await?;
         *self.runtime.write().await = Arc::new(new_runtime);
         tracing::info!("daemon reloaded");
         Ok(())
@@ -45,10 +55,12 @@ impl Daemon {
     async fn build_runtime(
         config: &DaemonConfig,
         config_dir: &Path,
+        event_tx: &DaemonEventSender,
     ) -> Result<Runtime<ProviderManager, DaemonHook>> {
         let manager = Self::build_providers(config).await?;
         let hook = Self::build_hook(config, config_dir).await;
-        let mut runtime = Runtime::new(manager, hook).await;
+        let tool_tx = Self::build_tool_sender(event_tx);
+        let mut runtime = Runtime::new(manager, hook, Some(tool_tx)).await;
         Self::load_agents(&mut runtime, config_dir)?;
         Ok(runtime)
     }
@@ -79,6 +91,24 @@ impl Daemon {
         let mcp_handler = hook::mcp::McpHandler::load(&mcp_servers).await;
 
         DaemonHook::new(memory, skills, mcp_handler)
+    }
+
+    /// Build a [`ToolSender`] that forwards [`ToolRequest`]s into the daemon
+    /// event loop as [`DaemonEvent::ToolCall`] variants.
+    ///
+    /// Spawns a lightweight bridge task relaying from the tool channel into
+    /// the main daemon event channel.
+    fn build_tool_sender(event_tx: &DaemonEventSender) -> wcore::ToolSender {
+        let (tool_tx, mut tool_rx) = tokio::sync::mpsc::unbounded_channel::<ToolRequest>();
+        let event_tx = event_tx.clone();
+        tokio::spawn(async move {
+            while let Some(req) = tool_rx.recv().await {
+                if event_tx.send(DaemonEvent::ToolCall(req)).is_err() {
+                    break;
+                }
+            }
+        });
+        tool_tx
     }
 
     /// Load agents from markdown files and add them to the runtime.

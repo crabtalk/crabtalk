@@ -35,6 +35,10 @@ pub struct Daemon {
     pub runtime: Arc<RwLock<Arc<Runtime<ProviderManager, DaemonHook>>>>,
     /// Config directory — stored so [`Daemon::reload`] can re-read config from disk.
     pub(crate) config_dir: PathBuf,
+    /// Sender for the daemon event loop — cloned into `Runtime` as `ToolSender`
+    /// so agents can dispatch tool calls. Stored here so [`Daemon::reload`] can
+    /// pass a fresh clone into the rebuilt runtime.
+    pub(crate) event_tx: DaemonEventSender,
 }
 
 impl Daemon {
@@ -55,7 +59,7 @@ impl Daemon {
         config_dir: &Path,
     ) -> Result<DaemonHandle> {
         let (event_tx, event_rx) = mpsc::unbounded_channel::<DaemonEvent>();
-        let daemon = Daemon::build(config, config_dir).await?;
+        let daemon = Daemon::build(config, config_dir, event_tx.clone()).await?;
 
         // Broadcast shutdown — all subsystems subscribe.
         let (shutdown_tx, _) = broadcast::channel::<()>(1);

@@ -1,46 +1,39 @@
-//! Dispatcher trait, Handler type, and ToolRegistry.
+//! Tool registry (schema store), ToolRequest, and ToolSender.
 //!
-//! [`Dispatcher`] is a generic async trait for tool dispatch, passed to
-//! `Agent::step()`. [`ToolRegistry`] is the canonical implementation — it
-//! holds `(Tool, Handler)` pairs keyed by name and implements `Dispatcher`
-//! directly, removing the need for `ClosureDispatcher` or `DispatchFn`.
+//! [`ToolRegistry`] stores tool schemas by name — no handlers, no closures.
+//! [`ToolRequest`] and [`ToolSender`] are the agent-side dispatch primitives:
+//! the agent sends a `ToolRequest` per tool call and awaits a `String` reply.
 
 use crate::model::Tool;
-use anyhow::Result;
 use compact_str::CompactString;
-use std::{collections::BTreeMap, future::Future, pin::Pin, sync::Arc};
+use std::collections::BTreeMap;
+use tokio::sync::{mpsc, oneshot};
 
-/// Type-erased async tool handler.
-///
-/// Takes JSON-encoded arguments, returns a result string. Captured state
-/// (e.g. `Arc<M>`) must be `Send + Sync + 'static`.
-pub type Handler =
-    Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = String> + Send>> + Send + Sync>;
-
-/// Generic tool dispatcher.
-///
-/// Passed as a method param to `Agent::step()`. Uses RPITIT for async
-/// without boxing — callers monomorphize over concrete dispatcher types.
-pub trait Dispatcher: Send + Sync {
-    /// Dispatch a batch of tool calls. Each entry is `(method, params)`.
-    ///
-    /// Returns one result per call in the same order.
-    fn dispatch(&self, calls: &[(&str, &str)]) -> impl Future<Output = Vec<Result<String>>> + Send;
-
-    /// Return the tool schemas this dispatcher can handle.
-    ///
-    /// Agent uses this to populate `Request.tools` before calling the model.
-    fn tools(&self) -> Vec<Tool>;
+/// A single tool call request sent by the agent to the runtime's tool handler.
+pub struct ToolRequest {
+    /// Tool name as returned by the model.
+    pub name: String,
+    /// JSON-encoded arguments string.
+    pub args: String,
+    /// Reply channel — the handler sends the result string here.
+    pub reply: oneshot::Sender<String>,
 }
 
-/// Registry of named tools with their async handlers.
+/// Sender half of the agent tool channel.
 ///
-/// Implements [`Dispatcher`] directly — `tools()` returns schemas and
-/// `dispatch()` looks up handlers by name. Used as both the runtime's
-/// shared store and the per-agent dispatcher snapshot.
-#[derive(Default)]
+/// Captured by `Agent` at construction. When the model returns tool calls,
+/// the agent sends one `ToolRequest` per call and awaits each reply.
+/// `None` means no tools are available (e.g. CLI path without a daemon).
+pub type ToolSender = mpsc::UnboundedSender<ToolRequest>;
+
+/// Schema-only registry of named tools.
+///
+/// Stores `Tool` definitions (name, description, JSON schema) keyed by name.
+/// Used by `Runtime` to filter tool schemas per agent at `add_agent` time.
+/// No handlers or closures are stored here.
+#[derive(Default, Clone)]
 pub struct ToolRegistry {
-    tools: BTreeMap<CompactString, (Tool, Handler)>,
+    tools: BTreeMap<CompactString, Tool>,
 }
 
 impl ToolRegistry {
@@ -49,9 +42,9 @@ impl ToolRegistry {
         Self::default()
     }
 
-    /// Insert a tool and its handler.
-    pub fn insert(&mut self, tool: Tool, handler: Handler) {
-        self.tools.insert(tool.name.clone(), (tool, handler));
+    /// Insert a tool schema.
+    pub fn insert(&mut self, tool: Tool) {
+        self.tools.insert(tool.name.clone(), tool);
     }
 
     /// Remove a tool by name. Returns `true` if it existed.
@@ -64,11 +57,6 @@ impl ToolRegistry {
         self.tools.contains_key(name)
     }
 
-    /// Iterate over all `(Tool, Handler)` pairs.
-    pub fn iter(&self) -> impl Iterator<Item = (&Tool, &Handler)> {
-        self.tools.values().map(|(t, h)| (t, h))
-    }
-
     /// Number of registered tools.
     pub fn len(&self) -> usize {
         self.tools.len()
@@ -79,57 +67,23 @@ impl ToolRegistry {
         self.tools.is_empty()
     }
 
-    /// Build a filtered snapshot containing only the named tools.
+    /// Return all tool schemas as a `Vec`.
+    pub fn tools(&self) -> Vec<Tool> {
+        self.tools.values().cloned().collect()
+    }
+
+    /// Build a filtered list of tool schemas matching the given names.
     ///
-    /// If `names` is empty, all tools are included. Used by runtime to
-    /// build a per-agent dispatcher.
-    pub fn filtered_snapshot(&self, names: &[CompactString]) -> Self {
-        let tools = if names.is_empty() {
-            self.tools.clone()
-        } else {
-            self.tools
-                .iter()
-                .filter(|(k, _)| names.iter().any(|n| n == *k))
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect()
-        };
-        Self { tools }
-    }
-}
-
-impl Clone for ToolRegistry {
-    fn clone(&self) -> Self {
-        Self {
-            tools: self.tools.clone(),
+    /// If `names` is empty, all tools are returned. Used by `Runtime::add_agent`
+    /// to build the per-agent schema snapshot stored on `Agent`.
+    pub fn filtered_snapshot(&self, names: &[CompactString]) -> Vec<Tool> {
+        if names.is_empty() {
+            return self.tools();
         }
-    }
-}
-
-impl Dispatcher for ToolRegistry {
-    fn dispatch(&self, calls: &[(&str, &str)]) -> impl Future<Output = Vec<Result<String>>> + Send {
-        let owned: Vec<(String, String, Option<Handler>)> = calls
+        self.tools
             .iter()
-            .map(|(m, p)| {
-                let handler = self.tools.get(*m).map(|(_, h)| Arc::clone(h));
-                (m.to_string(), p.to_string(), handler)
-            })
-            .collect();
-
-        async move {
-            let mut results = Vec::with_capacity(owned.len());
-            for (method, params, handler) in owned {
-                let output = if let Some(h) = handler {
-                    Ok(h(params).await)
-                } else {
-                    Ok(format!("function {method} not available"))
-                };
-                results.push(output);
-            }
-            results
-        }
-    }
-
-    fn tools(&self) -> Vec<Tool> {
-        self.tools.values().map(|(t, _)| t.clone()).collect()
+            .filter(|(k, _)| names.iter().any(|n| n == *k))
+            .map(|(_, v)| v.clone())
+            .collect()
     }
 }

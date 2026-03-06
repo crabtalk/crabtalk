@@ -1,17 +1,18 @@
 //! Stateful agent execution unit.
 //!
-//! [`Agent`] owns its configuration, model, and message history. It drives
-//! LLM execution through [`Agent::step`], [`Agent::run`], and
+//! [`Agent`] owns its configuration, model, message history, tool schemas,
+//! and an optional [`ToolSender`] for dispatching tool calls to the runtime.
+//! It drives LLM execution through [`Agent::step`], [`Agent::run`], and
 //! [`Agent::run_stream`]. `run_stream()` is the canonical step loop —
 //! `run()` collects its events and returns the final response.
 
-use crate::model::{Message, Model, Request};
+use crate::model::{Message, Model, Request, Tool};
 use anyhow::Result;
 use async_stream::stream;
 use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
 use futures_core::Stream;
-use tokio::sync::mpsc;
-use tool::Dispatcher;
+use tokio::sync::{mpsc, oneshot};
+use tool::{ToolRequest, ToolSender};
 
 pub use builder::AgentBuilder;
 pub use config::AgentConfig;
@@ -25,10 +26,10 @@ pub mod tool;
 
 /// A stateful agent execution unit.
 ///
-/// Generic over `M: Model` — stores the model provider alongside config
-/// and conversation history. Callers drive execution via `step()` (single
-/// LLM round), `run()` (loop to completion), or `run_stream()` (yields
-/// events as a stream).
+/// Generic over `M: Model` — stores the model provider alongside config,
+/// conversation history, tool schemas, and an optional sender for tool dispatch.
+/// Callers drive execution via `step()` (single LLM round), `run()` (loop to
+/// completion), or `run_stream()` (yields events as a stream).
 pub struct Agent<M: Model> {
     /// Agent configuration (name, prompt, model, limits, tool_choice).
     pub config: AgentConfig,
@@ -36,6 +37,10 @@ pub struct Agent<M: Model> {
     model: M,
     /// Conversation history (user/assistant/tool messages).
     pub(crate) history: Vec<Message>,
+    /// Tool schemas advertised to the LLM. Set once at build time.
+    tools: Vec<Tool>,
+    /// Sender for dispatching tool calls to the runtime. None = no tools.
+    tool_tx: Option<ToolSender>,
 }
 
 impl<M: Model> Agent<M> {
@@ -57,9 +62,9 @@ impl<M: Model> Agent<M> {
     /// Perform a single LLM round: send request, dispatch tools, return step.
     ///
     /// Composes a [`Request`] from config state (system prompt + history +
-    /// dispatcher tools), calls the stored model, dispatches any tool calls
-    /// via `dispatcher.dispatch()`, and appends results to history.
-    pub async fn step<D: Dispatcher>(&mut self, dispatcher: &D) -> Result<AgentStep> {
+    /// tool schemas), calls the stored model, dispatches any tool calls via
+    /// the [`ToolSender`] channel, and appends results to history.
+    pub async fn step(&mut self) -> Result<AgentStep> {
         let model_name = self
             .config
             .model
@@ -72,39 +77,27 @@ impl<M: Model> Agent<M> {
         }
         messages.extend(self.history.iter().cloned());
 
-        let tools = dispatcher.tools();
         let mut request = Request::new(model_name)
             .with_messages(messages)
             .with_tool_choice(self.config.tool_choice.clone());
-        if !tools.is_empty() {
-            request = request.with_tools(tools);
+        if !self.tools.is_empty() {
+            request = request.with_tools(self.tools.clone());
         }
 
         let response = self.model.send(&request).await?;
         let tool_calls = response.tool_calls().unwrap_or_default().to_vec();
 
-        // Append the assistant message to history.
         if let Some(msg) = response.message() {
             self.history.push(msg);
         }
 
-        // Dispatch tool calls if any.
         let mut tool_results = Vec::new();
         if !tool_calls.is_empty() {
-            let calls: Vec<(&str, &str)> = tool_calls
-                .iter()
-                .map(|tc| (tc.function.name.as_str(), tc.function.arguments.as_str()))
-                .collect();
-
-            let results = dispatcher.dispatch(&calls).await;
-
-            for (tc, result) in tool_calls.iter().zip(results) {
-                let output = match result {
-                    Ok(s) => s,
-                    Err(e) => format!("error: {e}"),
-                };
-
-                let msg = Message::tool(&output, tc.id.clone());
+            for tc in &tool_calls {
+                let result = self
+                    .dispatch_tool(&tc.function.name, &tc.function.arguments)
+                    .await;
+                let msg = Message::tool(&result, tc.id.clone());
                 self.history.push(msg.clone());
                 tool_results.push(msg);
             }
@@ -115,6 +108,28 @@ impl<M: Model> Agent<M> {
             tool_calls,
             tool_results,
         })
+    }
+
+    /// Dispatch a single tool call via the tool sender channel.
+    ///
+    /// Returns the result string. If no sender is configured, returns an error
+    /// message without panicking.
+    async fn dispatch_tool(&self, name: &str, args: &str) -> String {
+        let Some(tx) = &self.tool_tx else {
+            return format!("tool '{name}' called but no tool sender configured");
+        };
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let req = ToolRequest {
+            name: name.to_owned(),
+            args: args.to_owned(),
+            reply: reply_tx,
+        };
+        if tx.send(req).is_err() {
+            return format!("tool channel closed while calling '{name}'");
+        }
+        reply_rx
+            .await
+            .unwrap_or_else(|_| format!("tool '{name}' dropped reply"))
     }
 
     /// Determine the stop reason for a step with no tool calls.
@@ -129,17 +144,11 @@ impl<M: Model> Agent<M> {
     /// Run the agent loop to completion, returning the final response.
     ///
     /// Wraps [`Agent::run_stream`] — collects all events, sends each through
-    /// `events`, and extracts the `Done` response. The event sender allows
-    /// callers (like Runtime) to observe execution without reimplementing
-    /// the step loop.
-    pub async fn run<D: Dispatcher>(
-        &mut self,
-        dispatcher: &D,
-        events: mpsc::UnboundedSender<AgentEvent>,
-    ) -> AgentResponse {
+    /// `events`, and extracts the `Done` response.
+    pub async fn run(&mut self, events: mpsc::UnboundedSender<AgentEvent>) -> AgentResponse {
         use futures_util::StreamExt;
 
-        let mut stream = std::pin::pin!(self.run_stream(dispatcher));
+        let mut stream = std::pin::pin!(self.run_stream());
         let mut response = None;
         while let Some(event) = stream.next().await {
             if let AgentEvent::Done(ref resp) = event {
@@ -161,16 +170,13 @@ impl<M: Model> Agent<M> {
     /// The canonical step loop. Calls [`Agent::step`] up to `max_iterations`
     /// times, yielding events as they are produced. Always finishes with a
     /// `Done` event containing the [`AgentResponse`].
-    pub fn run_stream<'a, D: Dispatcher + 'a>(
-        &'a mut self,
-        dispatcher: &'a D,
-    ) -> impl Stream<Item = AgentEvent> + 'a {
+    pub fn run_stream(&mut self) -> impl Stream<Item = AgentEvent> + '_ {
         stream! {
             let mut steps = Vec::new();
             let max = self.config.max_iterations;
 
             for _ in 0..max {
-                match self.step(dispatcher).await {
+                match self.step().await {
                     Ok(step) => {
                         let has_tool_calls = !step.tool_calls.is_empty();
                         let text = step.response.content().cloned();

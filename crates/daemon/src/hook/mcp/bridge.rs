@@ -12,8 +12,6 @@ use std::collections::BTreeMap;
 use tokio::sync::Mutex;
 use wcore::model::Tool;
 
-// ── Bridge ─────────────────────────────────────────────────────────────
-
 /// A connected MCP server peer with its tool names.
 struct ConnectedPeer {
     name: CompactString,
