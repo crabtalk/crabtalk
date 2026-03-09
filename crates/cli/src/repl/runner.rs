@@ -9,6 +9,8 @@ use std::path::Path;
 use wcore::protocol::message::{
     DownloadEvent, DownloadRequest, HubAction, HubEvent, HubRequest, SendRequest, StreamEvent,
     StreamRequest,
+    client::ClientMessage,
+    server::{ServerMessage, SessionInfo},
 };
 
 /// Runs agents via a walrusd Unix domain socket connection.
@@ -35,6 +37,7 @@ impl Runner {
             .send(SendRequest {
                 agent: CompactString::from(agent),
                 content: content.to_string(),
+                session: None,
             })
             .await?;
         Ok(resp.content)
@@ -51,6 +54,7 @@ impl Runner {
             .stream(StreamRequest {
                 agent: CompactString::from(agent),
                 content: content.to_string(),
+                session: None,
             })
             .filter_map(|result| async {
                 match result {
@@ -84,5 +88,34 @@ impl Runner {
             package: CompactString::from(package),
             action,
         })
+    }
+
+    /// List active sessions on the daemon.
+    pub async fn list_sessions(&mut self) -> Result<Vec<SessionInfo>> {
+        use wcore::protocol::api::Client;
+        match self.connection.request(ClientMessage::Sessions).await? {
+            ServerMessage::Sessions(sessions) => Ok(sessions),
+            ServerMessage::Error { code, message } => {
+                anyhow::bail!("server error ({code}): {message}")
+            }
+            other => anyhow::bail!("unexpected response: {other:?}"),
+        }
+    }
+
+    /// Kill (close) a session by ID. Returns true if it existed.
+    pub async fn kill_session(&mut self, session: u64) -> Result<bool> {
+        use wcore::protocol::api::Client;
+        match self
+            .connection
+            .request(ClientMessage::Kill { session })
+            .await?
+        {
+            ServerMessage::Pong => Ok(true),
+            ServerMessage::Error { code: 404, .. } => Ok(false),
+            ServerMessage::Error { code, message } => {
+                anyhow::bail!("server error ({code}): {message}")
+            }
+            other => anyhow::bail!("unexpected response: {other:?}"),
+        }
     }
 }

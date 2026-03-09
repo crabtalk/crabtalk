@@ -40,6 +40,8 @@ pub struct Daemon {
     /// so agents can dispatch tool calls. Stored here so [`Daemon::reload`] can
     /// pass a fresh clone into the rebuilt runtime.
     pub(crate) event_tx: DaemonEventSender,
+    /// Heartbeat system prompt for heartbeat-triggered agent runs.
+    pub(crate) heartbeat_prompt: String,
 }
 
 impl Daemon {
@@ -66,6 +68,29 @@ impl Daemon {
             let _ = shutdown_rx.recv().await;
             let _ = shutdown_event_tx.send(DaemonEvent::Shutdown);
         });
+
+        // Heartbeat timer — sends Heartbeat events at the configured interval.
+        if config.heartbeat.interval > 0 {
+            let heartbeat_tx = event_tx.clone();
+            let mut heartbeat_shutdown = shutdown_tx.subscribe();
+            let interval_secs = config.heartbeat.interval;
+            tokio::spawn(async move {
+                let mut interval =
+                    tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+                interval.tick().await; // skip the immediate first tick
+                loop {
+                    tokio::select! {
+                        _ = interval.tick() => {
+                            if heartbeat_tx.send(DaemonEvent::Heartbeat).is_err() {
+                                break;
+                            }
+                        }
+                        _ = heartbeat_shutdown.recv() => break,
+                    }
+                }
+            });
+            tracing::info!("heartbeat timer started (interval: {interval_secs}s)");
+        }
 
         let d = daemon.clone();
         let event_loop_join = tokio::spawn(async move {

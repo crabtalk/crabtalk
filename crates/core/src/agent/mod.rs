@@ -1,7 +1,8 @@
-//! Stateful agent execution unit.
+//! Immutable agent definition and execution methods.
 //!
-//! [`Agent`] owns its configuration, model, message history, tool schemas,
-//! and an optional [`ToolSender`] for dispatching tool calls to the runtime.
+//! [`Agent`] owns its configuration, model, tool schemas, and an optional
+//! [`ToolSender`] for dispatching tool calls to the runtime. Conversation
+//! history is passed in externally — the agent itself is stateless.
 //! It drives LLM execution through [`Agent::step`], [`Agent::run`], and
 //! [`Agent::run_stream`]. `run_stream()` is the canonical step loop —
 //! `run()` collects its events and returns the final response.
@@ -30,10 +31,11 @@ pub mod event;
 mod parser;
 pub mod tool;
 
-/// A stateful agent execution unit.
+/// An immutable agent definition.
 ///
 /// Generic over `M: Model` — stores the model provider alongside config,
-/// conversation history, tool schemas, and an optional sender for tool dispatch.
+/// tool schemas, and an optional sender for tool dispatch. Conversation
+/// history is owned externally and passed into execution methods.
 /// Callers drive execution via `step()` (single LLM round), `run()` (loop to
 /// completion), or `run_stream()` (yields events as a stream).
 pub struct Agent<M: Model> {
@@ -41,8 +43,6 @@ pub struct Agent<M: Model> {
     pub config: AgentConfig,
     /// The model provider for LLM calls.
     model: M,
-    /// Conversation history (user/assistant/tool messages).
-    pub(crate) history: Vec<Message>,
     /// Tool schemas advertised to the LLM. Set once at build time.
     tools: Vec<Tool>,
     /// Sender for dispatching tool calls to the runtime. None = no tools.
@@ -50,38 +50,23 @@ pub struct Agent<M: Model> {
 }
 
 impl<M: Model> Agent<M> {
-    /// Push a message into the conversation history.
-    pub fn push_message(&mut self, message: Message) {
-        self.history.push(message);
-    }
-
-    /// Return a reference to the conversation history.
-    pub fn messages(&self) -> &[Message] {
-        &self.history
-    }
-
-    /// Clear the conversation history, keeping configuration intact.
-    pub fn clear_history(&mut self) {
-        self.history.clear();
-    }
-
     /// Perform a single LLM round: send request, dispatch tools, return step.
     ///
     /// Composes a [`Request`] from config state (system prompt + history +
     /// tool schemas), calls the stored model, dispatches any tool calls via
     /// the [`ToolSender`] channel, and appends results to history.
-    pub async fn step(&mut self) -> Result<AgentStep> {
+    pub async fn step(&self, history: &mut Vec<Message>) -> Result<AgentStep> {
         let model_name = self
             .config
             .model
             .clone()
             .unwrap_or_else(|| self.model.active_model());
 
-        let mut messages = Vec::with_capacity(1 + self.history.len());
+        let mut messages = Vec::with_capacity(1 + history.len());
         if !self.config.system_prompt.is_empty() {
             messages.push(Message::system(&self.config.system_prompt));
         }
-        messages.extend(self.history.iter().cloned());
+        messages.extend(history.iter().cloned());
 
         let mut request = Request::new(model_name)
             .with_messages(messages)
@@ -94,7 +79,7 @@ impl<M: Model> Agent<M> {
         let tool_calls = response.tool_calls().unwrap_or_default().to_vec();
 
         if let Some(msg) = response.message() {
-            self.history.push(msg);
+            history.push(msg);
         }
 
         let mut tool_results = Vec::new();
@@ -104,7 +89,7 @@ impl<M: Model> Agent<M> {
                     .dispatch_tool(&tc.function.name, &tc.function.arguments)
                     .await;
                 let msg = Message::tool(&result, tc.id.clone());
-                self.history.push(msg.clone());
+                history.push(msg.clone());
                 tool_results.push(msg);
             }
         }
@@ -130,6 +115,7 @@ impl<M: Model> Agent<M> {
             args: args.to_owned(),
             agent: self.config.name.to_string(),
             reply: reply_tx,
+            task_id: None,
         };
         if tx.send(req).is_err() {
             return format!("tool channel closed while calling '{name}'");
@@ -152,8 +138,12 @@ impl<M: Model> Agent<M> {
     ///
     /// Wraps [`Agent::run_stream`] — collects all events, sends each through
     /// `events`, and extracts the `Done` response.
-    pub async fn run(&mut self, events: mpsc::UnboundedSender<AgentEvent>) -> AgentResponse {
-        let mut stream = std::pin::pin!(self.run_stream());
+    pub async fn run(
+        &self,
+        history: &mut Vec<Message>,
+        events: mpsc::UnboundedSender<AgentEvent>,
+    ) -> AgentResponse {
+        let mut stream = std::pin::pin!(self.run_stream(history));
         let mut response = None;
         while let Some(event) = stream.next().await {
             if let AgentEvent::Done(ref resp) = event {
@@ -175,7 +165,10 @@ impl<M: Model> Agent<M> {
     /// Uses the model's streaming API so text deltas are yielded token-by-token.
     /// Tool call responses are dispatched after the stream completes (arguments
     /// arrive incrementally and must be fully accumulated first).
-    pub fn run_stream(&mut self) -> impl Stream<Item = AgentEvent> + '_ {
+    pub fn run_stream<'a>(
+        &'a self,
+        history: &'a mut Vec<Message>,
+    ) -> impl Stream<Item = AgentEvent> + 'a {
         stream! {
             let mut steps = Vec::new();
             let max = self.config.max_iterations;
@@ -188,11 +181,11 @@ impl<M: Model> Agent<M> {
                     .clone()
                     .unwrap_or_else(|| self.model.active_model());
 
-                let mut messages = Vec::with_capacity(1 + self.history.len());
+                let mut messages = Vec::with_capacity(1 + history.len());
                 if !self.config.system_prompt.is_empty() {
                     messages.push(Message::system(&self.config.system_prompt));
                 }
-                messages.extend(self.history.iter().cloned());
+                messages.extend(history.iter().cloned());
 
                 let mut request = Request::new(model_name)
                     .with_messages(messages)
@@ -202,8 +195,6 @@ impl<M: Model> Agent<M> {
                 }
 
                 // Stream from the model, yielding text deltas as they arrive.
-                // Scoped so the pinned stream drops before we may borrow self
-                // mutably for compaction.
                 let mut builder = MessageBuilder::new(Role::Assistant);
                 let mut finish_reason = None;
                 let mut last_meta = CompletionMeta::default();
@@ -284,7 +275,7 @@ impl<M: Model> Agent<M> {
                     }),
                 };
 
-                self.history.push(msg);
+                history.push(msg);
                 let has_tool_calls = !tool_calls.is_empty();
 
                 // Dispatch tool calls if any.
@@ -300,7 +291,7 @@ impl<M: Model> Agent<M> {
                             compact_triggered = true;
                         }
                         let msg = Message::tool(&result, tc.id.clone());
-                        self.history.push(msg.clone());
+                        history.push(msg.clone());
                         tool_results.push(msg);
                         yield AgentEvent::ToolResult {
                             call_id: tc.id.clone(),
@@ -312,11 +303,11 @@ impl<M: Model> Agent<M> {
 
                 // Handle compaction: summarize history, store journal, replace.
                 if compact_triggered {
-                    if let Some(summary) = self.compact().await {
+                    if let Some(summary) = self.compact(history).await {
                         // Store journal entry via internal tool dispatch.
                         let _ = self.dispatch_tool("__journal__", &summary).await;
                         // Replace history with the summary.
-                        self.history = vec![Message::user(&summary)];
+                        *history = vec![Message::user(&summary)];
                         yield AgentEvent::TextDelta(
                             "\n[context compacted]\n".to_owned(),
                         );

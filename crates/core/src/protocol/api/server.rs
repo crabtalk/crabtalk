@@ -2,7 +2,9 @@
 
 use crate::protocol::message::{
     DownloadEvent, DownloadRequest, HubAction, HubEvent, SendRequest, SendResponse, StreamEvent,
-    StreamRequest, client::ClientMessage, server::ServerMessage,
+    StreamRequest,
+    client::ClientMessage,
+    server::{ServerMessage, SessionInfo, TaskInfo},
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -40,6 +42,25 @@ pub trait Server: Sync {
         action: HubAction,
     ) -> impl Stream<Item = Result<HubEvent>> + Send;
 
+    /// Handle `Sessions` — list active sessions.
+    fn list_sessions(&self) -> impl std::future::Future<Output = Result<Vec<SessionInfo>>> + Send;
+
+    /// Handle `Kill` — close a session by ID.
+    fn kill_session(&self, session: u64) -> impl std::future::Future<Output = Result<bool>> + Send;
+
+    /// Handle `Tasks` — list tasks in the task registry.
+    fn list_tasks(&self) -> impl std::future::Future<Output = Result<Vec<TaskInfo>>> + Send;
+
+    /// Handle `KillTask` — cancel a task by ID.
+    fn kill_task(&self, task_id: u64) -> impl std::future::Future<Output = Result<bool>> + Send;
+
+    /// Handle `Approve` — approve a blocked task's inbox item.
+    fn approve_task(
+        &self,
+        task_id: u64,
+        response: String,
+    ) -> impl std::future::Future<Output = Result<bool>> + Send;
+
     /// Dispatch a `ClientMessage` to the appropriate handler method.
     ///
     /// Returns a stream of `ServerMessage`s. Request-response operations
@@ -47,11 +68,11 @@ pub trait Server: Sync {
     fn dispatch(&self, msg: ClientMessage) -> impl Stream<Item = ServerMessage> + Send + '_ {
         async_stream::stream! {
             match msg {
-                ClientMessage::Send { agent, content } => {
-                    yield result_to_msg(self.send(SendRequest { agent, content }).await);
+                ClientMessage::Send { agent, content, session } => {
+                    yield result_to_msg(self.send(SendRequest { agent, content, session }).await);
                 }
-                ClientMessage::Stream { agent, content } => {
-                    let s = self.stream(StreamRequest { agent, content });
+                ClientMessage::Stream { agent, content, session } => {
+                    let s = self.stream(StreamRequest { agent, content, session });
                     tokio::pin!(s);
                     while let Some(result) = s.next().await {
                         yield result_to_msg(result);
@@ -79,6 +100,63 @@ pub trait Server: Sync {
                     while let Some(result) = s.next().await {
                         yield result_to_msg(result);
                     }
+                }
+                ClientMessage::Sessions => {
+                    yield match self.list_sessions().await {
+                        Ok(sessions) => ServerMessage::Sessions(sessions),
+                        Err(e) => ServerMessage::Error {
+                            code: 500,
+                            message: e.to_string(),
+                        },
+                    };
+                }
+                ClientMessage::Kill { session } => {
+                    yield match self.kill_session(session).await {
+                        Ok(true) => ServerMessage::Pong,
+                        Ok(false) => ServerMessage::Error {
+                            code: 404,
+                            message: format!("session {session} not found"),
+                        },
+                        Err(e) => ServerMessage::Error {
+                            code: 500,
+                            message: e.to_string(),
+                        },
+                    };
+                }
+                ClientMessage::Tasks => {
+                    yield match self.list_tasks().await {
+                        Ok(tasks) => ServerMessage::Tasks(tasks),
+                        Err(e) => ServerMessage::Error {
+                            code: 500,
+                            message: e.to_string(),
+                        },
+                    };
+                }
+                ClientMessage::KillTask { task_id } => {
+                    yield match self.kill_task(task_id).await {
+                        Ok(true) => ServerMessage::Pong,
+                        Ok(false) => ServerMessage::Error {
+                            code: 404,
+                            message: format!("task {task_id} not found"),
+                        },
+                        Err(e) => ServerMessage::Error {
+                            code: 500,
+                            message: e.to_string(),
+                        },
+                    };
+                }
+                ClientMessage::Approve { task_id, response } => {
+                    yield match self.approve_task(task_id, response).await {
+                        Ok(true) => ServerMessage::Pong,
+                        Ok(false) => ServerMessage::Error {
+                            code: 404,
+                            message: format!("task {task_id} not found or not blocked"),
+                        },
+                        Err(e) => ServerMessage::Error {
+                            code: 500,
+                            message: e.to_string(),
+                        },
+                    };
                 }
             }
         }

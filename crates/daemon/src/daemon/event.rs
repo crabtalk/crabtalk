@@ -8,6 +8,7 @@
 //! no tool name matching happens here.
 
 use crate::daemon::Daemon;
+use compact_str::CompactString;
 use futures_util::{StreamExt, pin_mut};
 use tokio::sync::mpsc;
 use wcore::{
@@ -30,6 +31,8 @@ pub enum DaemonEvent {
     },
     /// A tool call from an agent, routed through `DaemonHook::dispatch_tool`.
     ToolCall(ToolRequest),
+    /// Periodic heartbeat tick.
+    Heartbeat,
     /// Graceful shutdown request.
     Shutdown,
 }
@@ -49,6 +52,7 @@ impl Daemon {
             match event {
                 DaemonEvent::Message { msg, reply } => self.handle_message(msg, reply),
                 DaemonEvent::ToolCall(req) => self.handle_tool_call(req),
+                DaemonEvent::Heartbeat => self.handle_heartbeat(),
                 DaemonEvent::Shutdown => {
                     tracing::info!("event loop shutting down");
                     break;
@@ -72,6 +76,69 @@ impl Daemon {
         });
     }
 
+    /// Handle a heartbeat tick: deliver queued create_task entries and promote spawn_task entries.
+    fn handle_heartbeat(&self) {
+        let daemon = self.clone();
+        tokio::spawn(async move {
+            tracing::debug!("heartbeat tick");
+            let rt = daemon.runtime.read().await.clone();
+            let tasks_arc = rt.hook.tasks.clone();
+
+            // Step 1: Gather queued create_task entries grouped by agent.
+            let groups = {
+                let registry = tasks_arc.lock().await;
+                registry.queued_create_tasks()
+            };
+
+            // For each agent group: format task list, send as message.
+            for (agent, task_entries) in &groups {
+                if task_entries.is_empty() {
+                    continue;
+                }
+                let task_context: String = task_entries
+                    .iter()
+                    .map(|(id, desc)| format!("- Task #{id}: {desc}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                let content = if daemon.heartbeat_prompt.is_empty() {
+                    format!("You have pending tasks:\n{task_context}")
+                } else {
+                    format!(
+                        "{}\n\nPending tasks:\n{task_context}",
+                        daemon.heartbeat_prompt
+                    )
+                };
+
+                // Mark tasks InProgress.
+                {
+                    let mut registry = tasks_arc.lock().await;
+                    for (id, _) in task_entries {
+                        registry.set_status(*id, crate::hook::task::TaskStatus::InProgress);
+                    }
+                }
+
+                // Dispatch via event channel with created_by: "heartbeat".
+                let msg = ClientMessage::Send {
+                    agent: CompactString::from(agent.as_str()),
+                    content,
+                    session: None,
+                };
+                let (reply_tx, _reply_rx) = mpsc::unbounded_channel();
+                let _ = daemon.event_tx.send(DaemonEvent::Message {
+                    msg,
+                    reply: reply_tx,
+                });
+            }
+
+            // Step 2: Promote queued spawn_task entries.
+            {
+                let reg = tasks_arc.clone();
+                tasks_arc.lock().await.promote_next(reg);
+            }
+        });
+    }
+
     /// Route a tool call through `DaemonHook::dispatch_tool`.
     fn handle_tool_call(&self, req: ToolRequest) {
         let runtime = self.runtime.clone();
@@ -80,7 +147,7 @@ impl Daemon {
             let rt = runtime.read().await.clone();
             let result = rt
                 .hook
-                .dispatch_tool(&req.name, &req.args, &req.agent)
+                .dispatch_tool(&req.name, &req.args, &req.agent, req.task_id)
                 .await;
             let _ = req.reply.send(result);
         });

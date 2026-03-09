@@ -1,10 +1,10 @@
-//! Runtime — agent registry, schema store, and hook orchestration.
+//! Runtime — agent registry, session management, and hook orchestration.
 //!
-//! [`Runtime`] holds agents in a `BTreeMap` with per-agent `Mutex` for
-//! concurrent execution. Tool schemas are registered once at startup via
-//! `hook.on_register_tools()` and stored in a plain [`ToolRegistry`].
-//! Each agent receives a filtered schema snapshot and a [`ToolSender`] at
-//! build time — the runtime holds no handlers or closures.
+//! [`Runtime`] holds agents as immutable definitions and sessions as
+//! per-session `Arc<Mutex<Session>>` containers. Tool schemas are registered
+//! once at startup via `hook.on_register_tools()`. Execution methods
+//! (`send_to`, `stream_to`) take a session ID, lock the session, clone the
+//! agent, and run with the session's history.
 
 use crate::{
     Agent, AgentBuilder, AgentConfig, AgentEvent, AgentResponse, AgentStopReason,
@@ -12,27 +12,36 @@ use crate::{
     model::{Message, Model},
     runtime::hook::Hook,
 };
-use anyhow::Result;
+use anyhow::{Result, bail};
 use async_stream::stream;
 use compact_str::CompactString;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use std::{collections::BTreeMap, sync::Arc};
-use tokio::sync::{Mutex, mpsc};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
+use tokio::sync::{Mutex, RwLock, mpsc};
 
 pub mod hook;
+pub mod session;
 
-/// The walrus runtime — agent registry, schema store, and hook orchestration.
+pub use session::Session;
+
+/// The walrus runtime — agent registry, session store, and hook orchestration.
 ///
-/// Tool schemas are registered once at construction via `hook.on_register_tools()`.
-/// Each agent is built with a filtered schema snapshot and a `ToolSender` so it
-/// can dispatch tool calls back to the runtime without going through the runtime.
-/// `Runtime::new()` is async — it calls `hook.on_register_tools()` during
-/// construction to populate the schema registry.
+/// Agents are stored as plain immutable values. Sessions own conversation
+/// history behind per-session `Arc<Mutex<Session>>`. The sessions map uses
+/// `RwLock` for concurrent access without requiring `&mut self`.
 pub struct Runtime<M: Model, H: Hook> {
     pub model: M,
     pub hook: H,
-    agents: BTreeMap<CompactString, Arc<Mutex<Agent<M>>>>,
+    agents: BTreeMap<CompactString, Agent<M>>,
+    sessions: RwLock<BTreeMap<u64, Arc<Mutex<Session>>>>,
+    next_session_id: AtomicU64,
     tools: ToolRegistry,
     tool_tx: Option<ToolSender>,
 }
@@ -50,6 +59,8 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             model,
             hook,
             agents: BTreeMap::new(),
+            sessions: RwLock::new(BTreeMap::new()),
+            next_session_id: AtomicU64::new(1),
             tools,
             tool_tx,
         }
@@ -84,72 +95,110 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             builder = builder.tool_tx(tx.clone());
         }
         let agent = builder.build();
-        self.agents.insert(name, Arc::new(Mutex::new(agent)));
+        self.agents.insert(name, agent);
     }
 
     /// Get a registered agent's config by name (cloned).
-    pub async fn agent(&self, name: &str) -> Option<AgentConfig> {
-        let mutex = self.agents.get(name)?;
-        Some(mutex.lock().await.config.clone())
+    pub fn agent(&self, name: &str) -> Option<AgentConfig> {
+        self.agents.get(name).map(|a| a.config.clone())
     }
 
     /// Get all registered agent configs (cloned, alphabetical order).
-    pub async fn agents(&self) -> Vec<AgentConfig> {
-        let mut configs = Vec::with_capacity(self.agents.len());
-        for mutex in self.agents.values() {
-            configs.push(mutex.lock().await.config.clone());
-        }
-        configs
+    pub fn agents(&self) -> Vec<AgentConfig> {
+        self.agents.values().map(|a| a.config.clone()).collect()
     }
 
-    /// Get the per-agent mutex by name.
-    pub fn agent_mutex(&self, name: &str) -> Option<Arc<Mutex<Agent<M>>>> {
-        self.agents.get(name).cloned()
+    /// Get a reference to an agent by name.
+    pub fn get_agent(&self, name: &str) -> Option<&Agent<M>> {
+        self.agents.get(name)
+    }
+
+    // --- Session management ---
+
+    /// Create a new session for the given agent. Returns the session ID.
+    pub async fn create_session(&self, agent: &str, created_by: &str) -> Result<u64> {
+        if !self.agents.contains_key(agent) {
+            bail!("agent '{agent}' not registered");
+        }
+        let id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
+        let session = Session::new(id, agent, created_by);
+        self.sessions
+            .write()
+            .await
+            .insert(id, Arc::new(Mutex::new(session)));
+        Ok(id)
+    }
+
+    /// Close (remove) a session by ID. Returns true if it existed.
+    pub async fn close_session(&self, id: u64) -> bool {
+        self.sessions.write().await.remove(&id).is_some()
+    }
+
+    /// Get a session mutex by ID.
+    pub async fn session(&self, id: u64) -> Option<Arc<Mutex<Session>>> {
+        self.sessions.read().await.get(&id).cloned()
+    }
+
+    /// Get all session mutexes (for iteration/listing).
+    pub async fn sessions(&self) -> Vec<Arc<Mutex<Session>>> {
+        self.sessions.read().await.values().cloned().collect()
     }
 
     // --- Execution ---
 
-    /// Send a message to an agent and run to completion.
+    /// Send a message to a session and run to completion.
     ///
-    /// Locks the per-agent mutex, pushes the user message, delegates to
-    /// `agent.run()`, and forwards all events to `hook.on_event()`.
-    pub async fn send_to(&self, agent: &str, content: &str) -> Result<AgentResponse> {
-        let mutex = self
-            .agents
-            .get(agent)
-            .ok_or_else(|| anyhow::anyhow!("agent '{agent}' not registered"))?;
+    /// Locks the session, looks up the agent, pushes the user message,
+    /// delegates to `agent.run()`, and forwards events to `hook.on_event()`.
+    pub async fn send_to(&self, session_id: u64, content: &str) -> Result<AgentResponse> {
+        let session_mutex = self
+            .sessions
+            .read()
+            .await
+            .get(&session_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("session {session_id} not found"))?;
 
-        let mut guard = mutex.lock().await;
-        guard.push_message(Message::user(content));
+        let mut session = session_mutex.lock().await;
+        let agent_ref = self
+            .agents
+            .get(&session.agent)
+            .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", session.agent))?;
+
+        session.history.push(Message::user(content));
 
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let response = guard.run(tx).await;
+        let agent_name = session.agent.clone();
+        let response = agent_ref.run(&mut session.history, tx).await;
 
         while let Ok(event) = rx.try_recv() {
-            self.hook.on_event(agent, &event);
+            self.hook.on_event(&agent_name, &event);
         }
 
         Ok(response)
     }
 
-    /// Send a message to an agent and stream response events.
+    /// Send a message to a session and stream response events.
     ///
-    /// Locks the per-agent mutex, pushes the user message, and streams events
-    /// forwarded to `hook.on_event()`.
-    pub fn stream_to<'a>(
-        &'a self,
-        agent: &'a str,
-        content: &'a str,
-    ) -> impl Stream<Item = AgentEvent> + 'a {
+    /// Locks the session, looks up the agent, pushes the user message, and
+    /// streams events forwarded to `hook.on_event()`.
+    pub fn stream_to(&self, session_id: u64, content: &str) -> impl Stream<Item = AgentEvent> + '_ {
+        let content = content.to_owned();
         stream! {
-            let mutex = match self.agents.get(agent) {
+            let session_mutex = match self
+                .sessions
+                .read()
+                .await
+                .get(&session_id)
+                .cloned()
+            {
                 Some(m) => m,
                 None => {
                     let resp = AgentResponse {
                         final_response: None,
                         iterations: 0,
                         stop_reason: AgentStopReason::Error(
-                            format!("agent '{agent}' not registered"),
+                            format!("session {session_id} not found"),
                         ),
                         steps: vec![],
                     };
@@ -158,12 +207,29 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                 }
             };
 
-            let mut guard = mutex.lock().await;
-            guard.push_message(Message::user(content));
+            let mut session = session_mutex.lock().await;
+            let agent_ref = match self.agents.get(&session.agent) {
+                Some(a) => a,
+                None => {
+                    let resp = AgentResponse {
+                        final_response: None,
+                        iterations: 0,
+                        stop_reason: AgentStopReason::Error(
+                            format!("agent '{}' not registered", session.agent),
+                        ),
+                        steps: vec![],
+                    };
+                    yield AgentEvent::Done(resp);
+                    return;
+                }
+            };
 
-            let mut event_stream = std::pin::pin!(guard.run_stream());
+            session.history.push(Message::user(&content));
+            let agent_name = session.agent.clone();
+
+            let mut event_stream = std::pin::pin!(agent_ref.run_stream(&mut session.history));
             while let Some(event) = event_stream.next().await {
-                self.hook.on_event(agent, &event);
+                self.hook.on_event(&agent_name, &event);
                 yield event;
             }
         }

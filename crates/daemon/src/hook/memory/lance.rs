@@ -152,7 +152,7 @@ impl LanceStore {
             .try_collect()
             .await?;
 
-        Ok(batches_to_entities(&batches))
+        batches_to_entities(&batches)
     }
 
     /// Query entities by type and agent (no FTS, returns all matching).
@@ -177,7 +177,7 @@ impl LanceStore {
             .try_collect()
             .await?;
 
-        Ok(batches_to_entities(&batches))
+        batches_to_entities(&batches)
     }
 
     /// Look up an entity by key within an agent's scope.
@@ -197,7 +197,7 @@ impl LanceStore {
             .try_collect()
             .await?;
 
-        Ok(batches_to_entities(&batches).into_iter().next())
+        Ok(batches_to_entities(&batches)?.into_iter().next())
     }
 
     /// Upsert a relation (deduplicated by source+relation+target+agent).
@@ -232,7 +232,7 @@ impl LanceStore {
             .execute_with_namespace_arc(Arc::clone(&self.namespace), None)
             .await?;
 
-        Ok(batch_to_relations(&batch))
+        batch_to_relations(&batch)
     }
 
     /// Create indices on the entities table. Errors are non-fatal.
@@ -294,7 +294,7 @@ impl LanceStore {
             .await?
             .try_collect()
             .await?;
-        Ok(batches_to_journals(&batches))
+        batches_to_journals(&batches)
     }
 
     /// Query most recent journal entries for an agent.
@@ -309,7 +309,7 @@ impl LanceStore {
             .await?
             .try_collect()
             .await?;
-        let mut results = batches_to_journals(&batches);
+        let mut results = batches_to_journals(&batches)?;
         results.sort_by(|a, b| b.created_at.cmp(&a.created_at));
         Ok(results)
     }
@@ -440,13 +440,16 @@ fn make_journal_batch(agent: &str, summary: &str, vector: Vec<f32>) -> Result<Re
     )?)
 }
 
-fn batches_to_journals(batches: &[RecordBatch]) -> Vec<JournalResult> {
+fn batches_to_journals(batches: &[RecordBatch]) -> Result<Vec<JournalResult>> {
     let mut results = Vec::new();
     for batch in batches {
-        let summaries = batch.column_by_name("summary").unwrap().as_string::<i32>();
+        let summaries = batch
+            .column_by_name("summary")
+            .ok_or_else(|| anyhow::anyhow!("missing column: summary"))?
+            .as_string::<i32>();
         let timestamps = batch
             .column_by_name("created_at")
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("missing column: created_at"))?
             .as_primitive::<arrow_array::types::UInt64Type>();
         for i in 0..batch.num_rows() {
             results.push(JournalResult {
@@ -455,7 +458,7 @@ fn batches_to_journals(batches: &[RecordBatch]) -> Vec<JournalResult> {
             });
         }
     }
-    results
+    Ok(results)
 }
 
 fn make_entity_batch(row: &EntityRow<'_>) -> Result<RecordBatch> {
@@ -490,16 +493,25 @@ fn make_relation_batch(row: &RelationRow<'_>) -> Result<RecordBatch> {
     )?)
 }
 
-fn batches_to_entities(batches: &[RecordBatch]) -> Vec<EntityResult> {
+fn batches_to_entities(batches: &[RecordBatch]) -> Result<Vec<EntityResult>> {
     let mut results = Vec::new();
     for batch in batches {
-        let ids = batch.column_by_name("id").unwrap().as_string::<i32>();
+        let ids = batch
+            .column_by_name("id")
+            .ok_or_else(|| anyhow::anyhow!("missing column: id"))?
+            .as_string::<i32>();
         let types = batch
             .column_by_name("entity_type")
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("missing column: entity_type"))?
             .as_string::<i32>();
-        let keys = batch.column_by_name("key").unwrap().as_string::<i32>();
-        let values = batch.column_by_name("value").unwrap().as_string::<i32>();
+        let keys = batch
+            .column_by_name("key")
+            .ok_or_else(|| anyhow::anyhow!("missing column: key"))?
+            .as_string::<i32>();
+        let values = batch
+            .column_by_name("value")
+            .ok_or_else(|| anyhow::anyhow!("missing column: value"))?
+            .as_string::<i32>();
         for i in 0..batch.num_rows() {
             results.push(EntityResult {
                 id: ids.value(i).to_string(),
@@ -509,34 +521,34 @@ fn batches_to_entities(batches: &[RecordBatch]) -> Vec<EntityResult> {
             });
         }
     }
-    results
+    Ok(results)
 }
 
-fn batch_to_relations(batch: &RecordBatch) -> Vec<RelationResult> {
+fn batch_to_relations(batch: &RecordBatch) -> Result<Vec<RelationResult>> {
     if batch.num_rows() == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     // lance-graph qualifies columns as {variable}__{field} (lowercase).
     // The Cypher query binds the relationship to variable `r`.
     let sources = batch
         .column_by_name("r__source")
-        .unwrap()
+        .ok_or_else(|| anyhow::anyhow!("missing column: r__source"))?
         .as_string::<i32>();
     let relations = batch
         .column_by_name("r__relation")
-        .unwrap()
+        .ok_or_else(|| anyhow::anyhow!("missing column: r__relation"))?
         .as_string::<i32>();
     let targets = batch
         .column_by_name("r__target")
-        .unwrap()
+        .ok_or_else(|| anyhow::anyhow!("missing column: r__target"))?
         .as_string::<i32>();
-    (0..batch.num_rows())
+    Ok((0..batch.num_rows())
         .map(|i| RelationResult {
             source: sources.value(i).to_string(),
             relation: relations.value(i).to_string(),
             target: targets.value(i).to_string(),
         })
-        .collect()
+        .collect())
 }
 
 /// Build a Cypher query for 1-hop connection traversal.

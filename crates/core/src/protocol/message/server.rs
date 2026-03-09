@@ -10,6 +10,8 @@ pub struct SendResponse {
     pub agent: CompactString,
     /// Response content.
     pub content: String,
+    /// Session ID used for this request.
+    pub session: u64,
 }
 
 /// Events emitted during a streamed agent response.
@@ -19,6 +21,8 @@ pub enum StreamEvent {
     Start {
         /// Source agent identifier.
         agent: CompactString,
+        /// Session ID used for this stream.
+        session: u64,
     },
     /// A chunk of streamed content.
     Chunk {
@@ -90,6 +94,54 @@ pub enum HubEvent {
     },
 }
 
+/// Summary of an active session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionInfo {
+    /// Session identifier.
+    pub id: u64,
+    /// Agent this session is bound to.
+    pub agent: CompactString,
+    /// Origin of this session.
+    pub created_by: CompactString,
+    /// Number of messages in history.
+    pub message_count: usize,
+    /// Seconds since session was created.
+    pub alive_secs: u64,
+}
+
+/// Summary of a task in the task registry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskInfo {
+    /// Task identifier.
+    pub id: u64,
+    /// Parent task ID (if sub-task).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<u64>,
+    /// Agent assigned to this task.
+    pub agent: CompactString,
+    /// Current status.
+    pub status: String,
+    /// Task description / message.
+    pub description: String,
+    /// Result content (if finished).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    /// Error message (if failed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Origin of this task.
+    pub created_by: CompactString,
+    /// Cumulative prompt tokens.
+    pub prompt_tokens: u64,
+    /// Cumulative completion tokens.
+    pub completion_tokens: u64,
+    /// Seconds since task was created.
+    pub alive_secs: u64,
+    /// Pending inbox question (if blocked).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_on: Option<String>,
+}
+
 /// Messages sent by the gateway to the client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -111,6 +163,10 @@ pub enum ServerMessage {
     Pong,
     /// A hub install/uninstall event.
     Hub(HubEvent),
+    /// Active session list.
+    Sessions(Vec<SessionInfo>),
+    /// Task registry list.
+    Tasks(Vec<TaskInfo>),
 }
 
 impl From<SendResponse> for ServerMessage {

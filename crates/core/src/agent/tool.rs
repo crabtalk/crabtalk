@@ -19,6 +19,9 @@ pub struct ToolRequest {
     pub agent: String,
     /// Reply channel — the handler sends the result string here.
     pub reply: oneshot::Sender<String>,
+    /// Task ID of the calling task, if running within a task context.
+    /// Set by the daemon when dispatching task-bound tool calls.
+    pub task_id: Option<u64>,
 }
 
 /// Sender half of the agent tool channel.

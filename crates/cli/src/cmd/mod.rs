@@ -11,6 +11,9 @@ pub mod attach;
 pub mod daemon;
 pub mod hub;
 pub mod model;
+#[cfg(unix)]
+pub mod sandbox;
+pub mod session;
 
 /// Walrus CLI client — connects to walrusd via Unix domain socket.
 #[derive(Parser, Debug)]
@@ -59,6 +62,12 @@ impl Cli {
                 let mut runner = connect(&socket_path).await?;
                 cmd.run(&mut runner).await
             }
+            Command::Session(cmd) => {
+                let mut runner = connect(&socket_path).await?;
+                cmd.run(&mut runner).await
+            }
+            #[cfg(unix)]
+            Command::Sandbox(cmd) => cmd.run().await,
             #[cfg(feature = "daemon")]
             Command::Daemon(cmd) => cmd.run().await,
         }
@@ -74,6 +83,11 @@ pub enum Command {
     Hub(hub::Hub),
     /// Manage local models.
     Model(model::Model),
+    /// Manage active sessions.
+    Session(session::Session),
+    /// Manage the workspace sandbox for agent isolation.
+    #[cfg(unix)]
+    Sandbox(sandbox::Sandbox),
     /// Start the walrus daemon in the foreground.
     #[cfg(feature = "daemon")]
     Daemon(daemon::Daemon),

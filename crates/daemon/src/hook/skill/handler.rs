@@ -31,6 +31,15 @@ pub struct SkillHandler {
     pub skills_dir: PathBuf,
 }
 
+impl Default for SkillHandler {
+    fn default() -> Self {
+        Self {
+            registry: Mutex::new(SkillRegistry::new()),
+            skills_dir: PathBuf::new(),
+        }
+    }
+}
+
 impl SkillHandler {
     /// Load skills from the given directory. Tolerates a missing directory
     /// by creating an empty registry.

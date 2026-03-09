@@ -9,7 +9,7 @@ use crate::config::{ChannelConfig, DiscordConfig, TelegramConfig};
 use crate::message::ChannelMessage;
 use compact_str::CompactString;
 use serenity::model::id::ChannelId;
-use std::{future::Future, sync::Arc};
+use std::{collections::HashMap, future::Future, sync::Arc};
 use teloxide::prelude::*;
 use tokio::sync::mpsc;
 use wcore::protocol::message::{client::ClientMessage, server::ServerMessage};
@@ -100,6 +100,10 @@ async fn spawn_discord<C, CFut>(
 }
 
 /// Telegram message loop: routes incoming messages to agents or bot commands.
+///
+/// Maintains a `chat_id → session_id` mapping so consecutive messages from the
+/// same chat reuse the same session. If a session is killed externally, the
+/// error triggers a retry with `session: None` to create a fresh session.
 async fn telegram_loop<C, CFut>(
     mut rx: mpsc::UnboundedReceiver<ChannelMessage>,
     bot: Bot,
@@ -109,6 +113,8 @@ async fn telegram_loop<C, CFut>(
     C: Fn(ClientMessage) -> CFut + Send + Sync + 'static,
     CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
 {
+    let mut sessions: HashMap<i64, u64> = HashMap::new();
+
     while let Some(msg) = rx.recv().await {
         let chat_id = msg.chat_id;
         let content = msg.content.clone();
@@ -136,23 +142,56 @@ async fn telegram_loop<C, CFut>(
             continue;
         }
 
-        // Normal agent chat path — send as ClientMessage::Send.
+        // Normal agent chat path with session mapping.
+        let session = sessions.get(&chat_id).copied();
         let client_msg = ClientMessage::Send {
             agent: agent.clone(),
-            content,
+            content: content.clone(),
+            session,
         };
         let mut reply_rx = on_message(client_msg).await;
+        let mut retry = false;
         while let Some(server_msg) = reply_rx.recv().await {
             match server_msg {
                 ServerMessage::Response(resp) => {
+                    sessions.insert(chat_id, resp.session);
                     if let Err(e) = bot.send_message(ChatId(chat_id), resp.content).await {
                         tracing::warn!(%agent, "failed to send channel reply: {e}");
                     }
                 }
+                ServerMessage::Error { ref message, .. } if session.is_some() => {
+                    tracing::warn!(%agent, chat_id, "session error, retrying: {message}");
+                    sessions.remove(&chat_id);
+                    retry = true;
+                }
                 ServerMessage::Error { message, .. } => {
-                    tracing::warn!(%agent, "dispatch error: {message}");
+                    tracing::warn!(%agent, chat_id, "dispatch error: {message}");
                 }
                 _ => {}
+            }
+        }
+
+        // Retry with a fresh session if the previous one was stale.
+        if retry {
+            let client_msg = ClientMessage::Send {
+                agent: agent.clone(),
+                content,
+                session: None,
+            };
+            let mut reply_rx = on_message(client_msg).await;
+            while let Some(server_msg) = reply_rx.recv().await {
+                match server_msg {
+                    ServerMessage::Response(resp) => {
+                        sessions.insert(chat_id, resp.session);
+                        if let Err(e) = bot.send_message(ChatId(chat_id), resp.content).await {
+                            tracing::warn!(%agent, "failed to send channel reply: {e}");
+                        }
+                    }
+                    ServerMessage::Error { message, .. } => {
+                        tracing::warn!(%agent, chat_id, "dispatch error on retry: {message}");
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -161,6 +200,9 @@ async fn telegram_loop<C, CFut>(
 }
 
 /// Discord message loop: routes incoming messages to agents or bot commands.
+///
+/// Maintains a `chat_id → session_id` mapping so consecutive messages from the
+/// same chat reuse the same session. Same stale-session retry logic as Telegram.
 async fn discord_loop<C, CFut>(
     mut rx: mpsc::UnboundedReceiver<ChannelMessage>,
     http: Arc<serenity::http::Http>,
@@ -170,6 +212,8 @@ async fn discord_loop<C, CFut>(
     C: Fn(ClientMessage) -> CFut + Send + Sync + 'static,
     CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
 {
+    let mut sessions: HashMap<i64, u64> = HashMap::new();
+
     while let Some(msg) = rx.recv().await {
         let chat_id = msg.chat_id;
         let channel_id = ChannelId::new(chat_id as u64);
@@ -196,21 +240,52 @@ async fn discord_loop<C, CFut>(
             continue;
         }
 
-        // Normal agent chat path — send as ClientMessage::Send.
+        // Normal agent chat path with session mapping.
+        let session = sessions.get(&chat_id).copied();
         let client_msg = ClientMessage::Send {
             agent: agent.clone(),
-            content,
+            content: content.clone(),
+            session,
         };
         let mut reply_rx = on_message(client_msg).await;
+        let mut retry = false;
         while let Some(server_msg) = reply_rx.recv().await {
             match server_msg {
                 ServerMessage::Response(resp) => {
+                    sessions.insert(chat_id, resp.session);
                     crate::discord::send_text(&http, channel_id, resp.content).await;
                 }
+                ServerMessage::Error { ref message, .. } if session.is_some() => {
+                    tracing::warn!(%agent, chat_id, "session error, retrying: {message}");
+                    sessions.remove(&chat_id);
+                    retry = true;
+                }
                 ServerMessage::Error { message, .. } => {
-                    tracing::warn!(%agent, "dispatch error: {message}");
+                    tracing::warn!(%agent, chat_id, "dispatch error: {message}");
                 }
                 _ => {}
+            }
+        }
+
+        // Retry with a fresh session if the previous one was stale.
+        if retry {
+            let client_msg = ClientMessage::Send {
+                agent: agent.clone(),
+                content,
+                session: None,
+            };
+            let mut reply_rx = on_message(client_msg).await;
+            while let Some(server_msg) = reply_rx.recv().await {
+                match server_msg {
+                    ServerMessage::Response(resp) => {
+                        sessions.insert(chat_id, resp.session);
+                        crate::discord::send_text(&http, channel_id, resp.content).await;
+                    }
+                    ServerMessage::Error { message, .. } => {
+                        tracing::warn!(%agent, chat_id, "dispatch error on retry: {message}");
+                    }
+                    _ => {}
+                }
             }
         }
     }

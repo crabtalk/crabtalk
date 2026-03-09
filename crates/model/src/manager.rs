@@ -2,7 +2,7 @@
 //! routing and active-provider swapping.
 
 use crate::{Provider, ProviderConfig, build_provider};
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use async_stream::try_stream;
 use compact_str::CompactString;
 use futures_core::Stream;
@@ -69,40 +69,59 @@ impl ProviderManager {
     }
 
     /// Add a pre-built provider directly (e.g. local models from registry).
-    pub fn add_provider(&self, name: impl Into<CompactString>, provider: Provider) {
-        let mut inner = self.inner.write().expect("provider lock poisoned");
+    pub fn add_provider(&self, name: impl Into<CompactString>, provider: Provider) -> Result<()> {
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|_| anyhow!("provider lock poisoned"))?;
         inner.providers.insert(name.into(), provider);
+        Ok(())
     }
 
     /// Add a remote provider from config. Validates and builds it.
     pub async fn add_config(&self, config: &ProviderConfig) -> Result<()> {
         config.validate()?;
         let client = {
-            let inner = self.inner.read().expect("provider lock poisoned");
+            let inner = self
+                .inner
+                .read()
+                .map_err(|_| anyhow!("provider lock poisoned"))?;
             inner.client.clone()
         };
         let provider = build_provider(config, client).await?;
-        let mut inner = self.inner.write().expect("provider lock poisoned");
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|_| anyhow!("provider lock poisoned"))?;
         inner.providers.insert(config.model.clone(), provider);
         Ok(())
     }
 
     /// Get a clone of the active provider.
-    pub fn active(&self) -> Provider {
-        let inner = self.inner.read().expect("provider lock poisoned");
-        inner.providers[&inner.active].clone()
+    pub fn active(&self) -> Result<Provider> {
+        let inner = self
+            .inner
+            .read()
+            .map_err(|_| anyhow!("provider lock poisoned"))?;
+        Ok(inner.providers[&inner.active].clone())
     }
 
     /// Get the model name of the active provider (also its key).
-    pub fn active_model(&self) -> CompactString {
-        let inner = self.inner.read().expect("provider lock poisoned");
-        inner.active.clone()
+    pub fn active_model_name(&self) -> Result<CompactString> {
+        let inner = self
+            .inner
+            .read()
+            .map_err(|_| anyhow!("provider lock poisoned"))?;
+        Ok(inner.active.clone())
     }
 
     /// Switch to a different provider by model name. Returns an error if the
     /// name is not found.
     pub fn switch(&self, model: &str) -> Result<()> {
-        let mut inner = self.inner.write().expect("provider lock poisoned");
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|_| anyhow!("provider lock poisoned"))?;
         if !inner.providers.contains_key(model) {
             bail!("provider '{}' not found", model);
         }
@@ -113,7 +132,10 @@ impl ProviderManager {
     /// Remove a provider by model name. Fails if the provider is currently
     /// active.
     pub fn remove(&self, model: &str) -> Result<()> {
-        let mut inner = self.inner.write().expect("provider lock poisoned");
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|_| anyhow!("provider lock poisoned"))?;
         if inner.active == model {
             bail!("cannot remove the active provider '{}'", model);
         }
@@ -124,27 +146,33 @@ impl ProviderManager {
     }
 
     /// List all providers with their active status.
-    pub fn list(&self) -> Vec<ProviderEntry> {
-        let inner = self.inner.read().expect("provider lock poisoned");
-        inner
+    pub fn list(&self) -> Result<Vec<ProviderEntry>> {
+        let inner = self
+            .inner
+            .read()
+            .map_err(|_| anyhow!("provider lock poisoned"))?;
+        Ok(inner
             .providers
             .keys()
             .map(|name| ProviderEntry {
                 name: name.clone(),
                 active: *name == inner.active,
             })
-            .collect()
+            .collect())
     }
 
     /// Look up a provider by model name. Returns a clone so callers don't
     /// hold the lock during LLM calls.
     fn provider_for(&self, model: &str) -> Result<Provider> {
-        let inner = self.inner.read().expect("provider lock poisoned");
+        let inner = self
+            .inner
+            .read()
+            .map_err(|_| anyhow!("provider lock poisoned"))?;
         inner
             .providers
             .get(model)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("model '{}' not found in registry", model))
+            .ok_or_else(|| anyhow!("model '{}' not found in registry", model))
     }
 
     /// Wait until the active provider is ready.
@@ -152,15 +180,18 @@ impl ProviderManager {
     /// No-op for remote providers. For local providers, blocks until the
     /// model finishes loading.
     pub async fn wait_until_ready(&self) -> Result<()> {
-        let mut provider = self.active();
+        let mut provider = self.active()?;
         provider.wait_until_ready().await
     }
 
     /// Resolve the context limit for a model.
     ///
     /// Resolution chain: provider reports limit → static map → 8192 default.
+    /// Falls back to the static default if the lock is poisoned.
     pub fn context_limit(&self, model: &str) -> usize {
-        let inner = self.inner.read().expect("provider lock poisoned");
+        let Ok(inner) = self.inner.read() else {
+            return default_context_limit(model);
+        };
         if let Some(provider) = inner.providers.get(model)
             && let Some(limit) = provider.context_length(model)
         {
@@ -195,17 +226,24 @@ impl Model for ProviderManager {
     }
 
     fn active_model(&self) -> CompactString {
-        ProviderManager::active_model(self)
+        self.active_model_name()
+            .unwrap_or_else(|_| CompactString::const_new("unknown"))
     }
 }
 
 impl std::fmt::Debug for ProviderManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let inner = self.inner.read().expect("provider lock poisoned");
-        f.debug_struct("ProviderManager")
-            .field("active", &inner.active)
-            .field("count", &inner.providers.len())
-            .finish()
+        match self.inner.read() {
+            Ok(inner) => f
+                .debug_struct("ProviderManager")
+                .field("active", &inner.active)
+                .field("count", &inner.providers.len())
+                .finish(),
+            Err(_) => f
+                .debug_struct("ProviderManager")
+                .field("error", &"lock poisoned")
+                .finish(),
+        }
     }
 }
 

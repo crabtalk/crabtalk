@@ -51,7 +51,6 @@ impl<M: Model> AgentBuilder<M> {
         Agent {
             config: self.config,
             model: self.model,
-            history: Vec::new(),
             tools: self.tools,
             tool_tx: self.tool_tx,
         }

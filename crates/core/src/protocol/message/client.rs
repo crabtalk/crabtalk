@@ -20,6 +20,9 @@ pub struct SendRequest {
     pub agent: CompactString,
     /// Message content.
     pub content: String,
+    /// Session to reuse. `None` creates a new session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<u64>,
 }
 
 /// Send a message to an agent and receive a streamed response.
@@ -29,6 +32,9 @@ pub struct StreamRequest {
     pub agent: CompactString,
     /// Message content.
     pub content: String,
+    /// Session to reuse. `None` creates a new session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<u64>,
 }
 
 /// Request download of a model's files with progress reporting.
@@ -57,6 +63,9 @@ pub enum ClientMessage {
         agent: CompactString,
         /// Message content.
         content: String,
+        /// Session to reuse. `None` creates a new session.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<u64>,
     },
     /// Send a message to an agent and receive a streamed response.
     Stream {
@@ -64,6 +73,9 @@ pub enum ClientMessage {
         agent: CompactString,
         /// Message content.
         content: String,
+        /// Session to reuse. `None` creates a new session.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<u64>,
     },
     /// Request download of a model's files with progress reporting.
     Download {
@@ -79,6 +91,27 @@ pub enum ClientMessage {
         /// Action to perform.
         action: HubAction,
     },
+    /// List active sessions.
+    Sessions,
+    /// Kill (close) a session.
+    Kill {
+        /// Session ID to close.
+        session: u64,
+    },
+    /// List tasks in the task registry.
+    Tasks,
+    /// Kill (cancel) a task.
+    KillTask {
+        /// Task ID to cancel.
+        task_id: u64,
+    },
+    /// Approve a blocked task's inbox item.
+    Approve {
+        /// Task ID to approve.
+        task_id: u64,
+        /// Response to send to the blocked tool call.
+        response: String,
+    },
 }
 
 impl From<SendRequest> for ClientMessage {
@@ -86,6 +119,7 @@ impl From<SendRequest> for ClientMessage {
         Self::Send {
             agent: r.agent,
             content: r.content,
+            session: r.session,
         }
     }
 }
@@ -95,6 +129,7 @@ impl From<StreamRequest> for ClientMessage {
         Self::Stream {
             agent: r.agent,
             content: r.content,
+            session: r.session,
         }
     }
 }
