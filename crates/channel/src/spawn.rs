@@ -29,11 +29,19 @@ pub async fn spawn_channels<C, CFut>(
     CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
 {
     if let Some(tg) = &config.telegram {
-        spawn_telegram(tg, &default_agent, on_message.clone()).await;
+        if tg.bot.is_empty() {
+            tracing::warn!(platform = "telegram", "bot token is empty, skipping");
+        } else {
+            spawn_telegram(tg, &default_agent, on_message.clone()).await;
+        }
     }
 
     if let Some(dc) = &config.discord {
-        spawn_discord(dc, &default_agent, on_message.clone()).await;
+        if dc.token.is_empty() {
+            tracing::warn!(platform = "discord", "bot token is empty, skipping");
+        } else {
+            spawn_discord(dc, &default_agent, on_message.clone()).await;
+        }
     }
 }
 
