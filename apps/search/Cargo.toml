@@ -13,9 +13,14 @@ repository.workspace = true
 [[bin]]
 name = "wsearch"
 path = "src/bin/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = ["dep:clap", "dep:tracing-subscriber"]
 
 [dependencies]
-clap.workspace = true
+clap = { workspace = true, optional = true }
 rand.workspace = true
 reqwest.workspace = true
 scraper.workspace = true
@@ -25,6 +30,6 @@ thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, optional = true }
 url.workspace = true
 percent-encoding.workspace = true

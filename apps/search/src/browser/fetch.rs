@@ -49,9 +49,7 @@ pub async fn fetch_url(url: &str, client: &Client) -> Result<FetchResult, Error>
 
 /// Build a default client for fetch operations.
 pub fn default_client() -> Result<Client, Error> {
-    Ok(Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()?)
+    Ok(Client::builder().timeout(Duration::from_secs(15)).build()?)
 }
 
 /// Tags whose entire subtree should be removed before text extraction.
@@ -159,9 +157,31 @@ fn normalize_whitespace(s: &str) -> String {
 fn is_block_element(tag: &str) -> bool {
     matches!(
         tag,
-        "div" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "section" | "article" | "main"
-            | "blockquote" | "pre" | "ul" | "ol" | "li" | "table" | "tr" | "br" | "hr" | "dl"
-            | "dd" | "dt" | "figcaption" | "figure"
+        "div"
+            | "p"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "section"
+            | "article"
+            | "main"
+            | "blockquote"
+            | "pre"
+            | "ul"
+            | "ol"
+            | "li"
+            | "table"
+            | "tr"
+            | "br"
+            | "hr"
+            | "dl"
+            | "dd"
+            | "dt"
+            | "figcaption"
+            | "figure"
     )
 }
 

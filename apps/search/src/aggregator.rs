@@ -1,10 +1,10 @@
+use crate::browser::user_agent;
 use crate::cache::Cache;
 use crate::config::Config;
 use crate::engine::EngineId;
 use crate::engine::EngineRegistry;
 use crate::error::Error;
 use crate::result::{EngineErrorInfo, SearchResult, SearchResults};
-use crate::browser::user_agent;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -165,7 +165,11 @@ fn merge_and_rank(
         .collect();
 
     // Sort by score descending
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     results.truncate(max_results);
     results
@@ -191,10 +195,7 @@ fn normalize_url(raw: &str) -> String {
             .split('&')
             .filter(|param| {
                 let key = param.split('=').next().unwrap_or("");
-                !key.starts_with("utm_")
-                    && key != "fbclid"
-                    && key != "gclid"
-                    && key != "ref"
+                !key.starts_with("utm_") && key != "fbclid" && key != "gclid" && key != "ref"
             })
             .collect();
         if filtered.is_empty() {

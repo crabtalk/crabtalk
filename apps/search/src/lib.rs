@@ -1,6 +1,7 @@
 pub mod aggregator;
 pub mod browser;
 pub mod cache;
+#[cfg(feature = "cli")]
 pub mod cmd;
 pub mod config;
 pub mod engine;

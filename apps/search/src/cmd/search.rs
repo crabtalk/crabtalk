@@ -1,8 +1,8 @@
 use crate::aggregator::Aggregator;
+use crate::browser::output;
 use crate::config::{Config, OutputFormat};
 use crate::engine::EngineId;
 use crate::error::Error;
-use crate::browser::output;
 
 pub async fn run(
     query: String,

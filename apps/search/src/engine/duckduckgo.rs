@@ -21,7 +21,10 @@ impl super::SearchEngine for DuckDuckGo {
             .get("https://lite.duckduckgo.com/lite/")
             .header("User-Agent", user_agent)
             .header("Referer", "https://lite.duckduckgo.com/")
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            )
             .header("Accept-Language", "en-US,en;q=0.5")
             .header("Sec-Fetch-Dest", "document")
             .header("Sec-Fetch-Mode", "navigate")
@@ -41,7 +44,10 @@ impl super::SearchEngine for DuckDuckGo {
                 .post("https://html.duckduckgo.com/html/")
                 .header("User-Agent", user_agent)
                 .header("Referer", "https://html.duckduckgo.com/")
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header(
+                    "Accept",
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                )
                 .header("Accept-Language", "en-US,en;q=0.5")
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .body(format!("q={}&b=", urlencoded(query)))
@@ -101,12 +107,12 @@ fn parse_html_results(html: &str) -> Result<Vec<SearchResult>, EngineError> {
 
     let result_sel =
         Selector::parse(".result").map_err(|e| EngineError::Parse(format!("{e:?}")))?;
-    let title_sel = Selector::parse(".result__a")
-        .map_err(|e| EngineError::Parse(format!("{e:?}")))?;
-    let snippet_sel = Selector::parse(".result__snippet")
-        .map_err(|e| EngineError::Parse(format!("{e:?}")))?;
-    let url_sel = Selector::parse(".result__url")
-        .map_err(|e| EngineError::Parse(format!("{e:?}")))?;
+    let title_sel =
+        Selector::parse(".result__a").map_err(|e| EngineError::Parse(format!("{e:?}")))?;
+    let snippet_sel =
+        Selector::parse(".result__snippet").map_err(|e| EngineError::Parse(format!("{e:?}")))?;
+    let url_sel =
+        Selector::parse(".result__url").map_err(|e| EngineError::Parse(format!("{e:?}")))?;
 
     let mut results = Vec::new();
 
@@ -190,10 +196,7 @@ mod tests {
     #[test]
     fn normalize_ddg_url_with_redirect() {
         let href = "/l/?uddg=https%3A%2F%2Fexample.com%2Fpage&rut=abc";
-        assert_eq!(
-            normalize_ddg_url(href, ""),
-            "https://example.com/page"
-        );
+        assert_eq!(normalize_ddg_url(href, ""), "https://example.com/page");
     }
 
     #[test]
