@@ -74,13 +74,13 @@ impl Config {
     /// Try to discover and load config from the default location.
     /// Returns default config if no file is found.
     pub fn discover() -> Self {
-        if let Some(path) = default_config_path() {
-            if path.exists() {
-                match Self::load(&path) {
-                    Ok(config) => return config,
-                    Err(e) => {
-                        eprintln!("warning: failed to load {}: {e}", path.display());
-                    }
+        if let Some(path) = default_config_path()
+            && path.exists()
+        {
+            match Self::load(&path) {
+                Ok(config) => return config,
+                Err(e) => {
+                    eprintln!("warning: failed to load {}: {e}", path.display());
                 }
             }
         }

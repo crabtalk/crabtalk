@@ -43,8 +43,8 @@ impl super::SearchEngine for Wikipedia {
             .ok_or_else(|| EngineError::Parse("missing urls array".into()))?;
 
         let mut results = Vec::new();
-        for i in 0..titles.len() {
-            let title = titles[i].as_str().unwrap_or_default();
+        for (i, title_val) in titles.iter().enumerate() {
+            let title = title_val.as_str().unwrap_or_default();
             let description = descriptions.get(i).and_then(|v| v.as_str()).unwrap_or("");
             let url = urls.get(i).and_then(|v| v.as_str()).unwrap_or("");
 
