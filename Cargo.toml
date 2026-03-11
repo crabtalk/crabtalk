@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.0.4"
+version = "0.0.5"
 edition = "2024"
 authors = ["clearloop <tianyi.gc@gmail.com>"]
 license = "GPL-3.0"
@@ -11,12 +11,12 @@ repository = "https://github.com/openwalrus/walrus"
 keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
-channel = { path = "crates/channel", package = "walrus-channel", version = "0.0.4" }
-cli = { path = "crates/cli", package = "openwalrus", version = "0.0.4" }
-daemon = { path = "crates/daemon", package = "walrus-daemon", version = "0.0.4" }
-model = { path = "crates/model", package = "walrus-model", version = "0.0.4" }
-socket = { path = "crates/socket", package = "walrus-socket", version = "0.0.4" }
-wcore = { path = "crates/core", package = "walrus-core", version = "0.0.4" }
+channel = { path = "crates/channel", package = "walrus-channel", version = "0.0.5" }
+cli = { path = "crates/cli", package = "openwalrus", version = "0.0.5" }
+daemon = { path = "crates/daemon", package = "walrus-daemon", version = "0.0.5" }
+model = { path = "crates/model", package = "walrus-model", version = "0.0.5" }
+socket = { path = "crates/socket", package = "walrus-socket", version = "0.0.5" }
+wcore = { path = "crates/core", package = "walrus-core", version = "0.0.5" }
 
 # crates.io
 anyhow = "1"
@@ -29,10 +29,9 @@ clap = { version = "4", features = ["derive"] }
 compact_str = { version = "0.8", features = ["serde"] }
 dirs = "6"
 dotenvy = "0.15"
-fastembed = { version = "5", default-features = false, features = [
-    "ort-download-binaries-rustls-tls",
-    "hf-hub-rustls-tls",
-] }
+candle-core = "0.9"
+candle-nn = "0.9"
+candle-transformers = "0.9"
 heck = "0.5"
 futures = "0.3"
 futures-core = "0.3"
@@ -40,7 +39,7 @@ futures-util = "0.3"
 hf-hub = { version = "0.5.0", features = ["tokio"] }
 lance-graph = { version = "0.5", default-features = false }
 lancedb = { version = "0.23", default-features = false }
-mistralrs = { version = "0.7.1-alpha.1", default-features = false, git = "https://github.com/EricLBuehler/mistral.rs.git" }
+mistralrs = { version = "0.7.0", default-features = false }
 openssl-sys = { version = "0.9", features = ["vendored"] }
 reqwest = { version = "0.12", default-features = false, features = [
     "json",
@@ -62,6 +61,7 @@ sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 serde_json = "1"
 serde_yaml = "0.9"
 smallvec = { version = "1", features = ["serde"] }
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
 tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",

@@ -38,8 +38,10 @@ macos-arm64:
 	$(CARGO) --target aarch64-apple-darwin -p openwalrus --features metal
 
 # build macos-amd64
+# .cargo/cc-x86_64.sh rewrites -march=native (ARM host) to x86-64-v4
+# so lance-linalg AVX-512 C kernels compile correctly when cross-compiling.
 macos-amd64:
-	$(CARGO) --target x86_64-apple-darwin -p openwalrus
+	CC_x86_64_apple_darwin=$(CURDIR)/.cargo/cc-x86_64.sh $(CARGO) --target x86_64-apple-darwin -p openwalrus
 
 # build linux-arm64
 linux-arm64:

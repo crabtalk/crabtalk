@@ -1,17 +1,18 @@
 //! Graph-based memory hook — owns LanceDB with entities, relations, and
 //! journals tables. Registers `remember`, `recall`, `relate`, `connections`,
 //! `compact`, and `distill` tool schemas. Journals store compaction summaries
-//! with vector embeddings for semantic search via fastembed.
+//! with vector embeddings for semantic search via candle (all-MiniLM-L6-v2).
 
 pub use config::MemoryConfig;
-use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use embedder::Embedder;
 use lance::LanceStore;
 use std::path::Path;
 use std::sync::Mutex;
-use wcore::{AgentConfig, Hook, ToolRegistry, agent::AsTool, model::Tool};
+use wcore::{AgentConfig, Hook, ToolRegistry, agent::AsTool, model::Tool, paths::CONFIG_DIR};
 
 pub mod config;
 pub(crate) mod dispatch;
+pub(crate) mod embedder;
 pub(crate) mod lance;
 pub(crate) mod tool;
 
@@ -42,7 +43,7 @@ const DEFAULT_RELATIONS: &[&str] = &[
 /// Graph-based memory hook owning LanceDB entity, relation, and journal storage.
 pub struct MemoryHook {
     pub(crate) lance: LanceStore,
-    pub(crate) embedder: Mutex<TextEmbedding>,
+    pub(crate) embedder: Mutex<Embedder>,
     pub(crate) allowed_entities: Vec<String>,
     pub(crate) allowed_relations: Vec<String>,
     pub(crate) connection_limit: usize,
@@ -56,10 +57,8 @@ impl MemoryHook {
         let lance_dir = memory_dir.join("lance");
         let lance = LanceStore::open(&lance_dir).await?;
 
-        let embedder = tokio::task::spawn_blocking(|| {
-            TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))
-        })
-        .await??;
+        let cache_dir = CONFIG_DIR.join(".cache").join("huggingface");
+        let embedder = tokio::task::spawn_blocking(move || Embedder::load(&cache_dir)).await??;
 
         let allowed_entities = merge_defaults(DEFAULT_ENTITIES, &config.entities);
         let allowed_relations = merge_defaults(DEFAULT_RELATIONS, &config.relations);
@@ -84,20 +83,16 @@ impl MemoryHook {
         self.allowed_relations.iter().any(|r| r == relation)
     }
 
-    /// Generate an embedding vector for text. Runs fastembed in a blocking task.
+    /// Generate an embedding vector for text. Runs candle inference in a blocking task.
     pub(crate) async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>> {
         let text = text.to_owned();
-        let embedding = tokio::task::block_in_place(|| {
+        tokio::task::block_in_place(|| {
             let mut embedder = self
                 .embedder
                 .lock()
                 .map_err(|e| anyhow::anyhow!("embedder lock poisoned: {e}"))?;
-            embedder.embed(vec![text], None)
-        })?;
-        embedding
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("embedding returned no results"))
+            embedder.embed(&text)
+        })
     }
 }
 
