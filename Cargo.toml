@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["apps/*", "crates/*"]
 
 [workspace.package]
 version = "0.0.5"
@@ -17,6 +17,7 @@ daemon = { path = "crates/daemon", package = "walrus-daemon", version = "0.0.5" 
 model = { path = "crates/model", package = "walrus-model", version = "0.0.5" }
 socket = { path = "crates/socket", package = "walrus-socket", version = "0.0.5" }
 wcore = { path = "crates/core", package = "walrus-core", version = "0.0.5" }
+wsearch = { path = "apps/search", package = "walrus-search", version = "0.0.5" }
 
 # crates.io
 anyhow = "1"
@@ -41,6 +42,9 @@ lance-graph = { version = "0.5", default-features = false }
 lancedb = { version = "0.23", default-features = false }
 mistralrs = { version = "0.7.0", default-features = false }
 openssl-sys = { version = "0.9", features = ["vendored"] }
+percent-encoding = "2"
+rand = "0.9"
+scraper = "0.22"
 reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "stream",
@@ -61,6 +65,7 @@ sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 serde_json = "1"
 serde_yaml = "0.9"
 smallvec = { version = "1", features = ["serde"] }
+thiserror = "2"
 tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
 tokio = { version = "1", features = [
     "rt-multi-thread",
@@ -78,6 +83,7 @@ quote = "1"
 toml_edit = "0.22"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
 
 [profile.prod]
 inherits = "release"
