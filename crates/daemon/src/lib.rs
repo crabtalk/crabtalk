@@ -8,7 +8,5 @@ pub mod hook;
 
 pub use config::DaemonConfig;
 pub use daemon::event::{DaemonEvent, DaemonEventSender};
-#[cfg(feature = "tcp")]
-pub use daemon::setup_tcp;
-pub use daemon::{Daemon, DaemonHandle, bridge_shutdown, setup_channels, setup_socket};
+pub use daemon::{Daemon, DaemonHandle, bridge_shutdown, setup_channels, setup_socket, setup_tcp};
 pub use hook::DaemonHook;

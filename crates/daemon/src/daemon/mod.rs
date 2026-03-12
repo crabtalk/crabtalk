@@ -213,18 +213,11 @@ pub async fn setup_channels(config: &DaemonConfig, event_tx: &DaemonEventSender)
 }
 
 /// Bind a TCP listener and spawn the accept loop.
-///
-/// Returns `None` if TCP is not configured (no `[tcp]` section or `bind` is absent).
-#[cfg(feature = "tcp")]
 pub fn setup_tcp(
-    config: &DaemonConfig,
+    addr: std::net::SocketAddr,
     shutdown_tx: &broadcast::Sender<()>,
     event_tx: &DaemonEventSender,
-) -> Result<Option<tokio::task::JoinHandle<()>>> {
-    let Some(addr) = config.tcp.bind else {
-        return Ok(None);
-    };
-
+) -> Result<tokio::task::JoinHandle<()>> {
     let listener = tokio::net::TcpListener::from_std(std::net::TcpListener::bind(addr)?)?;
     tracing::info!("daemon listening on tcp://{addr}");
 
@@ -238,7 +231,7 @@ pub fn setup_tcp(
         tcp_shutdown,
     ));
 
-    Ok(Some(join))
+    Ok(join)
 }
 
 /// Bridge a broadcast receiver into a oneshot receiver.

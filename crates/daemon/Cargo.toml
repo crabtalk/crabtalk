@@ -15,13 +15,12 @@ default = []
 local = ["model/local"]
 metal = ["model/metal"]
 cuda = ["model/cuda"]
-tcp = ["dep:tcp"]
 
 [dependencies]
 channel.workspace = true
 model.workspace = true
 socket.workspace = true
-tcp = { workspace = true, optional = true }
+tcp.workspace = true
 wcore.workspace = true
 
 # crates.io

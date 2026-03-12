@@ -11,7 +11,7 @@ use anyhow::Result;
 pub use channel::ChannelConfig;
 pub use loader::{load_agents_dir, scaffold_config_dir};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, net::SocketAddr};
+use std::collections::BTreeMap;
 pub use wcore::{
     AgentConfig, HeartbeatConfig,
     paths::{AGENTS_DIR, CONFIG_DIR, DATA_DIR, MEMORY_DB, SKILLS_DIR, SOCKET_PATH},
@@ -49,17 +49,6 @@ pub struct DaemonConfig {
     /// Search engine configuration.
     #[serde(default)]
     pub search: wsearch::config::Config,
-    /// TCP transport configuration (optional).
-    #[serde(default)]
-    pub tcp: TcpConfig,
-}
-
-/// TCP transport configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TcpConfig {
-    /// Bind address (e.g. `127.0.0.1:7890`). `None` disables TCP.
-    #[serde(default)]
-    pub bind: Option<SocketAddr>,
 }
 
 impl DaemonConfig {
