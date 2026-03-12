@@ -215,11 +215,7 @@ impl Server for Daemon {
         let sender_context = if !sender.is_empty() {
             let query = format!("{sender} profile");
             let args = serde_json::json!({ "query": query, "entity_type": "profile", "limit": 3 });
-            let recall_result = rt
-                .hook
-                .memory
-                .dispatch_recall(&args.to_string(), &req.agent, sender)
-                .await;
+            let recall_result = rt.hook.memory.dispatch_recall(&args.to_string()).await;
             if recall_result == "no entities found" {
                 String::new()
             } else {

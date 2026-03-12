@@ -7,24 +7,14 @@ use crate::hook::memory::{
 };
 use wcore::COMPACT_SENTINEL;
 
-/// User-scoped entity types — prefixed with sender when non-empty.
-const USER_SCOPED_TYPES: &[&str] = &["profile", "person", "preference"];
-
-/// Build entity ID with optional sender scoping.
-///
-/// Agent-scoped: `{agent}:{type}:{key}`
-/// User-scoped (non-empty sender): `{agent}:{sender}:{type}:{key}`
-fn entity_id(agent: &str, entity_type: &str, key: &str, sender: &str) -> String {
-    if !sender.is_empty() && USER_SCOPED_TYPES.contains(&entity_type) {
-        format!("{agent}:{sender}:{entity_type}:{key}")
-    } else {
-        format!("{agent}:{entity_type}:{key}")
-    }
+/// Build entity ID: `{entity_type}:{key}`.
+fn entity_id(entity_type: &str, key: &str) -> String {
+    format!("{entity_type}:{key}")
 }
 
 impl MemoryHook {
     /// Dispatch the `remember` tool call.
-    pub(crate) async fn dispatch_remember(&self, args: &str, agent: &str, sender: &str) -> String {
+    pub(crate) async fn dispatch_remember(&self, args: &str) -> String {
         let input: Remember = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
@@ -40,30 +30,30 @@ impl MemoryHook {
             );
         }
 
-        // Identity guard: only local/owner sessions may write identity entities.
-        if input.entity_type == "identity" && !sender.is_empty() {
-            return "identity entities can only be written by the owner".to_owned();
-        }
-
-        let id = entity_id(agent, &input.entity_type, &input.key, sender);
+        let id = entity_id(&input.entity_type, &input.key);
+        let text = format!("{} {}", input.key, input.value);
+        let vector = match self.embed(&text).await {
+            Ok(v) => v,
+            Err(e) => return format!("failed to embed entity: {e}"),
+        };
         let row = EntityRow {
             id: &id,
             entity_type: &input.entity_type,
             key: &input.key,
             value: &input.value,
-            agent,
+            vector,
         };
         match self.lance.upsert_entity(&row).await {
             Ok(()) => format!(
-                "remembered ({}/{}): {}",
-                input.entity_type, agent, input.key
+                "remembered [{}] {}: {}",
+                input.entity_type, input.key, input.value
             ),
             Err(e) => format!("failed to store entity: {e}"),
         }
     }
 
     /// Dispatch the `recall` tool call.
-    pub(crate) async fn dispatch_recall(&self, args: &str, agent: &str, sender: &str) -> String {
+    pub(crate) async fn dispatch_recall(&self, args: &str) -> String {
         let input: Recall = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
@@ -75,47 +65,21 @@ impl MemoryHook {
 
         match self
             .lance
-            .search_entities(&input.query, agent, input.entity_type.as_deref(), limit)
+            .search_entities(&input.query, input.entity_type.as_deref(), limit)
             .await
         {
             Ok(entities) if entities.is_empty() => "no entities found".to_owned(),
-            Ok(entities) => {
-                // Filter user-scoped entities to those belonging to this sender.
-                let sender_prefix = if sender.is_empty() {
-                    String::new()
-                } else {
-                    format!("{agent}:{sender}:")
-                };
-                let filtered: Vec<_> = entities
-                    .iter()
-                    .filter(|e| {
-                        if !USER_SCOPED_TYPES.contains(&e.entity_type.as_str()) {
-                            return true; // agent-scoped: visible to all
-                        }
-                        if sender.is_empty() {
-                            // Owner sees all user-scoped entries (full visibility)
-                            true
-                        } else {
-                            // Channel user sees only their own user-scoped entries
-                            e.id.starts_with(&sender_prefix)
-                        }
-                    })
-                    .collect();
-                if filtered.is_empty() {
-                    return "no entities found".to_owned();
-                }
-                filtered
-                    .iter()
-                    .map(|e| format!("[{}] {}: {}", e.entity_type, e.key, e.value))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            }
+            Ok(entities) => entities
+                .iter()
+                .map(|e| format!("[{}] {}: {}", e.entity_type, e.key, e.value))
+                .collect::<Vec<_>>()
+                .join("\n"),
             Err(e) => format!("recall failed: {e}"),
         }
     }
 
     /// Dispatch the `relate` tool call.
-    pub(crate) async fn dispatch_relate(&self, args: &str, agent: &str, sender: &str) -> String {
+    pub(crate) async fn dispatch_relate(&self, args: &str) -> String {
         let input: Relate = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
@@ -134,23 +98,15 @@ impl MemoryHook {
             );
         }
 
-        // Look up source entity (scoped by sender for user-scoped types).
-        let source = match self
-            .lance
-            .find_entity_by_key(&input.source_key, agent, sender)
-            .await
-        {
+        // Look up source entity.
+        let source = match self.lance.find_entity_by_key(&input.source_key).await {
             Ok(Some(e)) => e,
             Ok(None) => return format!("source entity not found: '{}'", input.source_key),
             Err(e) => return format!("failed to look up source: {e}"),
         };
 
-        // Look up target entity (scoped by sender for user-scoped types).
-        let target = match self
-            .lance
-            .find_entity_by_key(&input.target_key, agent, sender)
-            .await
-        {
+        // Look up target entity.
+        let target = match self.lance.find_entity_by_key(&input.target_key).await {
             Ok(Some(e)) => e,
             Ok(None) => return format!("target entity not found: '{}'", input.target_key),
             Err(e) => return format!("failed to look up target: {e}"),
@@ -160,7 +116,6 @@ impl MemoryHook {
             source: &source.id,
             relation: &input.relation,
             target: &target.id,
-            agent,
         };
         match self.lance.upsert_relation(&row).await {
             Ok(()) => format!(
@@ -172,12 +127,7 @@ impl MemoryHook {
     }
 
     /// Dispatch the `connections` tool call.
-    pub(crate) async fn dispatch_connections(
-        &self,
-        args: &str,
-        agent: &str,
-        sender: &str,
-    ) -> String {
+    pub(crate) async fn dispatch_connections(&self, args: &str) -> String {
         let input: Connections = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
@@ -186,12 +136,8 @@ impl MemoryHook {
             return "missing required field: key".to_owned();
         }
 
-        // Look up the entity (scoped by sender for user-scoped types).
-        let entity = match self
-            .lance
-            .find_entity_by_key(&input.key, agent, sender)
-            .await
-        {
+        // Look up the entity.
+        let entity = match self.lance.find_entity_by_key(&input.key).await {
             Ok(Some(e)) => e,
             Ok(None) => return format!("entity not found: '{}'", input.key),
             Err(e) => return format!("failed to look up entity: {e}"),
@@ -210,13 +156,7 @@ impl MemoryHook {
 
         let relations = match self
             .lance
-            .find_connections(
-                &entity.id,
-                agent,
-                input.relation.as_deref(),
-                direction,
-                limit,
-            )
+            .find_connections(&entity.id, input.relation.as_deref(), direction, limit)
             .await
         {
             Ok(r) => r,
