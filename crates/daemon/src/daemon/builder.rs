@@ -8,6 +8,7 @@
 use crate::{
     Daemon, DaemonConfig,
     daemon::event::{DaemonEvent, DaemonEventSender},
+    ext::hub::DownloadRegistry,
     hook::{self, DaemonHook, task::TaskRegistry},
 };
 use anyhow::Result;
@@ -108,12 +109,19 @@ impl Daemon {
         Ok(manager)
     }
 
-    /// Build the daemon hook with all backends (memory, skills, MCP, tasks).
+    /// Build the daemon hook with all backends (memory, skills, MCP, tasks, downloads).
     async fn build_hook(
         config: &DaemonConfig,
         config_dir: &Path,
         event_tx: &DaemonEventSender,
     ) -> Result<DaemonHook> {
+        let downloads = Arc::new(Mutex::new(DownloadRegistry::new()));
+
+        // Pre-download embeddings model files so MemoryHook::open() finds them cached.
+        if let Err(e) = crate::ext::hub::embeddings::pre_download(&downloads).await {
+            tracing::warn!("embeddings pre-download failed (memory may be degraded): {e}");
+        }
+
         let memory_dir = config_dir.join("memory");
         let memory = hook::memory::MemoryHook::open(memory_dir, &config.memory).await?;
         tracing::info!("memory hook initialized (LanceDB graph)");
@@ -150,6 +158,7 @@ impl Daemon {
             skills,
             mcp_handler,
             tasks,
+            downloads,
             config.permissions.clone(),
             sandboxed,
             aggregator,

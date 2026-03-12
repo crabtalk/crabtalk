@@ -1,10 +1,10 @@
 //! Server trait — one async method per protocol operation.
 
 use crate::protocol::message::{
-    DownloadEvent, DownloadRequest, HubAction, HubEvent, SendRequest, SendResponse, StreamEvent,
-    StreamRequest,
+    DownloadEvent, DownloadRequest, HubAction, Resource, SendRequest, SendResponse, StreamEvent,
+    StreamRequest, TaskEvent,
     client::ClientMessage,
-    server::{ServerMessage, SessionInfo, TaskInfo},
+    server::{DownloadInfo, ResourceList, ServerMessage, SessionInfo, TaskInfo},
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -40,7 +40,7 @@ pub trait Server: Sync {
         &self,
         package: compact_str::CompactString,
         action: HubAction,
-    ) -> impl Stream<Item = Result<HubEvent>> + Send;
+    ) -> impl Stream<Item = Result<DownloadEvent>> + Send;
 
     /// Handle `Sessions` — list active sessions.
     fn list_sessions(&self) -> impl std::future::Future<Output = Result<Vec<SessionInfo>>> + Send;
@@ -63,6 +63,37 @@ pub trait Server: Sync {
 
     /// Handle `Evaluate` — decide whether the agent should respond (DD#39).
     fn evaluate(&self, req: SendRequest) -> impl std::future::Future<Output = Result<bool>> + Send;
+
+    /// Handle `SubscribeTasks` — stream task lifecycle events.
+    fn subscribe_tasks(&self) -> impl Stream<Item = Result<TaskEvent>> + Send;
+
+    /// Handle `Downloads` — list downloads in the registry.
+    fn list_downloads(&self)
+    -> impl std::future::Future<Output = Result<Vec<DownloadInfo>>> + Send;
+
+    /// Handle `SubscribeDownloads` — stream download lifecycle events.
+    fn subscribe_downloads(&self) -> impl Stream<Item = Result<DownloadEvent>> + Send;
+
+    /// Handle `List` — list resources of a given kind.
+    fn list_resource(
+        &self,
+        resource: Resource,
+    ) -> impl std::future::Future<Output = Result<ResourceList>> + Send;
+
+    /// Handle `AddResource` — add or update a named resource.
+    fn add_resource(
+        &self,
+        resource: Resource,
+        name: String,
+        value: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `RemoveResource` — remove a named resource.
+    fn remove_resource(
+        &self,
+        resource: Resource,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Dispatch a `ClientMessage` to the appropriate handler method.
     ///
@@ -164,6 +195,56 @@ pub trait Server: Sync {
                 ClientMessage::Evaluate { agent, content, session, sender } => {
                     yield match self.evaluate(SendRequest { agent, content, session, sender }).await {
                         Ok(respond) => ServerMessage::Evaluation { respond },
+                        Err(e) => ServerMessage::Error {
+                            code: 500,
+                            message: e.to_string(),
+                        },
+                    };
+                }
+                ClientMessage::SubscribeTasks => {
+                    let s = self.subscribe_tasks();
+                    tokio::pin!(s);
+                    while let Some(result) = s.next().await {
+                        yield result_to_msg(result);
+                    }
+                }
+                ClientMessage::Downloads => {
+                    yield match self.list_downloads().await {
+                        Ok(downloads) => ServerMessage::Downloads(downloads),
+                        Err(e) => ServerMessage::Error {
+                            code: 500,
+                            message: e.to_string(),
+                        },
+                    };
+                }
+                ClientMessage::SubscribeDownloads => {
+                    let s = self.subscribe_downloads();
+                    tokio::pin!(s);
+                    while let Some(result) = s.next().await {
+                        yield result_to_msg(result);
+                    }
+                }
+                ClientMessage::List { resource } => {
+                    yield match self.list_resource(resource).await {
+                        Ok(list) => ServerMessage::Resource(list),
+                        Err(e) => ServerMessage::Error {
+                            code: 500,
+                            message: e.to_string(),
+                        },
+                    };
+                }
+                ClientMessage::AddResource { resource, name, value } => {
+                    yield match self.add_resource(resource, name, value).await {
+                        Ok(()) => ServerMessage::Pong,
+                        Err(e) => ServerMessage::Error {
+                            code: 500,
+                            message: e.to_string(),
+                        },
+                    };
+                }
+                ClientMessage::RemoveResource { resource, name } => {
+                    yield match self.remove_resource(resource, name).await {
+                        Ok(()) => ServerMessage::Pong,
                         Err(e) => ServerMessage::Error {
                             code: 500,
                             message: e.to_string(),

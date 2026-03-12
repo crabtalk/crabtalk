@@ -1,16 +1,16 @@
 //! Server trait implementation for the Daemon.
 
-use crate::{daemon::Daemon, ext::hub};
-use anyhow::Result;
+use crate::daemon::Daemon;
+use anyhow::{Context, Result};
 use compact_str::CompactString;
 use futures_util::{StreamExt, pin_mut};
 use std::sync::Arc;
 use wcore::protocol::{
     api::Server,
     message::{
-        DownloadEvent, DownloadRequest, HubAction, HubEvent, SendRequest, SendResponse,
-        StreamEvent, StreamRequest,
-        server::{SessionInfo, TaskInfo, ToolCallInfo},
+        DownloadEvent, DownloadRequest, HubAction, Resource, SendRequest, SendResponse,
+        StreamEvent, StreamRequest, TaskEvent,
+        server::{DownloadInfo, ResourceList, SessionInfo, SkillInfo, TaskInfo, ToolCallInfo},
     },
 };
 use wcore::{AgentEvent, model::Model};
@@ -101,66 +101,14 @@ impl Server for Daemon {
         &self,
         req: DownloadRequest,
     ) -> impl futures_core::Stream<Item = Result<DownloadEvent>> + Send {
-        #[cfg(feature = "local")]
-        {
-            use tokio::sync::mpsc;
-            async_stream::try_stream! {
-                // Only registry models are supported.
-                let entry = model::local::registry::find(&req.model)
-                    .ok_or_else(|| anyhow::anyhow!(
-                        "model '{}' is not in the registry", req.model
-                    ))?;
-
-                if !entry.fits() {
-                    let required = entry.memory_requirement();
-                    let actual = model::local::system_memory() / (1024 * 1024 * 1024);
-                    Err(anyhow::anyhow!(
-                        "model '{}' requires at least {} RAM, your system has {}GB",
-                        entry.name, required, actual
-                    ))?;
-                }
-
-                yield DownloadEvent::Start { model: req.model.clone() };
-
-                let (dtx, mut drx) = mpsc::unbounded_channel();
-                let model_str = req.model.to_string();
-                let download_handle = tokio::spawn(async move {
-                    model::local::download::download_model(&model_str, dtx).await
-                });
-
-                while let Some(event) = drx.recv().await {
-                    let dl_event = match event {
-                        model::local::download::DownloadEvent::FileStart { filename, size } => {
-                            DownloadEvent::FileStart { model: req.model.clone(), filename, size }
-                        }
-                        model::local::download::DownloadEvent::Progress { bytes } => {
-                            DownloadEvent::Progress { model: req.model.clone(), bytes }
-                        }
-                        model::local::download::DownloadEvent::FileEnd { filename } => {
-                            DownloadEvent::FileEnd { model: req.model.clone(), filename }
-                        }
-                    };
-                    yield dl_event;
-                }
-
-                match download_handle.await {
-                    Ok(Ok(())) => {
-                        yield DownloadEvent::End { model: req.model };
-                    }
-                    Ok(Err(e)) => {
-                        Err(anyhow::anyhow!("download failed: {e}"))?;
-                    }
-                    Err(e) => {
-                        Err(anyhow::anyhow!("download task panicked: {e}"))?;
-                    }
-                }
-            }
-        }
-        #[cfg(not(feature = "local"))]
-        {
-            let _ = req;
-            async_stream::stream! {
-                yield Err(anyhow::anyhow!("this daemon was built without local model support"));
+        let runtime = self.runtime.clone();
+        async_stream::try_stream! {
+            let rt = runtime.read().await.clone();
+            let registry = rt.hook.downloads.clone();
+            let s = crate::ext::hub::model::download(req.model, registry);
+            pin_mut!(s);
+            while let Some(event) = s.next().await {
+                yield event?;
             }
         }
     }
@@ -325,18 +273,21 @@ impl Server for Daemon {
         &self,
         package: CompactString,
         action: HubAction,
-    ) -> impl futures_core::Stream<Item = Result<HubEvent>> + Send {
+    ) -> impl futures_core::Stream<Item = Result<DownloadEvent>> + Send {
+        let runtime = self.runtime.clone();
         async_stream::try_stream! {
+            let rt = runtime.read().await.clone();
+            let registry = rt.hook.downloads.clone();
             match action {
                 HubAction::Install => {
-                    let s = hub::install(package);
+                    let s = crate::ext::hub::package::install(package, registry);
                     pin_mut!(s);
                     while let Some(event) = s.next().await {
                         yield event?;
                     }
                 }
                 HubAction::Uninstall => {
-                    let s = hub::uninstall(package);
+                    let s = crate::ext::hub::package::uninstall(package, registry);
                     pin_mut!(s);
                     while let Some(event) = s.next().await {
                         yield event?;
@@ -344,5 +295,202 @@ impl Server for Daemon {
                 }
             }
         }
+    }
+
+    fn subscribe_tasks(&self) -> impl futures_core::Stream<Item = Result<TaskEvent>> + Send {
+        let runtime = self.runtime.clone();
+        async_stream::try_stream! {
+            let rt = runtime.read().await.clone();
+            let mut rx = rt.hook.tasks.lock().await.subscribe();
+            loop {
+                match rx.recv().await {
+                    Ok(event) => yield event,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                }
+            }
+        }
+    }
+
+    async fn list_downloads(&self) -> Result<Vec<DownloadInfo>> {
+        let rt = self.runtime.read().await.clone();
+        let registry = rt.hook.downloads.lock().await;
+        Ok(registry.list())
+    }
+
+    fn subscribe_downloads(
+        &self,
+    ) -> impl futures_core::Stream<Item = Result<DownloadEvent>> + Send {
+        let runtime = self.runtime.clone();
+        async_stream::try_stream! {
+            let rt = runtime.read().await.clone();
+            let mut rx = rt.hook.downloads.lock().await.subscribe();
+            loop {
+                match rx.recv().await {
+                    Ok(event) => yield event,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                }
+            }
+        }
+    }
+
+    async fn list_resource(&self, resource: Resource) -> Result<ResourceList> {
+        match resource {
+            Resource::Mcp => {
+                let config = self.load_config()?;
+                let mcps = config
+                    .mcps
+                    .into_iter()
+                    .map(|(k, v)| (CompactString::from(k), v))
+                    .collect();
+                Ok(ResourceList::Mcps(mcps))
+            }
+            Resource::Skill => {
+                let rt = self.runtime.read().await.clone();
+                let registry = rt.hook.skills.registry.lock().await;
+                let skills = registry
+                    .skills()
+                    .into_iter()
+                    .map(|s| SkillInfo {
+                        name: s.name.clone(),
+                        description: s.description.clone(),
+                        license: s.license.clone(),
+                        compatibility: s.compatibility.clone(),
+                    })
+                    .collect();
+                Ok(ResourceList::Skills(skills))
+            }
+            Resource::Agent => {
+                let config = self.load_config()?;
+                let agents = config
+                    .agents
+                    .into_iter()
+                    .map(|(k, v)| (CompactString::from(k), v))
+                    .collect();
+                Ok(ResourceList::Agents(agents))
+            }
+            Resource::Provider => {
+                let config = self.load_config()?;
+                let providers = config.model.providers.into_iter().collect();
+                Ok(ResourceList::Providers(providers))
+            }
+        }
+    }
+
+    async fn add_resource(&self, resource: Resource, name: String, value: String) -> Result<()> {
+        match resource {
+            Resource::Skill => anyhow::bail!("skills are read-only; use hub install"),
+            Resource::Mcp => {
+                let typed: wcore::McpServerConfig =
+                    serde_json::from_str(&value).context("invalid McpServerConfig JSON")?;
+                self.edit_config(|doc| {
+                    let table = doc
+                        .entry("mcps")
+                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                        .as_table_mut()
+                        .context("mcps is not a table")?;
+                    let ser = toml_edit::ser::to_document(&typed)
+                        .context("failed to serialize McpServerConfig")?;
+                    table.insert(&name, toml_edit::Item::Table(ser.as_table().clone()));
+                    Ok(())
+                })?;
+                self.reload().await
+            }
+            Resource::Agent => {
+                let typed: wcore::AgentConfig =
+                    serde_json::from_str(&value).context("invalid AgentConfig JSON")?;
+                self.edit_config(|doc| {
+                    let table = doc
+                        .entry("agents")
+                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                        .as_table_mut()
+                        .context("agents is not a table")?;
+                    let ser = toml_edit::ser::to_document(&typed)
+                        .context("failed to serialize AgentConfig")?;
+                    table.insert(&name, toml_edit::Item::Table(ser.as_table().clone()));
+                    Ok(())
+                })?;
+                self.reload().await
+            }
+            Resource::Provider => {
+                let typed: wcore::ProviderConfig =
+                    serde_json::from_str(&value).context("invalid ProviderConfig JSON")?;
+                self.edit_config(|doc| {
+                    let model = doc
+                        .entry("model")
+                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                        .as_table_mut()
+                        .context("model is not a table")?;
+                    let providers = model
+                        .entry("providers")
+                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+                        .as_table_mut()
+                        .context("model.providers is not a table")?;
+                    let ser = toml_edit::ser::to_document(&typed)
+                        .context("failed to serialize ProviderConfig")?;
+                    providers.insert(&name, toml_edit::Item::Table(ser.as_table().clone()));
+                    Ok(())
+                })?;
+                self.reload().await
+            }
+        }
+    }
+
+    async fn remove_resource(&self, resource: Resource, name: String) -> Result<()> {
+        match resource {
+            Resource::Skill => anyhow::bail!("skills are read-only; use hub uninstall"),
+            Resource::Mcp => {
+                self.edit_config(|doc| {
+                    if let Some(table) = doc.get_mut("mcps").and_then(|v| v.as_table_mut()) {
+                        table.remove(&name);
+                    }
+                    Ok(())
+                })?;
+                self.reload().await
+            }
+            Resource::Agent => {
+                self.edit_config(|doc| {
+                    if let Some(table) = doc.get_mut("agents").and_then(|v| v.as_table_mut()) {
+                        table.remove(&name);
+                    }
+                    Ok(())
+                })?;
+                self.reload().await
+            }
+            Resource::Provider => {
+                self.edit_config(|doc| {
+                    if let Some(model) = doc.get_mut("model").and_then(|v| v.as_table_mut())
+                        && let Some(providers) =
+                            model.get_mut("providers").and_then(|v| v.as_table_mut())
+                    {
+                        providers.remove(&name);
+                    }
+                    Ok(())
+                })?;
+                self.reload().await
+            }
+        }
+    }
+}
+
+impl Daemon {
+    /// Load the current `DaemonConfig` from disk.
+    fn load_config(&self) -> Result<crate::DaemonConfig> {
+        crate::DaemonConfig::load(&self.config_dir.join("walrus.toml"))
+    }
+
+    /// Read `walrus.toml`, apply an edit function, and write back.
+    fn edit_config(&self, f: impl FnOnce(&mut toml_edit::DocumentMut) -> Result<()>) -> Result<()> {
+        let config_path = self.config_dir.join("walrus.toml");
+        let content = std::fs::read_to_string(&config_path)
+            .with_context(|| format!("cannot read {}", config_path.display()))?;
+        let mut doc: toml_edit::DocumentMut = content
+            .parse()
+            .with_context(|| format!("invalid TOML in {}", config_path.display()))?;
+        f(&mut doc)?;
+        std::fs::write(&config_path, doc.to_string())
+            .with_context(|| format!("failed to write {}", config_path.display()))?;
+        Ok(())
     }
 }

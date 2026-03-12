@@ -1,3 +1,3 @@
-//! walrus hub extension
+//! walrus daemon extensions.
 
 pub mod hub;

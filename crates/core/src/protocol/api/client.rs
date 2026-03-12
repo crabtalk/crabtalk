@@ -1,8 +1,8 @@
 //! Client trait — transport primitives plus typed provided methods.
 
 use crate::protocol::message::{
-    DownloadEvent, DownloadRequest, HubEvent, HubRequest, SendRequest, SendResponse, StreamEvent,
-    StreamRequest, client::ClientMessage, server::ServerMessage,
+    DownloadEvent, DownloadRequest, HubRequest, Resource, ResourceList, SendRequest, SendResponse,
+    StreamEvent, StreamRequest, TaskEvent, client::ClientMessage, server::ServerMessage,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -64,25 +64,105 @@ pub trait Client: Send {
             .take_while(|r| {
                 std::future::ready(!matches!(
                     r,
-                    Ok(ServerMessage::Download(DownloadEvent::End { .. }))
+                    Ok(ServerMessage::Download(DownloadEvent::Completed { .. }))
                 ))
             })
             .map(|r| r.and_then(DownloadEvent::try_from))
     }
 
-    /// Install or uninstall a hub package, streaming progress events.
-    fn hub(&mut self, req: HubRequest) -> impl Stream<Item = Result<HubEvent>> + Send + '_ {
+    /// Install or uninstall a hub package, streaming download events.
+    fn hub(&mut self, req: HubRequest) -> impl Stream<Item = Result<DownloadEvent>> + Send + '_ {
         self.request_stream(req.into())
             .take_while(|r| {
-                std::future::ready(!matches!(r, Ok(ServerMessage::Hub(HubEvent::End { .. }))))
+                std::future::ready(!matches!(
+                    r,
+                    Ok(ServerMessage::Download(DownloadEvent::Completed { .. }))
+                ))
             })
-            .map(|r| r.and_then(HubEvent::try_from))
+            .map(|r| r.and_then(DownloadEvent::try_from))
     }
 
     /// Ping the server (keepalive).
     fn ping(&mut self) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self.request(ClientMessage::Ping).await? {
+                ServerMessage::Pong => Ok(()),
+                ServerMessage::Error { code, message } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Subscribe to task lifecycle events.
+    ///
+    /// Streams `TaskEvent`s indefinitely until the connection closes.
+    fn subscribe_tasks(&mut self) -> impl Stream<Item = Result<TaskEvent>> + Send + '_ {
+        self.request_stream(ClientMessage::SubscribeTasks)
+            .map(|r| r.and_then(TaskEvent::try_from))
+    }
+
+    /// Subscribe to download lifecycle events.
+    ///
+    /// Streams `DownloadEvent`s indefinitely until the connection closes.
+    fn subscribe_downloads(&mut self) -> impl Stream<Item = Result<DownloadEvent>> + Send + '_ {
+        self.request_stream(ClientMessage::SubscribeDownloads)
+            .map(|r| r.and_then(DownloadEvent::try_from))
+    }
+
+    /// List resources of a given kind.
+    fn list_resource(
+        &mut self,
+        resource: Resource,
+    ) -> impl std::future::Future<Output = Result<ResourceList>> + Send {
+        async move {
+            match self.request(ClientMessage::List { resource }).await? {
+                ServerMessage::Resource(list) => Ok(list),
+                ServerMessage::Error { code, message } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Add or update a named resource.
+    fn add_resource(
+        &mut self,
+        resource: Resource,
+        name: String,
+        value: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(ClientMessage::AddResource {
+                    resource,
+                    name,
+                    value,
+                })
+                .await?
+            {
+                ServerMessage::Pong => Ok(()),
+                ServerMessage::Error { code, message } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Remove a named resource.
+    fn remove_resource(
+        &mut self,
+        resource: Resource,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(ClientMessage::RemoveResource { resource, name })
+                .await?
+            {
                 ServerMessage::Pong => Ok(()),
                 ServerMessage::Error { code, message } => {
                     anyhow::bail!("server error ({code}): {message}")

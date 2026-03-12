@@ -1,229 +1,156 @@
-//! walrus hub — install and uninstall hub packages.
+//! Walrus hub — unified registry for all download operations.
 //!
-//! All paths are derived from [`wcore::paths::CONFIG_DIR`] on demand.
-//! No persistent state; all operations are free functions.
+//! The "hub" encompasses walrus packages, proxied huggingface models,
+//! embeddings pre-download, and future skill downloads. Each operation
+//! gets a unique ID, tracked status, and broadcasts events to subscribers.
 
-use anyhow::{Context, Result};
-use async_stream::try_stream;
-use compact_str::CompactString;
-use std::path::Path;
-use tokio::process::Command;
-use wcore::paths::CONFIG_DIR;
-use wcore::protocol::message::HubEvent;
+use std::{
+    collections::BTreeMap,
+    sync::atomic::{AtomicU64, Ordering},
+};
+use tokio::sync::broadcast;
+use tokio::time::Instant;
+use wcore::protocol::message::server::{DownloadEvent, DownloadInfo, DownloadKind};
 
-mod manifest;
+pub mod embeddings;
+pub mod manifest;
+pub mod model;
+pub mod package;
 
-/// Remote URL of the walrus hub repository.
-pub const WALRUS_HUB: &str = "https://github.com/openwalrus/hub";
+// ── Registry ──────────────────────────────────────────────────────
 
-/// Install a hub package identified by `scope/name`.
-///
-/// Syncs the hub repo, reads the manifest, merges MCP servers into
-/// `walrus.toml`, and copies skill directories into `~/.openwalrus/skills/`.
-pub fn install(package: CompactString) -> impl futures_core::Stream<Item = Result<HubEvent>> {
-    try_stream! {
-        yield HubEvent::Start { package: package.clone() };
+/// Download status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadStatus {
+    /// Download in progress.
+    Downloading,
+    /// Download completed successfully.
+    Completed,
+    /// Download failed.
+    Failed,
+}
 
-        // Sync hub repo (clone or update).
-        let hub_dir = CONFIG_DIR.join("hub");
-        git_sync(WALRUS_HUB, &hub_dir).await.context("failed to sync hub repo")?;
-
-        let (scope, name) = parse_package(&package)?;
-        let manifest = read_manifest(scope, name)?;
-
-        // Merge MCP servers.
-        if !manifest.mcp_servers.is_empty() {
-            yield HubEvent::Step { message: "adding MCP servers…".into() };
-            merge_mcp_servers(&manifest)?;
+impl std::fmt::Display for DownloadStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Downloading => write!(f, "downloading"),
+            Self::Completed => write!(f, "completed"),
+            Self::Failed => write!(f, "failed"),
         }
-
-        // Install skills.
-        if !manifest.skills.is_empty() {
-            yield HubEvent::Step { message: "installing skills…".into() };
-            let cache_dir = CONFIG_DIR.join(".cache").join("skills");
-            let skills_dir = CONFIG_DIR.join("skills");
-            std::fs::create_dir_all(&cache_dir).context("failed to create skill cache dir")?;
-            std::fs::create_dir_all(&skills_dir).context("failed to create skills dir")?;
-
-            for (key, skill) in &manifest.skills {
-                yield HubEvent::Step { message: format!("installing skill {key}…") };
-                let cache_dest = cache_dir.join(key.as_str());
-                git_sync(&skill.repo, &cache_dest)
-                    .await
-                    .with_context(|| format!("failed to sync skill repo for {key}"))?;
-
-                let src = cache_dest.join(skill.path.as_str());
-                let dst = skills_dir.join(key.as_str());
-                if dst.exists() {
-                    std::fs::remove_dir_all(&dst)
-                        .with_context(|| format!("failed to remove old skill {key}"))?;
-                }
-                copy_dir_all(&src, &dst)
-                    .with_context(|| format!("failed to copy skill {key}"))?;
-            }
-        }
-
-        yield HubEvent::End { package };
     }
 }
 
-/// Uninstall a hub package identified by `scope/name`.
-///
-/// Reads the manifest from the local hub repo (no network sync), removes MCP
-/// server entries from `walrus.toml`, and deletes skill directories.
-pub fn uninstall(package: CompactString) -> impl futures_core::Stream<Item = Result<HubEvent>> {
-    try_stream! {
-        yield HubEvent::Start { package: package.clone() };
+/// A tracked download operation.
+pub struct Download {
+    pub id: u64,
+    pub kind: DownloadKind,
+    pub label: String,
+    pub status: DownloadStatus,
+    pub bytes_downloaded: u64,
+    pub total_bytes: u64,
+    pub error: Option<String>,
+    pub created_at: Instant,
+}
 
-        let (scope, name) = parse_package(&package)?;
-        let manifest = read_manifest(scope, name)?;
+/// In-memory download registry with broadcast event channel.
+pub struct DownloadRegistry {
+    downloads: BTreeMap<u64, Download>,
+    next_id: AtomicU64,
+    broadcast: broadcast::Sender<DownloadEvent>,
+}
 
-        if !manifest.mcp_servers.is_empty() {
-            yield HubEvent::Step { message: "removing MCP servers…".into() };
-            remove_mcp_servers(&manifest)?;
-        }
-
-        if !manifest.skills.is_empty() {
-            yield HubEvent::Step { message: "removing skills…".into() };
-            let skills_dir = CONFIG_DIR.join("skills");
-            for key in manifest.skills.keys() {
-                let dst = skills_dir.join(key.as_str());
-                if dst.exists() {
-                    std::fs::remove_dir_all(&dst)
-                        .with_context(|| format!("failed to remove skill {key}"))?;
-                }
-            }
-        }
-
-        yield HubEvent::End { package };
+impl Default for DownloadRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-/// Ensure `dest` is a shallow clone of `url`, creating or updating as needed.
-async fn git_sync(url: &str, dest: &Path) -> Result<()> {
-    if dest.exists() {
-        let status = Command::new("git")
-            .args([
-                "-C",
-                &dest.to_string_lossy(),
-                "fetch",
-                "--depth=1",
-                "origin",
-            ])
-            .status()
-            .await
-            .context("git fetch failed")?;
-        anyhow::ensure!(status.success(), "git fetch exited with {status}");
-
-        let status = Command::new("git")
-            .args([
-                "-C",
-                &dest.to_string_lossy(),
-                "reset",
-                "--hard",
-                "origin/HEAD",
-            ])
-            .status()
-            .await
-            .context("git reset failed")?;
-        anyhow::ensure!(status.success(), "git reset exited with {status}");
-    } else {
-        let status = Command::new("git")
-            .args(["clone", "--depth=1", url, &dest.to_string_lossy()])
-            .status()
-            .await
-            .context("git clone failed")?;
-        anyhow::ensure!(status.success(), "git clone exited with {status}");
-    }
-    Ok(())
-}
-
-/// Parse a `scope/name` package string into `(scope, name)`.
-fn parse_package(package: &str) -> Result<(&str, &str)> {
-    let mut parts = package.splitn(2, '/');
-    let scope = parts.next().filter(|s| !s.is_empty());
-    let name = parts.next().filter(|s| !s.is_empty());
-    match (scope, name) {
-        (Some(s), Some(n)) => Ok((s, n)),
-        _ => anyhow::bail!("package must be in `scope/name` format, got: {package}"),
-    }
-}
-
-/// Read and deserialize the manifest for a package from the local hub repo.
-fn read_manifest(scope: &str, name: &str) -> Result<manifest::Manifest> {
-    let hub_dir = CONFIG_DIR.join("hub");
-    let path = hub_dir.join(scope).join(format!("{name}.toml"));
-    let content = std::fs::read_to_string(&path)
-        .with_context(|| format!("cannot read manifest at {}", path.display()))?;
-    toml::from_str(&content).with_context(|| format!("invalid manifest at {}", path.display()))
-}
-
-/// Merge MCP server entries from a manifest into `walrus.toml`.
-fn merge_mcp_servers(manifest: &manifest::Manifest) -> Result<()> {
-    use toml_edit::DocumentMut;
-
-    let config_path = CONFIG_DIR.join("walrus.toml");
-    let content = std::fs::read_to_string(&config_path)
-        .with_context(|| format!("cannot read {}", config_path.display()))?;
-    let mut doc: DocumentMut = content
-        .parse()
-        .with_context(|| format!("invalid TOML in {}", config_path.display()))?;
-
-    let table = doc
-        .entry("mcps")
-        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
-        .as_table_mut()
-        .context("mcps is not a table")?;
-
-    for (key, cfg) in &manifest.mcp_servers {
-        let doc = toml_edit::ser::to_document(cfg)
-            .with_context(|| format!("failed to serialize McpServerConfig for {key}"))?;
-        let item = toml_edit::Item::Table(doc.as_table().clone());
-        table.insert(key.as_str(), item);
-    }
-
-    std::fs::write(&config_path, doc.to_string())
-        .with_context(|| format!("failed to write {}", config_path.display()))?;
-    Ok(())
-}
-
-/// Remove MCP server entries listed in a manifest from `walrus.toml`.
-fn remove_mcp_servers(manifest: &manifest::Manifest) -> Result<()> {
-    use toml_edit::DocumentMut;
-
-    let config_path = CONFIG_DIR.join("walrus.toml");
-    let content = std::fs::read_to_string(&config_path)
-        .with_context(|| format!("cannot read {}", config_path.display()))?;
-    let mut doc: DocumentMut = content
-        .parse()
-        .with_context(|| format!("invalid TOML in {}", config_path.display()))?;
-
-    if let Some(table) = doc.get_mut("mcps").and_then(|v| v.as_table_mut()) {
-        for key in manifest.mcp_servers.keys() {
-            table.remove(key.as_str());
+impl DownloadRegistry {
+    /// Create a new registry.
+    pub fn new() -> Self {
+        let (broadcast, _) = broadcast::channel(64);
+        Self {
+            downloads: BTreeMap::new(),
+            next_id: AtomicU64::new(1),
+            broadcast,
         }
     }
 
-    std::fs::write(&config_path, doc.to_string())
-        .with_context(|| format!("failed to write {}", config_path.display()))?;
-    Ok(())
-}
-
-/// Recursively copy `src` directory into `dst`.
-fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in
-        std::fs::read_dir(src).with_context(|| format!("cannot read dir {}", src.display()))?
-    {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        let to = dst.join(entry.file_name());
-        if ty.is_dir() {
-            copy_dir_all(&entry.path(), &to)?;
-        } else {
-            std::fs::copy(entry.path(), &to)
-                .with_context(|| format!("failed to copy {}", entry.path().display()))?;
-        }
+    /// Subscribe to download lifecycle events.
+    pub fn subscribe(&self) -> broadcast::Receiver<DownloadEvent> {
+        self.broadcast.subscribe()
     }
-    Ok(())
+
+    /// Register a new download, returning its ID.
+    pub fn start(&mut self, kind: DownloadKind, label: String) -> u64 {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let download = Download {
+            id,
+            kind: kind.clone(),
+            label: label.clone(),
+            status: DownloadStatus::Downloading,
+            bytes_downloaded: 0,
+            total_bytes: 0,
+            error: None,
+            created_at: Instant::now(),
+        };
+        self.downloads.insert(id, download);
+        let _ = self
+            .broadcast
+            .send(DownloadEvent::Created { id, kind, label });
+        id
+    }
+
+    /// Report byte-level progress for a download.
+    pub fn progress(&mut self, id: u64, bytes: u64, total_bytes: u64) {
+        if let Some(dl) = self.downloads.get_mut(&id) {
+            dl.bytes_downloaded += bytes;
+            dl.total_bytes = total_bytes;
+        }
+        let _ = self.broadcast.send(DownloadEvent::Progress {
+            id,
+            bytes,
+            total_bytes,
+        });
+    }
+
+    /// Report a human-readable progress step.
+    pub fn step(&mut self, id: u64, message: String) {
+        let _ = self.broadcast.send(DownloadEvent::Step { id, message });
+    }
+
+    /// Mark a download as completed.
+    pub fn complete(&mut self, id: u64) {
+        if let Some(dl) = self.downloads.get_mut(&id) {
+            dl.status = DownloadStatus::Completed;
+        }
+        let _ = self.broadcast.send(DownloadEvent::Completed { id });
+    }
+
+    /// Mark a download as failed.
+    pub fn fail(&mut self, id: u64, error: String) {
+        if let Some(dl) = self.downloads.get_mut(&id) {
+            dl.status = DownloadStatus::Failed;
+            dl.error = Some(error.clone());
+        }
+        let _ = self.broadcast.send(DownloadEvent::Failed { id, error });
+    }
+
+    /// List all downloads, most recent first.
+    pub fn list(&self) -> Vec<DownloadInfo> {
+        self.downloads
+            .values()
+            .rev()
+            .map(|dl| DownloadInfo {
+                id: dl.id,
+                kind: dl.kind.clone(),
+                label: dl.label.clone(),
+                status: dl.status.to_string(),
+                bytes_downloaded: dl.bytes_downloaded,
+                total_bytes: dl.total_bytes,
+                error: dl.error.clone(),
+                alive_secs: dl.created_at.elapsed().as_secs(),
+            })
+            .collect()
+    }
 }

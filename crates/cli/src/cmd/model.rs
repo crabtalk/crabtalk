@@ -35,37 +35,40 @@ impl Model {
         let ModelCommand::Download(m) = self.command;
         let stream = runner.download_stream(&m.model);
         futures_util::pin_mut!(stream);
-        let mut current_size: u64 = 0;
         let mut downloaded: u64 = 0;
-        let mut current_file = String::new();
         while let Some(result) = stream.next().await {
             match result? {
-                DownloadEvent::Start { model } => println!("Downloading {model}..."),
-                DownloadEvent::FileStart { filename, size, .. } => {
-                    current_file = filename;
-                    current_size = size;
-                    downloaded = 0;
+                DownloadEvent::Created { label, .. } => {
+                    println!("Downloading {label}...");
                 }
-                DownloadEvent::Progress { model, bytes } => {
+                DownloadEvent::Step { message, .. } => {
+                    println!("  {message}");
+                }
+                DownloadEvent::Progress {
+                    bytes, total_bytes, ..
+                } => {
                     downloaded += bytes;
-                    let pct = if current_size > 0 {
-                        downloaded * 100 / current_size
+                    let pct = if total_bytes > 0 {
+                        downloaded * 100 / total_bytes
                     } else {
                         0
                     };
                     eprint!(
-                        "\r  [{model}] {} {}% ({} / {})",
-                        current_file,
+                        "\r  {}% ({} / {})",
                         pct,
                         format_bytes(downloaded),
-                        format_bytes(current_size),
+                        format_bytes(total_bytes),
                     );
                     std::io::stderr().flush().ok();
                 }
-                DownloadEvent::FileEnd { filename, .. } => {
-                    eprintln!("\r  {filename} done{:30}", "");
+                DownloadEvent::Completed { .. } => {
+                    eprintln!();
+                    println!("Download complete: {}", m.model);
                 }
-                DownloadEvent::End { model } => println!("Download complete: {model}"),
+                DownloadEvent::Failed { error, .. } => {
+                    eprintln!();
+                    anyhow::bail!("download failed: {error}");
+                }
             }
         }
         Ok(())

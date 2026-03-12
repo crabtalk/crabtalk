@@ -3,6 +3,20 @@
 use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
+/// Resource kind for config proxy operations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Resource {
+    /// MCP server configurations.
+    Mcp,
+    /// Loaded skills (read-only).
+    Skill,
+    /// Agent configurations.
+    Agent,
+    /// Remote model provider configurations.
+    Provider,
+}
+
 /// Hub package action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -139,6 +153,33 @@ pub enum ClientMessage {
         /// Sender identity. `None` = local.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sender: Option<CompactString>,
+    },
+    /// Subscribe to task lifecycle events (streaming).
+    SubscribeTasks,
+    /// List downloads in the download registry.
+    Downloads,
+    /// Subscribe to download lifecycle events (streaming).
+    SubscribeDownloads,
+    /// List resources of a given kind.
+    List {
+        /// Resource kind to list.
+        resource: Resource,
+    },
+    /// Add or update a named resource.
+    AddResource {
+        /// Resource kind.
+        resource: Resource,
+        /// Resource name (map key in config).
+        name: String,
+        /// JSON-serialized config value.
+        value: String,
+    },
+    /// Remove a named resource.
+    RemoveResource {
+        /// Resource kind.
+        resource: Resource,
+        /// Resource name to remove.
+        name: String,
     },
 }
 

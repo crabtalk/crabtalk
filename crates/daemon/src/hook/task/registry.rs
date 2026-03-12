@@ -11,9 +11,13 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::{Mutex, mpsc, oneshot, watch};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot, watch};
 use tokio::time::Instant;
-use wcore::protocol::message::{client::ClientMessage, server::ServerMessage};
+use wcore::protocol::message::{
+    TaskEvent,
+    client::ClientMessage,
+    server::{ServerMessage, TaskInfo},
+};
 
 /// In-memory task registry with concurrency control.
 pub struct TaskRegistry {
@@ -27,6 +31,8 @@ pub struct TaskRegistry {
     pub task_timeout: Duration,
     /// Event channel for dispatching task execution.
     pub event_tx: DaemonEventSender,
+    /// Broadcast channel for task lifecycle events (subscriptions).
+    task_broadcast: broadcast::Sender<TaskEvent>,
 }
 
 impl TaskRegistry {
@@ -37,6 +43,7 @@ impl TaskRegistry {
         task_timeout: Duration,
         event_tx: DaemonEventSender,
     ) -> Self {
+        let (task_broadcast, _) = broadcast::channel(64);
         Self {
             tasks: BTreeMap::new(),
             next_id: AtomicU64::new(1),
@@ -44,6 +51,30 @@ impl TaskRegistry {
             viewable_window,
             task_timeout,
             event_tx,
+            task_broadcast,
+        }
+    }
+
+    /// Subscribe to task lifecycle events.
+    pub fn subscribe(&self) -> broadcast::Receiver<TaskEvent> {
+        self.task_broadcast.subscribe()
+    }
+
+    /// Build a `TaskInfo` snapshot from an internal `Task`.
+    fn task_info(task: &Task) -> TaskInfo {
+        TaskInfo {
+            id: task.id,
+            parent_id: task.parent_id,
+            agent: task.agent.clone(),
+            status: task.status.to_string(),
+            description: task.description.clone(),
+            result: task.result.clone(),
+            error: task.error.clone(),
+            created_by: task.created_by.clone(),
+            prompt_tokens: task.prompt_tokens,
+            completion_tokens: task.completion_tokens,
+            alive_secs: task.created_at.elapsed().as_secs(),
+            blocked_on: task.blocked_on.as_ref().map(|i| i.question.clone()),
         }
     }
 
@@ -78,6 +109,11 @@ impl TaskRegistry {
             status_tx,
         };
         self.tasks.insert(id, task);
+        if let Some(t) = self.tasks.get(&id) {
+            let _ = self.task_broadcast.send(TaskEvent::Created {
+                task: Self::task_info(t),
+            });
+        }
         id
     }
 
@@ -96,6 +132,11 @@ impl TaskRegistry {
         if let Some(task) = self.tasks.get_mut(&id) {
             task.status = status;
             let _ = task.status_tx.send(status);
+            let _ = self.task_broadcast.send(TaskEvent::StatusChanged {
+                task_id: id,
+                status: status.to_string(),
+                blocked_on: task.blocked_on.as_ref().map(|i| i.question.clone()),
+            });
         }
     }
 
@@ -205,12 +246,24 @@ impl TaskRegistry {
         if let Some(task) = self.tasks.get_mut(&task_id) {
             if error.is_some() {
                 task.status = TaskStatus::Failed;
-                task.error = error;
+                task.error = error.clone();
                 let _ = task.status_tx.send(TaskStatus::Failed);
+                let _ = self.task_broadcast.send(TaskEvent::Completed {
+                    task_id,
+                    status: TaskStatus::Failed.to_string(),
+                    result: None,
+                    error,
+                });
             } else {
                 task.status = TaskStatus::Finished;
-                task.result = result;
+                task.result = result.clone();
                 let _ = task.status_tx.send(TaskStatus::Finished);
+                let _ = self.task_broadcast.send(TaskEvent::Completed {
+                    task_id,
+                    status: TaskStatus::Finished.to_string(),
+                    result,
+                    error: None,
+                });
             }
         }
         self.promote_next(registry);
@@ -246,6 +299,11 @@ impl TaskRegistry {
         });
         task.status = TaskStatus::Blocked;
         let _ = task.status_tx.send(TaskStatus::Blocked);
+        let _ = self.task_broadcast.send(TaskEvent::StatusChanged {
+            task_id,
+            status: TaskStatus::Blocked.to_string(),
+            blocked_on: task.blocked_on.as_ref().map(|i| i.question.clone()),
+        });
         Some(rx)
     }
 
@@ -262,6 +320,11 @@ impl TaskRegistry {
         }
         task.status = TaskStatus::InProgress;
         let _ = task.status_tx.send(TaskStatus::InProgress);
+        let _ = self.task_broadcast.send(TaskEvent::StatusChanged {
+            task_id,
+            status: TaskStatus::InProgress.to_string(),
+            blocked_on: None,
+        });
         true
     }
 

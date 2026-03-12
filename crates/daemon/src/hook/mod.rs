@@ -5,9 +5,12 @@
 //! delegates to all sub-hooks in sequence. `dispatch_tool` routes every
 //! agent tool call by name — the single entry point from `event.rs`.
 
-use crate::hook::{
-    mcp::McpHandler, memory::MemoryHook, os::PermissionConfig, skill::SkillHandler,
-    task::TaskRegistry,
+use crate::{
+    ext::hub::DownloadRegistry,
+    hook::{
+        mcp::McpHandler, memory::MemoryHook, os::PermissionConfig, skill::SkillHandler,
+        task::TaskRegistry,
+    },
 };
 use compact_str::CompactString;
 use std::{collections::BTreeMap, sync::Arc};
@@ -40,6 +43,7 @@ pub struct DaemonHook {
     pub skills: SkillHandler,
     pub mcp: McpHandler,
     pub tasks: Arc<Mutex<TaskRegistry>>,
+    pub downloads: Arc<Mutex<DownloadRegistry>>,
     pub permissions: PermissionConfig,
     /// Whether the daemon is running as the `walrus` OS user (sandbox active).
     pub sandboxed: bool,
@@ -92,6 +96,7 @@ impl DaemonHook {
         skills: SkillHandler,
         mcp: McpHandler,
         tasks: Arc<Mutex<TaskRegistry>>,
+        downloads: Arc<Mutex<DownloadRegistry>>,
         permissions: PermissionConfig,
         sandboxed: bool,
         aggregator: wsearch::aggregator::Aggregator,
@@ -102,6 +107,7 @@ impl DaemonHook {
             skills,
             mcp,
             tasks,
+            downloads,
             permissions,
             sandboxed,
             scopes: BTreeMap::new(),

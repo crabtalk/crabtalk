@@ -10,7 +10,7 @@ use teloxide::prelude::*;
 use tokio::sync::mpsc;
 use wcore::protocol::message::{
     client::{ClientMessage, HubAction},
-    server::{DownloadEvent, HubEvent, ServerMessage},
+    server::{DownloadEvent, ServerMessage},
 };
 
 /// Execute a bot command, streaming progress messages back to the originating chat.
@@ -40,35 +40,19 @@ pub(crate) async fn dispatch_command<C, CFut>(
     let mut rx = on_message(msg).await;
     while let Some(server_msg) = rx.recv().await {
         match server_msg {
-            ServerMessage::Hub(event) => match event {
-                HubEvent::Start { package } => {
-                    send_text(
-                        &bot,
-                        chat_id,
-                        format!("Starting hub operation for {package}..."),
-                    )
-                    .await;
+            ServerMessage::Download(event) => match event {
+                DownloadEvent::Created { label, .. } => {
+                    send_text(&bot, chat_id, format!("Starting: {label}...")).await;
                 }
-                HubEvent::Step { message } => {
+                DownloadEvent::Step { message, .. } => {
                     send_text(&bot, chat_id, format!("  {message}")).await;
                 }
-                HubEvent::End { package } => {
-                    send_text(&bot, chat_id, format!("Done: {package}")).await;
-                }
-            },
-            ServerMessage::Download(event) => match event {
-                DownloadEvent::Start { model } => {
-                    send_text(&bot, chat_id, format!("Downloading {model}...")).await;
-                }
-                DownloadEvent::FileStart { filename, .. } => {
-                    send_text(&bot, chat_id, format!("  {filename} starting...")).await;
-                }
                 DownloadEvent::Progress { .. } => {}
-                DownloadEvent::FileEnd { filename, .. } => {
-                    send_text(&bot, chat_id, format!("  {filename} done")).await;
+                DownloadEvent::Completed { .. } => {
+                    send_text(&bot, chat_id, "Done".to_string()).await;
                 }
-                DownloadEvent::End { model } => {
-                    send_text(&bot, chat_id, format!("Download complete: {model}")).await;
+                DownloadEvent::Failed { error, .. } => {
+                    send_text(&bot, chat_id, format!("Failed: {error}")).await;
                 }
             },
             ServerMessage::Error { message, .. } => {
