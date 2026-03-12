@@ -1,8 +1,9 @@
 //! Client trait — transport primitives plus typed provided methods.
 
 use crate::protocol::message::{
-    DownloadEvent, DownloadRequest, HubRequest, Resource, ResourceList, SendRequest, SendResponse,
-    StreamEvent, StreamRequest, TaskEvent, client::ClientMessage, server::ServerMessage,
+    DownloadEvent, DownloadRequest, HubRequest, MemoryOp, MemoryResult, Resource, ResourceList,
+    SendRequest, SendResponse, StreamEvent, StreamRequest, TaskEvent, client::ClientMessage,
+    server::ServerMessage,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -170,5 +171,13 @@ pub trait Client: Send {
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
         }
+    }
+
+    /// Query the memory graph.
+    fn memory_query(
+        &mut self,
+        query: MemoryOp,
+    ) -> impl std::future::Future<Output = Result<MemoryResult>> + Send {
+        async move { MemoryResult::try_from(self.request(ClientMessage::MemoryQuery { query }).await?) }
     }
 }

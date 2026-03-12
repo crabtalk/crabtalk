@@ -59,11 +59,13 @@ pub(crate) struct RelationResult {
     pub source: String,
     pub relation: String,
     pub target: String,
+    pub created_at: u64,
 }
 
 /// A journal entry returned from queries.
 pub(crate) struct JournalResult {
     pub summary: String,
+    pub agent: String,
     pub created_at: u64,
 }
 
@@ -341,6 +343,22 @@ impl LanceStore {
             .try_collect()
             .await?;
         batches_to_journals(&batches)
+    }
+
+    /// Query most recent journal entries, optionally filtered by agent.
+    pub async fn list_journals(
+        &self,
+        agent: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<JournalResult>> {
+        let mut q = self.journals.query();
+        if let Some(a) = agent {
+            q = q.only_if(format!("agent = '{}'", escape_sql(a)));
+        }
+        let batches: Vec<RecordBatch> = q.limit(limit).execute().await?.try_collect().await?;
+        let mut results = batches_to_journals(&batches)?;
+        results.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok(results)
     }
 
     /// Query most recent journal entries for an agent.
@@ -765,6 +783,10 @@ fn batches_to_journals(batches: &[RecordBatch]) -> Result<Vec<JournalResult>> {
             .column_by_name("summary")
             .ok_or_else(|| anyhow::anyhow!("missing column: summary"))?
             .as_string::<i32>();
+        let agents = batch
+            .column_by_name("agent")
+            .ok_or_else(|| anyhow::anyhow!("missing column: agent"))?
+            .as_string::<i32>();
         let timestamps = batch
             .column_by_name("created_at")
             .ok_or_else(|| anyhow::anyhow!("missing column: created_at"))?
@@ -772,6 +794,7 @@ fn batches_to_journals(batches: &[RecordBatch]) -> Result<Vec<JournalResult>> {
         for i in 0..batch.num_rows() {
             results.push(JournalResult {
                 summary: summaries.value(i).to_string(),
+                agent: agents.value(i).to_string(),
                 created_at: timestamps.value(i),
             });
         }
@@ -865,11 +888,16 @@ fn batches_to_relation_results(batches: &[RecordBatch]) -> Result<Vec<RelationRe
             .column_by_name("target")
             .ok_or_else(|| anyhow::anyhow!("missing column: target"))?
             .as_string::<i32>();
+        let timestamps = batch
+            .column_by_name("created_at")
+            .ok_or_else(|| anyhow::anyhow!("missing column: created_at"))?
+            .as_primitive::<arrow_array::types::UInt64Type>();
         for i in 0..batch.num_rows() {
             results.push(RelationResult {
                 source: sources.value(i).to_string(),
                 relation: relations.value(i).to_string(),
                 target: targets.value(i).to_string(),
+                created_at: timestamps.value(i),
             });
         }
     }
@@ -894,11 +922,13 @@ fn batch_to_relations(batch: &RecordBatch) -> Result<Vec<RelationResult>> {
         .column_by_name("r__target")
         .ok_or_else(|| anyhow::anyhow!("missing column: r__target"))?
         .as_string::<i32>();
+    // Cypher results don't include created_at; default to 0.
     Ok((0..batch.num_rows())
         .map(|i| RelationResult {
             source: sources.value(i).to_string(),
             relation: relations.value(i).to_string(),
             target: targets.value(i).to_string(),
+            created_at: 0,
         })
         .collect())
 }

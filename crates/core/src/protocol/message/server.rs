@@ -264,6 +264,55 @@ pub enum ResourceList {
     Providers(Vec<(CompactString, ProviderConfig)>),
 }
 
+/// Summary of a memory entity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityInfo {
+    /// Entity type (e.g. "person", "fact").
+    pub entity_type: CompactString,
+    /// Human-readable key.
+    pub key: CompactString,
+    /// Entity value/content.
+    pub value: String,
+    /// Unix timestamp of creation.
+    pub created_at: u64,
+}
+
+/// Summary of a memory relation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelationInfo {
+    /// Source entity ID (`{type}:{key}`).
+    pub source_id: CompactString,
+    /// Relation type.
+    pub relation: CompactString,
+    /// Target entity ID (`{type}:{key}`).
+    pub target_id: CompactString,
+    /// Unix timestamp of creation.
+    pub created_at: u64,
+}
+
+/// Summary of a memory journal entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JournalInfo {
+    /// Compaction summary text.
+    pub summary: String,
+    /// Agent that produced this journal.
+    pub agent: CompactString,
+    /// Unix timestamp of creation.
+    pub created_at: u64,
+}
+
+/// Result of a memory graph query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryResult {
+    /// Entity list.
+    Entities(Vec<EntityInfo>),
+    /// Relation list.
+    Relations(Vec<RelationInfo>),
+    /// Journal list.
+    Journals(Vec<JournalInfo>),
+}
+
 /// Messages sent by the gateway to the client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -298,6 +347,8 @@ pub enum ServerMessage {
     },
     /// Resource list response.
     Resource(ResourceList),
+    /// Memory graph query result.
+    Memory(MemoryResult),
 }
 
 impl From<SendResponse> for ServerMessage {
@@ -368,6 +419,16 @@ impl TryFrom<ServerMessage> for TaskEvent {
     fn try_from(msg: ServerMessage) -> anyhow::Result<Self> {
         match msg {
             ServerMessage::Task(e) => Ok(e),
+            other => Err(error_or_unexpected(other)),
+        }
+    }
+}
+
+impl TryFrom<ServerMessage> for MemoryResult {
+    type Error = anyhow::Error;
+    fn try_from(msg: ServerMessage) -> anyhow::Result<Self> {
+        match msg {
+            ServerMessage::Memory(r) => Ok(r),
             other => Err(error_or_unexpected(other)),
         }
     }

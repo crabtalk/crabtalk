@@ -73,6 +73,41 @@ pub struct HubRequest {
     pub action: HubAction,
 }
 
+/// Memory graph query operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryOp {
+    /// List entities, optionally filtered by type.
+    Entities {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entity_type: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<u32>,
+    },
+    /// List relations, optionally filtered by entity ID.
+    Relations {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entity_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<u32>,
+    },
+    /// List journal entries, optionally filtered by agent.
+    Journals {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<u32>,
+    },
+    /// Search entities by query text.
+    Search {
+        query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entity_type: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<u32>,
+    },
+}
+
 /// Messages sent by the client to the gateway.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -180,6 +215,11 @@ pub enum ClientMessage {
         resource: Resource,
         /// Resource name to remove.
         name: String,
+    },
+    /// Query the memory graph.
+    MemoryQuery {
+        /// The query operation to perform.
+        query: MemoryOp,
     },
 }
 

@@ -4,9 +4,10 @@ pub mod client;
 pub mod server;
 
 pub use client::{
-    ClientMessage, DownloadRequest, HubAction, HubRequest, Resource, SendRequest, StreamRequest,
+    ClientMessage, DownloadRequest, HubAction, HubRequest, MemoryOp, Resource, SendRequest,
+    StreamRequest,
 };
 pub use server::{
-    DownloadEvent, DownloadKind, ResourceList, SendResponse, ServerMessage, SkillInfo, StreamEvent,
-    TaskEvent,
+    DownloadEvent, DownloadKind, EntityInfo, JournalInfo, MemoryResult, RelationInfo, ResourceList,
+    SendResponse, ServerMessage, SkillInfo, StreamEvent, TaskEvent,
 };

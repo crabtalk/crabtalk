@@ -112,6 +112,19 @@ impl MemoryHook {
     }
 }
 
+/// Truncate a string at a UTF-8 safe boundary, appending "..." if truncated.
+fn truncate_utf8(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_owned();
+    }
+    // Walk backward from max_bytes to find a char boundary.
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}...", &s[..end])
+}
+
 fn merge_defaults(defaults: &[&str], extras: &[String]) -> Vec<String> {
     let mut merged: Vec<String> = defaults.iter().map(|s| (*s).to_owned()).collect();
     for t in extras {
@@ -174,11 +187,7 @@ impl Hook for MemoryHook {
                             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
                             .unwrap_or_else(|| j.created_at.to_string());
                         // Truncate summary to avoid bloating the system prompt.
-                        let summary = if j.summary.len() > 500 {
-                            format!("{}...", &j.summary[..500])
-                        } else {
-                            j.summary.clone()
-                        };
+                        let summary = truncate_utf8(&j.summary, 500);
                         buf.push_str(&format!("- **{ts}**: {summary}\n"));
                     }
                     buf.push_str("</journal>");
@@ -253,11 +262,7 @@ impl Hook for MemoryHook {
                         let ts = chrono::DateTime::from_timestamp(j.created_at as i64, 0)
                             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
                             .unwrap_or_else(|| j.created_at.to_string());
-                        let summary = if j.summary.len() > 300 {
-                            format!("{}...", &j.summary[..300])
-                        } else {
-                            j.summary.clone()
-                        };
+                        let summary = truncate_utf8(&j.summary, 300);
                         lines.push(format!("[journal {ts}] {summary}"));
                     }
                 }
