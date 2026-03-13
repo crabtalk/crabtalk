@@ -12,6 +12,13 @@ pub struct MemoryConfig {
     pub relations: Vec<String>,
     /// Default limit for `connections` traversal results (default: 20, max: 100).
     pub connections: usize,
+    /// Enable automatic memory recall before each agent run (default: true).
+    #[serde(default = "default_true")]
+    pub auto_recall: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for MemoryConfig {
@@ -20,6 +27,7 @@ impl Default for MemoryConfig {
             entities: Vec::new(),
             relations: Vec::new(),
             connections: 20,
+            auto_recall: true,
         }
     }
 }

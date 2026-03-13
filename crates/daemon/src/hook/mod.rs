@@ -15,7 +15,7 @@ use crate::{
 use compact_str::CompactString;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
-use wcore::{AgentConfig, AgentEvent, Hook, ToolRegistry};
+use wcore::{AgentConfig, AgentEvent, Hook, ToolRegistry, model::Message};
 
 pub mod mcp;
 pub mod memory;
@@ -184,7 +184,7 @@ impl DaemonHook {
         args: &str,
         agent: &str,
         task_id: Option<u64>,
-        sender: &str,
+        _sender: &str,
     ) -> String {
         if let Some(denied) = self.check_perm(name, args, agent, task_id).await {
             return denied;
@@ -197,10 +197,10 @@ impl DaemonHook {
             return format!("tool not available: {name}");
         }
         match name {
-            "remember" => self.memory.dispatch_remember(args, agent, sender).await,
-            "recall" => self.memory.dispatch_recall(args, agent, sender).await,
-            "relate" => self.memory.dispatch_relate(args, agent, sender).await,
-            "connections" => self.memory.dispatch_connections(args, agent, sender).await,
+            "remember" => self.memory.dispatch_remember(args).await,
+            "recall" => self.memory.dispatch_recall(args).await,
+            "relate" => self.memory.dispatch_relate(args).await,
+            "connections" => self.memory.dispatch_connections(args).await,
             "compact" => self.memory.dispatch_compact(agent).await,
             "__journal__" => self.memory.dispatch_journal(args, agent).await,
             "distill" => self.memory.dispatch_distill(args, agent).await,
@@ -303,6 +303,10 @@ impl Hook for DaemonHook {
 
     fn on_compact(&self, prompt: &mut String) {
         self.memory.on_compact(prompt);
+    }
+
+    fn on_before_run(&self, agent: &str, history: &[Message]) -> Vec<Message> {
+        self.memory.on_before_run(agent, history)
     }
 
     async fn on_register_tools(&self, tools: &mut ToolRegistry) {

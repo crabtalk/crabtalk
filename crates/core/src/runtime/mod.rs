@@ -9,7 +9,7 @@
 use crate::{
     Agent, AgentBuilder, AgentConfig, AgentEvent, AgentResponse, AgentStopReason,
     agent::tool::{ToolRegistry, ToolSender},
-    model::{Message, Model},
+    model::{Message, Model, Role},
     runtime::hook::Hook,
 };
 use anyhow::{Result, bail};
@@ -180,6 +180,20 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let agent_name = session.agent.clone();
+
+        // Strip previous auto-recall messages to avoid accumulation.
+        session
+            .history
+            .retain(|m| !(m.role == Role::User && m.content.starts_with("<recall>")));
+
+        let recall_msgs = self.hook.on_before_run(&agent_name, &session.history);
+        if !recall_msgs.is_empty() {
+            let insert_pos = session.history.len().saturating_sub(1);
+            for (i, msg) in recall_msgs.into_iter().enumerate() {
+                session.history.insert(insert_pos + i, msg);
+            }
+        }
+
         let response = agent_ref.run(&mut session.history, tx).await;
 
         while let Ok(event) = rx.try_recv() {
@@ -247,6 +261,19 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                 session.history.push(Message::user_with_sender(&content, &sender));
             }
             let agent_name = session.agent.clone();
+
+            // Strip previous auto-recall messages to avoid accumulation.
+            session
+                .history
+                .retain(|m| !(m.role == Role::User && m.content.starts_with("<recall>")));
+
+            let recall_msgs = self.hook.on_before_run(&agent_name, &session.history);
+            if !recall_msgs.is_empty() {
+                let insert_pos = session.history.len().saturating_sub(1);
+                for (i, msg) in recall_msgs.into_iter().enumerate() {
+                    session.history.insert(insert_pos + i, msg);
+                }
+            }
 
             let mut event_stream = std::pin::pin!(agent_ref.run_stream(&mut session.history));
             while let Some(event) = event_stream.next().await {

@@ -8,9 +8,12 @@ use std::sync::Arc;
 use wcore::protocol::{
     api::Server,
     message::{
-        DownloadEvent, DownloadRequest, HubAction, Resource, SendRequest, SendResponse,
-        StreamEvent, StreamRequest, TaskEvent,
-        server::{DownloadInfo, ResourceList, SessionInfo, SkillInfo, TaskInfo, ToolCallInfo},
+        DownloadEvent, DownloadRequest, HubAction, MemoryOp, MemoryResult, Resource, SendRequest,
+        SendResponse, StreamEvent, StreamRequest, TaskEvent,
+        server::{
+            DownloadInfo, EntityInfo, JournalInfo, RelationInfo, ResourceList, SessionInfo,
+            SkillInfo, TaskInfo, ToolCallInfo,
+        },
     },
 };
 use wcore::{AgentEvent, model::Model};
@@ -215,11 +218,7 @@ impl Server for Daemon {
         let sender_context = if !sender.is_empty() {
             let query = format!("{sender} profile");
             let args = serde_json::json!({ "query": query, "entity_type": "profile", "limit": 3 });
-            let recall_result = rt
-                .hook
-                .memory
-                .dispatch_recall(&args.to_string(), &req.agent, sender)
-                .await;
+            let recall_result = rt.hook.memory.dispatch_recall(&args.to_string()).await;
             if recall_result == "no entities found" {
                 String::new()
             } else {
@@ -433,6 +432,80 @@ impl Server for Daemon {
                     Ok(())
                 })?;
                 self.reload().await
+            }
+        }
+    }
+
+    async fn memory_query(&self, query: MemoryOp) -> Result<MemoryResult> {
+        let rt = self.runtime.read().await.clone();
+        let lance = &rt.hook.memory.lance;
+        let default_limit = 50;
+
+        match query {
+            MemoryOp::Entities { entity_type, limit } => {
+                let limit = limit.unwrap_or(default_limit) as usize;
+                let entities = lance.list_entities(entity_type.as_deref(), limit).await?;
+                Ok(MemoryResult::Entities(
+                    entities
+                        .into_iter()
+                        .map(|e| EntityInfo {
+                            entity_type: e.entity_type.into(),
+                            key: e.key.into(),
+                            value: e.value,
+                            created_at: e.created_at,
+                        })
+                        .collect(),
+                ))
+            }
+            MemoryOp::Relations { entity_id, limit } => {
+                let limit = limit.unwrap_or(default_limit) as usize;
+                let relations = lance.list_relations(entity_id.as_deref(), limit).await?;
+                Ok(MemoryResult::Relations(
+                    relations
+                        .into_iter()
+                        .map(|r| RelationInfo {
+                            source_id: r.source.into(),
+                            relation: r.relation.into(),
+                            target_id: r.target.into(),
+                            created_at: r.created_at,
+                        })
+                        .collect(),
+                ))
+            }
+            MemoryOp::Journals { agent, limit } => {
+                let limit = limit.unwrap_or(default_limit) as usize;
+                let journals = lance.list_journals(agent.as_deref(), limit).await?;
+                Ok(MemoryResult::Journals(
+                    journals
+                        .into_iter()
+                        .map(|j| JournalInfo {
+                            summary: j.summary,
+                            agent: j.agent.into(),
+                            created_at: j.created_at,
+                        })
+                        .collect(),
+                ))
+            }
+            MemoryOp::Search {
+                query,
+                entity_type,
+                limit,
+            } => {
+                let limit = limit.unwrap_or(default_limit) as usize;
+                let entities = lance
+                    .search_entities(&query, entity_type.as_deref(), limit)
+                    .await?;
+                Ok(MemoryResult::Entities(
+                    entities
+                        .into_iter()
+                        .map(|e| EntityInfo {
+                            entity_type: e.entity_type.into(),
+                            key: e.key.into(),
+                            value: e.value,
+                            created_at: e.created_at,
+                        })
+                        .collect(),
+                ))
             }
         }
     }

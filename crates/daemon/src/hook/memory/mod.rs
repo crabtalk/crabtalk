@@ -8,7 +8,12 @@ use embedder::Embedder;
 use lance::LanceStore;
 use std::path::Path;
 use std::sync::Mutex;
-use wcore::{AgentConfig, Hook, ToolRegistry, agent::AsTool, model::Tool, paths::CONFIG_DIR};
+use wcore::{
+    AgentConfig, Hook, ToolRegistry,
+    agent::AsTool,
+    model::{Message, Role, Tool},
+    paths::CONFIG_DIR,
+};
 
 pub mod config;
 pub(crate) mod dispatch;
@@ -47,6 +52,7 @@ pub struct MemoryHook {
     pub(crate) allowed_entities: Vec<String>,
     pub(crate) allowed_relations: Vec<String>,
     pub(crate) connection_limit: usize,
+    pub(crate) auto_recall: bool,
 }
 
 impl MemoryHook {
@@ -54,11 +60,20 @@ impl MemoryHook {
     pub async fn open(memory_dir: impl AsRef<Path>, config: &MemoryConfig) -> anyhow::Result<Self> {
         let memory_dir = memory_dir.as_ref();
         tokio::fs::create_dir_all(memory_dir).await?;
-        let lance_dir = memory_dir.join("lance");
-        let lance = LanceStore::open(&lance_dir).await?;
 
+        // Load embedder first — needed for entity vector backfill during open.
         let cache_dir = CONFIG_DIR.join(".cache").join("huggingface");
         let embedder = tokio::task::spawn_blocking(move || Embedder::load(&cache_dir)).await??;
+
+        let lance_dir = memory_dir.join("lance");
+        let embed_mutex = Mutex::new(embedder);
+        let lance = LanceStore::open(&lance_dir, |text| {
+            let mut emb = embed_mutex
+                .lock()
+                .map_err(|e| anyhow::anyhow!("embedder lock poisoned: {e}"))?;
+            emb.embed(text)
+        })
+        .await?;
 
         let allowed_entities = merge_defaults(DEFAULT_ENTITIES, &config.entities);
         let allowed_relations = merge_defaults(DEFAULT_RELATIONS, &config.relations);
@@ -66,10 +81,11 @@ impl MemoryHook {
 
         Ok(Self {
             lance,
-            embedder: Mutex::new(embedder),
+            embedder: embed_mutex,
             allowed_entities,
             allowed_relations,
             connection_limit,
+            auto_recall: config.auto_recall,
         })
     }
 
@@ -94,6 +110,19 @@ impl MemoryHook {
             embedder.embed(&text)
         })
     }
+}
+
+/// Truncate a string at a UTF-8 safe boundary, appending "..." if truncated.
+fn truncate_utf8(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_owned();
+    }
+    // Walk backward from max_bytes to find a char boundary.
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}...", &s[..end])
 }
 
 fn merge_defaults(defaults: &[&str], extras: &[String]) -> Vec<String> {
@@ -126,8 +155,8 @@ impl Hook for MemoryHook {
             tokio::runtime::Handle::current().block_on(async {
                 let mut buf = self_block;
 
-                // Inject identity entities.
-                if let Ok(identities) = lance.query_by_type(&agent_name, "identity", 50).await
+                // Inject identity entities (shared across all agents).
+                if let Ok(identities) = lance.query_by_type("identity", 50).await
                     && !identities.is_empty()
                 {
                     buf.push_str("\n\n<identity>\n");
@@ -137,8 +166,8 @@ impl Hook for MemoryHook {
                     buf.push_str("</identity>");
                 }
 
-                // Inject profile entities.
-                if let Ok(profiles) = lance.query_by_type(&agent_name, "profile", 50).await
+                // Inject profile entities (shared across all agents).
+                if let Ok(profiles) = lance.query_by_type("profile", 50).await
                     && !profiles.is_empty()
                 {
                     buf.push_str("\n\n<profile>\n");
@@ -148,7 +177,7 @@ impl Hook for MemoryHook {
                     buf.push_str("</profile>");
                 }
 
-                // Inject recent journal entries.
+                // Inject recent journal entries (agent-scoped).
                 if let Ok(journals) = lance.recent_journals(&agent_name, 3).await
                     && !journals.is_empty()
                 {
@@ -158,11 +187,7 @@ impl Hook for MemoryHook {
                             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
                             .unwrap_or_else(|| j.created_at.to_string());
                         // Truncate summary to avoid bloating the system prompt.
-                        let summary = if j.summary.len() > 500 {
-                            format!("{}...", &j.summary[..500])
-                        } else {
-                            j.summary.clone()
-                        };
+                        let summary = truncate_utf8(&j.summary, 500);
                         buf.push_str(&format!("- **{ts}**: {summary}\n"));
                     }
                     buf.push_str("</journal>");
@@ -177,6 +202,79 @@ impl Hook for MemoryHook {
         }
         config.system_prompt = format!("{}\n\n{MEMORY_PROMPT}", config.system_prompt);
         config
+    }
+
+    fn on_before_run(&self, agent: &str, history: &[Message]) -> Vec<Message> {
+        if !self.auto_recall {
+            return Vec::new();
+        }
+
+        // Extract the last user message as the recall query.
+        let query = match history.iter().rev().find(|m| m.role == Role::User) {
+            Some(m) if m.content.len() >= 10 => &m.content,
+            _ => return Vec::new(),
+        };
+
+        let lance = &self.lance;
+        let agent = agent.to_owned();
+        let query = query.clone();
+
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let mut lines = Vec::new();
+
+                // Embed the user message once; reuse for entities + journals.
+                let vector = match self.embed(&query).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!("auto-recall embed failed: {e}");
+                        return Vec::new();
+                    }
+                };
+
+                // Semantic entity search.
+                let entities = lance
+                    .search_entities_semantic(&vector, None, 5)
+                    .await
+                    .unwrap_or_default();
+                for e in &entities {
+                    lines.push(format!("[{}] {}: {}", e.entity_type, e.key, e.value));
+                }
+
+                // 1-hop connections for top-3 matched entities.
+                for e in entities.iter().take(3) {
+                    if let Ok(rels) = lance
+                        .find_connections(&e.id, None, lance::Direction::Both, 5)
+                        .await
+                    {
+                        for r in &rels {
+                            let line = format!("{} -[{}]-> {}", r.source, r.relation, r.target);
+                            if !lines.contains(&line) {
+                                lines.push(line);
+                            }
+                        }
+                    }
+                }
+
+                // Semantic journal search (reuse same embedding vector).
+                if let Ok(journals) = lance.search_journals(&vector, &agent, 2).await {
+                    for j in &journals {
+                        let ts = chrono::DateTime::from_timestamp(j.created_at as i64, 0)
+                            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                            .unwrap_or_else(|| j.created_at.to_string());
+                        let summary = truncate_utf8(&j.summary, 300);
+                        lines.push(format!("[journal {ts}] {summary}"));
+                    }
+                }
+
+                if lines.is_empty() {
+                    return Vec::new();
+                }
+
+                let block = format!("<recall>\n{}\n</recall>", lines.join("\n"));
+                vec![Message::user(block)]
+            })
+        })
     }
 
     fn on_compact(&self, _prompt: &mut String) {

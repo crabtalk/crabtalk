@@ -60,7 +60,9 @@ from previous compactions. Use this to find past context, then call `remember` o
 
 ### Guidelines
 
-- **At conversation start**: call `recall` with a brief query to surface context.
+- **Memory is automatically recalled** before each response — relevant entities,
+  connections, and journal entries appear in `<recall>` blocks. You do NOT need
+  to call `recall` manually unless you want a more specific or targeted search.
 - **When you learn something durable**: call `remember` with the right entity type.
 - **When you discover relationships**: call `relate` to build the knowledge graph.
 - **Do not remember** transient details or one-off questions.

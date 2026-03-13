@@ -1,8 +1,8 @@
 //! Server trait — one async method per protocol operation.
 
 use crate::protocol::message::{
-    DownloadEvent, DownloadRequest, HubAction, Resource, SendRequest, SendResponse, StreamEvent,
-    StreamRequest, TaskEvent,
+    DownloadEvent, DownloadRequest, HubAction, MemoryOp, MemoryResult, Resource, SendRequest,
+    SendResponse, StreamEvent, StreamRequest, TaskEvent,
     client::ClientMessage,
     server::{DownloadInfo, ResourceList, ServerMessage, SessionInfo, TaskInfo},
 };
@@ -94,6 +94,12 @@ pub trait Server: Sync {
         resource: Resource,
         name: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `MemoryQuery` — query the memory graph.
+    fn memory_query(
+        &self,
+        query: MemoryOp,
+    ) -> impl std::future::Future<Output = Result<MemoryResult>> + Send;
 
     /// Dispatch a `ClientMessage` to the appropriate handler method.
     ///
@@ -245,6 +251,15 @@ pub trait Server: Sync {
                 ClientMessage::RemoveResource { resource, name } => {
                     yield match self.remove_resource(resource, name).await {
                         Ok(()) => ServerMessage::Pong,
+                        Err(e) => ServerMessage::Error {
+                            code: 500,
+                            message: e.to_string(),
+                        },
+                    };
+                }
+                ClientMessage::MemoryQuery { query } => {
+                    yield match self.memory_query(query).await {
+                        Ok(result) => ServerMessage::Memory(result),
                         Err(e) => ServerMessage::Error {
                             code: 500,
                             message: e.to_string(),

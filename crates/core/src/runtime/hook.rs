@@ -5,7 +5,7 @@
 //! methods at the appropriate lifecycle points. `DaemonHook` composes
 //! multiple Hook implementations by delegating to each.
 
-use crate::{AgentConfig, AgentEvent, agent::tool::ToolRegistry};
+use crate::{AgentConfig, AgentEvent, agent::tool::ToolRegistry, model::Message};
 use std::future::Future;
 
 /// Lifecycle backend for agent building, event observation, and tool registration.
@@ -48,6 +48,17 @@ pub trait Hook: Send + Sync {
     ///
     /// Default: no-op.
     fn on_compact(&self, _prompt: &mut String) {}
+
+    /// Called by Runtime before each agent run (send_to / stream_to).
+    ///
+    /// Receives the agent name and conversation history (including the
+    /// latest user message). Returns messages to inject before the user
+    /// message for additional context (e.g. auto-recalled memory).
+    ///
+    /// Default: no injection.
+    fn on_before_run(&self, _agent: &str, _history: &[Message]) -> Vec<Message> {
+        Vec::new()
+    }
 }
 
 impl Hook for () {}
