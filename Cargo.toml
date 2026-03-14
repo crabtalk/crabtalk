@@ -3,7 +3,7 @@ resolver = "3"
 members = ["apps/*", "crates/*"]
 
 [workspace.package]
-version = "0.0.5"
+version = "0.0.6"
 edition = "2024"
 authors = ["clearloop <tianyi.gc@gmail.com>"]
 license = "GPL-3.0"
@@ -11,18 +11,17 @@ repository = "https://github.com/openwalrus/walrus"
 keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
-channel = { path = "crates/channel", package = "walrus-channel", version = "0.0.5" }
-cli = { path = "crates/cli", package = "openwalrus", version = "0.0.5" }
-daemon = { path = "crates/daemon", package = "walrus-daemon", version = "0.0.5" }
-model = { path = "crates/model", package = "walrus-model", version = "0.0.5" }
-socket = { path = "crates/socket", package = "walrus-socket", version = "0.0.5" }
-tcp = { path = "crates/tcp", package = "walrus-tcp", version = "0.0.5" }
-wcore = { path = "crates/core", package = "walrus-core", version = "0.0.5" }
-wsearch = { path = "apps/search", package = "walrus-search", version = "0.0.5", default-features = false }
+channel = { path = "crates/channel", package = "walrus-channel", version = "0.0.6" }
+cli = { path = "crates/cli", package = "openwalrus", version = "0.0.6" }
+daemon = { path = "crates/daemon", package = "walrus-daemon", version = "0.0.6" }
+model = { path = "crates/model", package = "walrus-model", version = "0.0.6" }
+socket = { path = "crates/socket", package = "walrus-socket", version = "0.0.6" }
+tcp = { path = "crates/tcp", package = "walrus-tcp", version = "0.0.6" }
+wcore = { path = "crates/core", package = "walrus-core", version = "0.0.6" }
+wsearch = { path = "apps/search", package = "walrus-search", version = "0.0.6", default-features = false }
 
 # crates.io
 anyhow = "1"
-arrow = "56"
 arrow-array = "56"
 arrow-schema = "56"
 async-stream = "0.3"

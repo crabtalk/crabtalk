@@ -3,7 +3,8 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/openwalrus/walrus/main/install.sh | sh
-#   curl -fsSL ... | sh -s -- --yes    # non-interactive
+#   curl -fsSL ... | sh -s -- --yes      # non-interactive (prebuilt binary)
+#   curl -fsSL ... | sh -s -- --local    # compile with native local LLM support
 #
 # Environment variables:
 #   WALRUS_INSTALL_DIR  Override binary installation directory
@@ -14,6 +15,7 @@ REPO="openwalrus/walrus"
 BINARY_NAME="walrus"
 CARGO_CRATE="openwalrus"
 AUTO_YES=0
+FORCE_LOCAL=0
 TMPDIR_PATH=""
 
 # --- Utility functions ---
@@ -78,6 +80,9 @@ parse_args() {
             --yes | -y)
                 AUTO_YES=1
                 ;;
+            --local)
+                FORCE_LOCAL=1
+                ;;
             --help | -h)
                 cat <<'EOF'
 Install walrus — composable primitives for agentic workflows in Rust.
@@ -86,7 +91,8 @@ Usage:
   install.sh [OPTIONS]
 
 Options:
-  -y, --yes    Skip all confirmation prompts
+  -y, --yes    Skip all confirmation prompts (downloads prebuilt binary)
+  --local      Compile with native local LLM support (requires Rust toolchain)
   -h, --help   Show this help message
 
 Environment variables:
@@ -189,6 +195,25 @@ ensure_cargo() {
         err "cargo still not found after rustup install"
     fi
     info "cargo installed successfully"
+}
+
+# Determine the right cargo features for local LLM on this platform.
+local_features() {
+    case "$OS" in
+        macos)
+            echo "local,metal"
+            ;;
+        linux)
+            if [ "$ARCH" = "amd64" ] && detect_cuda; then
+                echo "cuda"
+            else
+                echo "local"
+            fi
+            ;;
+        *)
+            echo "local"
+            ;;
+    esac
 }
 
 install_prebuilt() {
@@ -294,7 +319,7 @@ main() {
         fi
     fi
 
-    # --- Windows path ---
+    # --- Windows path (no local LLM support) ---
     if [ "$OS" = "windows" ]; then
         warn "local LLM inference (mistralrs) is not supported on Windows."
         warn "${BINARY_NAME} will be installed without local model support."
@@ -308,19 +333,34 @@ main() {
         return
     fi
 
-    # --- Prebuilt binary path ---
-    if has_prebuilt; then
-        # Linux amd64 with CUDA: offer compiled CUDA build.
-        if [ "$OS" = "linux" ] && [ "$ARCH" = "amd64" ] && detect_cuda; then
-            info "NVIDIA CUDA toolkit detected on this system."
-            if confirm "compile a CUDA-accelerated version instead? (takes longer)"; then
-                ensure_cargo
-                install_cargo_crate "cuda"
-                post_install
-                return
-            fi
-        fi
+    # --- --local flag: compile with local LLM support ---
+    if [ "$FORCE_LOCAL" = "1" ]; then
+        FEATURES="$(local_features)"
+        info "compiling with native local LLM support (features: ${FEATURES})..."
+        ensure_cargo
+        install_cargo_crate "$FEATURES"
+        post_install
+        return
+    fi
 
+    # --- Interactive: ask about local LLM support ---
+    if [ "$AUTO_YES" = "0" ] && [ -e /dev/tty ]; then
+        echo "" >&2
+        info "walrus can run LLMs locally on your device (requires compiling from source)."
+        info "without local LLM support, walrus uses remote API providers only."
+        echo "" >&2
+        if confirm "install with native local LLM support? (requires compilation, takes longer)"; then
+            FEATURES="$(local_features)"
+            info "compiling with local LLM support (features: ${FEATURES})..."
+            ensure_cargo
+            install_cargo_crate "$FEATURES"
+            post_install
+            return
+        fi
+    fi
+
+    # --- Prebuilt binary path (no local LLM) ---
+    if has_prebuilt; then
         get_latest_version
         install_prebuilt
         post_install

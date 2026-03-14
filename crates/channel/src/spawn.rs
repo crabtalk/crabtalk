@@ -5,7 +5,7 @@
 //! `ClientMessage` and returns a `ServerMessage` stream.
 
 use crate::command::parse_command;
-use crate::config::{ChannelConfig, ChannelType};
+use crate::config::ChannelConfig;
 use crate::message::ChannelMessage;
 use compact_str::CompactString;
 use serenity::model::id::ChannelId;
@@ -41,25 +41,25 @@ pub async fn spawn_channels<C, CFut>(
 {
     let known_bots: KnownBots = Arc::new(RwLock::new(HashSet::new()));
 
-    for entry in &config.0 {
-        if entry.token.is_empty() {
-            tracing::warn!(platform = ?entry.channel_type, "token is empty, skipping");
-            continue;
+    if let Some(tg) = &config.telegram {
+        if tg.token.is_empty() {
+            tracing::warn!(platform = "telegram", "token is empty, skipping");
+        } else {
+            spawn_telegram(
+                &tg.token,
+                default_agent.clone(),
+                on_message.clone(),
+                known_bots.clone(),
+            )
+            .await;
         }
+    }
 
-        let agent = entry
-            .agent
-            .as_deref()
-            .map(CompactString::from)
-            .unwrap_or_else(|| default_agent.clone());
-
-        match entry.channel_type {
-            ChannelType::Telegram => {
-                spawn_telegram(&entry.token, agent, on_message.clone(), known_bots.clone()).await;
-            }
-            ChannelType::Discord => {
-                spawn_discord(&entry.token, agent, on_message.clone(), known_bots.clone()).await;
-            }
+    if let Some(dc) = &config.discord {
+        if dc.token.is_empty() {
+            tracing::warn!(platform = "discord", "token is empty, skipping");
+        } else {
+            spawn_discord(&dc.token, default_agent, on_message, known_bots).await;
         }
     }
 }

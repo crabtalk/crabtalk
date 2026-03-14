@@ -1,9 +1,8 @@
 //! Client trait — transport primitives plus typed provided methods.
 
 use crate::protocol::message::{
-    DownloadEvent, DownloadRequest, HubRequest, MemoryOp, MemoryResult, Resource, ResourceList,
-    SendRequest, SendResponse, StreamEvent, StreamRequest, TaskEvent, client::ClientMessage,
-    server::ServerMessage,
+    DownloadEvent, DownloadRequest, HubRequest, MemoryOp, MemoryResult, SendRequest, SendResponse,
+    StreamEvent, StreamRequest, TaskEvent, client::ClientMessage, server::ServerMessage,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -112,14 +111,11 @@ pub trait Client: Send {
             .map(|r| r.and_then(DownloadEvent::try_from))
     }
 
-    /// List resources of a given kind.
-    fn list_resource(
-        &mut self,
-        resource: Resource,
-    ) -> impl std::future::Future<Output = Result<ResourceList>> + Send {
+    /// Get the full daemon config as JSON.
+    fn get_config(&mut self) -> impl std::future::Future<Output = Result<String>> + Send {
         async move {
-            match self.request(ClientMessage::List { resource }).await? {
-                ServerMessage::Resource(list) => Ok(list),
+            match self.request(ClientMessage::GetConfig).await? {
+                ServerMessage::Config { config } => Ok(config),
                 ServerMessage::Error { code, message } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -128,42 +124,13 @@ pub trait Client: Send {
         }
     }
 
-    /// Add or update a named resource.
-    fn add_resource(
+    /// Replace the full daemon config from JSON.
+    fn set_config(
         &mut self,
-        resource: Resource,
-        name: String,
-        value: String,
+        config: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
-            match self
-                .request(ClientMessage::AddResource {
-                    resource,
-                    name,
-                    value,
-                })
-                .await?
-            {
-                ServerMessage::Pong => Ok(()),
-                ServerMessage::Error { code, message } => {
-                    anyhow::bail!("server error ({code}): {message}")
-                }
-                other => anyhow::bail!("unexpected response: {other:?}"),
-            }
-        }
-    }
-
-    /// Remove a named resource.
-    fn remove_resource(
-        &mut self,
-        resource: Resource,
-        name: String,
-    ) -> impl std::future::Future<Output = Result<()>> + Send {
-        async move {
-            match self
-                .request(ClientMessage::RemoveResource { resource, name })
-                .await?
-            {
+            match self.request(ClientMessage::SetConfig { config }).await? {
                 ServerMessage::Pong => Ok(()),
                 ServerMessage::Error { code, message } => {
                     anyhow::bail!("server error ({code}): {message}")

@@ -3,20 +3,6 @@
 use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
-/// Resource kind for config proxy operations.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Resource {
-    /// MCP server configurations.
-    Mcp,
-    /// Loaded skills (read-only).
-    Skill,
-    /// Agent configurations.
-    Agent,
-    /// Remote model provider configurations.
-    Provider,
-}
-
 /// Hub package action.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -195,26 +181,12 @@ pub enum ClientMessage {
     Downloads,
     /// Subscribe to download lifecycle events (streaming).
     SubscribeDownloads,
-    /// List resources of a given kind.
-    List {
-        /// Resource kind to list.
-        resource: Resource,
-    },
-    /// Add or update a named resource.
-    AddResource {
-        /// Resource kind.
-        resource: Resource,
-        /// Resource name (map key in config).
-        name: String,
-        /// JSON-serialized config value.
-        value: String,
-    },
-    /// Remove a named resource.
-    RemoveResource {
-        /// Resource kind.
-        resource: Resource,
-        /// Resource name to remove.
-        name: String,
+    /// Get the full daemon config as JSON.
+    GetConfig,
+    /// Replace the full daemon config from JSON.
+    SetConfig {
+        /// JSON-serialized `DaemonConfig`.
+        config: String,
     },
     /// Query the memory graph.
     MemoryQuery {

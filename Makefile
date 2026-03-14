@@ -35,7 +35,7 @@ tar-walrus:
 
 # build macos-arm64 (Metal acceleration)
 macos-arm64:
-	$(CARGO) --target aarch64-apple-darwin -p openwalrus --features metal
+	$(CARGO) --target aarch64-apple-darwin -p openwalrus
 
 # build macos-amd64
 # .cargo/cc-x86_64.sh rewrites -march=native (ARM host) to x86-64-v4
@@ -48,5 +48,7 @@ linux-arm64:
 	$(LINUX_ARM64_ENV) $(CARGO) --target aarch64-unknown-linux-gnu -p openwalrus
 
 # build linux-amd64 (CUDA acceleration)
+# CC_x86_64_unknown_linux_gnu rewrites -march=native (ARM host) to x86-64-v4
+# so lance-linalg AVX-512 C kernels compile correctly when cross-compiling.
 linux-amd64:
-	$(LINUX_AMD64_ENV) $(CARGO) --target x86_64-unknown-linux-gnu -p openwalrus
+	CC_x86_64_unknown_linux_gnu=$(CURDIR)/.cargo/cc-x86_64-linux.sh $(LINUX_AMD64_ENV) $(CARGO) --target x86_64-unknown-linux-gnu -p openwalrus

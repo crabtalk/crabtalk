@@ -15,7 +15,7 @@ name = "walrus"
 path = "src/bin/main.rs"
 
 [features]
-default = ["local"]
+default = ["daemon"]
 daemon = ["dep:daemon"]
 local = ["daemon/local"]
 metal = ["daemon/metal"]

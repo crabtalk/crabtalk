@@ -8,11 +8,11 @@ use std::sync::Arc;
 use wcore::protocol::{
     api::Server,
     message::{
-        DownloadEvent, DownloadRequest, HubAction, MemoryOp, MemoryResult, Resource, SendRequest,
+        DownloadEvent, DownloadRequest, HubAction, MemoryOp, MemoryResult, SendRequest,
         SendResponse, StreamEvent, StreamRequest, TaskEvent,
         server::{
-            DownloadInfo, EntityInfo, JournalInfo, RelationInfo, ResourceList, SessionInfo,
-            SkillInfo, TaskInfo, ToolCallInfo,
+            DownloadInfo, EntityInfo, JournalInfo, RelationInfo, SessionInfo, TaskInfo,
+            ToolCallInfo,
         },
     },
 };
@@ -334,106 +334,20 @@ impl Server for Daemon {
         }
     }
 
-    async fn list_resource(&self, resource: Resource) -> Result<ResourceList> {
-        match resource {
-            Resource::Mcp => {
-                let config = self.load_config()?;
-                let mcps = config
-                    .mcps
-                    .into_iter()
-                    .map(|(k, v)| (CompactString::from(k), v))
-                    .collect();
-                Ok(ResourceList::Mcps(mcps))
-            }
-            Resource::Skill => {
-                let rt = self.runtime.read().await.clone();
-                let registry = rt.hook.skills.registry.lock().await;
-                let skills = registry
-                    .skills()
-                    .into_iter()
-                    .map(|s| SkillInfo {
-                        name: s.name.clone(),
-                        description: s.description.clone(),
-                        license: s.license.clone(),
-                        compatibility: s.compatibility.clone(),
-                    })
-                    .collect();
-                Ok(ResourceList::Skills(skills))
-            }
-            Resource::Agent => {
-                let config = self.load_config()?;
-                let agents = config
-                    .agents
-                    .into_iter()
-                    .map(|(k, v)| (CompactString::from(k), v))
-                    .collect();
-                Ok(ResourceList::Agents(agents))
-            }
-            Resource::Provider => {
-                let config = self.load_config()?;
-                let providers = config.model.providers.into_iter().collect();
-                Ok(ResourceList::Providers(providers))
-            }
-        }
+    async fn get_config(&self) -> Result<String> {
+        let config = self.load_config()?;
+        serde_json::to_string(&config).context("failed to serialize config")
     }
 
-    async fn add_resource(&self, resource: Resource, name: String, value: String) -> Result<()> {
-        match resource {
-            Resource::Skill => anyhow::bail!("skills are read-only; use hub install"),
-            Resource::Mcp => {
-                let typed: wcore::McpServerConfig =
-                    serde_json::from_str(&value).context("invalid McpServerConfig JSON")?;
-                self.edit_config(|doc| {
-                    let table = doc
-                        .entry("mcps")
-                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
-                        .as_table_mut()
-                        .context("mcps is not a table")?;
-                    let ser = toml_edit::ser::to_document(&typed)
-                        .context("failed to serialize McpServerConfig")?;
-                    table.insert(&name, toml_edit::Item::Table(ser.as_table().clone()));
-                    Ok(())
-                })?;
-                self.reload().await
-            }
-            Resource::Agent => {
-                let typed: wcore::AgentConfig =
-                    serde_json::from_str(&value).context("invalid AgentConfig JSON")?;
-                self.edit_config(|doc| {
-                    let table = doc
-                        .entry("agents")
-                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
-                        .as_table_mut()
-                        .context("agents is not a table")?;
-                    let ser = toml_edit::ser::to_document(&typed)
-                        .context("failed to serialize AgentConfig")?;
-                    table.insert(&name, toml_edit::Item::Table(ser.as_table().clone()));
-                    Ok(())
-                })?;
-                self.reload().await
-            }
-            Resource::Provider => {
-                let typed: wcore::ProviderConfig =
-                    serde_json::from_str(&value).context("invalid ProviderConfig JSON")?;
-                self.edit_config(|doc| {
-                    let model = doc
-                        .entry("model")
-                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
-                        .as_table_mut()
-                        .context("model is not a table")?;
-                    let providers = model
-                        .entry("providers")
-                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
-                        .as_table_mut()
-                        .context("model.providers is not a table")?;
-                    let ser = toml_edit::ser::to_document(&typed)
-                        .context("failed to serialize ProviderConfig")?;
-                    providers.insert(&name, toml_edit::Item::Table(ser.as_table().clone()));
-                    Ok(())
-                })?;
-                self.reload().await
-            }
-        }
+    async fn set_config(&self, config: String) -> Result<()> {
+        let parsed: crate::DaemonConfig =
+            serde_json::from_str(&config).context("invalid DaemonConfig JSON")?;
+        let toml_str =
+            toml::to_string_pretty(&parsed).context("failed to serialize config to TOML")?;
+        let config_path = self.config_dir.join("walrus.toml");
+        std::fs::write(&config_path, toml_str)
+            .with_context(|| format!("failed to write {}", config_path.display()))?;
+        self.reload().await
     }
 
     async fn memory_query(&self, query: MemoryOp) -> Result<MemoryResult> {
@@ -509,61 +423,11 @@ impl Server for Daemon {
             }
         }
     }
-
-    async fn remove_resource(&self, resource: Resource, name: String) -> Result<()> {
-        match resource {
-            Resource::Skill => anyhow::bail!("skills are read-only; use hub uninstall"),
-            Resource::Mcp => {
-                self.edit_config(|doc| {
-                    if let Some(table) = doc.get_mut("mcps").and_then(|v| v.as_table_mut()) {
-                        table.remove(&name);
-                    }
-                    Ok(())
-                })?;
-                self.reload().await
-            }
-            Resource::Agent => {
-                self.edit_config(|doc| {
-                    if let Some(table) = doc.get_mut("agents").and_then(|v| v.as_table_mut()) {
-                        table.remove(&name);
-                    }
-                    Ok(())
-                })?;
-                self.reload().await
-            }
-            Resource::Provider => {
-                self.edit_config(|doc| {
-                    if let Some(model) = doc.get_mut("model").and_then(|v| v.as_table_mut())
-                        && let Some(providers) =
-                            model.get_mut("providers").and_then(|v| v.as_table_mut())
-                    {
-                        providers.remove(&name);
-                    }
-                    Ok(())
-                })?;
-                self.reload().await
-            }
-        }
-    }
 }
 
 impl Daemon {
     /// Load the current `DaemonConfig` from disk.
     fn load_config(&self) -> Result<crate::DaemonConfig> {
         crate::DaemonConfig::load(&self.config_dir.join("walrus.toml"))
-    }
-
-    /// Read `walrus.toml`, apply an edit function, and write back.
-    fn edit_config(&self, f: impl FnOnce(&mut toml_edit::DocumentMut) -> Result<()>) -> Result<()> {
-        let config_path = self.config_dir.join("walrus.toml");
-        let content = std::fs::read_to_string(&config_path)
-            .with_context(|| format!("cannot read {}", config_path.display()))?;
-        let mut doc: toml_edit::DocumentMut = content
-            .parse()
-            .with_context(|| format!("invalid TOML in {}", config_path.display()))?;
-        f(&mut doc)?;
-        std::fs::write(&config_path, doc.to_string())
-            .with_context(|| format!("failed to write {}", config_path.display()))?;
-        Ok(())
     }
 }

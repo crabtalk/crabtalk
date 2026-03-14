@@ -1,10 +1,10 @@
 //! Server trait — one async method per protocol operation.
 
 use crate::protocol::message::{
-    DownloadEvent, DownloadRequest, HubAction, MemoryOp, MemoryResult, Resource, SendRequest,
-    SendResponse, StreamEvent, StreamRequest, TaskEvent,
+    DownloadEvent, DownloadRequest, HubAction, MemoryOp, MemoryResult, SendRequest, SendResponse,
+    StreamEvent, StreamRequest, TaskEvent,
     client::ClientMessage,
-    server::{DownloadInfo, ResourceList, ServerMessage, SessionInfo, TaskInfo},
+    server::{DownloadInfo, ServerMessage, SessionInfo, TaskInfo},
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -74,26 +74,11 @@ pub trait Server: Sync {
     /// Handle `SubscribeDownloads` — stream download lifecycle events.
     fn subscribe_downloads(&self) -> impl Stream<Item = Result<DownloadEvent>> + Send;
 
-    /// Handle `List` — list resources of a given kind.
-    fn list_resource(
-        &self,
-        resource: Resource,
-    ) -> impl std::future::Future<Output = Result<ResourceList>> + Send;
+    /// Handle `GetConfig` — return the full daemon config as JSON.
+    fn get_config(&self) -> impl std::future::Future<Output = Result<String>> + Send;
 
-    /// Handle `AddResource` — add or update a named resource.
-    fn add_resource(
-        &self,
-        resource: Resource,
-        name: String,
-        value: String,
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
-
-    /// Handle `RemoveResource` — remove a named resource.
-    fn remove_resource(
-        &self,
-        resource: Resource,
-        name: String,
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    /// Handle `SetConfig` — replace the daemon config from JSON.
+    fn set_config(&self, config: String) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Handle `MemoryQuery` — query the memory graph.
     fn memory_query(
@@ -230,26 +215,17 @@ pub trait Server: Sync {
                         yield result_to_msg(result);
                     }
                 }
-                ClientMessage::List { resource } => {
-                    yield match self.list_resource(resource).await {
-                        Ok(list) => ServerMessage::Resource(list),
+                ClientMessage::GetConfig => {
+                    yield match self.get_config().await {
+                        Ok(config) => ServerMessage::Config { config },
                         Err(e) => ServerMessage::Error {
                             code: 500,
                             message: e.to_string(),
                         },
                     };
                 }
-                ClientMessage::AddResource { resource, name, value } => {
-                    yield match self.add_resource(resource, name, value).await {
-                        Ok(()) => ServerMessage::Pong,
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
-                        },
-                    };
-                }
-                ClientMessage::RemoveResource { resource, name } => {
-                    yield match self.remove_resource(resource, name).await {
+                ClientMessage::SetConfig { config } => {
+                    yield match self.set_config(config).await {
                         Ok(()) => ServerMessage::Pong,
                         Err(e) => ServerMessage::Error {
                             code: 500,
