@@ -1,4 +1,4 @@
-//! Interactive TUI for configuring channel entries.
+//! Interactive TUI for configuring channel tokens.
 
 use anyhow::{Context, Result};
 use channel::ChannelType;
@@ -13,46 +13,37 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Paragraph},
 };
 use std::{io::Stdout, time::Duration};
-use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
+use toml_edit::{DocumentMut, Item, Table};
 
-const FIELD_LABELS: [&str; 3] = ["Type", "Token", "Agent"];
-
-/// Configure channel entries interactively.
+/// Configure channel tokens interactively.
 #[derive(clap::Args, Debug)]
 pub struct Auth;
+
+/// Two fixed rows: Telegram (0) and Discord (1).
+const PLATFORM_NAMES: [&str; 2] = ["Telegram", "Discord"];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
     List,
-    Field,
-    /// Inline type selector overlay — index into `ChannelType::VARIANTS`.
-    TypeSelect(usize),
-}
-
-struct ChannelEntryState {
-    channel_type: ChannelType,
-    token: String,
-    agent: String,
+    Editing,
 }
 
 struct AuthState {
     focus: Focus,
-    /// Index into `entries`, or `entries.len()` for the "+ Add channel" row.
+    /// 0 = Telegram, 1 = Discord.
     selected: usize,
-    field_index: usize,
-    editing: bool,
     cursor: usize,
-    entries: Vec<ChannelEntryState>,
+    tokens: [String; 2],
     status: String,
 }
 
 impl AuthState {
     fn load() -> Result<Self> {
         let config_path = wcore::paths::CONFIG_DIR.join("walrus.toml");
-        let mut entries = Vec::new();
+        let mut tokens = [String::new(), String::new()];
 
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)
@@ -61,28 +52,20 @@ impl AuthState {
                 .parse()
                 .with_context(|| format!("invalid TOML in {}", config_path.display()))?;
 
-            if let Some(channels) = doc.get("channel").and_then(|c| c.as_array_of_tables()) {
-                for table in channels.iter() {
-                    let channel_type = match table.get("type").and_then(|v| v.as_str()) {
-                        Some("telegram") => ChannelType::Telegram,
-                        Some("discord") => ChannelType::Discord,
-                        _ => continue,
-                    };
-                    let token = table
+            if let Some(channel) = doc.get("channel").and_then(|c| c.as_table()) {
+                if let Some(tg) = channel.get("telegram").and_then(|t| t.as_table()) {
+                    tokens[0] = tg
                         .get("token")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let agent = table
-                        .get("agent")
+                }
+                if let Some(dc) = channel.get("discord").and_then(|t| t.as_table()) {
+                    tokens[1] = dc
+                        .get("token")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    entries.push(ChannelEntryState {
-                        channel_type,
-                        token,
-                        agent,
-                    });
                 }
             }
         }
@@ -90,10 +73,8 @@ impl AuthState {
         Ok(Self {
             focus: Focus::List,
             selected: 0,
-            field_index: 0,
-            editing: false,
             cursor: 0,
-            entries,
+            tokens,
             status: String::from("Ready"),
         })
     }
@@ -116,21 +97,19 @@ impl AuthState {
 
         doc.remove("channel");
 
-        if !self.entries.is_empty() {
-            let mut arr = ArrayOfTables::new();
-            for entry in &self.entries {
-                let mut table = Table::new();
-                table.insert(
-                    "type",
-                    toml_edit::value(entry.channel_type.to_string().to_lowercase()),
-                );
-                table.insert("token", toml_edit::value(&entry.token));
-                if !entry.agent.is_empty() {
-                    table.insert("agent", toml_edit::value(&entry.agent));
-                }
-                arr.push(table);
-            }
-            doc.insert("channel", Item::ArrayOfTables(arr));
+        let mut channel_table = Table::new();
+        if !self.tokens[0].is_empty() {
+            let mut tg = Table::new();
+            tg.insert("token", toml_edit::value(&self.tokens[0]));
+            channel_table.insert("telegram", Item::Table(tg));
+        }
+        if !self.tokens[1].is_empty() {
+            let mut dc = Table::new();
+            dc.insert("token", toml_edit::value(&self.tokens[1]));
+            channel_table.insert("discord", Item::Table(dc));
+        }
+        if !channel_table.is_empty() {
+            doc.insert("channel", Item::Table(channel_table));
         }
 
         std::fs::write(&config_path, doc.to_string())
@@ -140,17 +119,12 @@ impl AuthState {
         Ok(())
     }
 
-    fn on_add_row(&self) -> bool {
-        self.selected == self.entries.len()
+    fn current_token(&self) -> &str {
+        &self.tokens[self.selected]
     }
 
-    fn current_text_field(&self) -> &str {
-        let entry = &self.entries[self.selected];
-        match self.field_index {
-            1 => &entry.token,
-            2 => &entry.agent,
-            _ => "",
-        }
+    fn current_token_mut(&mut self) -> &mut String {
+        &mut self.tokens[self.selected]
     }
 }
 
@@ -216,121 +190,32 @@ fn handle_key(key: event::KeyEvent, state: &mut AuthState) -> Result<bool> {
         return Ok(true);
     }
 
-    if state.editing {
-        return Ok(handle_editing(key, state));
-    }
-
     match state.focus {
         Focus::List => handle_list_key(key, state),
-        Focus::Field => handle_field_key(key, state),
-        Focus::TypeSelect(sel) => handle_type_select_key(key, state, sel),
+        Focus::Editing => Ok(handle_editing(key, state)),
     }
 }
 
 fn handle_list_key(key: event::KeyEvent, state: &mut AuthState) -> Result<bool> {
-    let row_count = state.entries.len() + 1; // entries + "Add" row
     match key.code {
         KeyCode::Char('q') => return Ok(true),
         KeyCode::Up | KeyCode::Char('k') => {
             state.selected = state.selected.saturating_sub(1);
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if state.selected < row_count - 1 {
+            if state.selected < PLATFORM_NAMES.len() - 1 {
                 state.selected += 1;
             }
         }
         KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-            if state.on_add_row() {
-                state.entries.push(ChannelEntryState {
-                    channel_type: ChannelType::VARIANTS[0],
-                    token: String::new(),
-                    agent: String::new(),
-                });
-                state.selected = state.entries.len() - 1;
-            }
-            if !state.entries.is_empty() {
-                state.focus = Focus::Field;
-                state.field_index = 0;
-            }
-        }
-        KeyCode::Char('a') => {
-            state.entries.push(ChannelEntryState {
-                channel_type: ChannelType::VARIANTS[0],
-                token: String::new(),
-                agent: String::new(),
-            });
-            state.selected = state.entries.len() - 1;
-            state.focus = Focus::Field;
-            state.field_index = 0;
-        }
-        KeyCode::Char('d') | KeyCode::Delete => {
-            if !state.on_add_row() && !state.entries.is_empty() {
-                state.entries.remove(state.selected);
-                if state.selected >= state.entries.len() && !state.entries.is_empty() {
-                    state.selected = state.entries.len() - 1;
-                }
-            }
+            state.focus = Focus::Editing;
+            state.cursor = state.current_token().chars().count();
         }
         KeyCode::Tab => {
-            state.selected = (state.selected + 1) % row_count;
+            state.selected = (state.selected + 1) % PLATFORM_NAMES.len();
         }
-        _ => {}
-    }
-    Ok(false)
-}
-
-fn handle_field_key(key: event::KeyEvent, state: &mut AuthState) -> Result<bool> {
-    match key.code {
-        KeyCode::Esc | KeyCode::Left | KeyCode::Char('h') => {
-            state.focus = Focus::List;
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            state.field_index = state.field_index.saturating_sub(1);
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if state.field_index < FIELD_LABELS.len() - 1 {
-                state.field_index += 1;
-            }
-        }
-        KeyCode::Enter => {
-            if state.field_index == 0 {
-                // Open type selector — pre-select current type
-                let current = state.entries[state.selected].channel_type;
-                let idx = ChannelType::VARIANTS
-                    .iter()
-                    .position(|&v| v == current)
-                    .unwrap_or(0);
-                state.focus = Focus::TypeSelect(idx);
-            } else {
-                state.editing = true;
-                state.cursor = state.current_text_field().chars().count();
-            }
-        }
-        KeyCode::Tab => {
-            state.field_index = (state.field_index + 1) % FIELD_LABELS.len();
-        }
-        _ => {}
-    }
-    Ok(false)
-}
-
-fn handle_type_select_key(key: event::KeyEvent, state: &mut AuthState, sel: usize) -> Result<bool> {
-    let variant_count = ChannelType::VARIANTS.len();
-    match key.code {
-        KeyCode::Esc => {
-            state.focus = Focus::Field;
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            state.focus = Focus::TypeSelect(sel.saturating_sub(1));
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if sel < variant_count - 1 {
-                state.focus = Focus::TypeSelect(sel + 1);
-            }
-        }
-        KeyCode::Enter => {
-            state.entries[state.selected].channel_type = ChannelType::VARIANTS[sel];
-            state.focus = Focus::Field;
+        KeyCode::Char('x') | KeyCode::Delete => {
+            state.tokens[state.selected].clear();
         }
         _ => {}
     }
@@ -340,16 +225,11 @@ fn handle_type_select_key(key: event::KeyEvent, state: &mut AuthState, sel: usiz
 /// Returns true if the TUI should quit.
 fn handle_editing(key: event::KeyEvent, state: &mut AuthState) -> bool {
     let cursor = state.cursor;
-    let entry = &mut state.entries[state.selected];
-    let val = match state.field_index {
-        1 => &mut entry.token,
-        2 => &mut entry.agent,
-        _ => return false,
-    };
+    let val = state.current_token_mut();
 
     match key.code {
         KeyCode::Esc | KeyCode::Enter => {
-            state.editing = false;
+            state.focus = Focus::List;
         }
         KeyCode::Backspace => {
             if cursor > 0 {
@@ -416,51 +296,6 @@ fn render(frame: &mut Frame, state: &AuthState) {
     render_list(frame, state, list_area);
     render_fields(frame, state, field_area);
     render_status(frame, state, status_area);
-
-    // Type selector overlay — rendered last so it draws on top.
-    if let Focus::TypeSelect(sel) = state.focus {
-        render_type_selector(frame, field_area, sel);
-    }
-}
-
-/// Build display names for the channel list: `Type:agent` with `-N` suffix
-/// when multiple entries share the same (type, agent) pair.
-fn channel_display_names(entries: &[ChannelEntryState]) -> Vec<String> {
-    // Count occurrences of each (type, agent) pair.
-    let mut counts: std::collections::HashMap<(ChannelType, &str), usize> =
-        std::collections::HashMap::new();
-    for e in entries {
-        let agent = if e.agent.is_empty() {
-            "default"
-        } else {
-            &e.agent
-        };
-        *counts.entry((e.channel_type, agent)).or_default() += 1;
-    }
-
-    // Assign sequential numbers to duplicates.
-    let mut seen: std::collections::HashMap<(ChannelType, &str), usize> =
-        std::collections::HashMap::new();
-    entries
-        .iter()
-        .map(|e| {
-            let agent = if e.agent.is_empty() {
-                "default"
-            } else {
-                &e.agent
-            };
-            let key = (e.channel_type, agent);
-            let total = counts[&key];
-            let seq = seen.entry(key).or_default();
-            *seq += 1;
-            let type_lower = e.channel_type.to_string().to_lowercase();
-            if total > 1 {
-                format!("{type_lower}:{agent}-{seq}")
-            } else {
-                format!("{type_lower}:{agent}")
-            }
-        })
-        .collect()
 }
 
 fn render_list(frame: &mut Frame, state: &AuthState, area: Rect) {
@@ -473,13 +308,13 @@ fn render_list(frame: &mut Frame, state: &AuthState, area: Rect) {
             Style::default().fg(Color::DarkGray)
         });
 
-    let display_names = channel_display_names(&state.entries);
-    let mut lines: Vec<Line> = display_names
+    let lines: Vec<Line> = PLATFORM_NAMES
         .iter()
         .enumerate()
         .map(|(i, name)| {
             let marker = if i == state.selected { "> " } else { "  " };
-            let text = format!("{marker}{name}");
+            let configured = if state.tokens[i].is_empty() { "" } else { " *" };
+            let text = format!("{marker}{name}{configured}");
             let style = if i == state.selected {
                 Style::default()
                     .fg(Color::Yellow)
@@ -491,201 +326,69 @@ fn render_list(frame: &mut Frame, state: &AuthState, area: Rect) {
         })
         .collect();
 
-    // "+ Add channel" row
-    let add_marker = if state.on_add_row() { "> " } else { "  " };
-    let add_style = if state.on_add_row() {
-        Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-    lines.push(Line::from(Span::styled(
-        format!("{add_marker}+ Add channel"),
-        add_style,
-    )));
-
     let paragraph = Paragraph::new(lines).block(block);
     frame.render_widget(paragraph, area);
 }
 
 fn render_fields(frame: &mut Frame, state: &AuthState, area: Rect) {
-    if state.on_add_row() || state.entries.is_empty() {
-        let block = Block::default()
-            .title(" Channel ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray));
-        let hint = Paragraph::new(Line::from(Span::styled(
-            "  Select a channel or add one",
-            Style::default().fg(Color::DarkGray),
-        )))
-        .block(block);
-        frame.render_widget(hint, area);
-        return;
-    }
+    let name = PLATFORM_NAMES[state.selected];
+    let token = state.current_token();
+    let channel_type = ChannelType::VARIANTS[state.selected];
 
-    let entry = &state.entries[state.selected];
     let block = Block::default()
-        .title(format!(" {} ", entry.channel_type))
+        .title(format!(" {name} "))
         .borders(Borders::ALL)
-        .border_style(
-            if matches!(state.focus, Focus::Field | Focus::TypeSelect(_)) {
-                Style::default().fg(Color::Yellow)
-            } else {
-                Style::default().fg(Color::DarkGray)
-            },
-        );
+        .border_style(if state.focus == Focus::Editing {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        });
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let field_rows =
-        Layout::vertical(FIELD_LABELS.iter().map(|_| Constraint::Length(1))).split(inner);
+    let label_span = Span::styled(
+        "     Token: ",
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    );
 
-    for (i, &label) in FIELD_LABELS.iter().enumerate() {
-        let is_selected =
-            matches!(state.focus, Focus::Field | Focus::TypeSelect(_)) && state.field_index == i;
-        let is_editing = is_selected && state.editing;
-
-        let label_style = if is_selected {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
-
-        let label_span = Span::styled(format!("{label:>10}: "), label_style);
-
-        let line = match i {
-            // Type field
-            0 => {
-                let type_name = entry.channel_type.to_string();
-                if is_selected {
-                    Line::from(vec![
-                        label_span,
-                        Span::styled(type_name, Style::default().fg(Color::Cyan)),
-                        Span::styled("  (Enter to select)", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        label_span,
-                        Span::styled(type_name, Style::default().fg(Color::DarkGray)),
-                    ])
-                }
-            }
-            // Token field
-            1 => {
-                if is_editing {
-                    let byte_pos = char_to_byte(&entry.token, state.cursor);
-                    let mut s = entry.token.clone();
-                    s.insert(byte_pos, '|');
-                    Line::from(vec![
-                        label_span,
-                        Span::styled(s, Style::default().fg(Color::Green)),
-                    ])
-                } else if entry.token.is_empty() {
-                    Line::from(vec![
-                        label_span,
-                        Span::styled(
-                            entry.channel_type.token_hint(),
-                            Style::default()
-                                .fg(Color::DarkGray)
-                                .add_modifier(Modifier::ITALIC),
-                        ),
-                    ])
-                } else {
-                    let style = if is_selected {
-                        Style::default().fg(Color::White)
-                    } else {
-                        Style::default().fg(Color::DarkGray)
-                    };
-                    Line::from(vec![
-                        label_span,
-                        Span::styled(mask_token(&entry.token), style),
-                    ])
-                }
-            }
-            // Agent field
-            2 => {
-                if is_editing {
-                    let byte_pos = char_to_byte(&entry.agent, state.cursor);
-                    let mut s = entry.agent.clone();
-                    s.insert(byte_pos, '|');
-                    Line::from(vec![
-                        label_span,
-                        Span::styled(s, Style::default().fg(Color::Green)),
-                    ])
-                } else if entry.agent.is_empty() {
-                    Line::from(vec![
-                        label_span,
-                        Span::styled("walrus", Style::default().fg(Color::DarkGray)),
-                        Span::styled(" (default)", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    let style = if is_selected {
-                        Style::default().fg(Color::White)
-                    } else {
-                        Style::default().fg(Color::DarkGray)
-                    };
-                    Line::from(vec![label_span, Span::styled(entry.agent.as_str(), style)])
-                }
-            }
-            _ => Line::default(),
-        };
-
-        frame.render_widget(Paragraph::new(line), field_rows[i]);
-    }
-}
-
-/// Render the type selector as an overlay popup anchored to the field area.
-fn render_type_selector(frame: &mut Frame, field_area: Rect, sel: usize) {
-    let variants = ChannelType::VARIANTS;
-    let height = variants.len() as u16 + 2; // +2 for borders
-    let width = 20u16.min(field_area.width);
-
-    // Position below the Type field row (offset y by 1 for the block border + 0 for first field).
-    let popup = Rect {
-        x: field_area.x + 12, // align with value column (after "      Type: ")
-        y: field_area.y + 1,
-        width,
-        height: height.min(field_area.height),
+    let line = if state.focus == Focus::Editing {
+        let byte_pos = char_to_byte(token, state.cursor);
+        let mut s = token.to_owned();
+        s.insert(byte_pos, '|');
+        Line::from(vec![
+            label_span,
+            Span::styled(s, Style::default().fg(Color::Green)),
+        ])
+    } else if token.is_empty() {
+        Line::from(vec![
+            label_span,
+            Span::styled(
+                channel_type.token_hint(),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ])
+    } else {
+        Line::from(vec![
+            label_span,
+            Span::styled(mask_token(token), Style::default().fg(Color::White)),
+        ])
     };
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
-
-    let lines: Vec<Line> = variants
-        .iter()
-        .enumerate()
-        .map(|(i, v)| {
-            let marker = if i == sel { "> " } else { "  " };
-            let style = if i == sel {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            Line::from(Span::styled(format!("{marker}{v}"), style))
-        })
-        .collect();
-
-    // Clear the area behind the popup, then draw it.
-    frame.render_widget(Clear, popup);
-    frame.render_widget(Paragraph::new(lines).block(block), popup);
+    frame.render_widget(Paragraph::new(line), inner);
 }
 
 fn render_status(frame: &mut Frame, state: &AuthState, area: Rect) {
     let help = Line::from(vec![
         Span::styled(" Ctrl+S ", Style::default().fg(Color::Cyan)),
         Span::raw("Save  "),
-        Span::styled("a ", Style::default().fg(Color::Cyan)),
-        Span::raw("Add  "),
-        Span::styled("d ", Style::default().fg(Color::Cyan)),
-        Span::raw("Delete  "),
         Span::styled("Enter ", Style::default().fg(Color::Cyan)),
         Span::raw("Edit  "),
+        Span::styled("x ", Style::default().fg(Color::Cyan)),
+        Span::raw("Clear  "),
         Span::styled("Esc ", Style::default().fg(Color::Cyan)),
         Span::raw("Back  "),
         Span::styled("q ", Style::default().fg(Color::Cyan)),

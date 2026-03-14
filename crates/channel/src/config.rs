@@ -35,21 +35,27 @@ impl fmt::Display for ChannelType {
     }
 }
 
-/// A single channel entry — one bot connection to one agent.
+/// Telegram bot configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChannelEntry {
-    /// Platform type.
-    #[serde(rename = "type")]
-    pub channel_type: ChannelType,
-    /// Bot/API token.
+pub struct TelegramConfig {
+    /// Bot token from @BotFather.
     pub token: String,
-    /// Agent to route messages to. Falls back to `default_agent` if absent.
-    pub agent: Option<String>,
 }
 
-/// Top-level channel configuration — a list of channel entries.
+/// Discord bot configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscordConfig {
+    /// Bot token from the Discord developer portal.
+    pub token: String,
+}
+
+/// Top-level channel configuration.
 ///
-/// Deserialized from `[[channel]]` TOML array of tables.
+/// Deserialized from `[channel.telegram]` / `[channel.discord]` TOML tables.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(transparent)]
-pub struct ChannelConfig(pub Vec<ChannelEntry>);
+pub struct ChannelConfig {
+    /// Telegram bot config. Absent means no Telegram bot.
+    pub telegram: Option<TelegramConfig>,
+    /// Discord bot config. Absent means no Discord bot.
+    pub discord: Option<DiscordConfig>,
+}

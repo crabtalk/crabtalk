@@ -10,6 +10,6 @@ pub mod message;
 pub mod spawn;
 pub(crate) mod telegram;
 
-pub use config::{ChannelConfig, ChannelEntry, ChannelType};
+pub use config::{ChannelConfig, ChannelType, DiscordConfig, TelegramConfig};
 pub use message::{Attachment, AttachmentKind, ChannelMessage};
 pub use spawn::spawn_channels;
