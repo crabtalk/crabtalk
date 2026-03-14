@@ -1,4 +1,4 @@
-//! Walrus channel — messaging platform integration for OpenWalrus agents.
+//! Walrus gateway — messaging platform integration for OpenWalrus agents.
 //!
 //! Provides configuration types and a spawn function that connects
 //! platform bots (Telegram, Discord) to the daemon's agent event loop.
@@ -10,6 +10,6 @@ pub mod message;
 pub mod spawn;
 pub(crate) mod telegram;
 
-pub use config::{ChannelConfig, ChannelType, DiscordConfig, TelegramConfig};
-pub use message::{Attachment, AttachmentKind, ChannelMessage};
-pub use spawn::spawn_channels;
+pub use config::{DiscordConfig, GatewayConfig, GatewayType, TelegramConfig};
+pub use message::{Attachment, AttachmentKind, GatewayMessage};
+pub use spawn::spawn_gateways;

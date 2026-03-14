@@ -217,7 +217,7 @@ pub async fn setup_channels(config: &DaemonConfig, event_tx: &DaemonEventSender)
         .and_then(|agents| agents.into_iter().next())
         .map(|(stem, _)| compact_str::CompactString::from(stem))
         .unwrap_or_else(|| compact_str::CompactString::from("assistant"));
-    channel::spawn_channels(&config.channel, default_agent, on_message).await;
+    gateway::spawn_gateways(&config.gateway, default_agent, on_message).await;
 }
 
 /// Bind a TCP listener and spawn the accept loop.

@@ -1,7 +1,7 @@
 [package]
-name = "walrus-channel"
-description = "Platform-agnostic messaging channel abstraction for OpenWalrus agents"
-documentation = "https://docs.rs/walrus-channel"
+name = "walrus-gateway"
+description = "Platform gateway (Telegram, Discord) for OpenWalrus agents"
+documentation = "https://docs.rs/walrus-gateway"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true

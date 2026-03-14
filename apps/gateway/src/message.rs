@@ -1,10 +1,10 @@
-//! Channel message types.
+//! Gateway message types.
 
 use compact_str::CompactString;
 
-/// A message received from or sent to a channel.
+/// A message received from or sent to a gateway.
 #[derive(Debug, Clone)]
-pub struct ChannelMessage {
+pub struct GatewayMessage {
     /// Platform chat/channel ID.
     pub chat_id: i64,
     /// Platform sender user ID.
@@ -49,8 +49,8 @@ pub enum AttachmentKind {
     Video,
 }
 
-impl From<ChannelMessage> for wcore::model::Message {
-    fn from(msg: ChannelMessage) -> Self {
+impl From<GatewayMessage> for wcore::model::Message {
+    fn from(msg: GatewayMessage) -> Self {
         wcore::model::Message::user(msg.content)
     }
 }

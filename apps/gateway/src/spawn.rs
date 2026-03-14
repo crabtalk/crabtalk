@@ -1,12 +1,12 @@
-//! Channel spawn logic.
+//! Gateway spawn logic.
 //!
 //! Connects configured platform bots (Telegram, Discord) and routes all
 //! messages through a single `on_message` callback that accepts a
 //! `ClientMessage` and returns a `ServerMessage` stream.
 
 use crate::command::parse_command;
-use crate::config::ChannelConfig;
-use crate::message::ChannelMessage;
+use crate::config::GatewayConfig;
+use crate::message::GatewayMessage;
 use compact_str::CompactString;
 use serenity::model::id::ChannelId;
 use std::{
@@ -28,14 +28,14 @@ use wcore::protocol::message::{
 /// to prevent agent-to-agent loops.
 type KnownBots = Arc<RwLock<HashSet<CompactString>>>;
 
-/// Connect configured channels and spawn message loops.
+/// Connect configured gateways and spawn message loops.
 ///
-/// Iterates all channel entries and spawns a transport for each one.
+/// Iterates all gateway entries and spawns a transport for each one.
 /// `default_agent` is used when an entry does not specify an agent.
 /// `on_message` dispatches any `ClientMessage` and returns a receiver for
 /// streamed `ServerMessage` results.
-pub async fn spawn_channels<C, CFut>(
-    config: &ChannelConfig,
+pub async fn spawn_gateways<C, CFut>(
+    config: &GatewayConfig,
     default_agent: CompactString,
     on_message: Arc<C>,
 ) where
@@ -90,7 +90,7 @@ async fn spawn_telegram<C, CFut>(
         }
     }
 
-    let (tx, rx) = mpsc::unbounded_channel::<ChannelMessage>();
+    let (tx, rx) = mpsc::unbounded_channel::<GatewayMessage>();
 
     let poll_bot = bot.clone();
     tokio::spawn(async move {
@@ -110,7 +110,7 @@ async fn spawn_discord<C, CFut>(
     C: Fn(ClientMessage) -> CFut + Send + Sync + 'static,
     CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
 {
-    let (msg_tx, msg_rx) = mpsc::unbounded_channel::<ChannelMessage>();
+    let (msg_tx, msg_rx) = mpsc::unbounded_channel::<GatewayMessage>();
     let (http_tx, http_rx) = tokio::sync::oneshot::channel();
 
     let token = token.to_owned();
@@ -139,7 +139,7 @@ async fn spawn_discord<C, CFut>(
 /// same chat reuse the same session. If a session is killed externally, the
 /// error triggers a retry with `session: None` to create a fresh session.
 async fn telegram_loop<C, CFut>(
-    mut rx: mpsc::UnboundedReceiver<ChannelMessage>,
+    mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
     bot: Bot,
     agent: CompactString,
     on_message: Arc<C>,
@@ -264,7 +264,7 @@ async fn telegram_loop<C, CFut>(
 /// Maintains a `chat_id → session_id` mapping so consecutive messages from the
 /// same chat reuse the same session. Same stale-session retry logic as Telegram.
 async fn discord_loop<C, CFut>(
-    mut rx: mpsc::UnboundedReceiver<ChannelMessage>,
+    mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
     http: Arc<serenity::http::Http>,
     agent: CompactString,
     on_message: Arc<C>,

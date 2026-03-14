@@ -5,7 +5,7 @@
 
 pub(crate) mod command;
 
-use crate::message::{Attachment, AttachmentKind, ChannelMessage};
+use crate::message::{Attachment, AttachmentKind, GatewayMessage};
 use compact_str::CompactString;
 use serenity::async_trait;
 use serenity::model::channel::Message;
@@ -15,9 +15,9 @@ use serenity::prelude::*;
 use std::{collections::HashSet, sync::Arc};
 use tokio::sync::{RwLock, mpsc, oneshot};
 
-/// Serenity event handler that forwards messages as [`ChannelMessage`]s.
+/// Serenity event handler that forwards messages as [`GatewayMessage`]s.
 struct Handler {
-    tx: mpsc::UnboundedSender<ChannelMessage>,
+    tx: mpsc::UnboundedSender<GatewayMessage>,
     http_tx: std::sync::Mutex<Option<oneshot::Sender<Arc<serenity::http::Http>>>>,
     known_bots: Arc<RwLock<HashSet<CompactString>>>,
 }
@@ -42,8 +42,8 @@ impl EventHandler for Handler {
     }
 }
 
-/// Convert a serenity `Message` to a `ChannelMessage`.
-fn convert_message(msg: Message) -> Option<ChannelMessage> {
+/// Convert a serenity `Message` to a `GatewayMessage`.
+fn convert_message(msg: Message) -> Option<GatewayMessage> {
     let chat_id = msg.channel_id.get() as i64;
     let sender_id = msg.author.id.get() as i64;
     let sender_name = CompactString::from(msg.author.name.as_str());
@@ -69,7 +69,7 @@ fn convert_message(msg: Message) -> Option<ChannelMessage> {
         })
         .collect();
 
-    Some(ChannelMessage {
+    Some(GatewayMessage {
         chat_id,
         sender_id,
         sender_name,
@@ -88,7 +88,7 @@ fn convert_message(msg: Message) -> Option<ChannelMessage> {
 /// then blocks on the gateway connection until shutdown.
 pub(crate) async fn event_loop(
     token: &str,
-    tx: mpsc::UnboundedSender<ChannelMessage>,
+    tx: mpsc::UnboundedSender<GatewayMessage>,
     http_tx: oneshot::Sender<Arc<serenity::http::Http>>,
     known_bots: Arc<RwLock<HashSet<CompactString>>>,
 ) {

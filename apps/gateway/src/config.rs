@@ -1,19 +1,19 @@
-//! Channel configuration types.
+//! Gateway configuration types.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Supported channel platforms.
+/// Supported gateway platforms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum ChannelType {
+pub enum GatewayType {
     /// Telegram bot via long-polling.
     Telegram,
     /// Discord bot via WebSocket gateway.
     Discord,
 }
 
-impl ChannelType {
+impl GatewayType {
     /// All known variants, in definition order.
     pub const VARIANTS: &[Self] = &[Self::Telegram, Self::Discord];
 
@@ -26,7 +26,7 @@ impl ChannelType {
     }
 }
 
-impl fmt::Display for ChannelType {
+impl fmt::Display for GatewayType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Telegram => f.write_str("Telegram"),
@@ -49,11 +49,11 @@ pub struct DiscordConfig {
     pub token: String,
 }
 
-/// Top-level channel configuration.
+/// Top-level gateway configuration.
 ///
-/// Deserialized from `[channel.telegram]` / `[channel.discord]` TOML tables.
+/// Deserialized from `[gateway.telegram]` / `[gateway.discord]` TOML tables.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ChannelConfig {
+pub struct GatewayConfig {
     /// Telegram bot config. Absent means no Telegram bot.
     pub telegram: Option<TelegramConfig>,
     /// Discord bot config. Absent means no Discord bot.

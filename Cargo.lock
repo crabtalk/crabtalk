@@ -5608,9 +5608,9 @@ dependencies = [
  "toml_edit 0.22.27",
  "tracing",
  "tracing-subscriber",
- "walrus-channel",
  "walrus-core",
  "walrus-daemon",
+ "walrus-gateway",
  "walrus-socket",
  "walrus-tcp",
 ]
@@ -8679,20 +8679,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "walrus-channel"
-version = "0.0.6"
-dependencies = [
- "compact_str 0.8.1",
- "futures-util",
- "serde",
- "serenity",
- "teloxide",
- "tokio",
- "tracing",
- "walrus-core",
-]
-
-[[package]]
 name = "walrus-core"
 version = "0.0.6"
 dependencies = [
@@ -8732,11 +8718,25 @@ dependencies = [
  "toml",
  "toml_edit 0.22.27",
  "tracing",
- "walrus-channel",
  "walrus-core",
+ "walrus-gateway",
  "walrus-model",
  "walrus-socket",
  "walrus-tcp",
+]
+
+[[package]]
+name = "walrus-gateway"
+version = "0.0.6"
+dependencies = [
+ "compact_str 0.8.1",
+ "futures-util",
+ "serde",
+ "serenity",
+ "teloxide",
+ "tokio",
+ "tracing",
+ "walrus-core",
 ]
 
 [[package]]

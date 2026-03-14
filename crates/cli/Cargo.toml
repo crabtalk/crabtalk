@@ -19,7 +19,7 @@ default = ["daemon"]
 daemon = ["dep:daemon"]
 
 [dependencies]
-channel.workspace = true
+gateway.workspace = true
 daemon = { workspace = true, optional = true }
 socket.workspace = true
 tcp.workspace = true

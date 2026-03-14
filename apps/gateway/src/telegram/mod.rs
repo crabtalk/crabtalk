@@ -5,7 +5,7 @@
 
 pub(crate) mod command;
 
-use crate::message::{Attachment, AttachmentKind, ChannelMessage};
+use crate::message::{Attachment, AttachmentKind, GatewayMessage};
 use compact_str::CompactString;
 use futures_util::StreamExt;
 use teloxide::prelude::*;
@@ -13,8 +13,8 @@ use teloxide::types::{ChatKind, UpdateKind};
 use teloxide::update_listeners::{AsUpdateStream, polling_default};
 use tokio::sync::mpsc;
 
-/// Long-poll loop: receives Telegram updates and forwards them as [`ChannelMessage`]s.
-pub(crate) async fn poll_loop(bot: Bot, tx: mpsc::UnboundedSender<ChannelMessage>) {
+/// Long-poll loop: receives Telegram updates and forwards them as [`GatewayMessage`]s.
+pub(crate) async fn poll_loop(bot: Bot, tx: mpsc::UnboundedSender<GatewayMessage>) {
     let mut listener = polling_default(bot).await;
     let stream = listener.as_stream();
     futures_util::pin_mut!(stream);
@@ -36,8 +36,8 @@ pub(crate) async fn poll_loop(bot: Bot, tx: mpsc::UnboundedSender<ChannelMessage
     }
 }
 
-/// Convert a teloxide `Update` to a `ChannelMessage`.
-fn convert_update(update: Update) -> Option<ChannelMessage> {
+/// Convert a teloxide `Update` to a `GatewayMessage`.
+fn convert_update(update: Update) -> Option<GatewayMessage> {
     let UpdateKind::Message(msg) = update.kind else {
         return None;
     };
@@ -72,7 +72,7 @@ fn convert_update(update: Update) -> Option<ChannelMessage> {
 
     let reply_to = msg.reply_to_message().map(|r| r.id.0);
 
-    Some(ChannelMessage {
+    Some(GatewayMessage {
         chat_id,
         sender_id,
         sender_name,

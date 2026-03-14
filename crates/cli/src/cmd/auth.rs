@@ -1,12 +1,12 @@
-//! Interactive TUI for configuring channel tokens.
+//! Interactive TUI for configuring gateway tokens.
 
 use anyhow::{Context, Result};
-use channel::ChannelType;
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use gateway::GatewayType;
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
@@ -333,7 +333,7 @@ fn render_list(frame: &mut Frame, state: &AuthState, area: Rect) {
 fn render_fields(frame: &mut Frame, state: &AuthState, area: Rect) {
     let name = PLATFORM_NAMES[state.selected];
     let token = state.current_token();
-    let channel_type = ChannelType::VARIANTS[state.selected];
+    let channel_type = GatewayType::VARIANTS[state.selected];
 
     let block = Block::default()
         .title(format!(" {name} "))
