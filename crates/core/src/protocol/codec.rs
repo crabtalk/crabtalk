@@ -1,10 +1,10 @@
 //! Length-prefixed framing codec for walrus wire protocol.
 //!
-//! Wire format: `[u32 BE length][MessagePack payload]`. The length is the byte
+//! Wire format: `[u32 BE length][protobuf payload]`. The length is the byte
 //! count of the payload only (not including the 4-byte header). Generic over
 //! `AsyncRead`/`AsyncWrite` — used by both UDS and TCP transports.
 
-use serde::{Serialize, de::DeserializeOwned};
+use prost::Message;
 use std::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -18,7 +18,7 @@ pub enum FrameError {
     Io(io::Error),
     /// Frame exceeds the maximum allowed size.
     TooLarge { size: u32 },
-    /// MessagePack serialization/deserialization error.
+    /// Protobuf serialization/deserialization error.
     Codec(String),
     /// The connection was closed (EOF during read).
     ConnectionClosed,
@@ -52,25 +52,19 @@ impl From<io::Error> for FrameError {
     }
 }
 
-impl From<rmp_serde::encode::Error> for FrameError {
-    fn from(e: rmp_serde::encode::Error) -> Self {
+impl From<prost::DecodeError> for FrameError {
+    fn from(e: prost::DecodeError) -> Self {
         Self::Codec(e.to_string())
     }
 }
 
-impl From<rmp_serde::decode::Error> for FrameError {
-    fn from(e: rmp_serde::decode::Error) -> Self {
-        Self::Codec(e.to_string())
-    }
-}
-
-/// Write a typed message as a length-prefixed MessagePack frame.
+/// Write a typed message as a length-prefixed protobuf frame.
 pub async fn write_message<W, T>(writer: &mut W, msg: &T) -> Result<(), FrameError>
 where
     W: tokio::io::AsyncWrite + Unpin,
-    T: Serialize,
+    T: Message,
 {
-    let data = rmp_serde::to_vec_named(msg)?;
+    let data = msg.encode_to_vec();
     let len = data.len() as u32;
     if len > MAX_FRAME_SIZE {
         return Err(FrameError::TooLarge { size: len });
@@ -81,11 +75,11 @@ where
     Ok(())
 }
 
-/// Read a length-prefixed MessagePack frame and deserialize into a typed message.
+/// Read a length-prefixed protobuf frame and deserialize into a typed message.
 pub async fn read_message<R, T>(reader: &mut R) -> Result<T, FrameError>
 where
     R: tokio::io::AsyncRead + Unpin,
-    T: DeserializeOwned,
+    T: Message + Default,
 {
     let mut len_buf = [0u8; 4];
     match reader.read_exact(&mut len_buf).await {
@@ -103,6 +97,6 @@ where
 
     let mut buf = vec![0u8; len as usize];
     reader.read_exact(&mut buf).await?;
-    let msg = rmp_serde::from_slice(&buf)?;
+    let msg = T::decode(&buf[..])?;
     Ok(msg)
 }

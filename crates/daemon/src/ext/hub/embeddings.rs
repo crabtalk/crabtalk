@@ -2,7 +2,7 @@
 
 use crate::ext::hub::DownloadRegistry;
 use wcore::paths::CONFIG_DIR;
-use wcore::protocol::message::server::DownloadKind;
+use wcore::protocol::message::DownloadKind;
 
 const EMBEDDINGS_MODEL: &str = "sentence-transformers/all-MiniLM-L6-v2";
 const EMBEDDINGS_FILES: &[&str] = &["config.json", "tokenizer.json", "model.safetensors"];

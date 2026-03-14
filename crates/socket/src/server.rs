@@ -6,7 +6,7 @@ use tokio::{
 };
 use wcore::protocol::{
     codec,
-    message::{client::ClientMessage, server::ServerMessage},
+    message::{ClientMessage, ServerMessage},
 };
 
 /// Accept connections on the given `UnixListener` until shutdown is signalled.

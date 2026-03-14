@@ -2,24 +2,22 @@
 
 use crate::daemon::Daemon;
 use anyhow::{Context, Result};
-use compact_str::CompactString;
 use futures_util::{StreamExt, pin_mut};
 use std::sync::Arc;
 use wcore::protocol::{
     api::Server,
     message::{
-        DownloadEvent, HubAction, MemoryOp, MemoryResult, SendRequest, SendResponse, StreamEvent,
-        StreamRequest, TaskEvent,
-        server::{
-            DownloadInfo, EntityInfo, JournalInfo, RelationInfo, SessionInfo, TaskInfo,
-            ToolCallInfo,
-        },
+        DownloadEvent, DownloadInfo, EntityInfo, EntityList, HubAction, JournalInfo, JournalList,
+        MemoryOp, MemoryResult, RelationInfo, RelationList, SendMsg, SendResponse, SessionInfo,
+        StreamChunk, StreamEnd, StreamEvent, StreamMsg, StreamStart, StreamThinking, TaskEvent,
+        TaskInfo, ToolCallInfo, ToolResultEvent, ToolStartEvent, ToolsCompleteEvent, memory_op,
+        memory_result, stream_event,
     },
 };
 use wcore::{AgentEvent, model::Model};
 
 impl Server for Daemon {
-    async fn send(&self, req: SendRequest) -> Result<SendResponse> {
+    async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
         let created_by = if sender.is_empty() { "user" } else { sender };
@@ -40,7 +38,7 @@ impl Server for Daemon {
 
     fn stream(
         &self,
-        req: StreamRequest,
+        req: StreamMsg,
     ) -> impl futures_core::Stream<Item = Result<StreamEvent>> + Send {
         let runtime = self.runtime.clone();
         let agent = req.agent;
@@ -55,31 +53,31 @@ impl Server for Daemon {
                 None => (rt.create_session(&agent, created_by.as_str()).await?, true),
             };
 
-            yield StreamEvent::Start { agent: agent.clone(), session: session_id };
+            yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: agent.clone(), session: session_id })) };
 
             let stream = rt.stream_to(session_id, &content, &sender);
             pin_mut!(stream);
             while let Some(event) = stream.next().await {
                 match event {
                     AgentEvent::TextDelta(text) => {
-                        yield StreamEvent::Chunk { content: text };
+                        yield StreamEvent { event: Some(stream_event::Event::Chunk(StreamChunk { content: text })) };
                     }
                     AgentEvent::ThinkingDelta(text) => {
-                        yield StreamEvent::Thinking { content: text };
+                        yield StreamEvent { event: Some(stream_event::Event::Thinking(StreamThinking { content: text })) };
                     }
                     AgentEvent::ToolCallsStart(calls) => {
-                        yield StreamEvent::ToolStart {
+                        yield StreamEvent { event: Some(stream_event::Event::ToolStart(ToolStartEvent {
                             calls: calls.into_iter().map(|c| ToolCallInfo {
-                                name: CompactString::from(c.function.name.as_str()),
+                                name: c.function.name.to_string(),
                                 arguments: c.function.arguments,
                             }).collect(),
-                        };
+                        })) };
                     }
                     AgentEvent::ToolResult { call_id, output } => {
-                        yield StreamEvent::ToolResult { call_id, output };
+                        yield StreamEvent { event: Some(stream_event::Event::ToolResult(ToolResultEvent { call_id: call_id.to_string(), output })) };
                     }
                     AgentEvent::ToolCallsComplete => {
-                        yield StreamEvent::ToolsComplete;
+                        yield StreamEvent { event: Some(stream_event::Event::ToolsComplete(ToolsCompleteEvent {})) };
                     }
                     AgentEvent::Done(resp) => {
                         if let wcore::AgentStopReason::Error(e) = &resp.stop_reason {
@@ -96,7 +94,7 @@ impl Server for Daemon {
                 rt.close_session(session_id).await;
             }
 
-            yield StreamEvent::End { agent: agent.clone() };
+            yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd { agent: agent.clone() })) };
         }
     }
 
@@ -112,9 +110,9 @@ impl Server for Daemon {
             let s = s.lock().await;
             infos.push(SessionInfo {
                 id: s.id,
-                agent: s.agent.clone(),
-                created_by: s.created_by.clone(),
-                message_count: s.history.len(),
+                agent: s.agent.to_string(),
+                created_by: s.created_by.to_string(),
+                message_count: s.history.len() as u64,
                 alive_secs: s.created_at.elapsed().as_secs(),
             });
         }
@@ -135,12 +133,12 @@ impl Server for Daemon {
             .map(|t| TaskInfo {
                 id: t.id,
                 parent_id: t.parent_id,
-                agent: t.agent.clone(),
+                agent: t.agent.to_string(),
                 status: t.status.to_string(),
                 description: t.description.clone(),
                 result: t.result.clone(),
                 error: t.error.clone(),
-                created_by: t.created_by.clone(),
+                created_by: t.created_by.to_string(),
                 prompt_tokens: t.prompt_tokens,
                 completion_tokens: t.completion_tokens,
                 alive_secs: t.created_at.elapsed().as_secs(),
@@ -190,7 +188,7 @@ impl Server for Daemon {
         Ok(registry.approve(task_id, response))
     }
 
-    async fn evaluate(&self, req: SendRequest) -> Result<bool> {
+    async fn evaluate(&self, req: SendMsg) -> Result<bool> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let agent = rt
             .get_agent(&req.agent)
@@ -254,13 +252,14 @@ impl Server for Daemon {
 
     fn hub(
         &self,
-        package: CompactString,
+        package: String,
         action: HubAction,
     ) -> impl futures_core::Stream<Item = Result<DownloadEvent>> + Send {
         let runtime = self.runtime.clone();
         async_stream::try_stream! {
             let rt = runtime.read().await.clone();
             let registry = rt.hook.downloads.clone();
+            let package = compact_str::CompactString::from(package.as_str());
             match action {
                 HubAction::Install => {
                     let s = crate::ext::hub::package::install(package, registry);
@@ -337,73 +336,83 @@ impl Server for Daemon {
     async fn memory_query(&self, query: MemoryOp) -> Result<MemoryResult> {
         let rt = self.runtime.read().await.clone();
         let lance = &rt.hook.memory.lance;
-        let default_limit = 50;
+        let default_limit = 50u32;
 
-        match query {
-            MemoryOp::Entities { entity_type, limit } => {
-                let limit = limit.unwrap_or(default_limit) as usize;
-                let entities = lance.list_entities(entity_type.as_deref(), limit).await?;
-                Ok(MemoryResult::Entities(
-                    entities
-                        .into_iter()
-                        .map(|e| EntityInfo {
-                            entity_type: e.entity_type.into(),
-                            key: e.key.into(),
-                            value: e.value,
-                            created_at: e.created_at,
-                        })
-                        .collect(),
-                ))
-            }
-            MemoryOp::Relations { entity_id, limit } => {
-                let limit = limit.unwrap_or(default_limit) as usize;
-                let relations = lance.list_relations(entity_id.as_deref(), limit).await?;
-                Ok(MemoryResult::Relations(
-                    relations
-                        .into_iter()
-                        .map(|r| RelationInfo {
-                            source_id: r.source.into(),
-                            relation: r.relation.into(),
-                            target_id: r.target.into(),
-                            created_at: r.created_at,
-                        })
-                        .collect(),
-                ))
-            }
-            MemoryOp::Journals { agent, limit } => {
-                let limit = limit.unwrap_or(default_limit) as usize;
-                let journals = lance.list_journals(agent.as_deref(), limit).await?;
-                Ok(MemoryResult::Journals(
-                    journals
-                        .into_iter()
-                        .map(|j| JournalInfo {
-                            summary: j.summary,
-                            agent: j.agent.into(),
-                            created_at: j.created_at,
-                        })
-                        .collect(),
-                ))
-            }
-            MemoryOp::Search {
-                query,
-                entity_type,
-                limit,
-            } => {
-                let limit = limit.unwrap_or(default_limit) as usize;
+        let op = query.op.ok_or_else(|| anyhow::anyhow!("empty memory op"))?;
+
+        match op {
+            memory_op::Op::Entities(req) => {
+                let limit = req.limit.unwrap_or(default_limit) as usize;
                 let entities = lance
-                    .search_entities(&query, entity_type.as_deref(), limit)
+                    .list_entities(req.entity_type.as_deref(), limit)
                     .await?;
-                Ok(MemoryResult::Entities(
-                    entities
-                        .into_iter()
-                        .map(|e| EntityInfo {
-                            entity_type: e.entity_type.into(),
-                            key: e.key.into(),
-                            value: e.value,
-                            created_at: e.created_at,
-                        })
-                        .collect(),
-                ))
+                Ok(MemoryResult {
+                    result: Some(memory_result::Result::Entities(EntityList {
+                        entities: entities
+                            .into_iter()
+                            .map(|e| EntityInfo {
+                                entity_type: e.entity_type,
+                                key: e.key,
+                                value: e.value,
+                                created_at: e.created_at,
+                            })
+                            .collect(),
+                    })),
+                })
+            }
+            memory_op::Op::Relations(req) => {
+                let limit = req.limit.unwrap_or(default_limit) as usize;
+                let relations = lance
+                    .list_relations(req.entity_id.as_deref(), limit)
+                    .await?;
+                Ok(MemoryResult {
+                    result: Some(memory_result::Result::Relations(RelationList {
+                        relations: relations
+                            .into_iter()
+                            .map(|r| RelationInfo {
+                                source_id: r.source,
+                                relation: r.relation,
+                                target_id: r.target,
+                                created_at: r.created_at,
+                            })
+                            .collect(),
+                    })),
+                })
+            }
+            memory_op::Op::Journals(req) => {
+                let limit = req.limit.unwrap_or(default_limit) as usize;
+                let journals = lance.list_journals(req.agent.as_deref(), limit).await?;
+                Ok(MemoryResult {
+                    result: Some(memory_result::Result::Journals(JournalList {
+                        journals: journals
+                            .into_iter()
+                            .map(|j| JournalInfo {
+                                summary: j.summary,
+                                agent: j.agent,
+                                created_at: j.created_at,
+                            })
+                            .collect(),
+                    })),
+                })
+            }
+            memory_op::Op::Search(req) => {
+                let limit = req.limit.unwrap_or(default_limit) as usize;
+                let entities = lance
+                    .search_entities(&req.query, req.entity_type.as_deref(), limit)
+                    .await?;
+                Ok(MemoryResult {
+                    result: Some(memory_result::Result::Entities(EntityList {
+                        entities: entities
+                            .into_iter()
+                            .map(|e| EntityInfo {
+                                entity_type: e.entity_type,
+                                key: e.key,
+                                value: e.value,
+                                created_at: e.created_at,
+                            })
+                            .collect(),
+                    })),
+                })
             }
         }
     }

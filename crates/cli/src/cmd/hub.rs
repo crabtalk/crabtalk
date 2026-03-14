@@ -4,7 +4,7 @@ use crate::repl::runner::Runner;
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use futures_util::StreamExt;
-use wcore::protocol::message::{DownloadEvent, HubAction};
+use wcore::protocol::message::{HubAction, download_event};
 
 /// Manage hub packages.
 #[derive(Args, Debug)]
@@ -41,13 +41,13 @@ impl Hub {
         futures_util::pin_mut!(stream);
         while let Some(result) = stream.next().await {
             match result? {
-                DownloadEvent::Created { label, .. } => {
-                    println!("Starting hub operation for {label}...");
+                download_event::Event::Created(c) => {
+                    println!("Starting hub operation for {}...", c.label);
                 }
-                DownloadEvent::Step { message, .. } => println!("  {message}"),
-                DownloadEvent::Completed { .. } => println!("Done: {package}"),
-                DownloadEvent::Failed { error, .. } => {
-                    anyhow::bail!("hub operation failed: {error}");
+                download_event::Event::Step(s) => println!("  {}", s.message),
+                download_event::Event::Completed(_) => println!("Done: {package}"),
+                download_event::Event::Failed(f) => {
+                    anyhow::bail!("hub operation failed: {}", f.error);
                 }
                 _ => {}
             }

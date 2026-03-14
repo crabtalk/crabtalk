@@ -15,7 +15,7 @@ use wcore::{
     ToolRequest,
     protocol::{
         api::Server,
-        message::{client::ClientMessage, server::ServerMessage},
+        message::{ClientMessage, ServerMessage},
     },
 };
 
@@ -117,12 +117,12 @@ impl Daemon {
                     }
                 }
 
-                let msg = ClientMessage::Send {
-                    agent: agent.clone(),
+                let msg = ClientMessage::from(wcore::protocol::message::SendMsg {
+                    agent: agent.to_string(),
                     content,
                     session: None,
                     sender: None,
-                };
+                });
                 let (reply_tx, _reply_rx) = mpsc::unbounded_channel();
                 let _ = daemon.event_tx.send(DaemonEvent::Message {
                     msg,

@@ -21,7 +21,7 @@ use std::{
 use tokio::sync::{RwLock, broadcast, mpsc, oneshot};
 use wcore::AgentConfig;
 use wcore::Runtime;
-use wcore::protocol::message::client::ClientMessage;
+use wcore::protocol::message::ClientMessage;
 
 pub(crate) mod builder;
 pub mod event;

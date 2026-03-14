@@ -19,7 +19,7 @@ use tokio::sync::Mutex;
 use wcore::{
     AgentConfig, AgentEvent, Hook, ToolRegistry,
     model::Message,
-    protocol::whs::{WhsRequest, WhsResponse},
+    protocol::whs::{WhsError, WhsRequest, WhsToolCall, WhsToolResult, whs_request, whs_response},
 };
 
 pub mod mcp;
@@ -193,16 +193,22 @@ impl DaemonHook {
     ) -> Option<String> {
         let registry = self.registry.as_ref()?;
         let handle = registry.tools.get(name)?;
-        let req = WhsRequest::ToolCall {
-            name: CompactString::from(name),
-            args: args.to_owned(),
-            agent: CompactString::from(agent),
-            task_id,
+        let req = WhsRequest {
+            msg: Some(whs_request::Msg::ToolCall(WhsToolCall {
+                name: name.to_owned(),
+                args: args.to_owned(),
+                agent: agent.to_owned(),
+                task_id,
+            })),
         };
         match tokio::time::timeout(std::time::Duration::from_secs(30), handle.request(&req)).await {
-            Ok(Ok(WhsResponse::ToolResult { result })) => Some(result),
-            Ok(Ok(WhsResponse::Error { message })) => Some(format!("service error: {message}")),
-            Ok(Ok(other)) => Some(format!("unexpected response: {other:?}")),
+            Ok(Ok(resp)) => match resp.msg {
+                Some(whs_response::Msg::ToolResult(WhsToolResult { result })) => Some(result),
+                Some(whs_response::Msg::Error(WhsError { message })) => {
+                    Some(format!("service error: {message}"))
+                }
+                other => Some(format!("unexpected response: {other:?}")),
+            },
             Ok(Err(e)) => Some(format!("service unavailable: {name} ({e})")),
             Err(_) => Some(format!("service timeout: {name}")),
         }

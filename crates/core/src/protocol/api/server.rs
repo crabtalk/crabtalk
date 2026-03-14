@@ -1,14 +1,36 @@
 //! Server trait — one async method per protocol operation.
 
 use crate::protocol::message::{
-    DownloadEvent, HubAction, MemoryOp, MemoryResult, SendRequest, SendResponse, StreamEvent,
-    StreamRequest, TaskEvent,
-    client::ClientMessage,
-    server::{DownloadInfo, ServerMessage, SessionInfo, TaskInfo},
+    ClientMessage, ConfigMsg, DownloadEvent, DownloadInfo, DownloadList, ErrorMsg, EvaluationMsg,
+    HubAction, MemoryOp, MemoryResult, Pong, SendMsg, SendResponse, ServerMessage, SessionInfo,
+    SessionList, StreamEvent, StreamMsg, TaskEvent, TaskInfo, TaskList, client_message,
+    server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
 use futures_util::StreamExt;
+
+/// Construct an error `ServerMessage`.
+fn server_error(code: u32, message: String) -> ServerMessage {
+    ServerMessage {
+        msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+    }
+}
+
+/// Construct a pong `ServerMessage`.
+fn server_pong() -> ServerMessage {
+    ServerMessage {
+        msg: Some(server_message::Msg::Pong(Pong {})),
+    }
+}
+
+/// Convert a typed `Result` into a `ServerMessage`.
+fn result_to_msg<T: Into<ServerMessage>>(result: Result<T>) -> ServerMessage {
+    match result {
+        Ok(resp) => resp.into(),
+        Err(e) => server_error(500, e.to_string()),
+    }
+}
 
 /// Server-side protocol handler.
 ///
@@ -21,13 +43,10 @@ use futures_util::StreamExt;
 /// `ServerMessage`s.
 pub trait Server: Sync {
     /// Handle `Send` — run agent and return complete response.
-    fn send(
-        &self,
-        req: SendRequest,
-    ) -> impl std::future::Future<Output = Result<SendResponse>> + Send;
+    fn send(&self, req: SendMsg) -> impl std::future::Future<Output = Result<SendResponse>> + Send;
 
     /// Handle `Stream` — run agent and stream response events.
-    fn stream(&self, req: StreamRequest) -> impl Stream<Item = Result<StreamEvent>> + Send;
+    fn stream(&self, req: StreamMsg) -> impl Stream<Item = Result<StreamEvent>> + Send;
 
     /// Handle `Ping` — keepalive.
     fn ping(&self) -> impl std::future::Future<Output = Result<()>> + Send;
@@ -35,7 +54,7 @@ pub trait Server: Sync {
     /// Handle `Hub` — install or uninstall a hub package.
     fn hub(
         &self,
-        package: compact_str::CompactString,
+        package: String,
         action: HubAction,
     ) -> impl Stream<Item = Result<DownloadEvent>> + Send;
 
@@ -59,7 +78,7 @@ pub trait Server: Sync {
     ) -> impl std::future::Future<Output = Result<bool>> + Send;
 
     /// Handle `Evaluate` — decide whether the agent should respond (DD#39).
-    fn evaluate(&self, req: SendRequest) -> impl std::future::Future<Output = Result<bool>> + Send;
+    fn evaluate(&self, req: SendMsg) -> impl std::future::Future<Output = Result<bool>> + Send;
 
     /// Handle `SubscribeTasks` — stream task lifecycle events.
     fn subscribe_tasks(&self) -> impl Stream<Item = Result<TaskEvent>> + Send;
@@ -89,161 +108,145 @@ pub trait Server: Sync {
     /// yield exactly one message; streaming operations yield many.
     fn dispatch(&self, msg: ClientMessage) -> impl Stream<Item = ServerMessage> + Send + '_ {
         async_stream::stream! {
-            match msg {
-                ClientMessage::Send { agent, content, session, sender } => {
-                    yield result_to_msg(self.send(SendRequest { agent, content, session, sender }).await);
+            let Some(inner) = msg.msg else {
+                yield server_error(400, "empty client message".to_string());
+                return;
+            };
+
+            match inner {
+                client_message::Msg::Send(send_msg) => {
+                    yield result_to_msg(self.send(send_msg).await);
                 }
-                ClientMessage::Stream { agent, content, session, sender } => {
-                    let s = self.stream(StreamRequest { agent, content, session, sender });
+                client_message::Msg::Stream(stream_msg) => {
+                    let s = self.stream(stream_msg);
                     tokio::pin!(s);
                     while let Some(result) = s.next().await {
                         yield result_to_msg(result);
                     }
                 }
-                ClientMessage::Ping => {
+                client_message::Msg::Ping(_) => {
                     yield match self.ping().await {
-                        Ok(()) => ServerMessage::Pong,
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
-                        },
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                ClientMessage::Hub { package, action } => {
-                    let s = self.hub(package, action);
+                client_message::Msg::Hub(hub_msg) => {
+                    let action = hub_msg.action();
+                    let s = self.hub(hub_msg.package, action);
                     tokio::pin!(s);
                     while let Some(result) = s.next().await {
                         yield result_to_msg(result);
                     }
                 }
-                ClientMessage::Sessions => {
+                client_message::Msg::Sessions(_) => {
                     yield match self.list_sessions().await {
-                        Ok(sessions) => ServerMessage::Sessions(sessions),
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
+                        Ok(sessions) => ServerMessage {
+                            msg: Some(server_message::Msg::Sessions(SessionList { sessions })),
                         },
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                ClientMessage::Kill { session } => {
-                    yield match self.kill_session(session).await {
-                        Ok(true) => ServerMessage::Pong,
-                        Ok(false) => ServerMessage::Error {
-                            code: 404,
-                            message: format!("session {session} not found"),
-                        },
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
-                        },
+                client_message::Msg::Kill(kill_msg) => {
+                    yield match self.kill_session(kill_msg.session).await {
+                        Ok(true) => server_pong(),
+                        Ok(false) => server_error(
+                            404,
+                            format!("session {} not found", kill_msg.session),
+                        ),
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                ClientMessage::Tasks => {
+                client_message::Msg::Tasks(_) => {
                     yield match self.list_tasks().await {
-                        Ok(tasks) => ServerMessage::Tasks(tasks),
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
+                        Ok(tasks) => ServerMessage {
+                            msg: Some(server_message::Msg::Tasks(TaskList { tasks })),
                         },
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                ClientMessage::KillTask { task_id } => {
-                    yield match self.kill_task(task_id).await {
-                        Ok(true) => ServerMessage::Pong,
-                        Ok(false) => ServerMessage::Error {
-                            code: 404,
-                            message: format!("task {task_id} not found"),
-                        },
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
-                        },
+                client_message::Msg::KillTask(kill_task_msg) => {
+                    yield match self.kill_task(kill_task_msg.task_id).await {
+                        Ok(true) => server_pong(),
+                        Ok(false) => server_error(
+                            404,
+                            format!("task {} not found", kill_task_msg.task_id),
+                        ),
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                ClientMessage::Approve { task_id, response } => {
-                    yield match self.approve_task(task_id, response).await {
-                        Ok(true) => ServerMessage::Pong,
-                        Ok(false) => ServerMessage::Error {
-                            code: 404,
-                            message: format!("task {task_id} not found or not blocked"),
-                        },
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
-                        },
+                client_message::Msg::Approve(approve_msg) => {
+                    yield match self.approve_task(approve_msg.task_id, approve_msg.response).await {
+                        Ok(true) => server_pong(),
+                        Ok(false) => server_error(
+                            404,
+                            format!("task {} not found or not blocked", approve_msg.task_id),
+                        ),
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                ClientMessage::Evaluate { agent, content, session, sender } => {
-                    yield match self.evaluate(SendRequest { agent, content, session, sender }).await {
-                        Ok(respond) => ServerMessage::Evaluation { respond },
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
+                client_message::Msg::Evaluate(eval_msg) => {
+                    let req = SendMsg {
+                        agent: eval_msg.agent,
+                        content: eval_msg.content,
+                        session: eval_msg.session,
+                        sender: eval_msg.sender,
+                    };
+                    yield match self.evaluate(req).await {
+                        Ok(respond) => ServerMessage {
+                            msg: Some(server_message::Msg::Evaluation(EvaluationMsg { respond })),
                         },
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                ClientMessage::SubscribeTasks => {
+                client_message::Msg::SubscribeTasks(_) => {
                     let s = self.subscribe_tasks();
                     tokio::pin!(s);
                     while let Some(result) = s.next().await {
                         yield result_to_msg(result);
                     }
                 }
-                ClientMessage::Downloads => {
+                client_message::Msg::Downloads(_) => {
                     yield match self.list_downloads().await {
-                        Ok(downloads) => ServerMessage::Downloads(downloads),
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
+                        Ok(downloads) => ServerMessage {
+                            msg: Some(server_message::Msg::Downloads(DownloadList { downloads })),
                         },
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                ClientMessage::SubscribeDownloads => {
+                client_message::Msg::SubscribeDownloads(_) => {
                     let s = self.subscribe_downloads();
                     tokio::pin!(s);
                     while let Some(result) = s.next().await {
                         yield result_to_msg(result);
                     }
                 }
-                ClientMessage::GetConfig => {
+                client_message::Msg::GetConfig(_) => {
                     yield match self.get_config().await {
-                        Ok(config) => ServerMessage::Config { config },
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
+                        Ok(config) => ServerMessage {
+                            msg: Some(server_message::Msg::Config(ConfigMsg { config })),
                         },
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                ClientMessage::SetConfig { config } => {
-                    yield match self.set_config(config).await {
-                        Ok(()) => ServerMessage::Pong,
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
-                        },
+                client_message::Msg::SetConfig(set_config_msg) => {
+                    yield match self.set_config(set_config_msg.config).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                ClientMessage::MemoryQuery { query } => {
+                client_message::Msg::MemoryQuery(memory_query_msg) => {
+                    let Some(query) = memory_query_msg.query else {
+                        yield server_error(400, "empty memory query".to_string());
+                        return;
+                    };
                     yield match self.memory_query(query).await {
-                        Ok(result) => ServerMessage::Memory(result),
-                        Err(e) => ServerMessage::Error {
-                            code: 500,
-                            message: e.to_string(),
+                        Ok(result) => ServerMessage {
+                            msg: Some(server_message::Msg::Memory(result)),
                         },
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
             }
         }
-    }
-}
-
-/// Convert a typed `Result` into a `ServerMessage`.
-fn result_to_msg<T: Into<ServerMessage>>(result: Result<T>) -> ServerMessage {
-    match result {
-        Ok(resp) => resp.into(),
-        Err(e) => ServerMessage::Error {
-            code: 500,
-            message: e.to_string(),
-        },
     }
 }

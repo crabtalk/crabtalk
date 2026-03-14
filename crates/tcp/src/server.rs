@@ -7,7 +7,7 @@ use tokio::{
 };
 use wcore::protocol::{
     codec,
-    message::{client::ClientMessage, server::ServerMessage},
+    message::{ClientMessage, ServerMessage},
 };
 
 /// Default TCP port for the walrus daemon.

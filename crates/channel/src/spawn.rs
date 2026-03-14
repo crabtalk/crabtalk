@@ -16,7 +16,10 @@ use std::{
 };
 use teloxide::prelude::*;
 use tokio::sync::{RwLock, mpsc};
-use wcore::protocol::message::{client::ClientMessage, server::ServerMessage};
+use wcore::protocol::message::{
+    ClientMessage, EvaluateMsg, EvaluationMsg, SendMsg, ServerMessage, client_message,
+    server_message,
+};
 
 /// Shared set of sender IDs belonging to sibling Walrus bots.
 ///
@@ -189,29 +192,35 @@ async fn telegram_loop<C, CFut>(
             tracing::debug!(%agent, chat_id, "agent declined to respond in group");
             continue;
         }
-        let client_msg = ClientMessage::Send {
-            agent: agent.clone(),
+        let client_msg = ClientMessage::from(SendMsg {
+            agent: agent.clone().into(),
             content: content.clone(),
             session,
-            sender: Some(sender.clone()),
-        };
-        let mut reply_rx = on_message(client_msg).await;
+            sender: Some(sender.to_string()),
+        });
+        let mut reply_rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(client_msg).await;
         let mut retry = false;
         while let Some(server_msg) = reply_rx.recv().await {
             match server_msg {
-                ServerMessage::Response(resp) => {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Response(resp)),
+                } => {
                     sessions.insert(chat_id, resp.session);
                     if let Err(e) = bot.send_message(ChatId(chat_id), resp.content).await {
                         tracing::warn!(%agent, "failed to send channel reply: {e}");
                     }
                 }
-                ServerMessage::Error { ref message, .. } if session.is_some() => {
-                    tracing::warn!(%agent, chat_id, "session error, retrying: {message}");
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ref err)),
+                } if session.is_some() => {
+                    tracing::warn!(%agent, chat_id, "session error, retrying: {}", err.message);
                     sessions.remove(&chat_id);
                     retry = true;
                 }
-                ServerMessage::Error { message, .. } => {
-                    tracing::warn!(%agent, chat_id, "dispatch error: {message}");
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(err)),
+                } => {
+                    tracing::warn!(%agent, chat_id, "dispatch error: {}", err.message);
                 }
                 _ => {}
             }
@@ -219,23 +228,27 @@ async fn telegram_loop<C, CFut>(
 
         // Retry with a fresh session if the previous one was stale.
         if retry {
-            let client_msg = ClientMessage::Send {
-                agent: agent.clone(),
+            let client_msg = ClientMessage::from(SendMsg {
+                agent: agent.clone().into(),
                 content,
                 session: None,
-                sender: Some(sender),
-            };
-            let mut reply_rx = on_message(client_msg).await;
+                sender: Some(sender.to_string()),
+            });
+            let mut reply_rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(client_msg).await;
             while let Some(server_msg) = reply_rx.recv().await {
                 match server_msg {
-                    ServerMessage::Response(resp) => {
+                    ServerMessage {
+                        msg: Some(server_message::Msg::Response(resp)),
+                    } => {
                         sessions.insert(chat_id, resp.session);
                         if let Err(e) = bot.send_message(ChatId(chat_id), resp.content).await {
                             tracing::warn!(%agent, "failed to send channel reply: {e}");
                         }
                     }
-                    ServerMessage::Error { message, .. } => {
-                        tracing::warn!(%agent, chat_id, "dispatch error on retry: {message}");
+                    ServerMessage {
+                        msg: Some(server_message::Msg::Error(err)),
+                    } => {
+                        tracing::warn!(%agent, chat_id, "dispatch error on retry: {}", err.message);
                     }
                     _ => {}
                 }
@@ -304,27 +317,33 @@ async fn discord_loop<C, CFut>(
             continue;
         }
 
-        let client_msg = ClientMessage::Send {
-            agent: agent.clone(),
+        let client_msg = ClientMessage::from(SendMsg {
+            agent: agent.clone().into(),
             content: content.clone(),
             session,
-            sender: Some(sender.clone()),
-        };
-        let mut reply_rx = on_message(client_msg).await;
+            sender: Some(sender.to_string()),
+        });
+        let mut reply_rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(client_msg).await;
         let mut retry = false;
         while let Some(server_msg) = reply_rx.recv().await {
             match server_msg {
-                ServerMessage::Response(resp) => {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Response(resp)),
+                } => {
                     sessions.insert(chat_id, resp.session);
                     crate::discord::send_text(&http, channel_id, resp.content).await;
                 }
-                ServerMessage::Error { ref message, .. } if session.is_some() => {
-                    tracing::warn!(%agent, chat_id, "session error, retrying: {message}");
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ref err)),
+                } if session.is_some() => {
+                    tracing::warn!(%agent, chat_id, "session error, retrying: {}", err.message);
                     sessions.remove(&chat_id);
                     retry = true;
                 }
-                ServerMessage::Error { message, .. } => {
-                    tracing::warn!(%agent, chat_id, "dispatch error: {message}");
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(err)),
+                } => {
+                    tracing::warn!(%agent, chat_id, "dispatch error: {}", err.message);
                 }
                 _ => {}
             }
@@ -332,21 +351,25 @@ async fn discord_loop<C, CFut>(
 
         // Retry with a fresh session if the previous one was stale.
         if retry {
-            let client_msg = ClientMessage::Send {
-                agent: agent.clone(),
+            let client_msg = ClientMessage::from(SendMsg {
+                agent: agent.clone().into(),
                 content,
                 session: None,
-                sender: Some(sender),
-            };
-            let mut reply_rx = on_message(client_msg).await;
+                sender: Some(sender.to_string()),
+            });
+            let mut reply_rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(client_msg).await;
             while let Some(server_msg) = reply_rx.recv().await {
                 match server_msg {
-                    ServerMessage::Response(resp) => {
+                    ServerMessage {
+                        msg: Some(server_message::Msg::Response(resp)),
+                    } => {
                         sessions.insert(chat_id, resp.session);
                         crate::discord::send_text(&http, channel_id, resp.content).await;
                     }
-                    ServerMessage::Error { message, .. } => {
-                        tracing::warn!(%agent, chat_id, "dispatch error on retry: {message}");
+                    ServerMessage {
+                        msg: Some(server_message::Msg::Error(err)),
+                    } => {
+                        tracing::warn!(%agent, chat_id, "dispatch error on retry: {}", err.message);
                     }
                     _ => {}
                 }
@@ -374,15 +397,19 @@ where
     C: Fn(ClientMessage) -> CFut + Send + Sync + 'static,
     CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
 {
-    let eval_msg = ClientMessage::Evaluate {
-        agent: agent.clone(),
-        content: content.to_owned(),
-        session,
-        sender: Some(sender.clone()),
+    let eval_msg = ClientMessage {
+        msg: Some(client_message::Msg::Evaluate(EvaluateMsg {
+            agent: agent.clone().into(),
+            content: content.to_owned(),
+            session,
+            sender: Some(sender.to_string()),
+        })),
     };
-    let mut rx = on_message(eval_msg).await;
+    let mut rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(eval_msg).await;
     match rx.recv().await {
-        Some(ServerMessage::Evaluation { respond }) => respond,
+        Some(ServerMessage {
+            msg: Some(server_message::Msg::Evaluation(EvaluationMsg { respond })),
+        }) => respond,
         _ => {
             tracing::warn!(%agent, "evaluate returned unexpected response, defaulting to respond");
             true

@@ -7,7 +7,7 @@ use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use wcore::protocol::{
     api::Client,
     codec,
-    message::{client::ClientMessage, server::ServerMessage},
+    message::{ClientMessage, ErrorMsg, ServerMessage, server_message},
 };
 
 /// Client configuration for connecting to a walrus daemon.
@@ -84,7 +84,7 @@ impl Client for Connection {
                 let server_msg: ServerMessage = codec::read_message(&mut self.reader).await?;
 
                 match &server_msg {
-                    ServerMessage::Error { code, message } => {
+                    ServerMessage { msg: Some(server_message::Msg::Error(ErrorMsg { code, message })) } => {
                         Err(anyhow::anyhow!("server error ({code}): {message}"))?;
                     }
                     _ => yield server_msg,

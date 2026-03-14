@@ -4,13 +4,12 @@
 //! progress back to the originating Telegram chat.
 
 use crate::command::BotCommand;
-use compact_str::CompactString;
 use std::{future::Future, sync::Arc};
 use teloxide::prelude::*;
 use tokio::sync::mpsc;
 use wcore::protocol::message::{
-    client::{ClientMessage, HubAction},
-    server::{DownloadEvent, ServerMessage},
+    ClientMessage, DownloadCreated, DownloadStep, HubAction, HubMsg, ServerMessage, client_message,
+    download_event, server_message,
 };
 
 /// Execute a bot command, streaming progress messages back to the originating chat.
@@ -24,36 +23,45 @@ pub(crate) async fn dispatch_command<C, CFut>(
     CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
 {
     let msg = match cmd {
-        BotCommand::HubInstall { package } => ClientMessage::Hub {
-            package: CompactString::from(&package),
-            action: HubAction::Install,
+        BotCommand::HubInstall { package } => ClientMessage {
+            msg: Some(client_message::Msg::Hub(HubMsg {
+                package,
+                action: HubAction::Install as i32,
+            })),
         },
-        BotCommand::HubUninstall { package } => ClientMessage::Hub {
-            package: CompactString::from(&package),
-            action: HubAction::Uninstall,
+        BotCommand::HubUninstall { package } => ClientMessage {
+            msg: Some(client_message::Msg::Hub(HubMsg {
+                package,
+                action: HubAction::Uninstall as i32,
+            })),
         },
     };
 
-    let mut rx = on_message(msg).await;
+    let mut rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(msg).await;
     while let Some(server_msg) = rx.recv().await {
         match server_msg {
-            ServerMessage::Download(event) => match event {
-                DownloadEvent::Created { label, .. } => {
+            ServerMessage {
+                msg: Some(server_message::Msg::Download(event)),
+            } => match event.event {
+                Some(download_event::Event::Created(DownloadCreated { label, .. })) => {
                     send_text(&bot, chat_id, format!("Starting: {label}...")).await;
                 }
-                DownloadEvent::Step { message, .. } => {
+                Some(download_event::Event::Step(DownloadStep { message, .. })) => {
                     send_text(&bot, chat_id, format!("  {message}")).await;
                 }
-                DownloadEvent::Progress { .. } => {}
-                DownloadEvent::Completed { .. } => {
+                Some(download_event::Event::Progress(_)) => {}
+                Some(download_event::Event::Completed(_)) => {
                     send_text(&bot, chat_id, "Done".to_string()).await;
                 }
-                DownloadEvent::Failed { error, .. } => {
-                    send_text(&bot, chat_id, format!("Failed: {error}")).await;
+                Some(download_event::Event::Failed(f)) => {
+                    send_text(&bot, chat_id, format!("Failed: {}", f.error)).await;
                 }
+                None => {}
             },
-            ServerMessage::Error { message, .. } => {
-                tracing::warn!("command error: {message}");
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(err)),
+            } => {
+                tracing::warn!("command error: {}", err.message);
             }
             _ => {}
         }

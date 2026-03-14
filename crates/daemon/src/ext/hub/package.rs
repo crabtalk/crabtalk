@@ -6,7 +6,9 @@ use compact_str::CompactString;
 use std::path::Path;
 use tokio::process::Command;
 use wcore::paths::CONFIG_DIR;
-use wcore::protocol::message::server::{DownloadEvent, DownloadKind};
+use wcore::protocol::message::{
+    DownloadCompleted, DownloadCreated, DownloadEvent, DownloadKind, DownloadStep, download_event,
+};
 
 /// Remote URL of the walrus hub repository.
 const WALRUS_HUB: &str = "https://github.com/openwalrus/hub";
@@ -24,10 +26,12 @@ pub fn install(
             .lock()
             .await
             .start(DownloadKind::Hub, package.to_string());
-        yield DownloadEvent::Created {
-            id,
-            kind: DownloadKind::Hub,
-            label: package.to_string(),
+        yield DownloadEvent {
+            event: Some(download_event::Event::Created(DownloadCreated {
+                id,
+                kind: DownloadKind::Hub as i32,
+                label: package.to_string(),
+            })),
         };
 
         // Sync hub repo (clone or update).
@@ -41,7 +45,9 @@ pub fn install(
         if !manifest.mcp_servers.is_empty() {
             let msg = "adding MCP servers…".to_string();
             registry.lock().await.step(id, msg.clone());
-            yield DownloadEvent::Step { id, message: msg };
+            yield DownloadEvent {
+                event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+            };
             merge_mcp_servers(&manifest)?;
         }
 
@@ -49,7 +55,9 @@ pub fn install(
         if !manifest.skills.is_empty() {
             let msg = "installing skills…".to_string();
             registry.lock().await.step(id, msg.clone());
-            yield DownloadEvent::Step { id, message: msg };
+            yield DownloadEvent {
+                event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+            };
             let cache_dir = CONFIG_DIR.join(".cache").join("skills");
             let skills_dir = CONFIG_DIR.join("skills");
             std::fs::create_dir_all(&cache_dir).context("failed to create skill cache dir")?;
@@ -58,7 +66,9 @@ pub fn install(
             for (key, skill) in &manifest.skills {
                 let msg = format!("installing skill {key}…");
                 registry.lock().await.step(id, msg.clone());
-                yield DownloadEvent::Step { id, message: msg };
+                yield DownloadEvent {
+                    event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+                };
                 let cache_dest = cache_dir.join(key.as_str());
                 git_sync(&skill.repo, &cache_dest)
                     .await
@@ -76,7 +86,9 @@ pub fn install(
         }
 
         registry.lock().await.complete(id);
-        yield DownloadEvent::Completed { id };
+        yield DownloadEvent {
+            event: Some(download_event::Event::Completed(DownloadCompleted { id })),
+        };
     }
 }
 
@@ -93,10 +105,12 @@ pub fn uninstall(
             .lock()
             .await
             .start(DownloadKind::Hub, package.to_string());
-        yield DownloadEvent::Created {
-            id,
-            kind: DownloadKind::Hub,
-            label: package.to_string(),
+        yield DownloadEvent {
+            event: Some(download_event::Event::Created(DownloadCreated {
+                id,
+                kind: DownloadKind::Hub as i32,
+                label: package.to_string(),
+            })),
         };
 
         let (scope, name) = parse_package(&package)?;
@@ -105,14 +119,18 @@ pub fn uninstall(
         if !manifest.mcp_servers.is_empty() {
             let msg = "removing MCP servers…".to_string();
             registry.lock().await.step(id, msg.clone());
-            yield DownloadEvent::Step { id, message: msg };
+            yield DownloadEvent {
+                event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+            };
             remove_mcp_servers(&manifest)?;
         }
 
         if !manifest.skills.is_empty() {
             let msg = "removing skills…".to_string();
             registry.lock().await.step(id, msg.clone());
-            yield DownloadEvent::Step { id, message: msg };
+            yield DownloadEvent {
+                event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+            };
             let skills_dir = CONFIG_DIR.join("skills");
             for key in manifest.skills.keys() {
                 let dst = skills_dir.join(key.as_str());
@@ -124,7 +142,9 @@ pub fn uninstall(
         }
 
         registry.lock().await.complete(id);
-        yield DownloadEvent::Completed { id };
+        yield DownloadEvent {
+            event: Some(download_event::Event::Completed(DownloadCompleted { id })),
+        };
     }
 }
 

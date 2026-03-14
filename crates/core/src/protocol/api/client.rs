@@ -1,8 +1,10 @@
 //! Client trait — transport primitives plus typed provided methods.
 
 use crate::protocol::message::{
-    DownloadEvent, HubRequest, MemoryOp, MemoryResult, SendRequest, SendResponse, StreamEvent,
-    StreamRequest, TaskEvent, client::ClientMessage, server::ServerMessage,
+    ClientMessage, ConfigMsg, DownloadEvent, ErrorMsg, GetConfig, HubMsg, MemoryOp, MemoryQueryMsg,
+    Ping, SendMsg, SendResponse, ServerMessage, SetConfigMsg, StreamEvent, StreamMsg,
+    SubscribeDownloads, SubscribeTasks, client_message, download_event, memory_result,
+    server_message, stream_event, task_event,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -35,7 +37,7 @@ pub trait Client: Send {
     /// Send a message to an agent and receive a complete response.
     fn send(
         &mut self,
-        req: SendRequest,
+        req: SendMsg,
     ) -> impl std::future::Future<Output = Result<SendResponse>> + Send {
         async move { SendResponse::try_from(self.request(req.into()).await?) }
     }
@@ -43,36 +45,58 @@ pub trait Client: Send {
     /// Send a message to an agent and receive a streamed response.
     fn stream(
         &mut self,
-        req: StreamRequest,
-    ) -> impl Stream<Item = Result<StreamEvent>> + Send + '_ {
+        req: StreamMsg,
+    ) -> impl Stream<Item = Result<stream_event::Event>> + Send + '_ {
         self.request_stream(req.into())
             .take_while(|r| {
                 std::future::ready(!matches!(
                     r,
-                    Ok(ServerMessage::Stream(StreamEvent::End { .. }))
+                    Ok(ServerMessage {
+                        msg: Some(server_message::Msg::Stream(StreamEvent {
+                            event: Some(stream_event::Event::End(_))
+                        }))
+                    })
                 ))
             })
-            .map(|r| r.and_then(StreamEvent::try_from))
+            .map(|r| r.and_then(stream_event::Event::try_from))
     }
 
     /// Install or uninstall a hub package, streaming download events.
-    fn hub(&mut self, req: HubRequest) -> impl Stream<Item = Result<DownloadEvent>> + Send + '_ {
-        self.request_stream(req.into())
-            .take_while(|r| {
-                std::future::ready(!matches!(
-                    r,
-                    Ok(ServerMessage::Download(DownloadEvent::Completed { .. }))
-                ))
-            })
-            .map(|r| r.and_then(DownloadEvent::try_from))
+    fn hub(
+        &mut self,
+        req: HubMsg,
+    ) -> impl Stream<Item = Result<download_event::Event>> + Send + '_ {
+        self.request_stream(ClientMessage {
+            msg: Some(client_message::Msg::Hub(req)),
+        })
+        .take_while(|r| {
+            std::future::ready(!matches!(
+                r,
+                Ok(ServerMessage {
+                    msg: Some(server_message::Msg::Download(DownloadEvent {
+                        event: Some(download_event::Event::Completed(_))
+                    }))
+                })
+            ))
+        })
+        .map(|r| r.and_then(download_event::Event::try_from))
     }
 
     /// Ping the server (keepalive).
     fn ping(&mut self) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
-            match self.request(ClientMessage::Ping).await? {
-                ServerMessage::Pong => Ok(()),
-                ServerMessage::Error { code, message } => {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::Ping(Ping {})),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
                 other => anyhow::bail!("unexpected response: {other:?}"),
@@ -82,26 +106,43 @@ pub trait Client: Send {
 
     /// Subscribe to task lifecycle events.
     ///
-    /// Streams `TaskEvent`s indefinitely until the connection closes.
-    fn subscribe_tasks(&mut self) -> impl Stream<Item = Result<TaskEvent>> + Send + '_ {
-        self.request_stream(ClientMessage::SubscribeTasks)
-            .map(|r| r.and_then(TaskEvent::try_from))
+    /// Streams `task_event::Event`s indefinitely until the connection closes.
+    fn subscribe_tasks(&mut self) -> impl Stream<Item = Result<task_event::Event>> + Send + '_ {
+        self.request_stream(ClientMessage {
+            msg: Some(client_message::Msg::SubscribeTasks(SubscribeTasks {})),
+        })
+        .map(|r| r.and_then(task_event::Event::try_from))
     }
 
     /// Subscribe to download lifecycle events.
     ///
-    /// Streams `DownloadEvent`s indefinitely until the connection closes.
-    fn subscribe_downloads(&mut self) -> impl Stream<Item = Result<DownloadEvent>> + Send + '_ {
-        self.request_stream(ClientMessage::SubscribeDownloads)
-            .map(|r| r.and_then(DownloadEvent::try_from))
+    /// Streams `download_event::Event`s indefinitely until the connection closes.
+    fn subscribe_downloads(
+        &mut self,
+    ) -> impl Stream<Item = Result<download_event::Event>> + Send + '_ {
+        self.request_stream(ClientMessage {
+            msg: Some(client_message::Msg::SubscribeDownloads(
+                SubscribeDownloads {},
+            )),
+        })
+        .map(|r| r.and_then(download_event::Event::try_from))
     }
 
     /// Get the full daemon config as JSON.
     fn get_config(&mut self) -> impl std::future::Future<Output = Result<String>> + Send {
         async move {
-            match self.request(ClientMessage::GetConfig).await? {
-                ServerMessage::Config { config } => Ok(config),
-                ServerMessage::Error { code, message } => {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::GetConfig(GetConfig {})),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Config(ConfigMsg { config })),
+                } => Ok(config),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
                 other => anyhow::bail!("unexpected response: {other:?}"),
@@ -115,9 +156,18 @@ pub trait Client: Send {
         config: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
-            match self.request(ClientMessage::SetConfig { config }).await? {
-                ServerMessage::Pong => Ok(()),
-                ServerMessage::Error { code, message } => {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::SetConfig(SetConfigMsg { config })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
                 other => anyhow::bail!("unexpected response: {other:?}"),
@@ -129,7 +179,16 @@ pub trait Client: Send {
     fn memory_query(
         &mut self,
         query: MemoryOp,
-    ) -> impl std::future::Future<Output = Result<MemoryResult>> + Send {
-        async move { MemoryResult::try_from(self.request(ClientMessage::MemoryQuery { query }).await?) }
+    ) -> impl std::future::Future<Output = Result<memory_result::Result>> + Send {
+        async move {
+            memory_result::Result::try_from(
+                self.request(ClientMessage {
+                    msg: Some(client_message::Msg::MemoryQuery(MemoryQueryMsg {
+                        query: Some(query),
+                    })),
+                })
+                .await?,
+            )
+        }
     }
 }

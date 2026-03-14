@@ -1,0 +1,436 @@
+syntax = "proto3";
+
+package walrus.protocol;
+
+// ── Client Messages ──────────────────────────────────────────────
+
+message ClientMessage {
+  oneof msg {
+    SendMsg send = 1;
+    StreamMsg stream = 2;
+    Ping ping = 3;
+    HubMsg hub = 4;
+    Sessions sessions = 5;
+    KillMsg kill = 6;
+    Tasks tasks = 7;
+    KillTaskMsg kill_task = 8;
+    ApproveMsg approve = 9;
+    EvaluateMsg evaluate = 10;
+    SubscribeTasks subscribe_tasks = 11;
+    Downloads downloads = 12;
+    SubscribeDownloads subscribe_downloads = 13;
+    GetConfig get_config = 14;
+    SetConfigMsg set_config = 15;
+    MemoryQueryMsg memory_query = 16;
+  }
+}
+
+message SendMsg {
+  string agent = 1;
+  string content = 2;
+  optional uint64 session = 3;
+  optional string sender = 4;
+}
+
+message StreamMsg {
+  string agent = 1;
+  string content = 2;
+  optional uint64 session = 3;
+  optional string sender = 4;
+}
+
+message Ping {}
+message Sessions {}
+message Tasks {}
+message SubscribeTasks {}
+message Downloads {}
+message SubscribeDownloads {}
+message GetConfig {}
+
+message HubMsg {
+  string package = 1;
+  HubAction action = 2;
+}
+
+enum HubAction {
+  HUB_ACTION_INSTALL = 0;
+  HUB_ACTION_UNINSTALL = 1;
+}
+
+message KillMsg {
+  uint64 session = 1;
+}
+
+message KillTaskMsg {
+  uint64 task_id = 1;
+}
+
+message ApproveMsg {
+  uint64 task_id = 1;
+  string response = 2;
+}
+
+message EvaluateMsg {
+  string agent = 1;
+  string content = 2;
+  optional uint64 session = 3;
+  optional string sender = 4;
+}
+
+message SetConfigMsg {
+  string config = 1;
+}
+
+message MemoryQueryMsg {
+  MemoryOp query = 1;
+}
+
+message MemoryOp {
+  oneof op {
+    MemoryEntities entities = 1;
+    MemoryRelations relations = 2;
+    MemoryJournals journals = 3;
+    MemorySearch search = 4;
+  }
+}
+
+message MemoryEntities {
+  optional string entity_type = 1;
+  optional uint32 limit = 2;
+}
+
+message MemoryRelations {
+  optional string entity_id = 1;
+  optional uint32 limit = 2;
+}
+
+message MemoryJournals {
+  optional string agent = 1;
+  optional uint32 limit = 2;
+}
+
+message MemorySearch {
+  string query = 1;
+  optional string entity_type = 2;
+  optional uint32 limit = 3;
+}
+
+// ── Server Messages ──────────────────────────────────────────────
+
+message ServerMessage {
+  oneof msg {
+    SendResponse response = 1;
+    StreamEvent stream = 2;
+    DownloadEvent download = 3;
+    ErrorMsg error = 4;
+    Pong pong = 5;
+    SessionList sessions = 6;
+    DownloadList downloads = 7;
+    TaskList tasks = 8;
+    TaskEvent task = 9;
+    EvaluationMsg evaluation = 10;
+    ConfigMsg config = 11;
+    MemoryResult memory = 12;
+  }
+}
+
+message Pong {}
+
+message SendResponse {
+  string agent = 1;
+  string content = 2;
+  uint64 session = 3;
+}
+
+message ToolCallInfo {
+  string name = 1;
+  string arguments = 2;
+}
+
+message StreamEvent {
+  oneof event {
+    StreamStart start = 1;
+    StreamChunk chunk = 2;
+    StreamThinking thinking = 3;
+    ToolStartEvent tool_start = 4;
+    ToolResultEvent tool_result = 5;
+    ToolsCompleteEvent tools_complete = 6;
+    StreamEnd end = 7;
+  }
+}
+
+message StreamStart {
+  string agent = 1;
+  uint64 session = 2;
+}
+
+message StreamChunk {
+  string content = 1;
+}
+
+message StreamThinking {
+  string content = 1;
+}
+
+message ToolStartEvent {
+  repeated ToolCallInfo calls = 1;
+}
+
+message ToolResultEvent {
+  string call_id = 1;
+  string output = 2;
+}
+
+message ToolsCompleteEvent {}
+
+message StreamEnd {
+  string agent = 1;
+}
+
+enum DownloadKind {
+  DOWNLOAD_KIND_HUB = 0;
+  DOWNLOAD_KIND_EMBEDDINGS = 1;
+  DOWNLOAD_KIND_SKILL = 2;
+}
+
+message DownloadEvent {
+  oneof event {
+    DownloadCreated created = 1;
+    DownloadProgress progress = 2;
+    DownloadStep step = 3;
+    DownloadCompleted completed = 4;
+    DownloadFailed failed = 5;
+  }
+}
+
+message DownloadCreated {
+  uint64 id = 1;
+  DownloadKind kind = 2;
+  string label = 3;
+}
+
+message DownloadProgress {
+  uint64 id = 1;
+  uint64 bytes = 2;
+  uint64 total_bytes = 3;
+}
+
+message DownloadStep {
+  uint64 id = 1;
+  string message = 2;
+}
+
+message DownloadCompleted {
+  uint64 id = 1;
+}
+
+message DownloadFailed {
+  uint64 id = 1;
+  string error = 2;
+}
+
+message DownloadInfo {
+  uint64 id = 1;
+  DownloadKind kind = 2;
+  string label = 3;
+  string status = 4;
+  uint64 bytes_downloaded = 5;
+  uint64 total_bytes = 6;
+  optional string error = 7;
+  uint64 alive_secs = 8;
+}
+
+message ErrorMsg {
+  uint32 code = 1;
+  string message = 2;
+}
+
+message SessionInfo {
+  uint64 id = 1;
+  string agent = 2;
+  string created_by = 3;
+  uint64 message_count = 4;
+  uint64 alive_secs = 5;
+}
+
+message SessionList {
+  repeated SessionInfo sessions = 1;
+}
+
+message DownloadList {
+  repeated DownloadInfo downloads = 1;
+}
+
+message TaskInfo {
+  uint64 id = 1;
+  optional uint64 parent_id = 2;
+  string agent = 3;
+  string status = 4;
+  string description = 5;
+  optional string result = 6;
+  optional string error = 7;
+  string created_by = 8;
+  uint64 prompt_tokens = 9;
+  uint64 completion_tokens = 10;
+  uint64 alive_secs = 11;
+  optional string blocked_on = 12;
+}
+
+message TaskList {
+  repeated TaskInfo tasks = 1;
+}
+
+message TaskEvent {
+  oneof event {
+    TaskCreated created = 1;
+    TaskStatusChanged status_changed = 2;
+    TaskCompleted completed = 3;
+  }
+}
+
+message TaskCreated {
+  TaskInfo task = 1;
+}
+
+message TaskStatusChanged {
+  uint64 task_id = 1;
+  string status = 2;
+  optional string blocked_on = 3;
+}
+
+message TaskCompleted {
+  uint64 task_id = 1;
+  string status = 2;
+  optional string result = 3;
+  optional string error = 4;
+}
+
+message EvaluationMsg {
+  bool respond = 1;
+}
+
+message ConfigMsg {
+  string config = 1;
+}
+
+message EntityInfo {
+  string entity_type = 1;
+  string key = 2;
+  string value = 3;
+  uint64 created_at = 4;
+}
+
+message RelationInfo {
+  string source_id = 1;
+  string relation = 2;
+  string target_id = 3;
+  uint64 created_at = 4;
+}
+
+message JournalInfo {
+  string summary = 1;
+  string agent = 2;
+  uint64 created_at = 3;
+}
+
+message MemoryResult {
+  oneof result {
+    EntityList entities = 1;
+    RelationList relations = 2;
+    JournalList journals = 3;
+  }
+}
+
+message EntityList {
+  repeated EntityInfo entities = 1;
+}
+
+message RelationList {
+  repeated RelationInfo relations = 1;
+}
+
+message JournalList {
+  repeated JournalInfo journals = 1;
+}
+
+// ── WHS (Walrus Hook Service) Protocol ───────────────────────────
+
+message WhsRequest {
+  oneof msg {
+    WhsHello hello = 1;
+    WhsRegisterTools register_tools = 2;
+    WhsToolCall tool_call = 3;
+    WhsServiceQuery service_query = 4;
+    WhsShutdown shutdown = 5;
+  }
+}
+
+message WhsHello {
+  string version = 1;
+}
+
+message WhsRegisterTools {}
+message WhsShutdown {}
+
+message WhsToolCall {
+  string name = 1;
+  string args = 2;
+  string agent = 3;
+  optional uint64 task_id = 4;
+}
+
+message WhsServiceQuery {
+  string query = 1;
+}
+
+message WhsResponse {
+  oneof msg {
+    WhsReady ready = 1;
+    WhsToolSchemas tool_schemas = 2;
+    WhsToolResult tool_result = 3;
+    WhsServiceQueryResult service_query_result = 4;
+    WhsError error = 5;
+  }
+}
+
+message WhsReady {
+  string version = 1;
+  string service = 2;
+  repeated Capability capabilities = 3;
+}
+
+message Capability {
+  oneof cap {
+    ToolsList tools = 1;
+    QueryCap query = 2;
+  }
+}
+
+message ToolsList {
+  repeated string names = 1;
+}
+
+message QueryCap {}
+
+message ToolDef {
+  string name = 1;
+  string description = 2;
+  bytes parameters = 3;
+  bool strict = 4;
+}
+
+message WhsToolSchemas {
+  repeated ToolDef tools = 1;
+}
+
+message WhsToolResult {
+  string result = 1;
+}
+
+message WhsServiceQueryResult {
+  string result = 1;
+}
+
+message WhsError {
+  string message = 1;
+}

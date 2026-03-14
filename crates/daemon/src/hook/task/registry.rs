@@ -14,9 +14,8 @@ use std::{
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot, watch};
 use tokio::time::Instant;
 use wcore::protocol::message::{
-    TaskEvent,
-    client::ClientMessage,
-    server::{ServerMessage, TaskInfo},
+    ClientMessage, KillMsg, SendMsg, ServerMessage, TaskCompleted, TaskCreated, TaskEvent,
+    TaskInfo, TaskStatusChanged, client_message, server_message, task_event,
 };
 
 /// In-memory task registry with concurrency control.
@@ -65,12 +64,12 @@ impl TaskRegistry {
         TaskInfo {
             id: task.id,
             parent_id: task.parent_id,
-            agent: task.agent.clone(),
+            agent: task.agent.to_string(),
             status: task.status.to_string(),
             description: task.description.clone(),
             result: task.result.clone(),
             error: task.error.clone(),
-            created_by: task.created_by.clone(),
+            created_by: task.created_by.to_string(),
             prompt_tokens: task.prompt_tokens,
             completion_tokens: task.completion_tokens,
             alive_secs: task.created_at.elapsed().as_secs(),
@@ -110,8 +109,10 @@ impl TaskRegistry {
         };
         self.tasks.insert(id, task);
         if let Some(t) = self.tasks.get(&id) {
-            let _ = self.task_broadcast.send(TaskEvent::Created {
-                task: Self::task_info(t),
+            let _ = self.task_broadcast.send(TaskEvent {
+                event: Some(task_event::Event::Created(TaskCreated {
+                    task: Some(Self::task_info(t)),
+                })),
             });
         }
         id
@@ -132,10 +133,12 @@ impl TaskRegistry {
         if let Some(task) = self.tasks.get_mut(&id) {
             task.status = status;
             let _ = task.status_tx.send(status);
-            let _ = self.task_broadcast.send(TaskEvent::StatusChanged {
-                task_id: id,
-                status: status.to_string(),
-                blocked_on: task.blocked_on.as_ref().map(|i| i.question.clone()),
+            let _ = self.task_broadcast.send(TaskEvent {
+                event: Some(task_event::Event::StatusChanged(TaskStatusChanged {
+                    task_id: id,
+                    status: status.to_string(),
+                    blocked_on: task.blocked_on.as_ref().map(|i| i.question.clone()),
+                })),
             });
         }
     }
@@ -216,12 +219,12 @@ impl TaskRegistry {
         registry: Arc<Mutex<TaskRegistry>>,
     ) {
         let (reply_tx, reply_rx) = mpsc::unbounded_channel();
-        let msg = ClientMessage::Send {
-            agent,
+        let msg = ClientMessage::from(SendMsg {
+            agent: agent.to_string(),
             content: message,
             session: None,
             sender: None,
-        };
+        });
         let _ = self.event_tx.send(DaemonEvent::Message {
             msg,
             reply: reply_tx,
@@ -248,21 +251,25 @@ impl TaskRegistry {
                 task.status = TaskStatus::Failed;
                 task.error = error.clone();
                 let _ = task.status_tx.send(TaskStatus::Failed);
-                let _ = self.task_broadcast.send(TaskEvent::Completed {
-                    task_id,
-                    status: TaskStatus::Failed.to_string(),
-                    result: None,
-                    error,
+                let _ = self.task_broadcast.send(TaskEvent {
+                    event: Some(task_event::Event::Completed(TaskCompleted {
+                        task_id,
+                        status: TaskStatus::Failed.to_string(),
+                        result: None,
+                        error,
+                    })),
                 });
             } else {
                 task.status = TaskStatus::Finished;
                 task.result = result.clone();
                 let _ = task.status_tx.send(TaskStatus::Finished);
-                let _ = self.task_broadcast.send(TaskEvent::Completed {
-                    task_id,
-                    status: TaskStatus::Finished.to_string(),
-                    result,
-                    error: None,
+                let _ = self.task_broadcast.send(TaskEvent {
+                    event: Some(task_event::Event::Completed(TaskCompleted {
+                        task_id,
+                        status: TaskStatus::Finished.to_string(),
+                        result,
+                        error: None,
+                    })),
                 });
             }
         }
@@ -299,10 +306,12 @@ impl TaskRegistry {
         });
         task.status = TaskStatus::Blocked;
         let _ = task.status_tx.send(TaskStatus::Blocked);
-        let _ = self.task_broadcast.send(TaskEvent::StatusChanged {
-            task_id,
-            status: TaskStatus::Blocked.to_string(),
-            blocked_on: task.blocked_on.as_ref().map(|i| i.question.clone()),
+        let _ = self.task_broadcast.send(TaskEvent {
+            event: Some(task_event::Event::StatusChanged(TaskStatusChanged {
+                task_id,
+                status: TaskStatus::Blocked.to_string(),
+                blocked_on: task.blocked_on.as_ref().map(|i| i.question.clone()),
+            })),
         });
         Some(rx)
     }
@@ -320,10 +329,12 @@ impl TaskRegistry {
         }
         task.status = TaskStatus::InProgress;
         let _ = task.status_tx.send(TaskStatus::InProgress);
-        let _ = self.task_broadcast.send(TaskEvent::StatusChanged {
-            task_id,
-            status: TaskStatus::InProgress.to_string(),
-            blocked_on: None,
+        let _ = self.task_broadcast.send(TaskEvent {
+            event: Some(task_event::Event::StatusChanged(TaskStatusChanged {
+                task_id,
+                status: TaskStatus::InProgress.to_string(),
+                blocked_on: None,
+            })),
         });
         true
     }
@@ -404,13 +415,13 @@ async fn task_watcher(
 
     let collect = async {
         while let Some(msg) = reply_rx.recv().await {
-            match msg {
-                ServerMessage::Response(resp) => {
+            match msg.msg {
+                Some(server_message::Msg::Response(resp)) => {
                     session_id = Some(resp.session);
                     result_content = Some(resp.content);
                 }
-                ServerMessage::Error { message, .. } => {
-                    error_msg = Some(message);
+                Some(server_message::Msg::Error(err)) => {
+                    error_msg = Some(err.message);
                 }
                 _ => {}
             }
@@ -425,7 +436,9 @@ async fn task_watcher(
     if let Some(sid) = session_id {
         let (reply_tx, _reply_rx) = mpsc::unbounded_channel();
         let _ = event_tx.send(DaemonEvent::Message {
-            msg: ClientMessage::Kill { session: sid },
+            msg: ClientMessage {
+                msg: Some(client_message::Msg::Kill(KillMsg { session: sid })),
+            },
             reply: reply_tx,
         });
     }
@@ -447,7 +460,9 @@ async fn task_watcher(
     for sid in child_sessions {
         let (reply_tx, _) = mpsc::unbounded_channel();
         let _ = event_tx.send(DaemonEvent::Message {
-            msg: ClientMessage::Kill { session: sid },
+            msg: ClientMessage {
+                msg: Some(client_message::Msg::Kill(KillMsg { session: sid })),
+            },
             reply: reply_tx,
         });
     }

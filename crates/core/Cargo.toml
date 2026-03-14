@@ -19,10 +19,13 @@ async-stream.workspace = true
 compact_str.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
-rmp-serde.workspace = true
+prost.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 smallvec.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[build-dependencies]
+prost-build.workspace = true

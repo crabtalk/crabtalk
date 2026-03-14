@@ -47,7 +47,8 @@ percent-encoding = "2"
 rand = "0.9"
 ratatui = "0.29"
 scraper = "0.22"
-rmp-serde = "1"
+prost = "0.13"
+prost-build = "0.13"
 reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "stream",

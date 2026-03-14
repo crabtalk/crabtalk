@@ -1,7 +1,6 @@
 //! Gateway runner — connects to walrusd via Unix domain socket or TCP.
 
 use anyhow::Result;
-use compact_str::CompactString;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use socket::{ClientConfig, Connection, WalrusClient};
@@ -11,9 +10,9 @@ use tcp::TcpConnection;
 use wcore::protocol::{
     api::Client,
     message::{
-        DownloadEvent, HubAction, HubRequest, SendRequest, StreamEvent, StreamRequest,
-        client::ClientMessage,
-        server::{ServerMessage, SessionInfo, TaskInfo},
+        ApproveMsg, ClientMessage, HubAction, HubMsg, KillMsg, KillTaskMsg, SendMsg, SendResponse,
+        ServerMessage, SessionInfo, StreamMsg, TaskInfo, client_message, download_event,
+        server_message, stream_event,
     },
 };
 
@@ -97,17 +96,14 @@ impl Runner {
     pub async fn send(&mut self, agent: &str, content: &str) -> Result<String> {
         let resp = self
             .transport
-            .request(
-                SendRequest {
-                    agent: CompactString::from(agent),
-                    content: content.to_string(),
-                    session: None,
-                    sender: None,
-                }
-                .into(),
-            )
+            .request(ClientMessage::from(SendMsg {
+                agent: agent.to_string(),
+                content: content.to_string(),
+                session: None,
+                sender: None,
+            }))
             .await?;
-        let resp = wcore::protocol::message::SendResponse::try_from(resp)?;
+        let resp = SendResponse::try_from(resp)?;
         Ok(resp.content)
     }
 
@@ -118,45 +114,53 @@ impl Runner {
         content: &'a str,
     ) -> impl Stream<Item = Result<OutputChunk>> + Send + 'a {
         self.transport
-            .request_stream(
-                StreamRequest {
-                    agent: CompactString::from(agent),
-                    content: content.to_string(),
-                    session: None,
-                    sender: None,
-                }
-                .into(),
-            )
+            .request_stream(ClientMessage::from(StreamMsg {
+                agent: agent.to_string(),
+                content: content.to_string(),
+                session: None,
+                sender: None,
+            }))
             .take_while(|r| {
                 std::future::ready(!matches!(
                     r,
-                    Ok(ServerMessage::Stream(StreamEvent::End { .. }))
+                    Ok(ServerMessage {
+                        msg: Some(server_message::Msg::Stream(e))
+                    }) if matches!(e.event, Some(stream_event::Event::End(_)))
                 ))
             })
             .filter_map(|result| async {
                 match result {
-                    Ok(ServerMessage::Stream(StreamEvent::Chunk { content })) => {
-                        Some(Ok(OutputChunk::Text(content)))
-                    }
-                    Ok(ServerMessage::Stream(StreamEvent::Thinking { content })) => {
-                        Some(Ok(OutputChunk::Thinking(content)))
-                    }
-                    Ok(ServerMessage::Stream(StreamEvent::ToolStart { calls })) => {
-                        let names: Vec<_> = calls.iter().map(|c| c.name.as_str()).collect();
-                        Some(Ok(OutputChunk::Status(format!(
-                            "\n[calling {}...]\n",
-                            names.join(", ")
-                        ))))
-                    }
-                    Ok(ServerMessage::Stream(StreamEvent::ToolResult { .. })) => None,
-                    Ok(ServerMessage::Stream(StreamEvent::ToolsComplete)) => {
-                        Some(Ok(OutputChunk::Status("[done]\n".to_string())))
-                    }
-                    Ok(ServerMessage::Stream(StreamEvent::Start { .. })) => None,
-                    Ok(ServerMessage::Stream(StreamEvent::End { .. })) => None,
-                    Ok(ServerMessage::Error { code, message }) => {
-                        Some(Err(anyhow::anyhow!("server error ({code}): {message}")))
-                    }
+                    Ok(ServerMessage {
+                        msg: Some(server_message::Msg::Stream(e)),
+                    }) => match &e.event {
+                        Some(stream_event::Event::Chunk(c)) => {
+                            Some(Ok(OutputChunk::Text(c.content.clone())))
+                        }
+                        Some(stream_event::Event::Thinking(t)) => {
+                            Some(Ok(OutputChunk::Thinking(t.content.clone())))
+                        }
+                        Some(stream_event::Event::ToolStart(ts)) => {
+                            let names: Vec<_> = ts.calls.iter().map(|c| c.name.as_str()).collect();
+                            Some(Ok(OutputChunk::Status(format!(
+                                "\n[calling {}...]\n",
+                                names.join(", ")
+                            ))))
+                        }
+                        Some(stream_event::Event::ToolResult(_)) => None,
+                        Some(stream_event::Event::ToolsComplete(_)) => {
+                            Some(Ok(OutputChunk::Status("[done]\n".to_string())))
+                        }
+                        Some(stream_event::Event::Start(_)) => None,
+                        Some(stream_event::Event::End(_)) => None,
+                        None => None,
+                    },
+                    Ok(ServerMessage {
+                        msg: Some(server_message::Msg::Error(e)),
+                    }) => Some(Err(anyhow::anyhow!(
+                        "server error ({}): {}",
+                        e.code,
+                        e.message
+                    ))),
                     Ok(_) => None,
                     Err(e) => Some(Err(e)),
                 }
@@ -168,30 +172,38 @@ impl Runner {
         &mut self,
         package: &str,
         action: HubAction,
-    ) -> impl Stream<Item = Result<DownloadEvent>> + '_ {
+    ) -> impl Stream<Item = Result<download_event::Event>> + '_ {
         self.transport
-            .request_stream(
-                HubRequest {
-                    package: CompactString::from(package),
-                    action,
-                }
-                .into(),
-            )
+            .request_stream(ClientMessage {
+                msg: Some(client_message::Msg::Hub(HubMsg {
+                    package: package.to_string(),
+                    action: action.into(),
+                })),
+            })
             .take_while(|r| {
                 std::future::ready(!matches!(
                     r,
-                    Ok(ServerMessage::Download(DownloadEvent::Completed { .. }))
+                    Ok(ServerMessage {
+                        msg: Some(server_message::Msg::Download(e))
+                    }) if matches!(e.event, Some(download_event::Event::Completed(_)))
                 ))
             })
-            .map(|r| r.and_then(DownloadEvent::try_from))
+            .map(|r: Result<ServerMessage>| r.and_then(download_event::Event::try_from))
     }
 
     /// List active sessions on the daemon.
     pub async fn list_sessions(&mut self) -> Result<Vec<SessionInfo>> {
-        match self.transport.request(ClientMessage::Sessions).await? {
-            ServerMessage::Sessions(sessions) => Ok(sessions),
-            ServerMessage::Error { code, message } => {
-                anyhow::bail!("server error ({code}): {message}")
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::Sessions(Default::default())),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::Sessions(sl)),
+            } => Ok(sl.sessions),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => {
+                anyhow::bail!("server error ({}): {}", e.code, e.message)
             }
             other => anyhow::bail!("unexpected response: {other:?}"),
         }
@@ -199,15 +211,20 @@ impl Runner {
 
     /// Kill (close) a session by ID. Returns true if it existed.
     pub async fn kill_session(&mut self, session: u64) -> Result<bool> {
-        match self
-            .transport
-            .request(ClientMessage::Kill { session })
-            .await?
-        {
-            ServerMessage::Pong => Ok(true),
-            ServerMessage::Error { code: 404, .. } => Ok(false),
-            ServerMessage::Error { code, message } => {
-                anyhow::bail!("server error ({code}): {message}")
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::Kill(KillMsg { session })),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::Pong(_)),
+            } => Ok(true),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } if e.code == 404 => Ok(false),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => {
+                anyhow::bail!("server error ({}): {}", e.code, e.message)
             }
             other => anyhow::bail!("unexpected response: {other:?}"),
         }
@@ -215,10 +232,17 @@ impl Runner {
 
     /// List tasks in the task registry.
     pub async fn list_tasks(&mut self) -> Result<Vec<TaskInfo>> {
-        match self.transport.request(ClientMessage::Tasks).await? {
-            ServerMessage::Tasks(tasks) => Ok(tasks),
-            ServerMessage::Error { code, message } => {
-                anyhow::bail!("server error ({code}): {message}")
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::Tasks(Default::default())),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::Tasks(tl)),
+            } => Ok(tl.tasks),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => {
+                anyhow::bail!("server error ({}): {}", e.code, e.message)
             }
             other => anyhow::bail!("unexpected response: {other:?}"),
         }
@@ -226,15 +250,20 @@ impl Runner {
 
     /// Kill (cancel) a task by ID. Returns true if it existed.
     pub async fn kill_task(&mut self, task_id: u64) -> Result<bool> {
-        match self
-            .transport
-            .request(ClientMessage::KillTask { task_id })
-            .await?
-        {
-            ServerMessage::Pong => Ok(true),
-            ServerMessage::Error { code: 404, .. } => Ok(false),
-            ServerMessage::Error { code, message } => {
-                anyhow::bail!("server error ({code}): {message}")
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::KillTask(KillTaskMsg { task_id })),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::Pong(_)),
+            } => Ok(true),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } if e.code == 404 => Ok(false),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => {
+                anyhow::bail!("server error ({}): {}", e.code, e.message)
             }
             other => anyhow::bail!("unexpected response: {other:?}"),
         }
@@ -242,15 +271,23 @@ impl Runner {
 
     /// Approve a blocked task. Returns true if the task was blocked and approved.
     pub async fn approve_task(&mut self, task_id: u64, response: String) -> Result<bool> {
-        match self
-            .transport
-            .request(ClientMessage::Approve { task_id, response })
-            .await?
-        {
-            ServerMessage::Pong => Ok(true),
-            ServerMessage::Error { code: 404, .. } => Ok(false),
-            ServerMessage::Error { code, message } => {
-                anyhow::bail!("server error ({code}): {message}")
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::Approve(ApproveMsg {
+                task_id,
+                response,
+            })),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::Pong(_)),
+            } => Ok(true),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } if e.code == 404 => Ok(false),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => {
+                anyhow::bail!("server error ({}): {}", e.code, e.message)
             }
             other => anyhow::bail!("unexpected response: {other:?}"),
         }

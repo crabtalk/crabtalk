@@ -19,7 +19,10 @@ use wcore::{
     protocol::{
         PROTOCOL_VERSION,
         codec::{read_message, write_message},
-        whs::{Capability, WhsRequest, WhsResponse},
+        whs::{
+            Capability, ToolsList, WhsError, WhsHello, WhsReady, WhsRegisterTools, WhsRequest,
+            WhsResponse, WhsToolSchemas, capability, whs_request, whs_response,
+        },
     },
 };
 
@@ -192,8 +195,10 @@ impl ServiceManager {
         let reader = Mutex::new(read_half);
 
         // Hello → Ready
-        let hello = WhsRequest::Hello {
-            version: PROTOCOL_VERSION.to_owned(),
+        let hello = WhsRequest {
+            msg: Some(whs_request::Msg::Hello(WhsHello {
+                version: PROTOCOL_VERSION.to_owned(),
+            })),
         };
         {
             let mut w = writer.lock().await;
@@ -208,19 +213,21 @@ impl ServiceManager {
                 .context("Ready timeout")?
                 .context("read Ready")?
         };
-        let (service, capabilities) = match ready {
-            WhsResponse::Ready {
+        let (service, capabilities) = match ready.msg {
+            Some(whs_response::Msg::Ready(WhsReady {
                 service,
                 capabilities,
                 ..
-            } => (service, capabilities),
-            WhsResponse::Error { message } => bail!("service error: {message}"),
+            })) => (service, capabilities),
+            Some(whs_response::Msg::Error(WhsError { message })) => {
+                bail!("service error: {message}")
+            }
             other => bail!("unexpected response to Hello: {other:?}"),
         };
         tracing::debug!(service = %service, "handshake Hello/Ready complete");
 
         let handle = ServiceHandle {
-            name: service,
+            name: CompactString::from(service.as_str()),
             capabilities,
             writer,
             reader,
@@ -228,19 +235,32 @@ impl ServiceManager {
         };
 
         // RegisterTools → ToolSchemas
-        let resp = time::timeout(
-            HANDSHAKE_TIMEOUT,
-            handle.request(&WhsRequest::RegisterTools),
-        )
-        .await
-        .context("RegisterTools timeout")?
-        .context("RegisterTools")?;
-        let tools = match resp {
-            WhsResponse::ToolSchemas { tools } => tools,
-            WhsResponse::Error { message } => bail!("RegisterTools error: {message}"),
+        let register_tools_req = WhsRequest {
+            msg: Some(whs_request::Msg::RegisterTools(WhsRegisterTools {})),
+        };
+        let resp = time::timeout(HANDSHAKE_TIMEOUT, handle.request(&register_tools_req))
+            .await
+            .context("RegisterTools timeout")?
+            .context("RegisterTools")?;
+        let tool_defs = match resp.msg {
+            Some(whs_response::Msg::ToolSchemas(WhsToolSchemas { tools })) => tools,
+            Some(whs_response::Msg::Error(WhsError { message })) => {
+                bail!("RegisterTools error: {message}")
+            }
             other => bail!("unexpected response to RegisterTools: {other:?}"),
         };
-        tracing::debug!(service = %name, tools = tools.len(), "handshake RegisterTools/ToolSchemas complete");
+        tracing::debug!(service = %name, tools = tool_defs.len(), "handshake RegisterTools/ToolSchemas complete");
+
+        // Convert ToolDef (proto) → Tool (domain).
+        let tools: Vec<Tool> = tool_defs
+            .into_iter()
+            .map(|td| Tool {
+                name: CompactString::from(td.name.as_str()),
+                description: CompactString::from(td.description.as_str()),
+                parameters: serde_json::from_slice(&td.parameters).unwrap_or_else(|_| true.into()),
+                strict: td.strict,
+            })
+            .collect();
 
         Ok((handle, tools))
     }
@@ -248,17 +268,18 @@ impl ServiceManager {
     /// Populate the registry from a service handle's capabilities and tool schemas.
     fn register(registry: &mut ServiceRegistry, handle: &Arc<ServiceHandle>) {
         for cap in &handle.capabilities {
-            match cap {
-                Capability::Tools(names) => {
+            match &cap.cap {
+                Some(capability::Cap::Tools(ToolsList { names })) => {
                     for tool_name in names {
                         registry.tools.insert(tool_name.clone(), Arc::clone(handle));
                     }
                 }
-                Capability::Query => {
+                Some(capability::Cap::Query(_)) => {
                     registry
                         .query
                         .insert(handle.name.to_string(), Arc::clone(handle));
                 }
+                None => {}
             }
         }
     }

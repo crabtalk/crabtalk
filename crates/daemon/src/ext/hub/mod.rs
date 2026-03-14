@@ -10,7 +10,10 @@ use std::{
 };
 use tokio::sync::broadcast;
 use tokio::time::Instant;
-use wcore::protocol::message::server::{DownloadEvent, DownloadInfo, DownloadKind};
+use wcore::protocol::message::{
+    DownloadCompleted, DownloadCreated, DownloadEvent, DownloadFailed, DownloadInfo, DownloadKind,
+    DownloadProgress, DownloadStep, download_event,
+};
 
 pub mod embeddings;
 pub mod manifest;
@@ -85,7 +88,7 @@ impl DownloadRegistry {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let download = Download {
             id,
-            kind: kind.clone(),
+            kind,
             label: label.clone(),
             status: DownloadStatus::Downloading,
             bytes_downloaded: 0,
@@ -94,9 +97,13 @@ impl DownloadRegistry {
             created_at: Instant::now(),
         };
         self.downloads.insert(id, download);
-        let _ = self
-            .broadcast
-            .send(DownloadEvent::Created { id, kind, label });
+        let _ = self.broadcast.send(DownloadEvent {
+            event: Some(download_event::Event::Created(DownloadCreated {
+                id,
+                kind: kind as i32,
+                label,
+            })),
+        });
         id
     }
 
@@ -106,16 +113,20 @@ impl DownloadRegistry {
             dl.bytes_downloaded += bytes;
             dl.total_bytes = total_bytes;
         }
-        let _ = self.broadcast.send(DownloadEvent::Progress {
-            id,
-            bytes,
-            total_bytes,
+        let _ = self.broadcast.send(DownloadEvent {
+            event: Some(download_event::Event::Progress(DownloadProgress {
+                id,
+                bytes,
+                total_bytes,
+            })),
         });
     }
 
     /// Report a human-readable progress step.
     pub fn step(&mut self, id: u64, message: String) {
-        let _ = self.broadcast.send(DownloadEvent::Step { id, message });
+        let _ = self.broadcast.send(DownloadEvent {
+            event: Some(download_event::Event::Step(DownloadStep { id, message })),
+        });
     }
 
     /// Mark a download as completed.
@@ -123,7 +134,9 @@ impl DownloadRegistry {
         if let Some(dl) = self.downloads.get_mut(&id) {
             dl.status = DownloadStatus::Completed;
         }
-        let _ = self.broadcast.send(DownloadEvent::Completed { id });
+        let _ = self.broadcast.send(DownloadEvent {
+            event: Some(download_event::Event::Completed(DownloadCompleted { id })),
+        });
     }
 
     /// Mark a download as failed.
@@ -132,7 +145,9 @@ impl DownloadRegistry {
             dl.status = DownloadStatus::Failed;
             dl.error = Some(error.clone());
         }
-        let _ = self.broadcast.send(DownloadEvent::Failed { id, error });
+        let _ = self.broadcast.send(DownloadEvent {
+            event: Some(download_event::Event::Failed(DownloadFailed { id, error })),
+        });
     }
 
     /// List all downloads, most recent first.
@@ -142,7 +157,7 @@ impl DownloadRegistry {
             .rev()
             .map(|dl| DownloadInfo {
                 id: dl.id,
-                kind: dl.kind.clone(),
+                kind: dl.kind as i32,
                 label: dl.label.clone(),
                 status: dl.status.to_string(),
                 bytes_downloaded: dl.bytes_downloaded,
