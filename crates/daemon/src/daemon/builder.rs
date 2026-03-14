@@ -127,11 +127,12 @@ impl Daemon {
             tracing::info!("sandbox mode active — OS tools bypass permission check");
         }
 
-        // Spawn and handshake managed hook services.
+        // Spawn and handshake managed services.
         let (registry, service_manager) = if config.services.is_empty() {
             (None, None)
         } else {
-            let mut sm = ServiceManager::new(&config.services, config_dir);
+            let daemon_socket = wcore::paths::SOCKET_PATH.to_path_buf();
+            let mut sm = ServiceManager::new(&config.services, config_dir, daemon_socket);
             sm.spawn_all().await?;
             let registry = sm.handshake_all().await;
             (Some(registry), Some(sm))

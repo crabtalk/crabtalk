@@ -7,7 +7,6 @@ pub use crate::hook::{
 };
 pub use ::model::{ModelConfig, ProviderConfig, ProviderManager};
 use anyhow::Result;
-pub use gateway::GatewayConfig;
 pub use loader::{load_agents_dir, scaffold_config_dir};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -27,9 +26,6 @@ pub struct DaemonConfig {
     /// Model configurations (remote API endpoints + local models).
     #[serde(default)]
     pub model: ModelConfig,
-    /// Gateway configurations (Telegram, Discord bots).
-    #[serde(default)]
-    pub gateway: GatewayConfig,
     /// MCP server configurations.
     #[serde(default)]
     pub mcps: BTreeMap<String, McpServerConfig>,

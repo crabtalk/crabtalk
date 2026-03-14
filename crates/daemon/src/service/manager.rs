@@ -277,13 +277,22 @@ struct ServiceEntry {
 pub struct ServiceManager {
     entries: BTreeMap<String, ServiceEntry>,
     services_dir: PathBuf,
+    /// Daemon UDS socket path — passed to client services via `--daemon`.
+    daemon_socket: PathBuf,
 }
 
 const HANDSHAKE_TIMEOUT: time::Duration = time::Duration::from_secs(10);
 
 impl ServiceManager {
     /// Create a new manager from config. Does not spawn anything yet.
-    pub fn new(configs: &BTreeMap<String, ServiceConfig>, config_dir: &Path) -> Self {
+    ///
+    /// `daemon_socket` is the daemon's UDS path — forwarded to client services
+    /// so they can connect back.
+    pub fn new(
+        configs: &BTreeMap<String, ServiceConfig>,
+        config_dir: &Path,
+        daemon_socket: PathBuf,
+    ) -> Self {
         let services_dir = config_dir.join("services");
         let entries = configs
             .iter()
@@ -303,10 +312,15 @@ impl ServiceManager {
         Self {
             entries,
             services_dir,
+            daemon_socket,
         }
     }
 
-    /// Spawn all enabled services. Hook services get `--socket <path>` appended.
+    /// Spawn all enabled services.
+    ///
+    /// Hook services get `--socket <path>` so they bind a UDS listener.
+    /// Client services get `--daemon <path>` and `--config <json>` so they
+    /// can connect back to the daemon.
     pub async fn spawn_all(&mut self) -> Result<()> {
         std::fs::create_dir_all(&self.services_dir).context("create services dir")?;
 
@@ -319,9 +333,17 @@ impl ServiceManager {
             let mut cmd = tokio::process::Command::new(&entry.config.command);
             cmd.args(&entry.config.args);
 
-            // Hook services get the socket path so they can bind it.
-            if matches!(entry.config.kind, ServiceKind::Hook) {
-                cmd.arg("--socket").arg(&entry.socket_path);
+            match entry.config.kind {
+                ServiceKind::Hook => {
+                    cmd.arg("--socket").arg(&entry.socket_path);
+                }
+                ServiceKind::Client => {
+                    cmd.arg("--daemon").arg(&self.daemon_socket);
+                    let config_json = serde_json::to_string(&entry.config.config)
+                        .unwrap_or_else(|_| "{}".to_owned());
+                    cmd.arg("--config").arg(config_json);
+                }
+                ServiceKind::Process => {}
             }
 
             cmd.kill_on_drop(true);

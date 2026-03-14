@@ -3,6 +3,7 @@
 //! Uses serenity gateway (WebSocket) for receiving messages and
 //! `ChannelId::say` for sending replies.
 
+#[cfg(feature = "serve")]
 pub(crate) mod command;
 
 use crate::message::{Attachment, AttachmentKind, GatewayMessage};

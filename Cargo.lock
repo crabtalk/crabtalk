@@ -8719,7 +8719,6 @@ dependencies = [
  "toml_edit 0.22.27",
  "tracing",
  "walrus-core",
- "walrus-gateway",
  "walrus-model",
  "walrus-socket",
  "walrus-tcp",
@@ -8729,14 +8728,19 @@ dependencies = [
 name = "walrus-gateway"
 version = "0.0.6"
 dependencies = [
+ "anyhow",
+ "clap",
  "compact_str 0.8.1",
  "futures-util",
  "serde",
+ "serde_json",
  "serenity",
  "teloxide",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "walrus-core",
+ "walrus-socket",
 ]
 
 [[package]]

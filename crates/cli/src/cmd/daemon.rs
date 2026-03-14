@@ -29,7 +29,6 @@ impl Daemon {
         std::fs::write(&*TCP_PORT_FILE, tcp_port.to_string())?;
         tracing::info!("wrote tcp port file at {}", TCP_PORT_FILE.display());
 
-        daemon::setup_channels(&handle.config, &handle.event_tx).await;
         handle.wait_until_ready().await?;
 
         tokio::signal::ctrl_c().await?;

@@ -3,25 +3,21 @@
 //! Executes parsed bot commands (hub install/uninstall) by streaming
 //! progress back to the originating Telegram chat.
 
-use crate::command::BotCommand;
-use std::{future::Future, sync::Arc};
+use crate::{client::DaemonClient, command::BotCommand};
+use std::sync::Arc;
 use teloxide::prelude::*;
-use tokio::sync::mpsc;
 use wcore::protocol::message::{
     ClientMessage, DownloadCreated, DownloadStep, HubAction, HubMsg, ServerMessage, client_message,
     download_event, server_message,
 };
 
 /// Execute a bot command, streaming progress messages back to the originating chat.
-pub(crate) async fn dispatch_command<C, CFut>(
+pub(crate) async fn dispatch_command(
     cmd: BotCommand,
-    on_message: Arc<C>,
+    client: Arc<DaemonClient>,
     bot: Bot,
     chat_id: i64,
-) where
-    C: Fn(ClientMessage) -> CFut + Send + Sync + 'static,
-    CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
-{
+) {
     let msg = match cmd {
         BotCommand::HubInstall { package } => ClientMessage {
             msg: Some(client_message::Msg::Hub(HubMsg {
@@ -37,7 +33,7 @@ pub(crate) async fn dispatch_command<C, CFut>(
         },
     };
 
-    let mut rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(msg).await;
+    let mut rx = client.send(msg).await;
     while let Some(server_msg) = rx.recv().await {
         match server_msg {
             ServerMessage {

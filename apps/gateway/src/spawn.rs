@@ -1,17 +1,16 @@
 //! Gateway spawn logic.
 //!
 //! Connects configured platform bots (Telegram, Discord) and routes all
-//! messages through a single `on_message` callback that accepts a
-//! `ClientMessage` and returns a `ServerMessage` stream.
+//! messages through a `DaemonClient` that speaks the walrus protocol
+//! over a UDS connection.
 
-use crate::command::parse_command;
-use crate::config::GatewayConfig;
-use crate::message::GatewayMessage;
+use crate::{
+    client::DaemonClient, command::parse_command, config::GatewayConfig, message::GatewayMessage,
+};
 use compact_str::CompactString;
 use serenity::model::id::ChannelId;
 use std::{
     collections::{HashMap, HashSet},
-    future::Future,
     sync::Arc,
 };
 use teloxide::prelude::*;
@@ -32,16 +31,11 @@ type KnownBots = Arc<RwLock<HashSet<CompactString>>>;
 ///
 /// Iterates all gateway entries and spawns a transport for each one.
 /// `default_agent` is used when an entry does not specify an agent.
-/// `on_message` dispatches any `ClientMessage` and returns a receiver for
-/// streamed `ServerMessage` results.
-pub async fn spawn_gateways<C, CFut>(
+pub async fn spawn_gateways(
     config: &GatewayConfig,
     default_agent: CompactString,
-    on_message: Arc<C>,
-) where
-    C: Fn(ClientMessage) -> CFut + Send + Sync + 'static,
-    CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
-{
+    client: Arc<DaemonClient>,
+) {
     let known_bots: KnownBots = Arc::new(RwLock::new(HashSet::new()));
 
     if let Some(tg) = &config.telegram {
@@ -51,7 +45,7 @@ pub async fn spawn_gateways<C, CFut>(
             spawn_telegram(
                 &tg.token,
                 default_agent.clone(),
-                on_message.clone(),
+                client.clone(),
                 known_bots.clone(),
             )
             .await;
@@ -62,20 +56,17 @@ pub async fn spawn_gateways<C, CFut>(
         if dc.token.is_empty() {
             tracing::warn!(platform = "discord", "token is empty, skipping");
         } else {
-            spawn_discord(&dc.token, default_agent, on_message, known_bots).await;
+            spawn_discord(&dc.token, default_agent, client, known_bots).await;
         }
     }
 }
 
-async fn spawn_telegram<C, CFut>(
+async fn spawn_telegram(
     token: &str,
     agent: CompactString,
-    on_message: Arc<C>,
+    client: Arc<DaemonClient>,
     known_bots: KnownBots,
-) where
-    C: Fn(ClientMessage) -> CFut + Send + Sync + 'static,
-    CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
-{
+) {
     let bot = Bot::new(token);
 
     // Resolve our own user ID and register it in the known-bot set.
@@ -97,19 +88,16 @@ async fn spawn_telegram<C, CFut>(
         crate::telegram::poll_loop(poll_bot, tx).await;
     });
 
-    tokio::spawn(telegram_loop(rx, bot, agent, on_message, known_bots));
+    tokio::spawn(telegram_loop(rx, bot, agent, client, known_bots));
     tracing::info!(platform = "telegram", "channel transport started");
 }
 
-async fn spawn_discord<C, CFut>(
+async fn spawn_discord(
     token: &str,
     agent: CompactString,
-    on_message: Arc<C>,
+    client: Arc<DaemonClient>,
     known_bots: KnownBots,
-) where
-    C: Fn(ClientMessage) -> CFut + Send + Sync + 'static,
-    CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
-{
+) {
     let (msg_tx, msg_rx) = mpsc::unbounded_channel::<GatewayMessage>();
     let (http_tx, http_rx) = tokio::sync::oneshot::channel();
 
@@ -122,7 +110,7 @@ async fn spawn_discord<C, CFut>(
     tokio::spawn(async move {
         match http_rx.await {
             Ok(http) => {
-                discord_loop(msg_rx, http, agent, on_message, known_bots).await;
+                discord_loop(msg_rx, http, agent, client, known_bots).await;
             }
             Err(_) => {
                 tracing::error!("discord gateway failed to send http client");
@@ -138,16 +126,13 @@ async fn spawn_discord<C, CFut>(
 /// Maintains a `chat_id → session_id` mapping so consecutive messages from the
 /// same chat reuse the same session. If a session is killed externally, the
 /// error triggers a retry with `session: None` to create a fresh session.
-async fn telegram_loop<C, CFut>(
+async fn telegram_loop(
     mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
     bot: Bot,
     agent: CompactString,
-    on_message: Arc<C>,
+    client: Arc<DaemonClient>,
     known_bots: KnownBots,
-) where
-    C: Fn(ClientMessage) -> CFut + Send + Sync + 'static,
-    CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
-{
+) {
     let mut sessions: HashMap<i64, u64> = HashMap::new();
 
     while let Some(msg) = rx.recv().await {
@@ -168,9 +153,9 @@ async fn telegram_loop<C, CFut>(
             match parse_command(&content) {
                 Some(cmd) => {
                     let b = bot.clone();
-                    let om = on_message.clone();
+                    let c = client.clone();
                     tokio::spawn(async move {
-                        crate::telegram::command::dispatch_command(cmd, om, b, chat_id).await;
+                        crate::telegram::command::dispatch_command(cmd, c, b, chat_id).await;
                     });
                 }
                 None => {
@@ -188,7 +173,7 @@ async fn telegram_loop<C, CFut>(
         let session = sessions.get(&chat_id).copied();
 
         // Group chat: evaluate whether the agent should respond.
-        if msg.is_group && !should_respond(&on_message, &agent, &content, session, &sender).await {
+        if msg.is_group && !should_respond(&client, &agent, &content, session, &sender).await {
             tracing::debug!(%agent, chat_id, "agent declined to respond in group");
             continue;
         }
@@ -198,7 +183,7 @@ async fn telegram_loop<C, CFut>(
             session,
             sender: Some(sender.to_string()),
         });
-        let mut reply_rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(client_msg).await;
+        let mut reply_rx = client.send(client_msg).await;
         let mut retry = false;
         while let Some(server_msg) = reply_rx.recv().await {
             match server_msg {
@@ -234,7 +219,7 @@ async fn telegram_loop<C, CFut>(
                 session: None,
                 sender: Some(sender.to_string()),
             });
-            let mut reply_rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(client_msg).await;
+            let mut reply_rx = client.send(client_msg).await;
             while let Some(server_msg) = reply_rx.recv().await {
                 match server_msg {
                     ServerMessage {
@@ -263,16 +248,13 @@ async fn telegram_loop<C, CFut>(
 ///
 /// Maintains a `chat_id → session_id` mapping so consecutive messages from the
 /// same chat reuse the same session. Same stale-session retry logic as Telegram.
-async fn discord_loop<C, CFut>(
+async fn discord_loop(
     mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
     http: Arc<serenity::http::Http>,
     agent: CompactString,
-    on_message: Arc<C>,
+    client: Arc<DaemonClient>,
     known_bots: KnownBots,
-) where
-    C: Fn(ClientMessage) -> CFut + Send + Sync + 'static,
-    CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
-{
+) {
     let mut sessions: HashMap<i64, u64> = HashMap::new();
 
     while let Some(msg) = rx.recv().await {
@@ -294,9 +276,9 @@ async fn discord_loop<C, CFut>(
             match parse_command(&content) {
                 Some(cmd) => {
                     let h = http.clone();
-                    let om = on_message.clone();
+                    let c = client.clone();
                     tokio::spawn(async move {
-                        crate::discord::command::dispatch_command(cmd, om, h, channel_id).await;
+                        crate::discord::command::dispatch_command(cmd, c, h, channel_id).await;
                     });
                 }
                 None => {
@@ -312,7 +294,7 @@ async fn discord_loop<C, CFut>(
         let session = sessions.get(&chat_id).copied();
 
         // Group chat: evaluate whether the agent should respond.
-        if msg.is_group && !should_respond(&on_message, &agent, &content, session, &sender).await {
+        if msg.is_group && !should_respond(&client, &agent, &content, session, &sender).await {
             tracing::debug!(%agent, chat_id, "agent declined to respond in group");
             continue;
         }
@@ -323,7 +305,7 @@ async fn discord_loop<C, CFut>(
             session,
             sender: Some(sender.to_string()),
         });
-        let mut reply_rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(client_msg).await;
+        let mut reply_rx = client.send(client_msg).await;
         let mut retry = false;
         while let Some(server_msg) = reply_rx.recv().await {
             match server_msg {
@@ -357,7 +339,7 @@ async fn discord_loop<C, CFut>(
                 session: None,
                 sender: Some(sender.to_string()),
             });
-            let mut reply_rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(client_msg).await;
+            let mut reply_rx = client.send(client_msg).await;
             while let Some(server_msg) = reply_rx.recv().await {
                 match server_msg {
                     ServerMessage {
@@ -386,17 +368,13 @@ async fn discord_loop<C, CFut>(
 /// `ServerMessage::Evaluation { respond }`. Falls back to `true` on any
 /// unexpected response or error so the agent still responds if evaluation
 /// fails.
-async fn should_respond<C, CFut>(
-    on_message: &Arc<C>,
+async fn should_respond(
+    client: &Arc<DaemonClient>,
     agent: &CompactString,
     content: &str,
     session: Option<u64>,
     sender: &CompactString,
-) -> bool
-where
-    C: Fn(ClientMessage) -> CFut + Send + Sync + 'static,
-    CFut: Future<Output = mpsc::UnboundedReceiver<ServerMessage>> + Send + 'static,
-{
+) -> bool {
     let eval_msg = ClientMessage {
         msg: Some(client_message::Msg::Evaluate(EvaluateMsg {
             agent: agent.clone().into(),
@@ -405,7 +383,7 @@ where
             sender: Some(sender.to_string()),
         })),
     };
-    let mut rx: mpsc::UnboundedReceiver<ServerMessage> = on_message(eval_msg).await;
+    let mut rx = client.send(eval_msg).await;
     match rx.recv().await {
         Some(ServerMessage {
             msg: Some(server_message::Msg::Evaluation(EvaluationMsg { respond })),

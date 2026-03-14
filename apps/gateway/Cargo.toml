@@ -10,12 +10,27 @@ license.workspace = true
 repository.workspace = true
 keywords.workspace = true
 
+[[bin]]
+name = "wgateway"
+path = "src/bin/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+serve = ["dep:socket", "dep:anyhow", "dep:serde_json"]
+cli = ["dep:clap", "dep:tracing-subscriber", "serve"]
+
 [dependencies]
-wcore.workspace = true
+anyhow = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
 compact_str.workspace = true
 futures-util.workspace = true
 serde.workspace = true
+serde_json = { workspace = true, optional = true }
 serenity.workspace = true
+socket = { workspace = true, optional = true }
 teloxide.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+tracing-subscriber = { workspace = true, optional = true }
+wcore.workspace = true

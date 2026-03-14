@@ -21,7 +21,6 @@ use std::{
 use tokio::sync::{RwLock, broadcast, mpsc, oneshot};
 use wcore::AgentConfig;
 use wcore::Runtime;
-use wcore::protocol::message::ClientMessage;
 
 pub(crate) mod builder;
 pub mod event;
@@ -122,8 +121,8 @@ impl Daemon {
 
 /// Handle returned by [`Daemon::start`] — holds the event sender and shutdown trigger.
 ///
-/// The caller spawns transports (socket, channels) using [`setup_socket`] and
-/// [`setup_channels`], passing clones of `event_tx` and `shutdown_tx`.
+/// The caller spawns transports (socket, TCP) using [`setup_socket`] and
+/// [`setup_tcp`], passing clones of `event_tx` and `shutdown_tx`.
 pub struct DaemonHandle {
     /// The loaded daemon configuration.
     pub config: DaemonConfig,
@@ -193,31 +192,6 @@ pub fn setup_socket(
     ));
 
     Ok((resolved_path, join))
-}
-
-/// Spawn channel transports.
-pub async fn setup_channels(config: &DaemonConfig, event_tx: &DaemonEventSender) {
-    let tx = event_tx.clone();
-    let on_message = Arc::new(move |msg: ClientMessage| {
-        let tx = tx.clone();
-        async move {
-            let (reply_tx, reply_rx) = mpsc::unbounded_channel();
-            let _ = tx.send(DaemonEvent::Message {
-                msg,
-                reply: reply_tx,
-            });
-            reply_rx
-        }
-    });
-
-    // Use the first configured agent name as the default, falling back to "assistant".
-    let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
-    let default_agent = crate::config::load_agents_dir(&agents_dir)
-        .ok()
-        .and_then(|agents| agents.into_iter().next())
-        .map(|(stem, _)| compact_str::CompactString::from(stem))
-        .unwrap_or_else(|| compact_str::CompactString::from("assistant"));
-    gateway::spawn_gateways(&config.gateway, default_agent, on_message).await;
 }
 
 /// Bind a TCP listener and spawn the accept loop.

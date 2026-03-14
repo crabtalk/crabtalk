@@ -11,7 +11,6 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-gateway.workspace = true
 model.workspace = true
 socket.workspace = true
 tcp.workspace = true

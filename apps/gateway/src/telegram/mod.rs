@@ -3,6 +3,7 @@
 //! Uses teloxide long-polling for receiving messages and `Bot::send_message`
 //! for sending replies.
 
+#[cfg(feature = "serve")]
 pub(crate) mod command;
 
 use crate::message::{Attachment, AttachmentKind, GatewayMessage};
