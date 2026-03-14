@@ -1,8 +1,8 @@
 //! Client trait — transport primitives plus typed provided methods.
 
 use crate::protocol::message::{
-    DownloadEvent, DownloadRequest, HubRequest, MemoryOp, MemoryResult, SendRequest, SendResponse,
-    StreamEvent, StreamRequest, TaskEvent, client::ClientMessage, server::ServerMessage,
+    DownloadEvent, HubRequest, MemoryOp, MemoryResult, SendRequest, SendResponse, StreamEvent,
+    StreamRequest, TaskEvent, client::ClientMessage, server::ServerMessage,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -53,21 +53,6 @@ pub trait Client: Send {
                 ))
             })
             .map(|r| r.and_then(StreamEvent::try_from))
-    }
-
-    /// Download a model's files with progress reporting.
-    fn download(
-        &mut self,
-        req: DownloadRequest,
-    ) -> impl Stream<Item = Result<DownloadEvent>> + Send + '_ {
-        self.request_stream(req.into())
-            .take_while(|r| {
-                std::future::ready(!matches!(
-                    r,
-                    Ok(ServerMessage::Download(DownloadEvent::Completed { .. }))
-                ))
-            })
-            .map(|r| r.and_then(DownloadEvent::try_from))
     }
 
     /// Install or uninstall a hub package, streaming download events.

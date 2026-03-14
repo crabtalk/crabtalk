@@ -11,8 +11,7 @@ use tcp::TcpConnection;
 use wcore::protocol::{
     api::Client,
     message::{
-        DownloadEvent, DownloadRequest, HubAction, HubRequest, SendRequest, StreamEvent,
-        StreamRequest,
+        DownloadEvent, HubAction, HubRequest, SendRequest, StreamEvent, StreamRequest,
         client::ClientMessage,
         server::{ServerMessage, SessionInfo, TaskInfo},
     },
@@ -162,27 +161,6 @@ impl Runner {
                     Err(e) => Some(Err(e)),
                 }
             })
-    }
-
-    /// Send a download request and return a stream of progress events.
-    pub fn download_stream(
-        &mut self,
-        model: &str,
-    ) -> impl Stream<Item = Result<DownloadEvent>> + '_ {
-        self.transport
-            .request_stream(
-                DownloadRequest {
-                    model: CompactString::from(model),
-                }
-                .into(),
-            )
-            .take_while(|r| {
-                std::future::ready(!matches!(
-                    r,
-                    Ok(ServerMessage::Download(DownloadEvent::Completed { .. }))
-                ))
-            })
-            .map(|r| r.and_then(DownloadEvent::try_from))
     }
 
     /// Send a hub install/uninstall request and return a stream of progress events.

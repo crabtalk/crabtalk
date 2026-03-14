@@ -7,7 +7,6 @@
 pub(crate) enum BotCommand {
     HubInstall { package: String },
     HubUninstall { package: String },
-    ModelDownload { model: String },
 }
 
 /// Parse a message content string into a `BotCommand`.
@@ -28,9 +27,6 @@ pub(crate) fn parse_command(content: &str) -> Option<BotCommand> {
         }),
         ("/hub", "uninstall") => Some(BotCommand::HubUninstall {
             package: arg.unwrap_or_default(),
-        }),
-        ("/model", "download") => Some(BotCommand::ModelDownload {
-            model: arg.unwrap_or_default(),
         }),
         _ => None,
     }

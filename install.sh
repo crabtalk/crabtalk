@@ -4,7 +4,6 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/openwalrus/walrus/main/install.sh | sh
 #   curl -fsSL ... | sh -s -- --yes      # non-interactive (prebuilt binary)
-#   curl -fsSL ... | sh -s -- --local    # compile with native local LLM support
 #
 # Environment variables:
 #   WALRUS_INSTALL_DIR  Override binary installation directory
@@ -15,7 +14,6 @@ REPO="openwalrus/walrus"
 BINARY_NAME="walrus"
 CARGO_CRATE="openwalrus"
 AUTO_YES=0
-FORCE_LOCAL=0
 TMPDIR_PATH=""
 
 # --- Utility functions ---
@@ -80,9 +78,6 @@ parse_args() {
             --yes | -y)
                 AUTO_YES=1
                 ;;
-            --local)
-                FORCE_LOCAL=1
-                ;;
             --help | -h)
                 cat <<'EOF'
 Install walrus — composable primitives for agentic workflows in Rust.
@@ -92,7 +87,6 @@ Usage:
 
 Options:
   -y, --yes    Skip all confirmation prompts (downloads prebuilt binary)
-  --local      Compile with native local LLM support (requires Rust toolchain)
   -h, --help   Show this help message
 
 Environment variables:
@@ -124,10 +118,6 @@ detect_platform() {
         x86_64 | amd64)  ARCH="amd64" ;;
         *)               warn "unrecognized architecture: $ARCH" ;;
     esac
-}
-
-detect_cuda() {
-    check_cmd nvidia-smi || check_cmd nvcc
 }
 
 detect_existing() {
@@ -197,25 +187,6 @@ ensure_cargo() {
     info "cargo installed successfully"
 }
 
-# Determine the right cargo features for local LLM on this platform.
-local_features() {
-    case "$OS" in
-        macos)
-            echo "local,metal"
-            ;;
-        linux)
-            if [ "$ARCH" = "amd64" ] && detect_cuda; then
-                echo "cuda"
-            else
-                echo "local"
-            fi
-            ;;
-        *)
-            echo "local"
-            ;;
-    esac
-}
-
 install_prebuilt() {
     TMPDIR_PATH="$(mktemp -d)"
 
@@ -247,17 +218,6 @@ install_prebuilt() {
     fi
 
     info "installed ${BINARY_NAME} to ${INSTALL_DIR}/${BINARY_NAME}"
-}
-
-install_cargo_crate() {
-    FEATURES="$1"
-    if [ -n "$FEATURES" ]; then
-        info "installing ${CARGO_CRATE} (features: ${FEATURES})..."
-        cargo install "$CARGO_CRATE" --features "$FEATURES"
-    else
-        info "installing ${CARGO_CRATE}..."
-        cargo install "$CARGO_CRATE"
-    fi
 }
 
 post_install() {
@@ -319,47 +279,7 @@ main() {
         fi
     fi
 
-    # --- Windows path (no local LLM support) ---
-    if [ "$OS" = "windows" ]; then
-        warn "local LLM inference (mistralrs) is not supported on Windows."
-        warn "${BINARY_NAME} will be installed without local model support."
-        if ! confirm "continue with limited functionality?"; then
-            info "installation cancelled."
-            exit 0
-        fi
-        ensure_cargo
-        cargo install "$CARGO_CRATE" --no-default-features
-        post_install
-        return
-    fi
-
-    # --- --local flag: compile with local LLM support ---
-    if [ "$FORCE_LOCAL" = "1" ]; then
-        FEATURES="$(local_features)"
-        info "compiling with native local LLM support (features: ${FEATURES})..."
-        ensure_cargo
-        install_cargo_crate "$FEATURES"
-        post_install
-        return
-    fi
-
-    # --- Interactive: ask about local LLM support ---
-    if [ "$AUTO_YES" = "0" ] && [ -e /dev/tty ]; then
-        echo "" >&2
-        info "walrus can run LLMs locally on your device (requires compiling from source)."
-        info "without local LLM support, walrus uses remote API providers only."
-        echo "" >&2
-        if confirm "install with native local LLM support? (requires compilation, takes longer)"; then
-            FEATURES="$(local_features)"
-            info "compiling with local LLM support (features: ${FEATURES})..."
-            ensure_cargo
-            install_cargo_crate "$FEATURES"
-            post_install
-            return
-        fi
-    fi
-
-    # --- Prebuilt binary path (no local LLM) ---
+    # --- Prebuilt binary path ---
     if has_prebuilt; then
         get_latest_version
         install_prebuilt
@@ -371,7 +291,7 @@ main() {
     warn "no prebuilt binary available for ${OS}-${ARCH}."
     info "falling back to cargo install..."
     ensure_cargo
-    install_cargo_crate ""
+    cargo install "$CARGO_CRATE"
     post_install
 }
 

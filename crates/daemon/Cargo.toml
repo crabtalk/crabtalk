@@ -10,12 +10,6 @@ license.workspace = true
 repository.workspace = true
 keywords.workspace = true
 
-[features]
-default = []
-local = ["model/local"]
-metal = ["model/metal"]
-cuda = ["model/cuda"]
-
 [dependencies]
 channel.workspace = true
 model.workspace = true

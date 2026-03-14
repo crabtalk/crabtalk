@@ -1,7 +1,7 @@
 //! Telegram bot command dispatch.
 //!
-//! Executes parsed bot commands (hub install/uninstall, model download)
-//! by streaming progress back to the originating Telegram chat.
+//! Executes parsed bot commands (hub install/uninstall) by streaming
+//! progress back to the originating Telegram chat.
 
 use crate::command::BotCommand;
 use compact_str::CompactString;
@@ -31,9 +31,6 @@ pub(crate) async fn dispatch_command<C, CFut>(
         BotCommand::HubUninstall { package } => ClientMessage::Hub {
             package: CompactString::from(&package),
             action: HubAction::Uninstall,
-        },
-        BotCommand::ModelDownload { model } => ClientMessage::Download {
-            model: CompactString::from(&model),
         },
     };
 

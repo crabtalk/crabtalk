@@ -8,8 +8,8 @@ use std::sync::Arc;
 use wcore::protocol::{
     api::Server,
     message::{
-        DownloadEvent, DownloadRequest, HubAction, MemoryOp, MemoryResult, SendRequest,
-        SendResponse, StreamEvent, StreamRequest, TaskEvent,
+        DownloadEvent, HubAction, MemoryOp, MemoryResult, SendRequest, SendResponse, StreamEvent,
+        StreamRequest, TaskEvent,
         server::{
             DownloadInfo, EntityInfo, JournalInfo, RelationInfo, SessionInfo, TaskInfo,
             ToolCallInfo,
@@ -97,22 +97,6 @@ impl Server for Daemon {
             }
 
             yield StreamEvent::End { agent: agent.clone() };
-        }
-    }
-
-    fn download(
-        &self,
-        req: DownloadRequest,
-    ) -> impl futures_core::Stream<Item = Result<DownloadEvent>> + Send {
-        let runtime = self.runtime.clone();
-        async_stream::try_stream! {
-            let rt = runtime.read().await.clone();
-            let registry = rt.hook.downloads.clone();
-            let s = crate::ext::hub::model::download(req.model, registry);
-            pin_mut!(s);
-            while let Some(event) = s.next().await {
-                yield event?;
-            }
         }
     }
 

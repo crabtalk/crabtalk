@@ -65,9 +65,7 @@ impl Daemon {
 
     /// Construct the provider manager from config.
     ///
-    /// Loads a single local model from the registry (if local feature enabled)
-    /// and any remote providers from config. Only one local model is active
-    /// at a time to avoid memory pressure.
+    /// Builds remote providers from config and sets the active model.
     async fn build_providers(config: &DaemonConfig) -> Result<ProviderManager> {
         let active_model = config
             .walrus
@@ -75,27 +73,6 @@ impl Daemon {
             .clone()
             .ok_or_else(|| anyhow::anyhow!("walrus.model is required in walrus.toml"))?;
         let manager = ProviderManager::new(active_model.clone());
-
-        // Add the active local model — try registry first, then custom config.
-        #[cfg(feature = "local")]
-        {
-            if let Some(entry) = model::local::registry::find(&active_model) {
-                let local = model::local::registry::build_local(entry);
-                manager.add_provider(active_model.clone(), model::Provider::Local(local))?;
-            } else if let Some(entry) = model::local::registry::find_by_key(&active_model) {
-                let local = model::local::registry::build_local(entry);
-                manager.add_provider(active_model.clone(), model::Provider::Local(local))?;
-            } else if let Some(hf) = config.model.models.get(active_model.as_str()) {
-                let local = model::local::Local::lazy(
-                    &hf.model_id,
-                    hf.loader,
-                    None,
-                    hf.chat_template.clone(),
-                    hf.gguf_file.as_deref(),
-                );
-                manager.add_provider(active_model.clone(), model::Provider::Local(local))?;
-            }
-        }
 
         // Add remote providers from config.
         for config in config.model.remotes.values() {

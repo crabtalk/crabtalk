@@ -14,7 +14,6 @@ use wcore::protocol::message::server::{DownloadEvent, DownloadInfo, DownloadKind
 
 pub mod embeddings;
 pub mod manifest;
-pub mod model;
 pub mod package;
 
 // ── Registry ──────────────────────────────────────────────────────

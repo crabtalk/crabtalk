@@ -1,8 +1,8 @@
 //! Server trait — one async method per protocol operation.
 
 use crate::protocol::message::{
-    DownloadEvent, DownloadRequest, HubAction, MemoryOp, MemoryResult, SendRequest, SendResponse,
-    StreamEvent, StreamRequest, TaskEvent,
+    DownloadEvent, HubAction, MemoryOp, MemoryResult, SendRequest, SendResponse, StreamEvent,
+    StreamRequest, TaskEvent,
     client::ClientMessage,
     server::{DownloadInfo, ServerMessage, SessionInfo, TaskInfo},
 };
@@ -28,9 +28,6 @@ pub trait Server: Sync {
 
     /// Handle `Stream` — run agent and stream response events.
     fn stream(&self, req: StreamRequest) -> impl Stream<Item = Result<StreamEvent>> + Send;
-
-    /// Handle `Download` — download model files with progress.
-    fn download(&self, req: DownloadRequest) -> impl Stream<Item = Result<DownloadEvent>> + Send;
 
     /// Handle `Ping` — keepalive.
     fn ping(&self) -> impl std::future::Future<Output = Result<()>> + Send;
@@ -98,13 +95,6 @@ pub trait Server: Sync {
                 }
                 ClientMessage::Stream { agent, content, session, sender } => {
                     let s = self.stream(StreamRequest { agent, content, session, sender });
-                    tokio::pin!(s);
-                    while let Some(result) = s.next().await {
-                        yield result_to_msg(result);
-                    }
-                }
-                ClientMessage::Download { model } => {
-                    let s = self.download(DownloadRequest { model });
                     tokio::pin!(s);
                     while let Some(result) = s.next().await {
                         yield result_to_msg(result);

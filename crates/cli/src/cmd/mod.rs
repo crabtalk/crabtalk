@@ -12,7 +12,6 @@ pub mod auth;
 #[cfg(feature = "daemon")]
 pub mod daemon;
 pub mod hub;
-pub mod model;
 #[cfg(unix)]
 pub mod sandbox;
 pub mod session;
@@ -62,10 +61,6 @@ impl Cli {
                 let mut runner = connect_uds(&socket_path).await?;
                 cmd.run(&mut runner).await
             }
-            Command::Model(cmd) => {
-                let mut runner = connect_uds(&socket_path).await?;
-                cmd.run(&mut runner).await
-            }
             Command::Session(cmd) => {
                 let mut runner = connect_uds(&socket_path).await?;
                 cmd.run(&mut runner).await
@@ -91,8 +86,6 @@ pub enum Command {
     Auth(auth::Auth),
     /// Install or uninstall hub packages.
     Hub(hub::Hub),
-    /// Manage local models.
-    Model(model::Model),
     /// Manage active sessions.
     Session(session::Session),
     /// Manage tasks in the task registry.

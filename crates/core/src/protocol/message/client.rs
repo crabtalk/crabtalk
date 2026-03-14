@@ -43,13 +43,6 @@ pub struct StreamRequest {
     pub sender: Option<CompactString>,
 }
 
-/// Request download of a model's files with progress reporting.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DownloadRequest {
-    /// HuggingFace model ID.
-    pub model: CompactString,
-}
-
 /// Install or uninstall a hub package.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HubRequest {
@@ -123,11 +116,6 @@ pub enum ClientMessage {
         /// Sender identity. `None` = local.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sender: Option<CompactString>,
-    },
-    /// Request download of a model's files with progress reporting.
-    Download {
-        /// HuggingFace model ID (e.g. "microsoft/Phi-3.5-mini-instruct").
-        model: CompactString,
     },
     /// Ping the server (keepalive).
     Ping,
@@ -214,12 +202,6 @@ impl From<StreamRequest> for ClientMessage {
             session: r.session,
             sender: r.sender,
         }
-    }
-}
-
-impl From<DownloadRequest> for ClientMessage {
-    fn from(r: DownloadRequest) -> Self {
-        Self::Download { model: r.model }
     }
 }
 
