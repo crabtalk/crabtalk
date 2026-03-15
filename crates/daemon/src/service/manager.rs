@@ -467,7 +467,7 @@ async fn infer_fulfill(
         messages.push(msg);
     }
 
-    // Collect only the service's tools (tools owned by any service handle).
+    // Service tools (pre-filtered by caller).
     let tools: Vec<Tool> = service_tools.to_vec();
 
     const MAX_INFER_ITERATIONS: usize = 10;

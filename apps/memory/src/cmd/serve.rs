@@ -147,7 +147,10 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
                 }
             }
             Some(whs_request::Msg::AfterRun(ar)) => {
-                let messages = build_extraction_messages(&ar.history);
+                let conversation = build_conversation_summary(&ar.history);
+                // Store a journal entry from the conversation for future compaction context.
+                let _ = svc.dispatch_journal(&conversation, &ar.agent).await;
+                let messages = extraction_messages_from(&conversation);
                 // Respond with InferRequest — daemon runs extraction LLM loop,
                 // dispatching recall/extract tool calls back to this service.
                 WhsResponse {
@@ -460,22 +463,22 @@ async fn handle_compact(svc: &MemoryService, agent: &str) -> String {
     addition
 }
 
-/// Build extraction messages for the Infer LLM from conversation history.
-///
-/// Returns `[system(extract prompt), user(conversation summary)]` for the
-/// daemon to proxy through the host agent's model.
-fn build_extraction_messages(history: &[SimpleMessage]) -> Vec<SimpleMessage> {
-    // Build a condensed conversation for the extraction LLM.
+/// Build a condensed conversation summary from history, skipping recall
+/// injections and tool messages.
+fn build_conversation_summary(history: &[SimpleMessage]) -> String {
     let mut conversation = String::new();
     for msg in history {
         let role = msg.role.as_str();
-        // Skip auto-recall injections and tool messages.
         if msg.content.starts_with("<recall>") || role == "tool" {
             continue;
         }
         conversation.push_str(&format!("[{role}] {}\n\n", msg.content));
     }
+    conversation
+}
 
+/// Wrap a conversation summary into extraction messages for the Infer LLM.
+fn extraction_messages_from(conversation: &str) -> Vec<SimpleMessage> {
     vec![
         SimpleMessage {
             role: "system".to_owned(),
