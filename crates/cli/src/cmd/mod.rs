@@ -9,7 +9,6 @@ use wcore::paths::TCP_PORT_FILE;
 
 pub mod attach;
 pub mod auth;
-#[cfg(feature = "daemon")]
 pub mod daemon;
 pub mod hub;
 pub mod model;
@@ -56,6 +55,7 @@ impl Cli {
             Command::Auth(cmd) => cmd.run(),
             Command::Model(cmd) => cmd.run(),
             Command::Attach(cmd) => {
+                attach::ensure_providers(&socket_path).await?;
                 let runner = connect(cmd.tcp, &socket_path).await?;
                 cmd.run(runner, agent).await
             }
@@ -73,7 +73,6 @@ impl Cli {
             }
             #[cfg(unix)]
             Command::Sandbox(cmd) => cmd.run().await,
-            #[cfg(feature = "daemon")]
             Command::Daemon(cmd) => cmd.run(&socket_path).await,
         }
     }
@@ -98,7 +97,6 @@ pub enum Command {
     #[cfg(unix)]
     Sandbox(sandbox::Sandbox),
     /// Manage the walrus daemon (start, reload, install, uninstall).
-    #[cfg(feature = "daemon")]
     Daemon(daemon::Daemon),
 }
 
