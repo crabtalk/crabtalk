@@ -197,39 +197,26 @@ async fn reload(socket_path: &Path) -> Result<()> {
 // ── Service install/uninstall ────────────────────────────────────────
 
 #[cfg(target_os = "macos")]
+const LAUNCHD_TEMPLATE: &str = include_str!("launchd.plist");
+#[cfg(target_os = "linux")]
+const SYSTEMD_TEMPLATE: &str = include_str!("systemd.service");
+
+/// Render a template by replacing `{binary}` and `{log_dir}` placeholders.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn render_template(template: &str, binary: &Path, log_dir: &Path) -> String {
+    template
+        .replace("{binary}", &binary.display().to_string())
+        .replace("{log_dir}", &log_dir.display().to_string())
+}
+
+#[cfg(target_os = "macos")]
 fn install() -> Result<()> {
     let binary = std::env::current_exe()?;
-    let plist = format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.walrus.daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{}</string>
-        <string>daemon</string>
-        <string>start</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>{}/walrus-daemon.log</string>
-    <key>StandardErrorPath</key>
-    <string>{}/walrus-daemon.log</string>
-</dict>
-</plist>"#,
-        binary.display(),
-        CONFIG_DIR.display(),
-        CONFIG_DIR.display(),
-    );
+    let plist = render_template(LAUNCHD_TEMPLATE, &binary, &CONFIG_DIR);
 
     let plist_path = dirs::home_dir()
         .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?
-        .join("Library/LaunchAgents/com.walrus.daemon.plist");
+        .join("Library/LaunchAgents/xyz.openwalrus.walrus.plist");
 
     if let Some(parent) = plist_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -253,7 +240,7 @@ fn install() -> Result<()> {
 fn uninstall() -> Result<()> {
     let plist_path = dirs::home_dir()
         .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?
-        .join("Library/LaunchAgents/com.walrus.daemon.plist");
+        .join("Library/LaunchAgents/xyz.openwalrus.walrus.plist");
 
     if !plist_path.exists() {
         anyhow::bail!("service not installed ({})", plist_path.display());
@@ -275,21 +262,7 @@ fn uninstall() -> Result<()> {
 #[cfg(target_os = "linux")]
 fn install() -> Result<()> {
     let binary = std::env::current_exe()?;
-    let unit = format!(
-        "[Unit]\n\
-         Description=Walrus Daemon\n\
-         After=network-online.target\n\
-         \n\
-         [Service]\n\
-         Type=simple\n\
-         ExecStart={} daemon start\n\
-         Restart=always\n\
-         RestartSec=3\n\
-         \n\
-         [Install]\n\
-         WantedBy=default.target\n",
-        binary.display(),
-    );
+    let unit = render_template(SYSTEMD_TEMPLATE, &binary, &CONFIG_DIR);
 
     let unit_dir = dirs::home_dir()
         .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?
