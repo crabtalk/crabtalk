@@ -15,8 +15,9 @@ const WALRUS_HUB: &str = "https://github.com/openwalrus/hub";
 
 /// Install a hub package, streaming unified download events.
 ///
-/// Syncs the hub repo, reads the manifest, merges MCP servers into
-/// `walrus.toml`, and copies skill directories into `~/.openwalrus/skills/`.
+/// Syncs the hub repo, reads the manifest, merges MCP servers and services
+/// into `walrus.toml`, copies skill directories into `~/.openwalrus/skills/`,
+/// and installs agents (prompt files + their declared skills).
 pub fn install(
     package: CompactString,
     registry: std::sync::Arc<tokio::sync::Mutex<DownloadRegistry>>,
@@ -51,8 +52,51 @@ pub fn install(
             merge_mcp_servers(&manifest)?;
         }
 
-        // Install skills.
-        if !manifest.skills.is_empty() {
+        // Install service binaries and merge configs.
+        if !manifest.services.is_empty() {
+            for (key, cfg) in &manifest.services {
+                if let Some(install) = &cfg.install {
+                    let msg = format!("installing {key}…");
+                    registry.lock().await.step(id, msg.clone());
+                    yield DownloadEvent {
+                        event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+                    };
+                    let status = Command::new(&install.command)
+                        .args(&install.args)
+                        .status()
+                        .await
+                        .with_context(|| format!("failed to run install for {key}"))?;
+                    if !status.success() {
+                        Err(anyhow::anyhow!("install for {key} exited with {status}"))?;
+                    }
+                }
+            }
+
+            let msg = "adding services…".to_string();
+            registry.lock().await.step(id, msg.clone());
+            yield DownloadEvent {
+                event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+            };
+            merge_services(&manifest)?;
+        }
+
+        // Collect skill keys referenced by agents so they are installed too.
+        let mut agent_skill_keys: std::collections::BTreeSet<&CompactString> =
+            std::collections::BTreeSet::new();
+        for agent in manifest.agents.values() {
+            for sk in &agent.skills {
+                agent_skill_keys.insert(sk);
+            }
+        }
+
+        // Install skills (top-level + agent-referenced).
+        let all_skill_keys: std::collections::BTreeSet<&CompactString> = manifest
+            .skills
+            .keys()
+            .chain(agent_skill_keys.iter().copied())
+            .collect();
+
+        if !all_skill_keys.is_empty() {
             let msg = "installing skills…".to_string();
             registry.lock().await.step(id, msg.clone());
             yield DownloadEvent {
@@ -63,7 +107,10 @@ pub fn install(
             std::fs::create_dir_all(&cache_dir).context("failed to create skill cache dir")?;
             std::fs::create_dir_all(&skills_dir).context("failed to create skills dir")?;
 
-            for (key, skill) in &manifest.skills {
+            for key in &all_skill_keys {
+                let skill = manifest.skills.get(*key).ok_or_else(|| {
+                    anyhow::anyhow!("agent references skill '{key}' not found in [skills]")
+                })?;
                 let msg = format!("installing skill {key}…");
                 registry.lock().await.step(id, msg.clone());
                 yield DownloadEvent {
@@ -85,6 +132,16 @@ pub fn install(
             }
         }
 
+        // Install agents (copy prompt .md files).
+        if !manifest.agents.is_empty() {
+            let msg = "installing agents…".to_string();
+            registry.lock().await.step(id, msg.clone());
+            yield DownloadEvent {
+                event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+            };
+            install_agents(scope, &manifest)?;
+        }
+
         registry.lock().await.complete(id);
         yield DownloadEvent {
             event: Some(download_event::Event::Completed(DownloadCompleted { id })),
@@ -95,7 +152,8 @@ pub fn install(
 /// Uninstall a hub package, streaming unified download events.
 ///
 /// Reads the manifest from the local hub repo (no network sync), removes MCP
-/// server entries from `walrus.toml`, and deletes skill directories.
+/// servers and services from `walrus.toml`, deletes skill directories and
+/// agent prompt files.
 pub fn uninstall(
     package: CompactString,
     registry: std::sync::Arc<tokio::sync::Mutex<DownloadRegistry>>,
@@ -125,6 +183,15 @@ pub fn uninstall(
             remove_mcp_servers(&manifest)?;
         }
 
+        if !manifest.services.is_empty() {
+            let msg = "removing services…".to_string();
+            registry.lock().await.step(id, msg.clone());
+            yield DownloadEvent {
+                event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+            };
+            remove_services(&manifest)?;
+        }
+
         if !manifest.skills.is_empty() {
             let msg = "removing skills…".to_string();
             registry.lock().await.step(id, msg.clone());
@@ -139,6 +206,15 @@ pub fn uninstall(
                         .with_context(|| format!("failed to remove skill {key}"))?;
                 }
             }
+        }
+
+        if !manifest.agents.is_empty() {
+            let msg = "removing agents…".to_string();
+            registry.lock().await.step(id, msg.clone());
+            yield DownloadEvent {
+                event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+            };
+            remove_agents(&manifest)?;
         }
 
         registry.lock().await.complete(id);
@@ -257,6 +333,96 @@ fn remove_mcp_servers(manifest: &manifest::Manifest) -> Result<()> {
 
     std::fs::write(&config_path, doc.to_string())
         .with_context(|| format!("failed to write {}", config_path.display()))?;
+    Ok(())
+}
+
+/// Merge service entries from a manifest into `walrus.toml`.
+///
+/// Strips install-time fields (`install`, `description`) before writing —
+/// they are hub metadata, not runtime config.
+fn merge_services(manifest: &manifest::Manifest) -> Result<()> {
+    use toml_edit::DocumentMut;
+
+    let config_path = CONFIG_DIR.join("walrus.toml");
+    let content = std::fs::read_to_string(&config_path)
+        .with_context(|| format!("cannot read {}", config_path.display()))?;
+    let mut doc: DocumentMut = content
+        .parse()
+        .with_context(|| format!("invalid TOML in {}", config_path.display()))?;
+
+    let table = doc
+        .entry("services")
+        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_mut()
+        .context("services is not a table")?;
+
+    for (key, cfg) in &manifest.services {
+        let mut runtime = cfg.clone();
+        runtime.install = None;
+        runtime.description = None;
+        let doc = toml_edit::ser::to_document(&runtime)
+            .with_context(|| format!("failed to serialize ServiceConfig for {key}"))?;
+        let item = toml_edit::Item::Table(doc.as_table().clone());
+        table.insert(key.as_str(), item);
+    }
+
+    std::fs::write(&config_path, doc.to_string())
+        .with_context(|| format!("failed to write {}", config_path.display()))?;
+    Ok(())
+}
+
+/// Remove service entries listed in a manifest from `walrus.toml`.
+fn remove_services(manifest: &manifest::Manifest) -> Result<()> {
+    use toml_edit::DocumentMut;
+
+    let config_path = CONFIG_DIR.join("walrus.toml");
+    let content = std::fs::read_to_string(&config_path)
+        .with_context(|| format!("cannot read {}", config_path.display()))?;
+    let mut doc: DocumentMut = content
+        .parse()
+        .with_context(|| format!("invalid TOML in {}", config_path.display()))?;
+
+    if let Some(table) = doc.get_mut("services").and_then(|v| v.as_table_mut()) {
+        for key in manifest.services.keys() {
+            table.remove(key.as_str());
+        }
+    }
+
+    std::fs::write(&config_path, doc.to_string())
+        .with_context(|| format!("failed to write {}", config_path.display()))?;
+    Ok(())
+}
+
+/// Install agent prompt files from the hub repo to `~/.openwalrus/agents/`.
+fn install_agents(scope: &str, manifest: &manifest::Manifest) -> Result<()> {
+    let agents_dir = CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
+    std::fs::create_dir_all(&agents_dir).context("failed to create agents directory")?;
+
+    let hub_dir = CONFIG_DIR.join("hub");
+    for (name, agent) in &manifest.agents {
+        let src = hub_dir.join(scope).join(agent.prompt.as_str());
+        let dst = agents_dir.join(format!("{name}.md"));
+        std::fs::copy(&src, &dst).with_context(|| {
+            format!(
+                "failed to copy agent prompt {} -> {}",
+                src.display(),
+                dst.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Remove agent prompt files installed by a manifest.
+fn remove_agents(manifest: &manifest::Manifest) -> Result<()> {
+    let agents_dir = CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
+    for name in manifest.agents.keys() {
+        let dst = agents_dir.join(format!("{name}.md"));
+        if dst.exists() {
+            std::fs::remove_file(&dst)
+                .with_context(|| format!("failed to remove agent prompt {}", dst.display()))?;
+        }
+    }
     Ok(())
 }
 

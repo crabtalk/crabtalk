@@ -12,10 +12,7 @@ pub struct Daemon;
 impl Daemon {
     /// Run the daemon, blocking until Ctrl-C.
     pub async fn run(self) -> Result<()> {
-        if !CONFIG_DIR.exists() {
-            config::scaffold_config_dir(&CONFIG_DIR)?;
-            tracing::info!("created config directory at {}", CONFIG_DIR.display());
-        }
+        config::scaffold_config_dir(&CONFIG_DIR)?;
 
         let handle = WalrusDaemon::start(&CONFIG_DIR).await?;
 

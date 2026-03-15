@@ -1,4 +1,4 @@
-//! Walrus gateway binary entry point.
+//! Walrus Discord gateway entry point.
 
 use clap::Parser;
 use walrus_gateway::cmd::{App, Command};

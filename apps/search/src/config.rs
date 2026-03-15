@@ -109,13 +109,13 @@ fn default_config_path() -> Option<PathBuf> {
 fn dirs_path() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config").join("wsearch"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config").join("walrus-search"))
     }
     #[cfg(not(target_os = "macos"))]
     {
         std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-            .map(|p| p.join("wsearch"))
+            .map(|p| p.join("walrus-search"))
     }
 }

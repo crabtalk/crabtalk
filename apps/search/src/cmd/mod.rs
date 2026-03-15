@@ -10,7 +10,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "wsearch", version, about = "Meta search engine CLI")]
+#[command(name = "walrus-search", version, about = "Meta search engine CLI")]
 pub struct App {
     /// Path to config file.
     #[arg(long, short, global = true)]

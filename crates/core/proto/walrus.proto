@@ -15,13 +15,17 @@ message ClientMessage {
     Tasks tasks = 7;
     KillTaskMsg kill_task = 8;
     ApproveMsg approve = 9;
-    EvaluateMsg evaluate = 10;
+    // Field 10 removed — reserved to prevent accidental reuse.
     SubscribeTasks subscribe_tasks = 11;
     Downloads downloads = 12;
     SubscribeDownloads subscribe_downloads = 13;
     GetConfig get_config = 14;
     SetConfigMsg set_config = 15;
     ServiceQueryMsg service_query = 16;
+    GetServiceSchemaMsg get_service_schema = 17;
+    GetAllSchemasMsg get_all_schemas = 18;
+    GetServicesMsg get_services = 19;
+    SetServiceConfigMsg set_service_config = 20;
   }
 }
 
@@ -70,13 +74,6 @@ message ApproveMsg {
   string response = 2;
 }
 
-message EvaluateMsg {
-  string agent = 1;
-  string content = 2;
-  optional uint64 session = 3;
-  optional string sender = 4;
-}
-
 message SetConfigMsg {
   string config = 1;
 }
@@ -84,6 +81,19 @@ message SetConfigMsg {
 message ServiceQueryMsg {
   string service = 1;
   string query = 2;
+}
+
+message GetServiceSchemaMsg {
+  string service = 1;
+}
+
+message GetAllSchemasMsg {}
+
+message GetServicesMsg {}
+
+message SetServiceConfigMsg {
+  string service = 1;
+  string config = 2;
 }
 
 // ── Server Messages ──────────────────────────────────────────────
@@ -99,9 +109,12 @@ message ServerMessage {
     DownloadList downloads = 7;
     TaskList tasks = 8;
     TaskEvent task = 9;
-    EvaluationMsg evaluation = 10;
+    // Field 10 removed — reserved to prevent accidental reuse.
     ConfigMsg config = 11;
     ServiceQueryResultMsg service_query_result = 12;
+    ServiceSchemaMsg service_schema = 13;
+    AllSchemasMsg all_schemas = 14;
+    ServiceListMsg service_list = 15;
   }
 }
 
@@ -162,6 +175,7 @@ enum DownloadKind {
   DOWNLOAD_KIND_HUB = 0;
   DOWNLOAD_KIND_EMBEDDINGS = 1;
   DOWNLOAD_KIND_SKILL = 2;
+  DOWNLOAD_KIND_HOOK = 3;
 }
 
 message DownloadEvent {
@@ -276,151 +290,33 @@ message TaskCompleted {
   optional string error = 4;
 }
 
-message EvaluationMsg {
-  bool respond = 1;
-}
-
+// Core daemon config only. Per-service configs are fetched via
+// GetServiceSchema / GetAllSchemas and set via SetServiceConfig.
 message ConfigMsg {
   string config = 1;
 }
 
+message ServiceSchemaMsg {
+  string service = 1;
+  string schema = 2;
+}
+
+message AllSchemasMsg {
+  map<string, string> schemas = 1;
+}
+
+message ServiceInfoMsg {
+  string name = 1;
+  string kind = 2;
+  string status = 3;
+  repeated string capabilities = 4;
+  bool has_config = 5;
+}
+
+message ServiceListMsg {
+  repeated ServiceInfoMsg services = 1;
+}
+
 message ServiceQueryResultMsg {
   string result = 1;
-}
-
-// ── WHS (Walrus Hook Service) Protocol ───────────────────────────
-
-message WhsRequest {
-  oneof msg {
-    WhsHello hello = 1;
-    WhsRegisterTools register_tools = 2;
-    WhsToolCall tool_call = 3;
-    WhsServiceQuery service_query = 4;
-    WhsShutdown shutdown = 5;
-    WhsConfigure configure = 6;
-    WhsBuildAgent build_agent = 7;
-    WhsBeforeRun before_run = 8;
-    WhsCompact compact = 9;
-  }
-}
-
-message WhsHello {
-  string version = 1;
-}
-
-message WhsRegisterTools {}
-message WhsShutdown {}
-message WhsConfigure {
-  bytes config = 1;
-}
-message WhsConfigured {}
-
-message WhsToolCall {
-  string name = 1;
-  string args = 2;
-  string agent = 3;
-  optional uint64 task_id = 4;
-}
-
-message WhsServiceQuery {
-  string query = 1;
-}
-
-message WhsResponse {
-  oneof msg {
-    WhsReady ready = 1;
-    WhsToolSchemas tool_schemas = 2;
-    WhsToolResult tool_result = 3;
-    WhsServiceQueryResult service_query_result = 4;
-    WhsError error = 5;
-    WhsConfigured configured = 6;
-    WhsBuildAgentResult build_agent_result = 7;
-    WhsBeforeRunResult before_run_result = 8;
-    WhsCompactResult compact_result = 9;
-  }
-}
-
-message WhsReady {
-  string version = 1;
-  string service = 2;
-  repeated Capability capabilities = 3;
-}
-
-message Capability {
-  oneof cap {
-    ToolsList tools = 1;
-    QueryCap query = 2;
-    BuildAgentCap build_agent = 3;
-    BeforeRunCap before_run = 4;
-    CompactCap compact = 5;
-  }
-}
-
-message ToolsList {
-  repeated string names = 1;
-}
-
-message QueryCap {}
-
-message ToolDef {
-  string name = 1;
-  string description = 2;
-  bytes parameters = 3;
-  bool strict = 4;
-}
-
-message WhsToolSchemas {
-  repeated ToolDef tools = 1;
-}
-
-message WhsToolResult {
-  string result = 1;
-}
-
-message WhsServiceQueryResult {
-  string result = 1;
-}
-
-message WhsError {
-  string message = 1;
-}
-
-// ── WHS Lifecycle Messages ──────────────────────────────────────
-
-message SimpleMessage {
-  string role = 1;
-  string content = 2;
-}
-
-message BuildAgentCap {}
-message BeforeRunCap {}
-message CompactCap {}
-
-message WhsBuildAgent {
-  string name = 1;
-  string description = 2;
-  string system_prompt = 3;
-}
-
-message WhsBuildAgentResult {
-  string prompt_addition = 1;
-  repeated ToolDef tools = 2;
-}
-
-message WhsBeforeRun {
-  string agent = 1;
-  repeated SimpleMessage history = 2;
-}
-
-message WhsBeforeRunResult {
-  repeated SimpleMessage messages = 1;
-}
-
-message WhsCompact {
-  string agent = 1;
-  string prompt = 2;
-}
-
-message WhsCompactResult {
-  string addition = 1;
 }

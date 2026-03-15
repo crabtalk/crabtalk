@@ -1,4 +1,4 @@
-//! WHS serve command — run wsearch as a hook service over UDS.
+//! WHS serve command — run walrus-search as a hook service over UDS.
 
 use crate::{
     aggregator::Aggregator,
@@ -54,7 +54,7 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
             if c.config.is_empty() {
                 Config::default()
             } else {
-                serde_json::from_slice(&c.config).unwrap_or_else(|e| {
+                serde_json::from_str(&c.config).unwrap_or_else(|e| {
                     tracing::warn!("invalid config, using defaults: {e}");
                     Config::default()
                 })
@@ -107,6 +107,15 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
                     msg: Some(whs_response::Msg::ToolResult(WhsToolResult { result })),
                 }
             }
+            Some(whs_request::Msg::Event(_)) => {
+                // Fire-and-forget — no response expected.
+                continue;
+            }
+            Some(whs_request::Msg::GetSchema(_)) => WhsResponse {
+                msg: Some(whs_response::Msg::Error(WhsError {
+                    message: "schema not yet implemented".into(),
+                })),
+            },
             Some(whs_request::Msg::Shutdown(_)) => {
                 tracing::info!("shutdown requested");
                 clean_exit = true;

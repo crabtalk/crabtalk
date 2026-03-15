@@ -29,9 +29,22 @@ pub enum RestartPolicy {
     Always,
 }
 
+/// Install instructions for a service binary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstallConfig {
+    /// Command to execute (e.g. "cargo", "curl").
+    pub command: String,
+    /// Arguments to pass to the command (e.g. ["install", "walrus-memory"]).
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
 /// Per-service configuration from `[services.<name>]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceConfig {
+    /// Human-readable description (for hub display).
+    #[serde(default)]
+    pub description: Option<String>,
     /// Service kind.
     #[serde(default)]
     pub kind: ServiceKind,
@@ -40,6 +53,9 @@ pub struct ServiceConfig {
     /// Arguments to pass to the command.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Install instructions (hub install-time only, not written to walrus.toml).
+    #[serde(default)]
+    pub install: Option<InstallConfig>,
     /// Restart policy.
     #[serde(default)]
     pub restart: RestartPolicy,

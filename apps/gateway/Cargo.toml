@@ -11,16 +11,24 @@ repository.workspace = true
 keywords.workspace = true
 
 [[bin]]
-name = "wgateway"
-path = "src/bin/main.rs"
-required-features = ["cli"]
+name = "walrus-telegram"
+path = "src/bin/telegram.rs"
+required-features = ["telegram-bin"]
+
+[[bin]]
+name = "walrus-discord"
+path = "src/bin/discord.rs"
+required-features = ["discord-bin"]
 
 [features]
 default = ["cli"]
 telegram = ["dep:teloxide", "serve"]
 discord = ["dep:serenity", "serve"]
 serve = ["dep:socket", "dep:anyhow", "dep:serde_json"]
-cli = ["dep:clap", "dep:tracing-subscriber", "serve", "telegram", "discord"]
+cli-common = ["dep:clap", "dep:tracing-subscriber", "serve"]
+telegram-bin = ["telegram", "cli-common"]
+discord-bin = ["discord", "cli-common"]
+cli = ["telegram-bin", "discord-bin"]
 
 [dependencies]
 anyhow = { workspace = true, optional = true }

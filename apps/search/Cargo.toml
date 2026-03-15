@@ -11,7 +11,7 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "wsearch"
+name = "walrus-search"
 path = "src/bin/main.rs"
 required-features = ["cli"]
 

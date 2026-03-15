@@ -19,10 +19,7 @@ use tokio::sync::RwLock;
 #[cfg(any(feature = "telegram", feature = "discord"))]
 use tokio::sync::mpsc;
 #[cfg(any(feature = "telegram", feature = "discord"))]
-use wcore::protocol::message::{
-    ClientMessage, EvaluateMsg, EvaluationMsg, SendMsg, ServerMessage, client_message,
-    server_message,
-};
+use wcore::protocol::message::{ClientMessage, SendMsg, ServerMessage, server_message};
 
 /// Shared set of sender IDs belonging to sibling Walrus bots.
 ///
@@ -182,11 +179,6 @@ async fn telegram_loop(
         // Normal agent chat path with session mapping.
         let session = sessions.get(&chat_id).copied();
 
-        // Group chat: evaluate whether the agent should respond.
-        if msg.is_group && !should_respond(&client, &agent, &content, session, &sender).await {
-            tracing::debug!(%agent, chat_id, "agent declined to respond in group");
-            continue;
-        }
         let client_msg = ClientMessage::from(SendMsg {
             agent: agent.clone().into(),
             content: content.clone(),
@@ -304,12 +296,6 @@ async fn discord_loop(
         // Normal agent chat path with session mapping.
         let session = sessions.get(&chat_id).copied();
 
-        // Group chat: evaluate whether the agent should respond.
-        if msg.is_group && !should_respond(&client, &agent, &content, session, &sender).await {
-            tracing::debug!(%agent, chat_id, "agent declined to respond in group");
-            continue;
-        }
-
         let client_msg = ClientMessage::from(SendMsg {
             agent: agent.clone().into(),
             content: content.clone(),
@@ -371,38 +357,4 @@ async fn discord_loop(
     }
 
     tracing::info!(platform = "discord", "channel loop ended");
-}
-
-#[cfg(any(feature = "telegram", feature = "discord"))]
-/// Ask the daemon whether the agent should respond to a group message.
-///
-/// Dispatches `ClientMessage::Evaluate` and checks for
-/// `ServerMessage::Evaluation { respond }`. Falls back to `true` on any
-/// unexpected response or error so the agent still responds if evaluation
-/// fails.
-async fn should_respond(
-    client: &Arc<DaemonClient>,
-    agent: &CompactString,
-    content: &str,
-    session: Option<u64>,
-    sender: &CompactString,
-) -> bool {
-    let eval_msg = ClientMessage {
-        msg: Some(client_message::Msg::Evaluate(EvaluateMsg {
-            agent: agent.clone().into(),
-            content: content.to_owned(),
-            session,
-            sender: Some(sender.to_string()),
-        })),
-    };
-    let mut rx = client.send(eval_msg).await;
-    match rx.recv().await {
-        Some(ServerMessage {
-            msg: Some(server_message::Msg::Evaluation(EvaluationMsg { respond })),
-        }) => respond,
-        _ => {
-            tracing::warn!(%agent, "evaluate returned unexpected response, defaulting to respond");
-            true
-        }
-    }
 }

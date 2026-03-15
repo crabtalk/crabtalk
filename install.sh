@@ -2,8 +2,10 @@
 # Install script for walrus — https://github.com/openwalrus/walrus
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/openwalrus/walrus/main/install.sh | sh
-#   curl -fsSL ... | sh -s -- --yes      # non-interactive (prebuilt binary)
+#   curl -fsSL openwalrus.xyz/install | sh
+#   curl -fsSL openwalrus.xyz/install | sh -s -- --yes              # non-interactive
+#   curl -fsSL openwalrus.xyz/install | sh -s -- --services         # install all services
+#   curl -fsSL openwalrus.xyz/install | sh -s -- --service memory   # install one service
 #
 # Environment variables:
 #   WALRUS_INSTALL_DIR  Override binary installation directory
@@ -14,7 +16,12 @@ REPO="openwalrus/walrus"
 BINARY_NAME="walrus"
 CARGO_CRATE="openwalrus"
 AUTO_YES=0
+INSTALL_SERVICES=0
+INSTALL_SERVICE_LIST=""
 TMPDIR_PATH=""
+
+# WHS service binaries and their cargo crate names.
+SERVICE_BINS="walrus-memory walrus-search walrus-telegram walrus-discord"
 
 # --- Utility functions ---
 
@@ -70,6 +77,27 @@ check_cmd() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Map a service short name to its binary name.
+resolve_service_bin() {
+    case "$1" in
+        memory|walrus-memory)     echo "walrus-memory" ;;
+        search|walrus-search)     echo "walrus-search" ;;
+        telegram|walrus-telegram) echo "walrus-telegram" ;;
+        discord|walrus-discord)   echo "walrus-discord" ;;
+        *) err "unknown service: $1. Available: memory, search, telegram, discord" ;;
+    esac
+}
+
+# Map a binary name to its cargo crate name.
+bin_to_crate() {
+    case "$1" in
+        walrus-memory)   echo "walrus-memory" ;;
+        walrus-search)   echo "walrus-search" ;;
+        walrus-telegram) echo "walrus-gateway" ;;
+        walrus-discord)  echo "walrus-gateway" ;;
+    esac
+}
+
 # --- Detection functions ---
 
 parse_args() {
@@ -77,6 +105,17 @@ parse_args() {
         case "$1" in
             --yes | -y)
                 AUTO_YES=1
+                ;;
+            --services)
+                INSTALL_SERVICES=1
+                ;;
+            --service)
+                shift
+                if [ $# -eq 0 ]; then
+                    err "--service requires a service name"
+                fi
+                _bin="$(resolve_service_bin "$1")"
+                INSTALL_SERVICE_LIST="${INSTALL_SERVICE_LIST} ${_bin}"
                 ;;
             --help | -h)
                 cat <<'EOF'
@@ -86,8 +125,10 @@ Usage:
   install.sh [OPTIONS]
 
 Options:
-  -y, --yes    Skip all confirmation prompts (downloads prebuilt binary)
-  -h, --help   Show this help message
+  -y, --yes              Skip all confirmation prompts (downloads prebuilt binary)
+  --services             Install all WHS services
+  --service <name>       Install a specific service (memory, search, telegram, discord)
+  -h, --help             Show this help message
 
 Environment variables:
   WALRUS_INSTALL_DIR   Override binary installation directory
@@ -165,6 +206,13 @@ has_prebuilt() {
     esac
 }
 
+# Build the list of service binaries to install.
+resolve_services() {
+    if [ "$INSTALL_SERVICES" = "1" ]; then
+        INSTALL_SERVICE_LIST="$SERVICE_BINS"
+    fi
+}
+
 # --- Installation functions ---
 
 ensure_cargo() {
@@ -187,37 +235,42 @@ ensure_cargo() {
     info "cargo installed successfully"
 }
 
-install_prebuilt() {
+# Download and install a prebuilt binary from GitHub releases.
+# Usage: install_binary <binary_name>
+install_binary() {
+    _bin="$1"
     TMPDIR_PATH="$(mktemp -d)"
 
-    TARBALL="${BINARY_NAME}-${VERSION}-${OS}-${ARCH}.tar.gz"
-    URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL}"
+    _tarball="${_bin}-${VERSION}-${OS}-${ARCH}.tar.gz"
+    _url="https://github.com/${REPO}/releases/download/${VERSION}/${_tarball}"
 
-    info "downloading ${TARBALL}..."
-    curl -fL# "$URL" -o "${TMPDIR_PATH}/${TARBALL}"
+    info "downloading ${_tarball}..."
+    curl -fL# "$_url" -o "${TMPDIR_PATH}/${_tarball}"
 
     info "extracting..."
-    tar -xzf "${TMPDIR_PATH}/${TARBALL}" -C "${TMPDIR_PATH}"
+    tar -xzf "${TMPDIR_PATH}/${_tarball}" -C "${TMPDIR_PATH}"
 
-    if [ ! -f "${TMPDIR_PATH}/${BINARY_NAME}" ]; then
-        err "expected binary '${BINARY_NAME}' not found in tarball"
+    if [ ! -f "${TMPDIR_PATH}/${_bin}" ]; then
+        err "expected binary '${_bin}' not found in tarball"
     fi
 
     # Place binary in install dir, handling permissions.
     if [ -w "$INSTALL_DIR" ]; then
-        cp "${TMPDIR_PATH}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-        chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+        cp "${TMPDIR_PATH}/${_bin}" "${INSTALL_DIR}/${_bin}"
+        chmod +x "${INSTALL_DIR}/${_bin}"
     elif confirm "use sudo to install to ${INSTALL_DIR}?"; then
-        sudo cp "${TMPDIR_PATH}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-        sudo chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+        sudo cp "${TMPDIR_PATH}/${_bin}" "${INSTALL_DIR}/${_bin}"
+        sudo chmod +x "${INSTALL_DIR}/${_bin}"
     else
         INSTALL_DIR="${HOME}/.local/bin"
         mkdir -p "$INSTALL_DIR"
-        cp "${TMPDIR_PATH}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-        chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+        cp "${TMPDIR_PATH}/${_bin}" "${INSTALL_DIR}/${_bin}"
+        chmod +x "${INSTALL_DIR}/${_bin}"
     fi
 
-    info "installed ${BINARY_NAME} to ${INSTALL_DIR}/${BINARY_NAME}"
+    info "installed ${_bin} to ${INSTALL_DIR}/${_bin}"
+    rm -rf "$TMPDIR_PATH"
+    TMPDIR_PATH=""
 }
 
 post_install() {
@@ -268,7 +321,30 @@ main() {
     detect_platform
     detect_existing
     determine_install_dir
+    resolve_services
     trap cleanup EXIT
+
+    # --- Service-only install (no walrus binary) ---
+    if [ -n "$INSTALL_SERVICE_LIST" ] && [ "$INSTALL_SERVICES" = "0" ]; then
+        if has_prebuilt; then
+            get_latest_version
+            for svc in $INSTALL_SERVICE_LIST; do
+                install_binary "$svc"
+            done
+        else
+            warn "no prebuilt binary available for ${OS}-${ARCH}."
+            info "falling back to cargo install..."
+            ensure_cargo
+            _crates=""
+            for svc in $INSTALL_SERVICE_LIST; do
+                _crates="${_crates} $(bin_to_crate "$svc")"
+            done
+            # shellcheck disable=SC2086
+            cargo install $_crates
+        fi
+        info "service installation complete"
+        return
+    fi
 
     # --- Existing installation check ---
     if [ -n "$EXISTING_PATH" ]; then
@@ -282,7 +358,10 @@ main() {
     # --- Prebuilt binary path ---
     if has_prebuilt; then
         get_latest_version
-        install_prebuilt
+        install_binary "$BINARY_NAME"
+        for svc in $INSTALL_SERVICE_LIST; do
+            install_binary "$svc"
+        done
         post_install
         return
     fi
@@ -292,6 +371,14 @@ main() {
     info "falling back to cargo install..."
     ensure_cargo
     cargo install "$CARGO_CRATE"
+    if [ -n "$INSTALL_SERVICE_LIST" ]; then
+        _crates=""
+        for svc in $INSTALL_SERVICE_LIST; do
+            _crates="${_crates} $(bin_to_crate "$svc")"
+        done
+        # shellcheck disable=SC2086
+        cargo install $_crates
+    fi
     post_install
 }
 

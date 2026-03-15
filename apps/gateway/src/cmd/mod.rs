@@ -6,7 +6,7 @@ pub mod serve;
 
 /// Walrus gateway service.
 #[derive(Parser)]
-#[command(name = "wgateway")]
+#[command(name = "walrus-gateway")]
 pub struct App {
     #[command(subcommand)]
     pub command: Command,

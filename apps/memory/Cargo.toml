@@ -11,7 +11,7 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "wmemory"
+name = "walrus-memory"
 path = "src/bin/main.rs"
 required-features = ["cli"]
 

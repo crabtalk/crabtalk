@@ -1,4 +1,4 @@
-//! CLI command definitions for wmemory.
+//! CLI command definitions for walrus-memory.
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -6,7 +6,7 @@ use std::path::PathBuf;
 pub mod serve;
 
 #[derive(Parser)]
-#[command(name = "wmemory", about = "Walrus memory service")]
+#[command(name = "walrus-memory", about = "Walrus memory service")]
 pub struct App {
     #[command(subcommand)]
     pub command: Command,
