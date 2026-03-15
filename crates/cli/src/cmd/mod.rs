@@ -12,6 +12,7 @@ pub mod auth;
 #[cfg(feature = "daemon")]
 pub mod daemon;
 pub mod hub;
+pub mod model;
 #[cfg(unix)]
 pub mod sandbox;
 pub mod session;
@@ -53,6 +54,7 @@ impl Cli {
         let socket_path = self.resolve_socket();
         match self.command {
             Command::Auth(cmd) => cmd.run(),
+            Command::Model(cmd) => cmd.run(),
             Command::Attach(cmd) => {
                 let runner = connect(cmd.tcp, &socket_path).await?;
                 cmd.run(runner, agent).await
@@ -86,6 +88,8 @@ pub enum Command {
     Auth(auth::Auth),
     /// Install or uninstall hub packages.
     Hub(hub::Hub),
+    /// Configure LLM providers and models interactively.
+    Model(model::Model),
     /// Manage active sessions.
     Session(session::Session),
     /// Manage tasks in the task registry.
