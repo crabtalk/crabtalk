@@ -26,6 +26,7 @@ wcore.workspace = true
 
 # crates.io
 anyhow.workspace = true
+dirs.workspace = true
 async-stream.workspace = true
 clap.workspace = true
 crossterm.workspace = true

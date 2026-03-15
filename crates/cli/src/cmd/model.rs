@@ -23,13 +23,13 @@ pub struct Model;
 
 // ── Presets ──────────────────────────────────────────────────────────
 
-struct Preset {
-    name: &'static str,
-    base_url: &'static str,
-    standard: &'static str,
+pub(crate) struct Preset {
+    pub(crate) name: &'static str,
+    pub(crate) base_url: &'static str,
+    pub(crate) standard: &'static str,
 }
 
-const PRESETS: &[Preset] = &[
+pub(crate) const PRESETS: &[Preset] = &[
     Preset {
         name: "anthropic",
         base_url: "https://api.anthropic.com/v1/messages",

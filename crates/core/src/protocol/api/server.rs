@@ -123,6 +123,9 @@ pub trait Server: Sync {
         config: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
+    /// Handle `Reload` — hot-reload runtime from disk.
+    fn reload(&self) -> impl std::future::Future<Output = Result<()>> + Send;
+
     /// Dispatch a `ClientMessage` to the appropriate handler method.
     ///
     /// Returns a stream of `ServerMessage`s. Request-response operations
@@ -281,6 +284,12 @@ pub trait Server: Sync {
                 }
                 client_message::Msg::SetServiceConfig(req) => {
                     yield match self.set_service_config(req.service, req.config).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::Reload(_) => {
+                    yield match self.reload().await {
                         Ok(()) => server_pong(),
                         Err(e) => server_error(500, e.to_string()),
                     };

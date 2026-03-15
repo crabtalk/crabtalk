@@ -74,7 +74,7 @@ impl Cli {
             #[cfg(unix)]
             Command::Sandbox(cmd) => cmd.run().await,
             #[cfg(feature = "daemon")]
-            Command::Daemon(cmd) => cmd.run().await,
+            Command::Daemon(cmd) => cmd.run(&socket_path).await,
         }
     }
 }
@@ -97,7 +97,7 @@ pub enum Command {
     /// Manage the workspace sandbox for agent isolation.
     #[cfg(unix)]
     Sandbox(sandbox::Sandbox),
-    /// Start the walrus daemon in the foreground.
+    /// Manage the walrus daemon (start, reload, install, uninstall).
     #[cfg(feature = "daemon")]
     Daemon(daemon::Daemon),
 }

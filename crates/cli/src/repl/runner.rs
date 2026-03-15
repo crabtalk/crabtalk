@@ -269,6 +269,24 @@ impl Runner {
         }
     }
 
+    /// Trigger a daemon reload. Returns Ok(()) on success.
+    pub async fn reload(&mut self) -> Result<()> {
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::Reload(Default::default())),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::Pong(_)),
+            } => Ok(()),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => {
+                anyhow::bail!("server error ({}): {}", e.code, e.message)
+            }
+            other => anyhow::bail!("unexpected response: {other:?}"),
+        }
+    }
+
     /// Approve a blocked task. Returns true if the task was blocked and approved.
     pub async fn approve_task(&mut self, task_id: u64, response: String) -> Result<bool> {
         let msg = ClientMessage {
