@@ -87,12 +87,7 @@ impl Daemon {
             .model
             .clone()
             .ok_or_else(|| anyhow::anyhow!("walrus.model is required in walrus.toml"))?;
-        let manager = ProviderManager::new(active_model.clone());
-
-        // Add remote providers from config.
-        for config in config.model.remotes.values() {
-            manager.add_config(config).await?;
-        }
+        let manager = ProviderManager::from_providers(active_model, &config.provider).await?;
 
         tracing::info!(
             "provider manager initialized — active model: {}",

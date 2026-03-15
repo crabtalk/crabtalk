@@ -4,4 +4,4 @@ pub mod mcp;
 pub mod provider;
 
 pub use mcp::McpServerConfig;
-pub use provider::{ApiStandard, ProviderConfig};
+pub use provider::{ApiStandard, ProviderDef};

@@ -5,8 +5,9 @@ pub use crate::hook::{
     os::{PermissionConfig, ToolPermission},
     task::TasksConfig,
 };
-pub use ::model::{ModelConfig, ProviderConfig, ProviderManager};
+pub use ::model::{ModelConfig, ProviderDef, ProviderManager};
 use anyhow::Result;
+use compact_str::CompactString;
 pub use loader::{load_agents_dir, scaffold_config_dir};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -23,7 +24,10 @@ pub struct DaemonConfig {
     /// The walrus daemon's own agent config (model, heartbeat).
     #[serde(default)]
     pub walrus: AgentConfig,
-    /// Model configurations (remote API endpoints + local models).
+    /// Provider definitions (`[provider.<name>]`).
+    #[serde(default)]
+    pub provider: BTreeMap<CompactString, ProviderDef>,
+    /// Model configuration (embedding model).
     #[serde(default)]
     pub model: ModelConfig,
     /// MCP server configurations.
@@ -47,11 +51,6 @@ impl DaemonConfig {
     /// Parse a TOML string into a `DaemonConfig`.
     pub fn from_toml(toml_str: &str) -> Result<Self> {
         let mut config: Self = toml::from_str(toml_str)?;
-        config.model.remotes.iter_mut().for_each(|(key, provider)| {
-            if provider.name.is_empty() {
-                provider.name = key.clone();
-            }
-        });
         config.mcps.iter_mut().for_each(|(name, server)| {
             if server.name.is_empty() {
                 server.name = name.clone().into();
@@ -60,6 +59,7 @@ impl DaemonConfig {
         if config.walrus.model.is_none() {
             config.walrus.model = Some(::model::default_model().into());
         }
+        ModelConfig::validate(&config.provider)?;
         Ok(config)
     }
 

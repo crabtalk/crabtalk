@@ -4,7 +4,7 @@
 //! `build_provider()` constructs the appropriate variant based on `ApiStandard`.
 
 use crate::{
-    config::{ApiStandard, ProviderConfig},
+    config::{ApiStandard, ProviderDef},
     remote::{
         claude::{self, Claude},
         openai::{self, OpenAI},
@@ -29,25 +29,25 @@ pub enum Provider {
     Claude(Claude),
 }
 
-/// Construct a `Provider` from config and a shared HTTP client.
+/// Construct a `Provider` from a provider definition and model name.
 ///
 /// Uses `effective_standard()` to pick the API protocol (OpenAI or Anthropic).
-pub async fn build_provider(config: &ProviderConfig, client: reqwest::Client) -> Result<Provider> {
-    let api_key = config.api_key.as_deref().unwrap_or("");
-    let model = config.name.as_str();
+pub async fn build_provider(
+    def: &ProviderDef,
+    model: &str,
+    client: reqwest::Client,
+) -> Result<Provider> {
+    let api_key = def.api_key.as_deref().unwrap_or("");
 
-    match config.effective_standard() {
+    match def.effective_standard() {
         ApiStandard::Anthropic => {
-            let url = config.base_url.as_deref().unwrap_or(claude::ENDPOINT);
+            let url = def.base_url.as_deref().unwrap_or(claude::ENDPOINT);
             Ok(Provider::Claude(Claude::custom(
                 client, api_key, url, model,
             )?))
         }
         ApiStandard::OpenAI => {
-            let url = config
-                .base_url
-                .as_deref()
-                .unwrap_or(openai::endpoint::OPENAI);
+            let url = def.base_url.as_deref().unwrap_or(openai::endpoint::OPENAI);
             let provider = if api_key.is_empty() {
                 OpenAI::no_auth(client, url, model)
             } else {
