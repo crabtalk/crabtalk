@@ -1,9 +1,10 @@
 //! Server trait — one async method per protocol operation.
 
 use crate::protocol::message::{
-    ClientMessage, ConfigMsg, DownloadEvent, DownloadInfo, DownloadList, ErrorMsg, HubAction, Pong,
-    SendMsg, SendResponse, ServerMessage, ServiceQueryResultMsg, SessionInfo, SessionList,
-    StreamEvent, StreamMsg, TaskEvent, TaskInfo, TaskList, client_message, server_message,
+    AllSchemasMsg, ClientMessage, ConfigMsg, DownloadEvent, DownloadInfo, DownloadList, ErrorMsg,
+    HubAction, Pong, SendMsg, SendResponse, ServerMessage, ServiceInfoMsg, ServiceListMsg,
+    ServiceQueryResultMsg, ServiceSchemaMsg, SessionInfo, SessionList, StreamEvent, StreamMsg,
+    TaskEvent, TaskInfo, TaskList, client_message, server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -98,6 +99,29 @@ pub trait Server: Sync {
         service: String,
         query: String,
     ) -> impl std::future::Future<Output = Result<String>> + Send;
+
+    /// Handle `GetServiceSchema` — return JSON Schema for one service's config.
+    fn get_service_schema(
+        &self,
+        service: String,
+    ) -> impl std::future::Future<Output = Result<String>> + Send;
+
+    /// Handle `GetAllSchemas` — return JSON Schemas for all services.
+    fn get_all_schemas(
+        &self,
+    ) -> impl std::future::Future<Output = Result<std::collections::HashMap<String, String>>> + Send;
+
+    /// Handle `GetServices` — list registered services with status.
+    fn list_services(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<ServiceInfoMsg>>> + Send;
+
+    /// Handle `SetServiceConfig` — update a single service's config.
+    fn set_service_config(
+        &self,
+        service: String,
+        config: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Dispatch a `ClientMessage` to the appropriate handler method.
     ///
@@ -224,6 +248,40 @@ pub trait Server: Sync {
                                 ServiceQueryResultMsg { result },
                             )),
                         },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::GetServiceSchema(req) => {
+                    let service = req.service;
+                    yield match self.get_service_schema(service.clone()).await {
+                        Ok(schema) => ServerMessage {
+                            msg: Some(server_message::Msg::ServiceSchema(ServiceSchemaMsg {
+                                service,
+                                schema,
+                            })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::GetAllSchemas(_) => {
+                    yield match self.get_all_schemas().await {
+                        Ok(schemas) => ServerMessage {
+                            msg: Some(server_message::Msg::AllSchemas(AllSchemasMsg { schemas })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::GetServices(_) => {
+                    yield match self.list_services().await {
+                        Ok(services) => ServerMessage {
+                            msg: Some(server_message::Msg::ServiceList(ServiceListMsg { services })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::SetServiceConfig(req) => {
+                    yield match self.set_service_config(req.service, req.config).await {
+                        Ok(()) => server_pong(),
                         Err(e) => server_error(500, e.to_string()),
                     };
                 }

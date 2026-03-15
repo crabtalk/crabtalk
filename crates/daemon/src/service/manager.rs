@@ -23,8 +23,8 @@ use wcore::{
         whs::{
             Capability, SimpleMessage, ToolsList, WhsBeforeRun, WhsBeforeRunResult, WhsBuildAgent,
             WhsBuildAgentResult, WhsCompact, WhsCompactResult, WhsConfigure, WhsConfigured,
-            WhsError, WhsHello, WhsReady, WhsRegisterTools, WhsRequest, WhsResponse, WhsToolCall,
-            WhsToolResult, WhsToolSchemas, capability, whs_request, whs_response,
+            WhsError, WhsEvent, WhsHello, WhsReady, WhsRegisterTools, WhsRequest, WhsResponse,
+            WhsToolCall, WhsToolResult, WhsToolSchemas, capability, whs_request, whs_response,
         },
     },
 };
@@ -50,6 +50,14 @@ impl ServiceHandle {
         let resp: WhsResponse = read_message(&mut *r).await.context("whs read")?;
         Ok(resp)
     }
+
+    /// Send a fire-and-forget WHS request (no response expected).
+    pub async fn send(&self, req: &WhsRequest) -> Result<()> {
+        let _guard = self.rpc_lock.lock().await;
+        let mut w = self.writer.lock().await;
+        write_message(&mut *w, req).await.context("whs write")?;
+        Ok(())
+    }
 }
 
 /// Capability-indexed runtime state built during handshake.
@@ -67,9 +75,29 @@ pub struct ServiceRegistry {
     pub before_run: Vec<Arc<ServiceHandle>>,
     /// Services that declared Compact capability.
     pub compact: Vec<Arc<ServiceHandle>>,
+    /// Services that declared EventObserver capability.
+    pub event_observer: Vec<Arc<ServiceHandle>>,
 }
 
 impl ServiceRegistry {
+    /// Fire-and-forget event to all EventObserver services.
+    pub async fn fire_event(&self, agent: &str, event: &str) {
+        let req = WhsRequest {
+            msg: Some(whs_request::Msg::Event(WhsEvent {
+                agent: agent.to_owned(),
+                event: event.to_owned(),
+            })),
+        };
+        for handle in &self.event_observer {
+            if let Err(e) = handle.send(&req).await {
+                tracing::warn!(
+                    service = %handle.name, error = %e,
+                    "Event dispatch failed"
+                );
+            }
+        }
+    }
+
     /// Dispatch a tool call to the owning WHS service.
     /// Returns `None` if the tool is not in the registry.
     pub async fn dispatch_tool(
@@ -116,6 +144,10 @@ impl Hook for ServiceRegistry {
                             name: config.name.to_string(),
                             description: config.description.to_string(),
                             system_prompt: config.system_prompt.clone(),
+                            tools: config.tools.iter().map(|t| t.to_string()).collect(),
+                            skills: config.skills.clone(),
+                            mcps: config.mcps.clone(),
+                            members: config.members.clone(),
                         })),
                     };
                     match time::timeout(std::time::Duration::from_secs(10), handle.request(&req))
@@ -467,10 +499,10 @@ impl ServiceManager {
         };
 
         // Configure → Configured
-        let config_bytes = serde_json::to_vec(config).context("serialize service config")?;
+        let config_json = serde_json::to_string(config).context("serialize service config")?;
         let configure_req = WhsRequest {
             msg: Some(whs_request::Msg::Configure(WhsConfigure {
-                config: config_bytes,
+                config: config_json,
             })),
         };
         let configure_resp = time::timeout(HANDSHAKE_TIMEOUT, handle.request(&configure_req))
@@ -539,6 +571,9 @@ impl ServiceManager {
                 }
                 Some(capability::Cap::Compact(_)) => {
                     registry.compact.push(Arc::clone(handle));
+                }
+                Some(capability::Cap::EventObserver(_)) => {
+                    registry.event_observer.push(Arc::clone(handle));
                 }
                 None => {}
             }

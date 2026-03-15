@@ -296,6 +296,138 @@ impl Server for Daemon {
             other => anyhow::bail!("unexpected response from service '{}': {other:?}", service),
         }
     }
+
+    async fn get_service_schema(&self, service: String) -> Result<String> {
+        let rt = self.runtime.read().await.clone();
+        let registry = rt
+            .hook
+            .registry
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no service registry"))?;
+        let handle = registry
+            .query
+            .get(&service)
+            .or_else(|| registry.tools.values().find(|h| h.name.as_str() == service))
+            .ok_or_else(|| anyhow::anyhow!("service '{}' not found", service))?;
+        let req = wcore::protocol::whs::WhsRequest {
+            msg: Some(wcore::protocol::whs::whs_request::Msg::GetSchema(
+                wcore::protocol::whs::WhsGetSchema {},
+            )),
+        };
+        let resp = handle.request(&req).await?;
+        match resp.msg {
+            Some(wcore::protocol::whs::whs_response::Msg::SchemaResult(result)) => {
+                Ok(result.schema)
+            }
+            Some(wcore::protocol::whs::whs_response::Msg::Error(e)) => {
+                anyhow::bail!("service '{}' schema error: {}", service, e.message)
+            }
+            other => anyhow::bail!(
+                "unexpected schema response from service '{}': {other:?}",
+                service
+            ),
+        }
+    }
+
+    async fn get_all_schemas(&self) -> Result<std::collections::HashMap<String, String>> {
+        let rt = self.runtime.read().await.clone();
+        let registry = rt
+            .hook
+            .registry
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no service registry"))?;
+        let mut schemas = std::collections::HashMap::new();
+        // Collect unique service handles from the query registry.
+        for (name, handle) in &registry.query {
+            let req = wcore::protocol::whs::WhsRequest {
+                msg: Some(wcore::protocol::whs::whs_request::Msg::GetSchema(
+                    wcore::protocol::whs::WhsGetSchema {},
+                )),
+            };
+            if let Ok(resp) = handle.request(&req).await
+                && let Some(wcore::protocol::whs::whs_response::Msg::SchemaResult(result)) =
+                    resp.msg
+            {
+                schemas.insert(name.clone(), result.schema);
+            }
+        }
+        Ok(schemas)
+    }
+
+    async fn list_services(&self) -> Result<Vec<wcore::protocol::message::ServiceInfoMsg>> {
+        let rt = self.runtime.read().await.clone();
+        let registry = rt.hook.registry.as_ref();
+        let mut services = Vec::new();
+        if let Some(reg) = registry {
+            // Collect unique service names from all capability buckets.
+            let mut seen = std::collections::HashSet::new();
+            let all_handles: Vec<_> = reg
+                .build_agent
+                .iter()
+                .chain(reg.before_run.iter())
+                .chain(reg.compact.iter())
+                .chain(reg.event_observer.iter())
+                .chain(reg.query.values())
+                .chain(reg.tools.values())
+                .collect();
+            for handle in all_handles {
+                let name = handle.name.to_string();
+                if !seen.insert(name.clone()) {
+                    continue;
+                }
+                let capabilities: Vec<String> = handle
+                    .capabilities
+                    .iter()
+                    .filter_map(|c| match &c.cap {
+                        Some(wcore::protocol::whs::capability::Cap::Tools(_)) => {
+                            Some("tools".into())
+                        }
+                        Some(wcore::protocol::whs::capability::Cap::Query(_)) => {
+                            Some("query".into())
+                        }
+                        Some(wcore::protocol::whs::capability::Cap::BuildAgent(_)) => {
+                            Some("build_agent".into())
+                        }
+                        Some(wcore::protocol::whs::capability::Cap::BeforeRun(_)) => {
+                            Some("before_run".into())
+                        }
+                        Some(wcore::protocol::whs::capability::Cap::Compact(_)) => {
+                            Some("compact".into())
+                        }
+                        Some(wcore::protocol::whs::capability::Cap::EventObserver(_)) => {
+                            Some("event_observer".into())
+                        }
+                        None => None,
+                    })
+                    .collect();
+                services.push(wcore::protocol::message::ServiceInfoMsg {
+                    name,
+                    kind: "hook".into(),
+                    status: "running".into(),
+                    capabilities,
+                    has_config: true,
+                });
+            }
+        }
+        Ok(services)
+    }
+
+    async fn set_service_config(&self, service: String, config: String) -> Result<()> {
+        let mut daemon_config = self.load_config()?;
+        let svc = daemon_config
+            .services
+            .get_mut(&service)
+            .ok_or_else(|| anyhow::anyhow!("service '{}' not found in config", service))?;
+        let parsed: serde_json::Value =
+            serde_json::from_str(&config).context("invalid service config JSON")?;
+        svc.config = parsed;
+        let toml_str =
+            toml::to_string_pretty(&daemon_config).context("failed to serialize config to TOML")?;
+        let config_path = self.config_dir.join("walrus.toml");
+        std::fs::write(&config_path, toml_str)
+            .with_context(|| format!("failed to write {}", config_path.display()))?;
+        self.reload().await
+    }
 }
 
 impl Daemon {

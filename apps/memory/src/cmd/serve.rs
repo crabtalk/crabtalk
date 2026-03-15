@@ -14,10 +14,11 @@ use wcore::{
         PROTOCOL_VERSION,
         codec::{read_message, write_message},
         whs::{
-            BeforeRunCap, BuildAgentCap, Capability, CompactCap, QueryCap, SimpleMessage, ToolDef,
-            ToolsList, WhsBeforeRunResult, WhsBuildAgentResult, WhsCompactResult, WhsConfigured,
-            WhsError, WhsReady, WhsRequest, WhsResponse, WhsServiceQueryResult, WhsToolResult,
-            WhsToolSchemas, capability, whs_request, whs_response,
+            BeforeRunCap, BuildAgentCap, Capability, CompactCap, EventObserverCap, QueryCap,
+            SimpleMessage, ToolDef, ToolsList, WhsBeforeRunResult, WhsBuildAgentResult,
+            WhsCompactResult, WhsConfigured, WhsError, WhsReady, WhsRequest, WhsResponse,
+            WhsServiceQueryResult, WhsToolResult, WhsToolSchemas, capability, whs_request,
+            whs_response,
         },
     },
 };
@@ -71,6 +72,9 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
                 Capability {
                     cap: Some(capability::Cap::Query(QueryCap {})),
                 },
+                Capability {
+                    cap: Some(capability::Cap::EventObserver(EventObserverCap {})),
+                },
             ],
         })),
     };
@@ -83,7 +87,7 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
             if c.config.is_empty() {
                 MemoryConfig::default()
             } else {
-                serde_json::from_slice(&c.config).unwrap_or_else(|e| {
+                serde_json::from_str(&c.config).unwrap_or_else(|e| {
                     tracing::warn!("invalid config, using defaults: {e}");
                     MemoryConfig::default()
                 })
@@ -163,6 +167,15 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
                     )),
                 }
             }
+            Some(whs_request::Msg::Event(_)) => {
+                // Fire-and-forget — no response expected.
+                continue;
+            }
+            Some(whs_request::Msg::GetSchema(_)) => WhsResponse {
+                msg: Some(whs_response::Msg::Error(WhsError {
+                    message: "schema not yet implemented".into(),
+                })),
+            },
             Some(whs_request::Msg::Shutdown(_)) => {
                 tracing::info!("shutdown requested");
                 clean_exit = true;
