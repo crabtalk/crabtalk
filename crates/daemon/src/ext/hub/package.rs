@@ -52,8 +52,26 @@ pub fn install(
             merge_mcp_servers(&manifest)?;
         }
 
-        // Merge services.
+        // Install service binaries and merge configs.
         if !manifest.services.is_empty() {
+            for (key, cfg) in &manifest.services {
+                if let Some(install) = &cfg.install {
+                    let msg = format!("installing {key}…");
+                    registry.lock().await.step(id, msg.clone());
+                    yield DownloadEvent {
+                        event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+                    };
+                    let status = Command::new(&install.command)
+                        .args(&install.args)
+                        .status()
+                        .await
+                        .with_context(|| format!("failed to run install for {key}"))?;
+                    if !status.success() {
+                        Err(anyhow::anyhow!("install for {key} exited with {status}"))?;
+                    }
+                }
+            }
+
             let msg = "adding services…".to_string();
             registry.lock().await.step(id, msg.clone());
             yield DownloadEvent {
@@ -319,6 +337,9 @@ fn remove_mcp_servers(manifest: &manifest::Manifest) -> Result<()> {
 }
 
 /// Merge service entries from a manifest into `walrus.toml`.
+///
+/// Strips install-time fields (`install`, `description`) before writing —
+/// they are hub metadata, not runtime config.
 fn merge_services(manifest: &manifest::Manifest) -> Result<()> {
     use toml_edit::DocumentMut;
 
@@ -336,7 +357,10 @@ fn merge_services(manifest: &manifest::Manifest) -> Result<()> {
         .context("services is not a table")?;
 
     for (key, cfg) in &manifest.services {
-        let doc = toml_edit::ser::to_document(cfg)
+        let mut runtime = cfg.clone();
+        runtime.install = None;
+        runtime.description = None;
+        let doc = toml_edit::ser::to_document(&runtime)
             .with_context(|| format!("failed to serialize ServiceConfig for {key}"))?;
         let item = toml_edit::Item::Table(doc.as_table().clone());
         table.insert(key.as_str(), item);
