@@ -143,53 +143,82 @@ impl ServiceRegistry {
     }
 }
 
+/// Send a WHS request with timeout and uniform error logging.
+/// Returns `Some(response)` on success, `None` on error or timeout.
+async fn send_with_timeout(
+    handle: &ServiceHandle,
+    req: &WhsRequest,
+    timeout_secs: u64,
+    label: &str,
+) -> Option<WhsResponse> {
+    match time::timeout(
+        std::time::Duration::from_secs(timeout_secs),
+        handle.request(req),
+    )
+    .await
+    {
+        Ok(Ok(resp)) => Some(resp),
+        Ok(Err(e)) => {
+            tracing::warn!(service = %handle.name, error = %e, "{label} dispatch failed");
+            None
+        }
+        Err(_) => {
+            tracing::warn!(service = %handle.name, "{label} dispatch timeout");
+            None
+        }
+    }
+}
+
+/// Fan out a request to multiple service handles, collecting extracted results.
+///
+/// Builds the same request for each handle, sends with timeout, and calls
+/// `extract` on successful responses. Skips handles that error or timeout.
+async fn fan_out<T>(
+    handles: &[Arc<ServiceHandle>],
+    req: &WhsRequest,
+    timeout_secs: u64,
+    label: &str,
+    extract: impl Fn(WhsResponse) -> Option<T>,
+) -> Vec<T> {
+    let mut results = Vec::new();
+    for handle in handles {
+        if let Some(resp) = send_with_timeout(handle, req, timeout_secs, label).await
+            && let Some(val) = extract(resp)
+        {
+            results.push(val);
+        }
+    }
+    results
+}
+
 impl Hook for ServiceRegistry {
     fn on_build_agent(&self, config: AgentConfig) -> AgentConfig {
         let mut config = config;
-        let additions = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let mut additions = Vec::new();
-                for handle in &self.build_agent {
-                    let req = WhsRequest {
-                        msg: Some(whs_request::Msg::BuildAgent(WhsBuildAgent {
-                            name: config.name.to_string(),
-                            description: config.description.to_string(),
-                            system_prompt: config.system_prompt.clone(),
-                            tools: config.tools.iter().map(|t| t.to_string()).collect(),
-                            skills: config.skills.clone(),
-                            mcps: config.mcps.clone(),
-                            members: config.members.clone(),
-                        })),
-                    };
-                    match time::timeout(std::time::Duration::from_secs(10), handle.request(&req))
-                        .await
-                    {
-                        Ok(Ok(resp)) => {
-                            if let Some(whs_response::Msg::BuildAgentResult(WhsBuildAgentResult {
-                                prompt_addition,
-                                ..
-                            })) = resp.msg
-                                && !prompt_addition.is_empty()
-                            {
-                                additions.push(prompt_addition);
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            tracing::warn!(
-                                service = %handle.name, error = %e,
-                                "BuildAgent dispatch failed"
-                            );
-                        }
-                        Err(_) => {
-                            tracing::warn!(
-                                service = %handle.name,
-                                "BuildAgent dispatch timeout"
-                            );
-                        }
-                    }
-                }
-                additions
-            })
+        let req = WhsRequest {
+            msg: Some(whs_request::Msg::BuildAgent(WhsBuildAgent {
+                name: config.name.to_string(),
+                description: config.description.to_string(),
+                system_prompt: config.system_prompt.clone(),
+                tools: config.tools.iter().map(|t| t.to_string()).collect(),
+                skills: config.skills.clone(),
+                mcps: config.mcps.clone(),
+                members: config.members.clone(),
+            })),
+        };
+        let additions: Vec<String> = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(fan_out(
+                &self.build_agent,
+                &req,
+                10,
+                "BuildAgent",
+                |resp| match resp.msg {
+                    Some(whs_response::Msg::BuildAgentResult(WhsBuildAgentResult {
+                        prompt_addition,
+                        ..
+                    })) if !prompt_addition.is_empty() => Some(prompt_addition),
+                    _ => None,
+                },
+            ))
         });
         for addition in additions {
             config.system_prompt.push_str(&addition);
@@ -198,45 +227,27 @@ impl Hook for ServiceRegistry {
     }
 
     fn on_compact(&self, agent: &str, prompt: &mut String) {
-        let agent = agent.to_owned();
-        let additions = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let mut additions = Vec::new();
-                for handle in &self.compact {
-                    let req = WhsRequest {
-                        msg: Some(whs_request::Msg::Compact(WhsCompact {
-                            agent: agent.clone(),
-                            prompt: prompt.clone(),
-                        })),
-                    };
-                    match time::timeout(std::time::Duration::from_secs(10), handle.request(&req))
-                        .await
+        let req = WhsRequest {
+            msg: Some(whs_request::Msg::Compact(WhsCompact {
+                agent: agent.to_owned(),
+                prompt: prompt.clone(),
+            })),
+        };
+        let additions: Vec<String> = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(fan_out(
+                &self.compact,
+                &req,
+                10,
+                "Compact",
+                |resp| match resp.msg {
+                    Some(whs_response::Msg::CompactResult(WhsCompactResult { addition }))
+                        if !addition.is_empty() =>
                     {
-                        Ok(Ok(resp)) => {
-                            if let Some(whs_response::Msg::CompactResult(WhsCompactResult {
-                                addition,
-                            })) = resp.msg
-                                && !addition.is_empty()
-                            {
-                                additions.push(addition);
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            tracing::warn!(
-                                service = %handle.name, error = %e,
-                                "Compact dispatch failed"
-                            );
-                        }
-                        Err(_) => {
-                            tracing::warn!(
-                                service = %handle.name,
-                                "Compact dispatch timeout"
-                            );
-                        }
+                        Some(addition)
                     }
-                }
-                additions
-            })
+                    _ => None,
+                },
+            ))
         });
         for addition in additions {
             prompt.push_str(&addition);
@@ -244,53 +255,35 @@ impl Hook for ServiceRegistry {
     }
 
     fn on_before_run(&self, agent: &str, history: &[Message]) -> Vec<Message> {
-        let agent = agent.to_owned();
-        let simple_history = to_simple_messages(history);
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                let mut messages = Vec::new();
-                for handle in &self.before_run {
-                    let req = WhsRequest {
-                        msg: Some(whs_request::Msg::BeforeRun(WhsBeforeRun {
-                            agent: agent.clone(),
-                            history: simple_history.clone(),
-                        })),
-                    };
-                    match time::timeout(std::time::Duration::from_secs(10), handle.request(&req))
-                        .await
-                    {
-                        Ok(Ok(resp)) => {
-                            if let Some(whs_response::Msg::BeforeRunResult(WhsBeforeRunResult {
-                                messages: whs_msgs,
-                            })) = resp.msg
-                            {
-                                for sm in whs_msgs {
-                                    let msg = match sm.role.as_str() {
-                                        "assistant" => Message::assistant(sm.content, None, None),
-                                        "system" => Message::system(&sm.content),
-                                        _ => Message::user(sm.content),
-                                    };
-                                    messages.push(msg);
-                                }
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            tracing::warn!(
-                                service = %handle.name, error = %e,
-                                "BeforeRun dispatch failed"
-                            );
-                        }
-                        Err(_) => {
-                            tracing::warn!(
-                                service = %handle.name,
-                                "BeforeRun dispatch timeout"
-                            );
-                        }
+        let req = WhsRequest {
+            msg: Some(whs_request::Msg::BeforeRun(WhsBeforeRun {
+                agent: agent.to_owned(),
+                history: to_simple_messages(history),
+            })),
+        };
+        let batches: Vec<Vec<SimpleMessage>> = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(fan_out(
+                &self.before_run,
+                &req,
+                10,
+                "BeforeRun",
+                |resp| match resp.msg {
+                    Some(whs_response::Msg::BeforeRunResult(WhsBeforeRunResult { messages })) => {
+                        Some(messages)
                     }
-                }
-                messages
+                    _ => None,
+                },
+            ))
+        });
+        batches
+            .into_iter()
+            .flatten()
+            .map(|sm| match sm.role.as_str() {
+                "assistant" => Message::assistant(sm.content, None, None),
+                "system" => Message::system(&sm.content),
+                _ => Message::user(sm.content),
             })
-        })
+            .collect()
     }
 
     fn on_after_run(&self, agent: &str, history: &[Message], system_prompt: &str) {
@@ -301,17 +294,15 @@ impl Hook for ServiceRegistry {
         let agent = agent.to_owned();
         let system_prompt = system_prompt.to_owned();
         let model = self.model.clone();
-        let all_tool_schemas = &self.tool_schemas;
-        let all_tool_handles = &self.tools;
 
         for handle in &self.after_run {
             let handle = Arc::clone(handle);
             // Filter tools to only those owned by this service.
             let service_tools: Arc<Vec<Tool>> = Arc::new(
-                all_tool_schemas
+                self.tool_schemas
                     .iter()
                     .filter(|t| {
-                        all_tool_handles
+                        self.tools
                             .get(t.name.as_str())
                             .is_some_and(|h| h.name == handle.name)
                     })
@@ -319,7 +310,7 @@ impl Hook for ServiceRegistry {
                     .collect(),
             );
             let tool_handles: Arc<BTreeMap<String, Arc<ServiceHandle>>> = Arc::new(
-                all_tool_handles
+                self.tools
                     .iter()
                     .filter(|(_, h)| h.name == handle.name)
                     .map(|(k, v)| (k.clone(), Arc::clone(v)))
@@ -337,62 +328,50 @@ impl Hook for ServiceRegistry {
                         system_prompt: system_prompt.clone(),
                     })),
                 };
-                match time::timeout(std::time::Duration::from_secs(30), handle.request(&req)).await
-                {
-                    Ok(Ok(resp)) => match resp.msg {
-                        Some(whs_response::Msg::AfterRunResult(_)) => {
-                            tracing::debug!(service = %handle.name, "AfterRun complete");
-                        }
-                        Some(whs_response::Msg::InferRequest(infer_req)) => {
-                            if let Some(ref model) = model {
-                                if let Err(e) = infer_fulfill(
-                                    model,
-                                    &handle,
-                                    &agent,
-                                    &system_prompt,
-                                    infer_req.messages,
-                                    &service_tools,
-                                    &tool_handles,
-                                )
-                                .await
-                                {
-                                    tracing::warn!(
-                                        service = %handle.name,
-                                        error = %e,
-                                        "Infer fulfillment failed"
-                                    );
-                                }
-                            } else {
+                let Some(resp) = send_with_timeout(&handle, &req, 30, "AfterRun").await else {
+                    return;
+                };
+                match resp.msg {
+                    Some(whs_response::Msg::AfterRunResult(_)) => {
+                        tracing::debug!(service = %handle.name, "AfterRun complete");
+                    }
+                    Some(whs_response::Msg::InferRequest(infer_req)) => {
+                        if let Some(ref model) = model {
+                            if let Err(e) = infer_fulfill(
+                                model,
+                                &handle,
+                                &agent,
+                                &system_prompt,
+                                infer_req.messages,
+                                &service_tools,
+                                &tool_handles,
+                            )
+                            .await
+                            {
                                 tracing::warn!(
                                     service = %handle.name,
-                                    "Infer requested but no model available"
+                                    error = %e,
+                                    "Infer fulfillment failed"
                                 );
                             }
-                        }
-                        Some(whs_response::Msg::Error(WhsError { message })) => {
+                        } else {
                             tracing::warn!(
                                 service = %handle.name,
-                                error = %message,
-                                "AfterRun service error"
+                                "Infer requested but no model available"
                             );
                         }
-                        other => {
-                            tracing::warn!(
-                                service = %handle.name,
-                                "unexpected AfterRun response: {other:?}"
-                            );
-                        }
-                    },
-                    Ok(Err(e)) => {
-                        tracing::warn!(
-                            service = %handle.name, error = %e,
-                            "AfterRun dispatch failed"
-                        );
                     }
-                    Err(_) => {
+                    Some(whs_response::Msg::Error(WhsError { message })) => {
                         tracing::warn!(
                             service = %handle.name,
-                            "AfterRun dispatch timeout"
+                            error = %message,
+                            "AfterRun service error"
+                        );
+                    }
+                    other => {
+                        tracing::warn!(
+                            service = %handle.name,
+                            "unexpected AfterRun response: {other:?}"
                         );
                     }
                 }
@@ -614,6 +593,9 @@ impl ServiceManager {
 
             let mut cmd = tokio::process::Command::new(&entry.config.command);
             cmd.args(&entry.config.args);
+            for (k, v) in &entry.config.env {
+                cmd.env(k, v);
+            }
 
             match entry.config.kind {
                 ServiceKind::Hook => {

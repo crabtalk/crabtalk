@@ -4,3 +4,4 @@ pub use cmd::{Cli, Command};
 
 pub mod cmd;
 pub mod repl;
+pub mod tui;

@@ -2,10 +2,9 @@
 //! construction, and runtime management.
 //!
 //! Merges all provider backends (OpenAI, Claude, Local) with the `Provider`
-//! enum, `ProviderManager`, and `ProviderConfig` into a single crate.
-//! `ProviderConfig` describes a single remote model (name, api_key, base_url,
-//! standard). `ModelConfig` collects them via `#[serde(flatten)]` so each
-//! model is a flat key under `[model]` in TOML.
+//! enum, `ProviderManager`, and `ProviderDef` into a single crate.
+//! `ProviderDef` describes a provider (api_key, base_url, standard, models).
+//! Each `[provider.<name>]` in TOML becomes one `ProviderDef`.
 
 pub mod config;
 pub mod manager;
@@ -19,7 +18,7 @@ pub fn default_model() -> &'static str {
     "deepseek-chat"
 }
 
-pub use config::{ApiStandard, ModelConfig, ProviderConfig};
+pub use config::{ApiStandard, ModelConfig, ProviderDef};
 pub use manager::ProviderManager;
 pub use provider::{Provider, build_provider};
 pub use reqwest::Client;

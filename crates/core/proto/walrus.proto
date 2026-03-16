@@ -28,6 +28,7 @@ message ClientMessage {
     GetAllSchemasMsg get_all_schemas = 18;
     GetServicesMsg get_services = 19;
     SetServiceConfigMsg set_service_config = 20;
+    ReloadMsg reload = 21;
   }
 }
 
@@ -92,6 +93,8 @@ message GetServiceSchemaMsg {
 message GetAllSchemasMsg {}
 
 message GetServicesMsg {}
+
+message ReloadMsg {}
 
 message SetServiceConfigMsg {
   string service = 1;

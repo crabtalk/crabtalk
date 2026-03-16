@@ -434,6 +434,10 @@ impl Server for Daemon {
             .with_context(|| format!("failed to write {}", config_path.display()))?;
         self.reload().await
     }
+
+    async fn reload(&self) -> Result<()> {
+        self.reload().await
+    }
 }
 
 impl Daemon {

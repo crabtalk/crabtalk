@@ -19,16 +19,19 @@ pub const DEFAULT_PORT: u16 = 6688;
 /// Returns the listener and the actual address it bound to.
 pub fn bind() -> std::io::Result<(std::net::TcpListener, SocketAddr)> {
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, DEFAULT_PORT));
-    match std::net::TcpListener::bind(addr) {
-        Ok(listener) => Ok((listener, addr)),
+    let (listener, actual) = match std::net::TcpListener::bind(addr) {
+        Ok(listener) => (listener, addr),
         Err(_) => {
             // Port busy — bind to :0 and let the OS pick.
             let fallback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0u16));
             let listener = std::net::TcpListener::bind(fallback)?;
             let actual = listener.local_addr()?;
-            Ok((listener, actual))
+            (listener, actual)
         }
-    }
+    };
+    // Required for tokio::net::TcpListener::from_std (tokio rejects blocking FDs).
+    listener.set_nonblocking(true)?;
+    Ok((listener, actual))
 }
 
 /// Accept connections on the given `TcpListener` until shutdown is signalled.

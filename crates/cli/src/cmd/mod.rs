@@ -9,13 +9,9 @@ use wcore::paths::TCP_PORT_FILE;
 
 pub mod attach;
 pub mod auth;
-#[cfg(feature = "daemon")]
+pub mod console;
 pub mod daemon;
 pub mod hub;
-#[cfg(unix)]
-pub mod sandbox;
-pub mod session;
-pub mod task;
 
 /// Walrus CLI client — connects to walrusd via Unix domain socket.
 #[derive(Parser, Debug)]
@@ -54,25 +50,19 @@ impl Cli {
         match self.command {
             Command::Auth(cmd) => cmd.run(),
             Command::Attach(cmd) => {
+                attach::ensure_providers(&socket_path).await?;
                 let runner = connect(cmd.tcp, &socket_path).await?;
                 cmd.run(runner, agent).await
+            }
+            Command::Console(cmd) => {
+                let runner = connect_uds(&socket_path).await?;
+                cmd.run(runner).await
             }
             Command::Hub(cmd) => {
                 let mut runner = connect_uds(&socket_path).await?;
                 cmd.run(&mut runner).await
             }
-            Command::Session(cmd) => {
-                let mut runner = connect_uds(&socket_path).await?;
-                cmd.run(&mut runner).await
-            }
-            Command::Task(cmd) => {
-                let mut runner = connect_uds(&socket_path).await?;
-                cmd.run(&mut runner).await
-            }
-            #[cfg(unix)]
-            Command::Sandbox(cmd) => cmd.run().await,
-            #[cfg(feature = "daemon")]
-            Command::Daemon(cmd) => cmd.run().await,
+            Command::Daemon(cmd) => cmd.run(&socket_path).await,
         }
     }
 }
@@ -82,19 +72,13 @@ impl Cli {
 pub enum Command {
     /// Attach to an agent via the interactive chat REPL.
     Attach(attach::Attach),
-    /// Configure channel API tokens interactively.
+    /// Configure providers, models, and channel tokens interactively.
     Auth(auth::Auth),
+    /// Interactive console for sessions and tasks.
+    Console(console::Console),
     /// Install or uninstall hub packages.
     Hub(hub::Hub),
-    /// Manage active sessions.
-    Session(session::Session),
-    /// Manage tasks in the task registry.
-    Task(task::Task),
-    /// Manage the workspace sandbox for agent isolation.
-    #[cfg(unix)]
-    Sandbox(sandbox::Sandbox),
-    /// Start the walrus daemon in the foreground.
-    #[cfg(feature = "daemon")]
+    /// Manage the walrus daemon (start, reload, install, uninstall).
     Daemon(daemon::Daemon),
 }
 

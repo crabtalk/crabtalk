@@ -18,30 +18,28 @@ pub enum ApiStandard {
     Anthropic,
 }
 
-/// Remote model configuration.
+/// Provider definition — credentials and a list of models served.
 ///
-/// Any model name is valid — the `standard` field (or auto-detection from
-/// `base_url`) determines which API protocol to use. Local models are handled
-/// by the built-in registry, not by this config.
+/// Each `[provider.<name>]` in TOML becomes one `ProviderDef`. The TOML key
+/// is the provider name (not stored in the struct). Multiple models share
+/// the same credentials and endpoint.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ProviderConfig {
-    /// Model identifier sent to the remote API. Auto-filled from the config
-    /// key if omitted.
-    #[serde(default)]
-    pub name: CompactString,
-    /// API key for remote providers. Supports `${ENV_VAR}` expansion at the
-    /// daemon layer.
+pub struct ProviderDef {
+    /// API key. Supports `${ENV_VAR}` expansion at the daemon layer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
-    /// Base URL for the remote provider endpoint.
+    /// Base URL for the provider endpoint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
     /// API protocol standard. Defaults to OpenAI if omitted.
     #[serde(default)]
     pub standard: ApiStandard,
+    /// Model names served by this provider.
+    #[serde(default)]
+    pub models: Vec<CompactString>,
 }
 
-impl ProviderConfig {
+impl ProviderDef {
     /// Resolve the effective API standard.
     ///
     /// Returns `Anthropic` if the field is explicitly set to `Anthropic`,
@@ -59,16 +57,13 @@ impl ProviderConfig {
     }
 
     /// Validate field combinations.
-    ///
-    /// Called on startup and on provider add/reload.
-    pub fn validate(&self) -> Result<()> {
-        if self.name.is_empty() {
-            bail!("model name is required");
+    pub fn validate(&self, provider_name: &str) -> Result<()> {
+        if self.models.is_empty() {
+            bail!("provider '{provider_name}' has no models");
         }
-        // Remote models: api_key is required unless base_url is set
-        // (e.g. Ollama which is keyless with a local base_url).
+        // api_key is required unless base_url is set (e.g. Ollama).
         if self.api_key.is_none() && self.base_url.is_none() {
-            bail!("remote model '{}' requires api_key or base_url", self.name);
+            bail!("provider '{provider_name}' requires api_key or base_url");
         }
         Ok(())
     }

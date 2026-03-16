@@ -117,7 +117,7 @@ pub fn install(
                     event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
                 };
                 let cache_dest = cache_dir.join(key.as_str());
-                git_sync(&skill.repo, &cache_dest)
+                git_sync(&manifest.package.repository, &cache_dest)
                     .await
                     .with_context(|| format!("failed to sync skill repo for {key}"))?;
 

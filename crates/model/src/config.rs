@@ -1,24 +1,37 @@
 //! Model configuration.
 //!
-//! `ProviderConfig` and `ApiStandard` are defined in wcore and re-exported here.
+//! `ProviderDef` and `ApiStandard` are defined in wcore and re-exported here.
 
+use anyhow::{Result, bail};
 use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
-pub use wcore::config::provider::{ApiStandard, ProviderConfig};
+pub use wcore::config::provider::{ApiStandard, ProviderDef};
 
 /// Model configuration for the daemon.
 ///
-/// Remote models are configured as flat keys under `[model]` (e.g.
-/// `[model.deepseek-chat]`). The active model name lives in
-/// `[walrus].model`.
+/// Providers are configured as `[provider.<name>]` sections, each owning
+/// a list of model names. The active model name lives in `[walrus].model`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelConfig {
-    /// Optional embedding model
+    /// Optional embedding model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding: Option<CompactString>,
-    /// Remote model configurations, keyed by model name.
-    #[serde(flatten)]
-    pub remotes: BTreeMap<CompactString, ProviderConfig>,
+}
+
+impl ModelConfig {
+    /// Validate provider definitions and reject duplicate model names.
+    pub fn validate(providers: &BTreeMap<CompactString, ProviderDef>) -> Result<()> {
+        let mut seen = HashSet::new();
+        for (name, def) in providers {
+            def.validate(name)?;
+            for model in &def.models {
+                if !seen.insert(model.clone()) {
+                    bail!("duplicate model name '{model}' across providers");
+                }
+            }
+        }
+        Ok(())
+    }
 }

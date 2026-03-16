@@ -31,7 +31,20 @@ pub struct Manifest {
 /// The package manifest
 #[derive(Serialize, Deserialize)]
 pub struct Package {
+    /// Package name.
     pub name: CompactString,
+    /// Package description (for hub display).
+    #[serde(default)]
+    pub description: CompactString,
+    /// Logo URL (for hub display).
+    #[serde(default)]
+    pub logo: CompactString,
+    /// Source repository URL.
+    #[serde(default)]
+    pub repository: CompactString,
+    /// Searchable keywords (for hub discovery).
+    #[serde(default)]
+    pub keywords: Vec<CompactString>,
 }
 
 /// A skill resource
@@ -42,8 +55,6 @@ pub struct SkillResource {
     pub name: CompactString,
     /// Skill description
     pub description: CompactString,
-    /// Skill repository URL
-    pub repo: CompactString,
     /// Path within the repo to the skill directory
     pub path: CompactString,
 }

@@ -1,7 +1,7 @@
 //! `ProviderManager` — concurrent-safe named provider registry with model
 //! routing and active-provider swapping.
 
-use crate::{Provider, ProviderConfig, build_provider};
+use crate::{Provider, ProviderDef, build_provider};
 use anyhow::{Result, anyhow, bail};
 use async_stream::try_stream;
 use compact_str::CompactString;
@@ -41,7 +41,7 @@ pub struct ProviderEntry {
 impl ProviderManager {
     /// Create an empty manager with the given active model name.
     ///
-    /// Use `add_provider()` or `add_config()` to populate.
+    /// Use `add_provider()` or `add_model()` to populate.
     pub fn new(active: impl Into<CompactString>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(Inner {
@@ -52,18 +52,17 @@ impl ProviderManager {
         }
     }
 
-    /// Create a manager from a list of remote provider configs.
+    /// Build a manager from a map of provider definitions and an active model.
     ///
-    /// The first element becomes the active provider.
-    /// Returns an error if the slice is empty, any config fails validation, or
-    /// any provider fails to build.
-    pub async fn from_configs(configs: &[ProviderConfig]) -> Result<Self> {
-        if configs.is_empty() {
-            bail!("at least one provider config is required");
-        }
-        let manager = Self::new(configs[0].name.clone());
-        for config in configs {
-            manager.add_config(config).await?;
+    /// Iterates each provider def, building a `Provider` instance per model
+    /// in its `models` list.
+    pub async fn from_providers(
+        active: CompactString,
+        providers: &BTreeMap<CompactString, ProviderDef>,
+    ) -> Result<Self> {
+        let manager = Self::new(active);
+        for def in providers.values() {
+            manager.add_def(def).await?;
         }
         Ok(manager)
     }
@@ -78,9 +77,8 @@ impl ProviderManager {
         Ok(())
     }
 
-    /// Add a remote provider from config. Validates and builds it.
-    pub async fn add_config(&self, config: &ProviderConfig) -> Result<()> {
-        config.validate()?;
+    /// Add all models from a provider definition. Builds a `Provider` per model.
+    pub async fn add_def(&self, def: &ProviderDef) -> Result<()> {
         let client = {
             let inner = self
                 .inner
@@ -88,12 +86,14 @@ impl ProviderManager {
                 .map_err(|_| anyhow!("provider lock poisoned"))?;
             inner.client.clone()
         };
-        let provider = build_provider(config, client).await?;
-        let mut inner = self
-            .inner
-            .write()
-            .map_err(|_| anyhow!("provider lock poisoned"))?;
-        inner.providers.insert(config.name.clone(), provider);
+        for model_name in &def.models {
+            let provider = build_provider(def, model_name, client.clone()).await?;
+            let mut inner = self
+                .inner
+                .write()
+                .map_err(|_| anyhow!("provider lock poisoned"))?;
+            inner.providers.insert(model_name.clone(), provider);
+        }
         Ok(())
     }
 
