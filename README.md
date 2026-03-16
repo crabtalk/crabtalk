@@ -83,10 +83,10 @@ GPL-3.0
 [remote]: https://openwalrus.xyz/docs/walrus/models/remote
 [agents]: https://openwalrus.xyz/docs/development/concepts/agents
 [runtime]: https://openwalrus.xyz/docs/development/concepts/runtime
-[services]: https://openwalrus.xyz/docs/walrus/services
-[memory]: https://openwalrus.xyz/docs/walrus/services/memory
-[search]: https://openwalrus.xyz/docs/walrus/services/search
-[gateway]: https://openwalrus.xyz/docs/walrus/services/gateway
+[services]: https://openwalrus.xyz/docs/walrus/extensions
+[memory]: https://openwalrus.xyz/docs/walrus/extensions/memory
+[search]: https://openwalrus.xyz/docs/walrus/extensions/search
+[gateway]: https://openwalrus.xyz/docs/walrus/extensions/gateway
 [tools]: https://openwalrus.xyz/docs/development/tools/built-in
 [mcp]: https://openwalrus.xyz/docs/development/tools/mcp
 [skills]: https://openwalrus.xyz/docs/development/tools/skills

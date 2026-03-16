@@ -1,85 +1,50 @@
-# wsearch
+# walrus-search
 
-A meta search engine CLI that aggregates results from multiple backends with
-consensus-based ranking.
-
-## Features
-
-- **Multi-engine search** — queries DuckDuckGo and Wikipedia in parallel, merges
-  and deduplicates results
-- **Consensus ranking** — results found by multiple engines get a score boost
-- **Web page fetching** — extracts clean text content from any URL, stripping
-  scripts, styles, navigation, and other noise
-- **In-memory caching** — configurable TTL to avoid redundant queries
-- **Multiple output formats** — JSON, plain text, or compact
+Meta-search extension for OpenWalrus agents. Aggregates results from DuckDuckGo
+and Wikipedia with consensus-based ranking. No API keys required.
 
 ## Install
 
-```sh
-cargo install wsearch
+```bash
+walrus hub install openwalrus/search
 ```
 
-## Usage
+Or build from source:
 
-### Search
-
-```sh
-wsearch search "rust programming language"
-wsearch search "openwalrus" --engines wikipedia
-wsearch search "hello world" -n 5 --format text
+```bash
+cargo install walrus-search
 ```
 
-### Fetch a web page
+## Configuration
 
-```sh
-wsearch fetch "https://example.com"
-wsearch fetch "https://example.com" --format text
-```
-
-### List available engines
-
-```sh
-wsearch engines
-```
-
-### Configuration
-
-Generate a default config file:
-
-```sh
-wsearch config --init > ~/.config/wsearch/config.toml
-```
-
-Show current configuration:
-
-```sh
-wsearch config
-```
-
-#### Config file format (TOML)
+Installed automatically by `walrus hub install`. Default config in `walrus.toml`:
 
 ```toml
-engines = ["duckduckgo", "wikipedia"]
-timeout_secs = 10
-max_results = 20
-cache_ttl_secs = 300
-output_format = "json"
+[services.search]
+kind = "extension"
+crate = "walrus-search"
+enabled = true
 ```
 
-The config file is loaded from `~/.config/wsearch/config.toml` by default, or
-specify a path with `--config <path>`.
+No additional configuration needed.
 
-## Library usage
+## How it works
 
-The crate also exposes a library API:
+1. Agent calls the `web_search` tool with a query
+2. The service queries DuckDuckGo and Wikipedia in parallel
+3. Results are merged, deduplicated, and ranked by cross-engine consensus
+4. Top results are returned to the agent as structured data
 
-```rust
-use wsearch::aggregator::Aggregator;
-use wsearch::config::Config;
+## Standalone CLI
 
-let config = Config::default();
-let aggregator = Aggregator::new(&config);
-let results = aggregator.search("rust", 1).await?;
+The binary also works as a standalone search CLI:
+
+```sh
+walrus-search search "rust programming language"
+walrus-search search "openwalrus" --engines wikipedia
+walrus-search search "hello world" -n 5 --format text
+walrus-search fetch "https://example.com"
+walrus-search engines
 ```
 
 ## License
