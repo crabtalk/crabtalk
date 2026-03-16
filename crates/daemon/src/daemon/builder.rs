@@ -97,7 +97,7 @@ impl Daemon {
     }
 
     /// Build the daemon hook with all backends (skills, MCP, tasks, downloads).
-    /// Memory is handled by the external WHS service.
+    /// Memory is handled by an external extension service.
     /// Returns the hook and an optional ServiceManager for child service lifecycle.
     async fn build_hook(
         config: &DaemonConfig,

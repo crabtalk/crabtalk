@@ -8,9 +8,9 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceKind {
-    /// Hook service — speaks WHS protocol over UDS.
+    /// Extension service — speaks Walrus Extension protocol over UDS.
     #[default]
-    Hook,
+    Extension,
     /// Gateway service — speaks existing walrus protocol (e.g. Telegram, Discord).
     Gateway,
 }
@@ -50,7 +50,7 @@ pub struct ServiceConfig {
     /// Environment variables injected into the child process.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
-    /// Opaque service-specific configuration (forwarded via WHS Configure).
+    /// Opaque service-specific configuration (forwarded via extension Configure).
     #[serde(default)]
     pub config: Value,
 }

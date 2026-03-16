@@ -1,0 +1,188 @@
+syntax = "proto3";
+
+package walrus.ext;
+
+// ── Walrus Extension Protocol ───────────────────────────────────
+
+message ExtRequest {
+  oneof msg {
+    ExtHello hello = 1;
+    ExtRegisterTools register_tools = 2;
+    ExtToolCall tool_call = 3;
+    ExtServiceQuery service_query = 4;
+    ExtShutdown shutdown = 5;
+    ExtConfigure configure = 6;
+    ExtBuildAgent build_agent = 7;
+    ExtBeforeRun before_run = 8;
+    ExtCompact compact = 9;
+    ExtEvent event = 10;
+    ExtGetSchema get_schema = 11;
+    ExtAfterRun after_run = 12;
+    ExtInferResult infer_result = 13;
+  }
+}
+
+message ExtHello {
+  string version = 1;
+}
+
+message ExtRegisterTools {}
+message ExtShutdown {}
+message ExtConfigure {
+  string config = 1;
+}
+message ExtConfigured {}
+
+message ExtToolCall {
+  string name = 1;
+  string args = 2;
+  string agent = 3;
+  optional uint64 task_id = 4;
+}
+
+message ExtServiceQuery {
+  string query = 1;
+}
+
+// Fire-and-forget observation message (daemon → extension).
+message ExtEvent {
+  string agent = 1;
+  string event = 2;
+}
+
+// Request the extension's config JSON Schema.
+message ExtGetSchema {}
+
+message ExtResponse {
+  oneof msg {
+    ExtReady ready = 1;
+    ExtToolSchemas tool_schemas = 2;
+    ExtToolResult tool_result = 3;
+    ExtServiceQueryResult service_query_result = 4;
+    ExtError error = 5;
+    ExtConfigured configured = 6;
+    ExtBuildAgentResult build_agent_result = 7;
+    ExtBeforeRunResult before_run_result = 8;
+    ExtCompactResult compact_result = 9;
+    ExtSchemaResult schema_result = 10;
+    ExtAfterRunResult after_run_result = 11;
+    ExtInferRequest infer_request = 12;
+  }
+}
+
+message ExtReady {
+  string version = 1;
+  string service = 2;
+  repeated Capability capabilities = 3;
+}
+
+message Capability {
+  oneof cap {
+    ToolsList tools = 1;
+    QueryCap query = 2;
+    BuildAgentCap build_agent = 3;
+    BeforeRunCap before_run = 4;
+    CompactCap compact = 5;
+    EventObserverCap event_observer = 6;
+    AfterRunCap after_run = 7;
+    InferCap infer = 8;
+  }
+}
+
+message ToolsList {
+  repeated string names = 1;
+}
+
+message QueryCap {}
+
+message ToolDef {
+  string name = 1;
+  string description = 2;
+  bytes parameters = 3;
+  bool strict = 4;
+}
+
+message ExtToolSchemas {
+  repeated ToolDef tools = 1;
+}
+
+message ExtToolResult {
+  string result = 1;
+}
+
+message ExtServiceQueryResult {
+  string result = 1;
+}
+
+message ExtError {
+  string message = 1;
+}
+
+// Config schema response from an extension.
+message ExtSchemaResult {
+  string schema = 1;
+}
+
+// ── Extension Lifecycle Messages ────────────────────────────────
+
+message SimpleMessage {
+  string role = 1;
+  string content = 2;
+}
+
+message BuildAgentCap {}
+message BeforeRunCap {}
+message CompactCap {}
+message EventObserverCap {}
+
+message ExtBuildAgent {
+  string name = 1;
+  string description = 2;
+  string system_prompt = 3;
+  repeated string tools = 4;
+  repeated string skills = 5;
+  repeated string mcps = 6;
+  repeated string members = 7;
+}
+
+message ExtBuildAgentResult {
+  string prompt_addition = 1;
+  repeated ToolDef tools = 2;
+}
+
+message ExtBeforeRun {
+  string agent = 1;
+  repeated SimpleMessage history = 2;
+}
+
+message ExtBeforeRunResult {
+  repeated SimpleMessage messages = 1;
+}
+
+message ExtCompact {
+  string agent = 1;
+  string prompt = 2;
+}
+
+message ExtCompactResult {
+  string addition = 1;
+}
+
+message ExtAfterRun {
+  string agent = 1;
+  repeated SimpleMessage history = 2;
+  string system_prompt = 3;
+}
+
+message ExtAfterRunResult {}
+
+message ExtInferRequest {
+  repeated SimpleMessage messages = 1;
+}
+
+message ExtInferResult {
+  string content = 1;
+}
+
+message AfterRunCap {}
+message InferCap {}

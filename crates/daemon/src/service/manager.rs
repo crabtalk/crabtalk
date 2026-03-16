@@ -21,17 +21,17 @@ use wcore::{
     protocol::{
         PROTOCOL_VERSION,
         codec::{read_message, write_message},
-        whs::{
-            Capability, SimpleMessage, ToolsList, WhsAfterRun, WhsBeforeRun, WhsBeforeRunResult,
-            WhsBuildAgent, WhsBuildAgentResult, WhsCompact, WhsCompactResult, WhsConfigure,
-            WhsConfigured, WhsError, WhsEvent, WhsHello, WhsInferResult, WhsReady,
-            WhsRegisterTools, WhsRequest, WhsResponse, WhsToolCall, WhsToolResult, WhsToolSchemas,
-            capability, whs_request, whs_response,
+        ext::{
+            Capability, ExtAfterRun, ExtBeforeRun, ExtBeforeRunResult, ExtBuildAgent,
+            ExtBuildAgentResult, ExtCompact, ExtCompactResult, ExtConfigure, ExtConfigured,
+            ExtError, ExtEvent, ExtHello, ExtInferResult, ExtReady, ExtRegisterTools, ExtRequest,
+            ExtResponse, ExtToolCall, ExtToolResult, ExtToolSchemas, SimpleMessage, ToolsList,
+            capability, ext_request, ext_response,
         },
     },
 };
 
-/// Handle to a connected hook service.
+/// Handle to a connected extension service.
 pub struct ServiceHandle {
     pub name: CompactString,
     pub capabilities: Vec<Capability>,
@@ -42,22 +42,22 @@ pub struct ServiceHandle {
 }
 
 impl ServiceHandle {
-    /// Send a WHS request and read one response.
-    pub async fn request(&self, req: &WhsRequest) -> Result<WhsResponse> {
+    /// Send an extension request and read one response.
+    pub async fn request(&self, req: &ExtRequest) -> Result<ExtResponse> {
         let _guard = self.rpc_lock.lock().await;
         let mut w = self.writer.lock().await;
-        write_message(&mut *w, req).await.context("whs write")?;
+        write_message(&mut *w, req).await.context("ext write")?;
         drop(w);
         let mut r = self.reader.lock().await;
-        let resp: WhsResponse = read_message(&mut *r).await.context("whs read")?;
+        let resp: ExtResponse = read_message(&mut *r).await.context("ext read")?;
         Ok(resp)
     }
 
-    /// Send a fire-and-forget WHS request (no response expected).
-    pub async fn send(&self, req: &WhsRequest) -> Result<()> {
+    /// Send a fire-and-forget extension request (no response expected).
+    pub async fn send(&self, req: &ExtRequest) -> Result<()> {
         let _guard = self.rpc_lock.lock().await;
         let mut w = self.writer.lock().await;
-        write_message(&mut *w, req).await.context("whs write")?;
+        write_message(&mut *w, req).await.context("ext write")?;
         Ok(())
     }
 }
@@ -69,7 +69,7 @@ pub struct ServiceRegistry {
     pub tools: BTreeMap<String, Arc<ServiceHandle>>,
     /// Service name → handle (for ServiceQuery routing).
     pub query: BTreeMap<String, Arc<ServiceHandle>>,
-    /// Tool schemas collected from all hook services.
+    /// Tool schemas collected from all extension services.
     pub tool_schemas: Vec<Tool>,
     /// Services that declared BuildAgent capability.
     pub build_agent: Vec<Arc<ServiceHandle>>,
@@ -93,8 +93,8 @@ impl ServiceRegistry {
 
     /// Fire-and-forget event to all EventObserver services.
     pub async fn fire_event(&self, agent: &str, event: &str) {
-        let req = WhsRequest {
-            msg: Some(whs_request::Msg::Event(WhsEvent {
+        let req = ExtRequest {
+            msg: Some(ext_request::Msg::Event(ExtEvent {
                 agent: agent.to_owned(),
                 event: event.to_owned(),
             })),
@@ -109,7 +109,7 @@ impl ServiceRegistry {
         }
     }
 
-    /// Dispatch a tool call to the owning WHS service.
+    /// Dispatch a tool call to the owning extension service.
     /// Returns `None` if the tool is not in the registry.
     pub async fn dispatch_tool(
         &self,
@@ -119,8 +119,8 @@ impl ServiceRegistry {
         task_id: Option<u64>,
     ) -> Option<String> {
         let handle = self.tools.get(name)?;
-        let req = WhsRequest {
-            msg: Some(whs_request::Msg::ToolCall(WhsToolCall {
+        let req = ExtRequest {
+            msg: Some(ext_request::Msg::ToolCall(ExtToolCall {
                 name: name.to_owned(),
                 args: args.to_owned(),
                 agent: agent.to_owned(),
@@ -130,8 +130,8 @@ impl ServiceRegistry {
         Some(
             match time::timeout(std::time::Duration::from_secs(30), handle.request(&req)).await {
                 Ok(Ok(resp)) => match resp.msg {
-                    Some(whs_response::Msg::ToolResult(WhsToolResult { result })) => result,
-                    Some(whs_response::Msg::Error(WhsError { message })) => {
+                    Some(ext_response::Msg::ToolResult(ExtToolResult { result })) => result,
+                    Some(ext_response::Msg::Error(ExtError { message })) => {
                         format!("service error: {message}")
                     }
                     other => format!("unexpected response: {other:?}"),
@@ -143,14 +143,14 @@ impl ServiceRegistry {
     }
 }
 
-/// Send a WHS request with timeout and uniform error logging.
+/// Send an extension request with timeout and uniform error logging.
 /// Returns `Some(response)` on success, `None` on error or timeout.
 async fn send_with_timeout(
     handle: &ServiceHandle,
-    req: &WhsRequest,
+    req: &ExtRequest,
     timeout_secs: u64,
     label: &str,
-) -> Option<WhsResponse> {
+) -> Option<ExtResponse> {
     match time::timeout(
         std::time::Duration::from_secs(timeout_secs),
         handle.request(req),
@@ -175,10 +175,10 @@ async fn send_with_timeout(
 /// `extract` on successful responses. Skips handles that error or timeout.
 async fn fan_out<T>(
     handles: &[Arc<ServiceHandle>],
-    req: &WhsRequest,
+    req: &ExtRequest,
     timeout_secs: u64,
     label: &str,
-    extract: impl Fn(WhsResponse) -> Option<T>,
+    extract: impl Fn(ExtResponse) -> Option<T>,
 ) -> Vec<T> {
     let mut results = Vec::new();
     for handle in handles {
@@ -194,8 +194,8 @@ async fn fan_out<T>(
 impl Hook for ServiceRegistry {
     fn on_build_agent(&self, config: AgentConfig) -> AgentConfig {
         let mut config = config;
-        let req = WhsRequest {
-            msg: Some(whs_request::Msg::BuildAgent(WhsBuildAgent {
+        let req = ExtRequest {
+            msg: Some(ext_request::Msg::BuildAgent(ExtBuildAgent {
                 name: config.name.to_string(),
                 description: config.description.to_string(),
                 system_prompt: config.system_prompt.clone(),
@@ -212,7 +212,7 @@ impl Hook for ServiceRegistry {
                 10,
                 "BuildAgent",
                 |resp| match resp.msg {
-                    Some(whs_response::Msg::BuildAgentResult(WhsBuildAgentResult {
+                    Some(ext_response::Msg::BuildAgentResult(ExtBuildAgentResult {
                         prompt_addition,
                         ..
                     })) if !prompt_addition.is_empty() => Some(prompt_addition),
@@ -227,8 +227,8 @@ impl Hook for ServiceRegistry {
     }
 
     fn on_compact(&self, agent: &str, prompt: &mut String) {
-        let req = WhsRequest {
-            msg: Some(whs_request::Msg::Compact(WhsCompact {
+        let req = ExtRequest {
+            msg: Some(ext_request::Msg::Compact(ExtCompact {
                 agent: agent.to_owned(),
                 prompt: prompt.clone(),
             })),
@@ -240,7 +240,7 @@ impl Hook for ServiceRegistry {
                 10,
                 "Compact",
                 |resp| match resp.msg {
-                    Some(whs_response::Msg::CompactResult(WhsCompactResult { addition }))
+                    Some(ext_response::Msg::CompactResult(ExtCompactResult { addition }))
                         if !addition.is_empty() =>
                     {
                         Some(addition)
@@ -255,8 +255,8 @@ impl Hook for ServiceRegistry {
     }
 
     fn on_before_run(&self, agent: &str, history: &[Message]) -> Vec<Message> {
-        let req = WhsRequest {
-            msg: Some(whs_request::Msg::BeforeRun(WhsBeforeRun {
+        let req = ExtRequest {
+            msg: Some(ext_request::Msg::BeforeRun(ExtBeforeRun {
                 agent: agent.to_owned(),
                 history: to_simple_messages(history),
             })),
@@ -268,7 +268,7 @@ impl Hook for ServiceRegistry {
                 10,
                 "BeforeRun",
                 |resp| match resp.msg {
-                    Some(whs_response::Msg::BeforeRunResult(WhsBeforeRunResult { messages })) => {
+                    Some(ext_response::Msg::BeforeRunResult(ExtBeforeRunResult { messages })) => {
                         Some(messages)
                     }
                     _ => None,
@@ -321,8 +321,8 @@ impl Hook for ServiceRegistry {
             let system_prompt = system_prompt.clone();
             let model = model.clone();
             tokio::spawn(async move {
-                let req = WhsRequest {
-                    msg: Some(whs_request::Msg::AfterRun(WhsAfterRun {
+                let req = ExtRequest {
+                    msg: Some(ext_request::Msg::AfterRun(ExtAfterRun {
                         agent: agent.clone(),
                         history,
                         system_prompt: system_prompt.clone(),
@@ -332,10 +332,10 @@ impl Hook for ServiceRegistry {
                     return;
                 };
                 match resp.msg {
-                    Some(whs_response::Msg::AfterRunResult(_)) => {
+                    Some(ext_response::Msg::AfterRunResult(_)) => {
                         tracing::debug!(service = %handle.name, "AfterRun complete");
                     }
-                    Some(whs_response::Msg::InferRequest(infer_req)) => {
+                    Some(ext_response::Msg::InferRequest(infer_req)) => {
                         if let Some(ref model) = model {
                             if let Err(e) = infer_fulfill(
                                 model,
@@ -361,7 +361,7 @@ impl Hook for ServiceRegistry {
                             );
                         }
                     }
-                    Some(whs_response::Msg::Error(WhsError { message })) => {
+                    Some(ext_response::Msg::Error(ExtError { message })) => {
                         tracing::warn!(
                             service = %handle.name,
                             error = %message,
@@ -390,7 +390,7 @@ impl CompactHook for ServiceRegistry {
     }
 }
 
-/// Convert core `Message` history to proto `SimpleMessage` for WHS transport.
+/// Convert core `Message` history to proto `SimpleMessage` for extension transport.
 fn to_simple_messages(history: &[Message]) -> Vec<SimpleMessage> {
     history
         .iter()
@@ -462,8 +462,8 @@ async fn infer_fulfill(
                 .last()
                 .map(|m| m.content.clone())
                 .unwrap_or_default();
-            let result_req = WhsRequest {
-                msg: Some(whs_request::Msg::InferResult(WhsInferResult { content })),
+            let result_req = ExtRequest {
+                msg: Some(ext_request::Msg::InferResult(ExtInferResult { content })),
             };
             // Read the final response from the service after sending InferResult.
             let _final_resp = time::timeout(
@@ -483,8 +483,8 @@ async fn infer_fulfill(
             let tool_handle = tool_handles
                 .get(tool_name)
                 .ok_or_else(|| anyhow::anyhow!("tool '{tool_name}' not in registry"))?;
-            let tool_req = WhsRequest {
-                msg: Some(whs_request::Msg::ToolCall(WhsToolCall {
+            let tool_req = ExtRequest {
+                msg: Some(ext_request::Msg::ToolCall(ExtToolCall {
                     name: tool_name.to_owned(),
                     args: tc.function.arguments.clone(),
                     agent: agent.to_owned(),
@@ -499,8 +499,8 @@ async fn infer_fulfill(
             .context("tool call timeout")?
             .context("tool call")?;
             let result = match tool_resp.msg {
-                Some(whs_response::Msg::ToolResult(WhsToolResult { result })) => result,
-                Some(whs_response::Msg::Error(WhsError { message })) => {
+                Some(ext_response::Msg::ToolResult(ExtToolResult { result })) => result,
+                Some(ext_response::Msg::Error(ExtError { message })) => {
                     format!("service error: {message}")
                 }
                 other => format!("unexpected tool response: {other:?}"),
@@ -514,8 +514,8 @@ async fn infer_fulfill(
         "Infer hit max iterations ({MAX_INFER_ITERATIONS})"
     );
     // Send an InferResult so the service doesn't deadlock waiting for a response.
-    let result_req = WhsRequest {
-        msg: Some(whs_request::Msg::InferResult(WhsInferResult {
+    let result_req = ExtRequest {
+        msg: Some(ext_request::Msg::InferResult(ExtInferResult {
             content: format!("infer fulfillment exceeded max iterations ({MAX_INFER_ITERATIONS})"),
         })),
     };
@@ -579,7 +579,7 @@ impl ServiceManager {
 
     /// Spawn all enabled services.
     ///
-    /// Hook services get `--socket <path>` so they bind a UDS listener.
+    /// Extension services get `--socket <path>` so they bind a UDS listener.
     /// Gateway services get `--daemon <path>` and `--config <json>` so they
     /// can connect back to the daemon.
     pub async fn spawn_all(&mut self) -> Result<()> {
@@ -597,7 +597,7 @@ impl ServiceManager {
             }
 
             match entry.config.kind {
-                ServiceKind::Hook => {
+                ServiceKind::Extension => {
                     cmd.arg("--socket").arg(&entry.socket_path);
                 }
                 ServiceKind::Gateway => {
@@ -619,13 +619,13 @@ impl ServiceManager {
         Ok(())
     }
 
-    /// Connect to all hook services and perform the WHS handshake.
+    /// Connect to all extension services and perform the handshake.
     /// Returns a `ServiceRegistry` with tool and query mappings.
     pub async fn handshake_all(&self) -> ServiceRegistry {
         let mut registry = ServiceRegistry::default();
 
         for (name, entry) in &self.entries {
-            if !matches!(entry.config.kind, ServiceKind::Hook) {
+            if !matches!(entry.config.kind, ServiceKind::Extension) {
                 continue;
             }
 
@@ -639,12 +639,12 @@ impl ServiceManager {
                     tracing::info!(
                         service = %name,
                         tools = schemas.len(),
-                        "hook service registered"
+                        "extension registered"
                     );
                     registry.tool_schemas.extend(schemas);
                 }
                 Err(e) => {
-                    tracing::warn!(service = %name, error = %e, "hook handshake failed, skipping");
+                    tracing::warn!(service = %name, error = %e, "extension handshake failed, skipping");
                 }
             }
         }
@@ -652,7 +652,7 @@ impl ServiceManager {
         registry
     }
 
-    /// Perform WHS handshake with a single hook service.
+    /// Perform handshake with a single extension service.
     /// Returns the handle and its declared tool schemas.
     async fn handshake_one(
         &self,
@@ -689,8 +689,8 @@ impl ServiceManager {
         let reader = Mutex::new(read_half);
 
         // Hello → Ready
-        let hello = WhsRequest {
-            msg: Some(whs_request::Msg::Hello(WhsHello {
+        let hello = ExtRequest {
+            msg: Some(ext_request::Msg::Hello(ExtHello {
                 version: PROTOCOL_VERSION.to_owned(),
             })),
         };
@@ -700,7 +700,7 @@ impl ServiceManager {
                 .await
                 .context("write Hello")?;
         }
-        let ready: WhsResponse = {
+        let ready: ExtResponse = {
             let mut r = reader.lock().await;
             time::timeout(HANDSHAKE_TIMEOUT, read_message(&mut *r))
                 .await
@@ -708,12 +708,12 @@ impl ServiceManager {
                 .context("read Ready")?
         };
         let (service, capabilities) = match ready.msg {
-            Some(whs_response::Msg::Ready(WhsReady {
+            Some(ext_response::Msg::Ready(ExtReady {
                 service,
                 capabilities,
                 ..
             })) => (service, capabilities),
-            Some(whs_response::Msg::Error(WhsError { message })) => {
+            Some(ext_response::Msg::Error(ExtError { message })) => {
                 bail!("service error: {message}")
             }
             other => bail!("unexpected response to Hello: {other:?}"),
@@ -730,8 +730,8 @@ impl ServiceManager {
 
         // Configure → Configured
         let config_json = serde_json::to_string(config).context("serialize service config")?;
-        let configure_req = WhsRequest {
-            msg: Some(whs_request::Msg::Configure(WhsConfigure {
+        let configure_req = ExtRequest {
+            msg: Some(ext_request::Msg::Configure(ExtConfigure {
                 config: config_json,
             })),
         };
@@ -740,8 +740,8 @@ impl ServiceManager {
             .context("Configure timeout")?
             .context("Configure")?;
         match configure_resp.msg {
-            Some(whs_response::Msg::Configured(WhsConfigured {})) => {}
-            Some(whs_response::Msg::Error(WhsError { message })) => {
+            Some(ext_response::Msg::Configured(ExtConfigured {})) => {}
+            Some(ext_response::Msg::Error(ExtError { message })) => {
                 bail!("Configure error: {message}")
             }
             other => bail!("unexpected response to Configure: {other:?}"),
@@ -749,16 +749,16 @@ impl ServiceManager {
         tracing::debug!(service = %name, "handshake Configure/Configured complete");
 
         // RegisterTools → ToolSchemas
-        let register_tools_req = WhsRequest {
-            msg: Some(whs_request::Msg::RegisterTools(WhsRegisterTools {})),
+        let register_tools_req = ExtRequest {
+            msg: Some(ext_request::Msg::RegisterTools(ExtRegisterTools {})),
         };
         let resp = time::timeout(HANDSHAKE_TIMEOUT, handle.request(&register_tools_req))
             .await
             .context("RegisterTools timeout")?
             .context("RegisterTools")?;
         let tool_defs = match resp.msg {
-            Some(whs_response::Msg::ToolSchemas(WhsToolSchemas { tools })) => tools,
-            Some(whs_response::Msg::Error(WhsError { message })) => {
+            Some(ext_response::Msg::ToolSchemas(ExtToolSchemas { tools })) => tools,
+            Some(ext_response::Msg::Error(ExtError { message })) => {
                 bail!("RegisterTools error: {message}")
             }
             other => bail!("unexpected response to RegisterTools: {other:?}"),

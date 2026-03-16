@@ -41,7 +41,7 @@ Walrus is a daemon that runs [agents] and dispatches tools. The daemon
 ships with built-in [tools] (file I/O, shell, task delegation),
 [MCP][mcp] server integration, and [skills] (Markdown prompt files).
 
-Heavier capabilities live outside the daemon as [WHS services][services] —
+Heavier capabilities live outside the daemon as [extensions][services] —
 managed child processes you add or remove in config:
 
 | Service            | What it does                                 |
@@ -57,7 +57,7 @@ The daemon stays small. Services scale independently.
 - [Quickstart][quickstart] — first agent in 2 minutes
 - [Configuration][config] — walrus.toml reference
 - [Providers][providers] — connect any LLM
-- [WHS Services][services] — how hooks work
+- [Extensions][services] — how extensions work
 - [Architecture][runtime] — runtime, event loop, hooks
 - [Why we built OpenWalrus][blog]
 

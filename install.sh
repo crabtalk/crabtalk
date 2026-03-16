@@ -20,7 +20,7 @@ INSTALL_SERVICES=0
 INSTALL_SERVICE_LIST=""
 TMPDIR_PATH=""
 
-# WHS service binaries and their cargo crate names.
+# Extension service binaries and their cargo crate names.
 SERVICE_BINS="walrus-memory walrus-search walrus-telegram walrus-discord"
 
 # --- Utility functions ---
@@ -126,7 +126,7 @@ Usage:
 
 Options:
   -y, --yes              Skip all confirmation prompts (downloads prebuilt binary)
-  --services             Install all WHS services
+  --services             Install all extension services
   --service <name>       Install a specific service (memory, search, telegram, discord)
   -h, --help             Show this help message
 

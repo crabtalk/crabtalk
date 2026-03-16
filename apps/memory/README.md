@@ -1,7 +1,7 @@
 # walrus-memory
 
-Graph-based memory service for walrus agents. Runs as a WHS (Walrus Hook
-Service) child process managed by the daemon.
+Graph-based memory extension for walrus agents. Runs as an extension service
+child process managed by the daemon.
 
 ## Architecture
 

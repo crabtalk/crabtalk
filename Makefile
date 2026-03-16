@@ -1,6 +1,6 @@
 # Walrus Makefile
 #
-# Cross-platform builds for walrus CLI and WHS services.
+# Cross-platform builds for walrus CLI and extension services.
 #
 # - macOS Apple Silicon: Metal acceleration
 # - linux x86_64: CUDA acceleration

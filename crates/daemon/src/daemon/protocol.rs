@@ -281,17 +281,17 @@ impl Server for Daemon {
             .query
             .get(&service)
             .ok_or_else(|| anyhow::anyhow!("service '{}' not available", service))?;
-        let req = wcore::protocol::whs::WhsRequest {
-            msg: Some(wcore::protocol::whs::whs_request::Msg::ServiceQuery(
-                wcore::protocol::whs::WhsServiceQuery { query },
+        let req = wcore::protocol::ext::ExtRequest {
+            msg: Some(wcore::protocol::ext::ext_request::Msg::ServiceQuery(
+                wcore::protocol::ext::ExtServiceQuery { query },
             )),
         };
         let resp = handle.request(&req).await?;
         match resp.msg {
-            Some(wcore::protocol::whs::whs_response::Msg::ServiceQueryResult(result)) => {
+            Some(wcore::protocol::ext::ext_response::Msg::ServiceQueryResult(result)) => {
                 Ok(result.result)
             }
-            Some(wcore::protocol::whs::whs_response::Msg::Error(e)) => {
+            Some(wcore::protocol::ext::ext_response::Msg::Error(e)) => {
                 anyhow::bail!("service '{}' error: {}", service, e.message)
             }
             other => anyhow::bail!("unexpected response from service '{}': {other:?}", service),
@@ -310,17 +310,17 @@ impl Server for Daemon {
             .get(&service)
             .or_else(|| registry.tools.values().find(|h| h.name.as_str() == service))
             .ok_or_else(|| anyhow::anyhow!("service '{}' not found", service))?;
-        let req = wcore::protocol::whs::WhsRequest {
-            msg: Some(wcore::protocol::whs::whs_request::Msg::GetSchema(
-                wcore::protocol::whs::WhsGetSchema {},
+        let req = wcore::protocol::ext::ExtRequest {
+            msg: Some(wcore::protocol::ext::ext_request::Msg::GetSchema(
+                wcore::protocol::ext::ExtGetSchema {},
             )),
         };
         let resp = handle.request(&req).await?;
         match resp.msg {
-            Some(wcore::protocol::whs::whs_response::Msg::SchemaResult(result)) => {
+            Some(wcore::protocol::ext::ext_response::Msg::SchemaResult(result)) => {
                 Ok(result.schema)
             }
-            Some(wcore::protocol::whs::whs_response::Msg::Error(e)) => {
+            Some(wcore::protocol::ext::ext_response::Msg::Error(e)) => {
                 anyhow::bail!("service '{}' schema error: {}", service, e.message)
             }
             other => anyhow::bail!(
@@ -340,13 +340,13 @@ impl Server for Daemon {
         let mut schemas = std::collections::HashMap::new();
         // Collect unique service handles from the query registry.
         for (name, handle) in &registry.query {
-            let req = wcore::protocol::whs::WhsRequest {
-                msg: Some(wcore::protocol::whs::whs_request::Msg::GetSchema(
-                    wcore::protocol::whs::WhsGetSchema {},
+            let req = wcore::protocol::ext::ExtRequest {
+                msg: Some(wcore::protocol::ext::ext_request::Msg::GetSchema(
+                    wcore::protocol::ext::ExtGetSchema {},
                 )),
             };
             if let Ok(resp) = handle.request(&req).await
-                && let Some(wcore::protocol::whs::whs_response::Msg::SchemaResult(result)) =
+                && let Some(wcore::protocol::ext::ext_response::Msg::SchemaResult(result)) =
                     resp.msg
             {
                 schemas.insert(name.clone(), result.schema);
@@ -380,28 +380,28 @@ impl Server for Daemon {
                     .capabilities
                     .iter()
                     .filter_map(|c| match &c.cap {
-                        Some(wcore::protocol::whs::capability::Cap::Tools(_)) => {
+                        Some(wcore::protocol::ext::capability::Cap::Tools(_)) => {
                             Some("tools".into())
                         }
-                        Some(wcore::protocol::whs::capability::Cap::Query(_)) => {
+                        Some(wcore::protocol::ext::capability::Cap::Query(_)) => {
                             Some("query".into())
                         }
-                        Some(wcore::protocol::whs::capability::Cap::BuildAgent(_)) => {
+                        Some(wcore::protocol::ext::capability::Cap::BuildAgent(_)) => {
                             Some("build_agent".into())
                         }
-                        Some(wcore::protocol::whs::capability::Cap::BeforeRun(_)) => {
+                        Some(wcore::protocol::ext::capability::Cap::BeforeRun(_)) => {
                             Some("before_run".into())
                         }
-                        Some(wcore::protocol::whs::capability::Cap::Compact(_)) => {
+                        Some(wcore::protocol::ext::capability::Cap::Compact(_)) => {
                             Some("compact".into())
                         }
-                        Some(wcore::protocol::whs::capability::Cap::EventObserver(_)) => {
+                        Some(wcore::protocol::ext::capability::Cap::EventObserver(_)) => {
                             Some("event_observer".into())
                         }
-                        Some(wcore::protocol::whs::capability::Cap::AfterRun(_)) => {
+                        Some(wcore::protocol::ext::capability::Cap::AfterRun(_)) => {
                             Some("after_run".into())
                         }
-                        Some(wcore::protocol::whs::capability::Cap::Infer(_)) => {
+                        Some(wcore::protocol::ext::capability::Cap::Infer(_)) => {
                             Some("infer".into())
                         }
                         None => None,
@@ -409,7 +409,7 @@ impl Server for Daemon {
                     .collect();
                 services.push(wcore::protocol::message::ServiceInfoMsg {
                     name,
-                    kind: "hook".into(),
+                    kind: "extension".into(),
                     status: "running".into(),
                     capabilities,
                     has_config: true,

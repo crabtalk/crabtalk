@@ -1,16 +1,16 @@
-//! WHS serve command — run walrus-memory as a hook service over UDS.
+//! Extension serve command — run walrus-memory as an extension service over UDS.
 
 use crate::{config::MemoryConfig, dispatch::MemoryService, tool};
 use std::path::Path;
 use wcore::protocol::{
     PROTOCOL_VERSION,
     codec::{read_message, write_message},
-    whs::{
+    ext::{
         AfterRunCap, BeforeRunCap, BuildAgentCap, Capability, CompactCap, EventObserverCap,
-        InferCap, QueryCap, SimpleMessage, ToolsList, WhsAfterRunResult, WhsBeforeRunResult,
-        WhsBuildAgentResult, WhsCompactResult, WhsConfigured, WhsError, WhsInferRequest, WhsReady,
-        WhsRequest, WhsResponse, WhsServiceQueryResult, WhsToolResult, WhsToolSchemas, capability,
-        whs_request, whs_response,
+        ExtAfterRunResult, ExtBeforeRunResult, ExtBuildAgentResult, ExtCompactResult,
+        ExtConfigured, ExtError, ExtInferRequest, ExtReady, ExtRequest, ExtResponse,
+        ExtServiceQueryResult, ExtToolResult, ExtToolSchemas, InferCap, QueryCap, SimpleMessage,
+        ToolsList, capability, ext_request, ext_response,
     },
 };
 
@@ -29,16 +29,16 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
     let (mut reader, mut writer) = stream.into_split();
 
     // ── Hello → Ready ────────────────────────────────────────────────
-    let hello: WhsRequest = read_message(&mut reader).await?;
+    let hello: ExtRequest = read_message(&mut reader).await?;
     match hello.msg {
-        Some(whs_request::Msg::Hello(_)) => {}
+        Some(ext_request::Msg::Hello(_)) => {}
         other => anyhow::bail!("expected Hello, got {other:?}"),
     }
 
     let tool_names = vec!["recall".to_owned(), "extract".to_owned()];
 
-    let ready = WhsResponse {
-        msg: Some(whs_response::Msg::Ready(WhsReady {
+    let ready = ExtResponse {
+        msg: Some(ext_response::Msg::Ready(ExtReady {
             version: PROTOCOL_VERSION.to_owned(),
             service: "memory".to_owned(),
             capabilities: vec![
@@ -72,9 +72,9 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
     write_message(&mut writer, &ready).await?;
 
     // ── Configure → Configured ───────────────────────────────────────
-    let configure: WhsRequest = read_message(&mut reader).await?;
+    let configure: ExtRequest = read_message(&mut reader).await?;
     let config = match configure.msg {
-        Some(whs_request::Msg::Configure(c)) => {
+        Some(ext_request::Msg::Configure(c)) => {
             if c.config.is_empty() {
                 MemoryConfig::default()
             } else {
@@ -86,15 +86,15 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
         }
         other => anyhow::bail!("expected Configure, got {other:?}"),
     };
-    let configured = WhsResponse {
-        msg: Some(whs_response::Msg::Configured(WhsConfigured {})),
+    let configured = ExtResponse {
+        msg: Some(ext_response::Msg::Configured(ExtConfigured {})),
     };
     write_message(&mut writer, &configured).await?;
 
     // ── RegisterTools → ToolSchemas ──────────────────────────────────
-    let register: WhsRequest = read_message(&mut reader).await?;
+    let register: ExtRequest = read_message(&mut reader).await?;
     match register.msg {
-        Some(whs_request::Msg::RegisterTools(_)) => {}
+        Some(ext_request::Msg::RegisterTools(_)) => {}
         other => anyhow::bail!("expected RegisterTools, got {other:?}"),
     }
 
@@ -105,8 +105,8 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
     // All tools including internal `extract` (needed by infer_fulfill).
     // Agent-visible filtering happens via BuildAgent response (tool_defs).
     let tools = tool::all_tool_defs();
-    let schemas = WhsResponse {
-        msg: Some(whs_response::Msg::ToolSchemas(WhsToolSchemas { tools })),
+    let schemas = ExtResponse {
+        msg: Some(ext_response::Msg::ToolSchemas(ExtToolSchemas { tools })),
     };
     write_message(&mut writer, &schemas).await?;
     tracing::info!("handshake complete");
@@ -114,7 +114,7 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
     // ── Dispatch loop ────────────────────────────────────────────────
     let mut clean_exit = false;
     loop {
-        let req: WhsRequest = match read_message(&mut reader).await {
+        let req: ExtRequest = match read_message(&mut reader).await {
             Ok(r) => r,
             Err(wcore::protocol::codec::FrameError::ConnectionClosed) => {
                 tracing::warn!("daemon connection closed");
@@ -127,76 +127,76 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
         };
 
         let resp = match req.msg {
-            Some(whs_request::Msg::ToolCall(call)) => {
+            Some(ext_request::Msg::ToolCall(call)) => {
                 let result = dispatch_tool(&svc, &call.name, &call.args, &call.agent).await;
-                WhsResponse {
-                    msg: Some(whs_response::Msg::ToolResult(WhsToolResult { result })),
+                ExtResponse {
+                    msg: Some(ext_response::Msg::ToolResult(ExtToolResult { result })),
                 }
             }
-            Some(whs_request::Msg::BuildAgent(ba)) => {
+            Some(ext_request::Msg::BuildAgent(ba)) => {
                 let result =
                     handle_build_agent(&svc, &ba.name, &ba.description, &ba.system_prompt).await;
-                WhsResponse {
-                    msg: Some(whs_response::Msg::BuildAgentResult(result)),
+                ExtResponse {
+                    msg: Some(ext_response::Msg::BuildAgentResult(result)),
                 }
             }
-            Some(whs_request::Msg::BeforeRun(br)) => {
+            Some(ext_request::Msg::BeforeRun(br)) => {
                 let result = handle_before_run(&svc, &br.history).await;
-                WhsResponse {
-                    msg: Some(whs_response::Msg::BeforeRunResult(result)),
+                ExtResponse {
+                    msg: Some(ext_response::Msg::BeforeRunResult(result)),
                 }
             }
-            Some(whs_request::Msg::AfterRun(ar)) => {
+            Some(ext_request::Msg::AfterRun(ar)) => {
                 let conversation = build_conversation_summary(&ar.history);
                 // Store a journal entry from the conversation for future compaction context.
                 let _ = svc.dispatch_journal(&conversation, &ar.agent).await;
                 let messages = extraction_messages_from(&conversation);
                 // Respond with InferRequest — daemon runs extraction LLM loop,
                 // dispatching recall/extract tool calls back to this service.
-                WhsResponse {
-                    msg: Some(whs_response::Msg::InferRequest(WhsInferRequest {
+                ExtResponse {
+                    msg: Some(ext_response::Msg::InferRequest(ExtInferRequest {
                         messages,
                     })),
                 }
             }
-            Some(whs_request::Msg::InferResult(_)) => {
+            Some(ext_request::Msg::InferResult(_)) => {
                 // Infer complete — extraction tool calls already dispatched.
-                WhsResponse {
-                    msg: Some(whs_response::Msg::AfterRunResult(WhsAfterRunResult {})),
+                ExtResponse {
+                    msg: Some(ext_response::Msg::AfterRunResult(ExtAfterRunResult {})),
                 }
             }
-            Some(whs_request::Msg::Compact(c)) => {
+            Some(ext_request::Msg::Compact(c)) => {
                 let addition = handle_compact(&svc, &c.agent).await;
-                WhsResponse {
-                    msg: Some(whs_response::Msg::CompactResult(WhsCompactResult {
+                ExtResponse {
+                    msg: Some(ext_response::Msg::CompactResult(ExtCompactResult {
                         addition,
                     })),
                 }
             }
-            Some(whs_request::Msg::ServiceQuery(sq)) => {
+            Some(ext_request::Msg::ServiceQuery(sq)) => {
                 let result = handle_service_query(&svc, &sq.query).await;
-                WhsResponse {
-                    msg: Some(whs_response::Msg::ServiceQueryResult(
-                        WhsServiceQueryResult { result },
+                ExtResponse {
+                    msg: Some(ext_response::Msg::ServiceQueryResult(
+                        ExtServiceQueryResult { result },
                     )),
                 }
             }
-            Some(whs_request::Msg::Event(_)) => {
+            Some(ext_request::Msg::Event(_)) => {
                 // Fire-and-forget — no response expected.
                 continue;
             }
-            Some(whs_request::Msg::GetSchema(_)) => WhsResponse {
-                msg: Some(whs_response::Msg::Error(WhsError {
+            Some(ext_request::Msg::GetSchema(_)) => ExtResponse {
+                msg: Some(ext_response::Msg::Error(ExtError {
                     message: "schema not yet implemented".into(),
                 })),
             },
-            Some(whs_request::Msg::Shutdown(_)) => {
+            Some(ext_request::Msg::Shutdown(_)) => {
                 tracing::info!("shutdown requested");
                 clean_exit = true;
                 break;
             }
-            other => WhsResponse {
-                msg: Some(whs_response::Msg::Error(WhsError {
+            other => ExtResponse {
+                msg: Some(ext_response::Msg::Error(ExtError {
                     message: format!("unexpected request: {other:?}"),
                 })),
             },
@@ -235,7 +235,7 @@ async fn handle_build_agent(
     name: &str,
     description: &str,
     _system_prompt: &str,
-) -> WhsBuildAgentResult {
+) -> ExtBuildAgentResult {
     let lance = &svc.lance;
 
     // Inject <self> block.
@@ -271,7 +271,7 @@ async fn handle_build_agent(
     // Append memory prompt.
     buf.push_str(&format!("\n\n{}", MemoryService::memory_prompt()));
 
-    WhsBuildAgentResult {
+    ExtBuildAgentResult {
         prompt_addition: buf,
         tools: tool::tool_defs(),
     }
@@ -281,9 +281,9 @@ async fn handle_build_agent(
 ///
 /// Auto-recalls relevant entities and graph connections based on
 /// the last user message via unified semantic search.
-async fn handle_before_run(svc: &MemoryService, history: &[SimpleMessage]) -> WhsBeforeRunResult {
+async fn handle_before_run(svc: &MemoryService, history: &[SimpleMessage]) -> ExtBeforeRunResult {
     if !svc.auto_recall {
-        return WhsBeforeRunResult {
+        return ExtBeforeRunResult {
             messages: Vec::new(),
         };
     }
@@ -297,7 +297,7 @@ async fn handle_before_run(svc: &MemoryService, history: &[SimpleMessage]) -> Wh
     {
         Some(q) if q.len() >= 10 => q.clone(),
         _ => {
-            return WhsBeforeRunResult {
+            return ExtBeforeRunResult {
                 messages: Vec::new(),
             };
         }
@@ -306,14 +306,14 @@ async fn handle_before_run(svc: &MemoryService, history: &[SimpleMessage]) -> Wh
     let result = match svc.unified_search(&query, 5).await {
         Some(r) => r,
         None => {
-            return WhsBeforeRunResult {
+            return ExtBeforeRunResult {
                 messages: Vec::new(),
             };
         }
     };
 
     let block = format!("<recall>\n{result}\n</recall>");
-    WhsBeforeRunResult {
+    ExtBeforeRunResult {
         messages: vec![SimpleMessage {
             role: "user".to_owned(),
             content: block,

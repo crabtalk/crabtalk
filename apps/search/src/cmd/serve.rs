@@ -1,4 +1,4 @@
-//! WHS serve command — run walrus-search as a hook service over UDS.
+//! Extension serve command — run walrus-search as an extension service over UDS.
 
 use crate::{
     aggregator::Aggregator,
@@ -10,9 +10,9 @@ use std::path::Path;
 use wcore::protocol::{
     PROTOCOL_VERSION,
     codec::{read_message, write_message},
-    whs::{
-        Capability, ToolsList, WhsConfigured, WhsError, WhsReady, WhsRequest, WhsResponse,
-        WhsToolResult, WhsToolSchemas, capability, whs_request, whs_response,
+    ext::{
+        Capability, ExtConfigured, ExtError, ExtReady, ExtRequest, ExtResponse, ExtToolResult,
+        ExtToolSchemas, ToolsList, capability, ext_request, ext_response,
     },
 };
 
@@ -29,13 +29,13 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
     let (mut reader, mut writer) = stream.into_split();
 
     // Hello → Ready
-    let hello: WhsRequest = read_message(&mut reader).await?;
+    let hello: ExtRequest = read_message(&mut reader).await?;
     match hello.msg {
-        Some(whs_request::Msg::Hello(_)) => {}
+        Some(ext_request::Msg::Hello(_)) => {}
         other => anyhow::bail!("expected Hello, got {other:?}"),
     }
-    let ready = WhsResponse {
-        msg: Some(whs_response::Msg::Ready(WhsReady {
+    let ready = ExtResponse {
+        msg: Some(ext_response::Msg::Ready(ExtReady {
             version: PROTOCOL_VERSION.to_owned(),
             service: "search".to_owned(),
             capabilities: vec![Capability {
@@ -48,9 +48,9 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
     write_message(&mut writer, &ready).await?;
 
     // Configure → Configured
-    let configure: WhsRequest = read_message(&mut reader).await?;
+    let configure: ExtRequest = read_message(&mut reader).await?;
     let config = match configure.msg {
-        Some(whs_request::Msg::Configure(c)) => {
+        Some(ext_request::Msg::Configure(c)) => {
             if c.config.is_empty() {
                 Config::default()
             } else {
@@ -62,19 +62,19 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
         }
         other => anyhow::bail!("expected Configure, got {other:?}"),
     };
-    let configured = WhsResponse {
-        msg: Some(whs_response::Msg::Configured(WhsConfigured {})),
+    let configured = ExtResponse {
+        msg: Some(ext_response::Msg::Configured(ExtConfigured {})),
     };
     write_message(&mut writer, &configured).await?;
 
     // RegisterTools → ToolSchemas
-    let register: WhsRequest = read_message(&mut reader).await?;
+    let register: ExtRequest = read_message(&mut reader).await?;
     match register.msg {
-        Some(whs_request::Msg::RegisterTools(_)) => {}
+        Some(ext_request::Msg::RegisterTools(_)) => {}
         other => anyhow::bail!("expected RegisterTools, got {other:?}"),
     }
-    let schemas = WhsResponse {
-        msg: Some(whs_response::Msg::ToolSchemas(WhsToolSchemas {
+    let schemas = ExtResponse {
+        msg: Some(ext_response::Msg::ToolSchemas(ExtToolSchemas {
             tools: tool_defs(),
         })),
     };
@@ -88,7 +88,7 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
     // Dispatch loop
     let mut clean_exit = false;
     loop {
-        let req: WhsRequest = match read_message(&mut reader).await {
+        let req: ExtRequest = match read_message(&mut reader).await {
             Ok(r) => r,
             Err(wcore::protocol::codec::FrameError::ConnectionClosed) => {
                 tracing::warn!("daemon connection closed");
@@ -101,28 +101,28 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
         };
 
         let resp = match req.msg {
-            Some(whs_request::Msg::ToolCall(call)) => {
+            Some(ext_request::Msg::ToolCall(call)) => {
                 let result = dispatch(&call.name, &call.args, &aggregator, &fetch_client).await;
-                WhsResponse {
-                    msg: Some(whs_response::Msg::ToolResult(WhsToolResult { result })),
+                ExtResponse {
+                    msg: Some(ext_response::Msg::ToolResult(ExtToolResult { result })),
                 }
             }
-            Some(whs_request::Msg::Event(_)) => {
+            Some(ext_request::Msg::Event(_)) => {
                 // Fire-and-forget — no response expected.
                 continue;
             }
-            Some(whs_request::Msg::GetSchema(_)) => WhsResponse {
-                msg: Some(whs_response::Msg::Error(WhsError {
+            Some(ext_request::Msg::GetSchema(_)) => ExtResponse {
+                msg: Some(ext_response::Msg::Error(ExtError {
                     message: "schema not yet implemented".into(),
                 })),
             },
-            Some(whs_request::Msg::Shutdown(_)) => {
+            Some(ext_request::Msg::Shutdown(_)) => {
                 tracing::info!("shutdown requested");
                 clean_exit = true;
                 break;
             }
-            other => WhsResponse {
-                msg: Some(whs_response::Msg::Error(WhsError {
+            other => ExtResponse {
+                msg: Some(ext_response::Msg::Error(ExtError {
                     message: format!("unexpected request: {other:?}"),
                 })),
             },

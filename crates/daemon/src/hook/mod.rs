@@ -1,8 +1,8 @@
 //! Stateful Hook implementation for the daemon.
 //!
-//! [`DaemonHook`] composes skill, MCP, and OS sub-hooks plus external WHS
-//! services. Memory is handled by an external WHS service.
-//! `on_build_agent` delegates to skills and WHS services;
+//! [`DaemonHook`] composes skill, MCP, and OS sub-hooks plus external extension
+//! services. Memory is handled by an external extension service.
+//! `on_build_agent` delegates to skills and extension services;
 //! `on_register_tools` delegates to all sub-hooks in sequence.
 //! `dispatch_tool` routes every agent tool call by name — the single
 //! entry point from `event.rs`.
@@ -41,7 +41,7 @@ pub struct DaemonHook {
     pub sandboxed: bool,
     /// Per-agent scope maps, populated during load_agents.
     pub(crate) scopes: BTreeMap<CompactString, AgentScope>,
-    /// External hook service registry (tools + queries).
+    /// External extension service registry (tools + queries).
     pub(crate) registry: Option<Arc<ServiceRegistry>>,
 }
 
@@ -144,7 +144,7 @@ impl DaemonHook {
         }
     }
 
-    /// Dispatch to an external hook service if the tool is registered.
+    /// Dispatch to an external extension service if the tool is registered.
     /// Returns `None` if the tool is not in the registry (fall through to in-process).
     async fn dispatch_external(
         &self,
@@ -195,7 +195,7 @@ impl DaemonHook {
             "create_task" => self.dispatch_create_task(args, agent).await,
             "ask_user" => self.dispatch_ask_user(args, task_id).await,
             "await_tasks" => self.dispatch_await_tasks(args, task_id).await,
-            // External hook services, then MCP bridge as final fallback.
+            // External extension services, then MCP bridge as final fallback.
             name => {
                 if let Some(result) = self.dispatch_external(name, args, agent, task_id).await {
                     return result;
@@ -210,7 +210,7 @@ impl DaemonHook {
 
 impl Hook for DaemonHook {
     fn on_build_agent(&self, config: AgentConfig) -> AgentConfig {
-        // Delegate to WHS services first (prompt enrichment).
+        // Delegate to extension services first (prompt enrichment).
         let mut config = match self.registry {
             Some(ref registry) => registry.on_build_agent(config),
             None => config,

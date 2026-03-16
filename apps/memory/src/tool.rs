@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use wcore::{
     agent::{AsTool, ToolDescription},
-    protocol::whs::ToolDef,
+    protocol::ext::ToolDef,
 };
 
 #[derive(Deserialize, JsonSchema)]
@@ -64,7 +64,7 @@ pub fn tool_defs() -> Vec<ToolDef> {
     }]
 }
 
-/// Build all tool defs including internal ones (for WHS RegisterTools response).
+/// Build all tool defs including internal ones (for extension RegisterTools response).
 ///
 /// The daemon needs `extract` in the ToolSchemas so `infer_fulfill` can
 /// provide it to the extraction LLM.

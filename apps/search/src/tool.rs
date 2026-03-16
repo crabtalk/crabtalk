@@ -1,10 +1,10 @@
-//! Tool schema definitions for the search WHS service.
+//! Tool schema definitions for the search extension service.
 
 use schemars::JsonSchema;
 use serde::Deserialize;
 use wcore::{
     agent::{AsTool, ToolDescription},
-    protocol::whs::ToolDef,
+    protocol::ext::ToolDef,
 };
 
 #[derive(Deserialize, JsonSchema)]
