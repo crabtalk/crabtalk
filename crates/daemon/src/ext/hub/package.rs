@@ -128,6 +128,23 @@ pub fn install(
             .filter(|(k, _)| filter.wants_service(k.as_str()))
             .collect();
         if !wanted_services.is_empty() {
+            // Auto-install Rust toolchain if cargo is not available.
+            if Command::new("cargo").arg("--version").output().await.is_err() {
+                let msg = "installing rust toolchain…".to_string();
+                registry.lock().await.step(id, msg.clone());
+                yield DownloadEvent {
+                    event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+                };
+                let status = Command::new("sh")
+                    .args(["-c", "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"])
+                    .status()
+                    .await
+                    .context("failed to install rust via rustup")?;
+                if !status.success() {
+                    Err(anyhow::anyhow!("rustup install exited with {status}"))?;
+                }
+            }
+
             for (key, cfg) in &wanted_services {
                 let msg = format!("installing {key}…");
                 registry.lock().await.step(id, msg.clone());
