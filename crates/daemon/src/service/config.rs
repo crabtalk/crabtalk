@@ -13,8 +13,6 @@ pub enum ServiceKind {
     Hook,
     /// Gateway service — speaks existing walrus protocol (e.g. Telegram, Discord).
     Gateway,
-    /// Arbitrary process — no walrus protocol (e.g. llama-server).
-    Process,
 }
 
 /// Restart policy for a managed service.
@@ -30,16 +28,6 @@ pub enum RestartPolicy {
     Always,
 }
 
-/// Install instructions for a service binary.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InstallConfig {
-    /// Command to execute (e.g. "cargo", "curl").
-    pub command: String,
-    /// Arguments to pass to the command (e.g. ["install", "walrus-memory"]).
-    #[serde(default)]
-    pub args: Vec<String>,
-}
-
 /// Per-service configuration from `[services.<name>]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceConfig {
@@ -49,14 +37,10 @@ pub struct ServiceConfig {
     /// Service kind.
     #[serde(default)]
     pub kind: ServiceKind,
-    /// Command to execute (binary name or path).
-    pub command: String,
-    /// Arguments to pass to the command.
-    #[serde(default)]
-    pub args: Vec<String>,
-    /// Install instructions (hub install-time only, not written to walrus.toml).
-    #[serde(default)]
-    pub install: Option<InstallConfig>,
+    /// Cargo package name (e.g. "walrus-memory"). Used as binary name and for
+    /// `cargo install` during hub installation.
+    #[serde(rename = "crate")]
+    pub krate: String,
     /// Restart policy.
     #[serde(default)]
     pub restart: RestartPolicy,

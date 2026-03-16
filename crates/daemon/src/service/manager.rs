@@ -591,8 +591,7 @@ impl ServiceManager {
                 let _ = std::fs::remove_file(&entry.socket_path);
             }
 
-            let mut cmd = tokio::process::Command::new(&entry.config.command);
-            cmd.args(&entry.config.args);
+            let mut cmd = tokio::process::Command::new(&entry.config.krate);
             for (k, v) in &entry.config.env {
                 cmd.env(k, v);
             }
@@ -607,7 +606,6 @@ impl ServiceManager {
                         .unwrap_or_else(|_| "{}".to_owned());
                     cmd.arg("--config").arg(config_json);
                 }
-                ServiceKind::Process => {}
             }
 
             cmd.kill_on_drop(true);

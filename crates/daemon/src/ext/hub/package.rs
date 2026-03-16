@@ -129,20 +129,18 @@ pub fn install(
             .collect();
         if !wanted_services.is_empty() {
             for (key, cfg) in &wanted_services {
-                if let Some(install) = &cfg.install {
-                    let msg = format!("installing {key}…");
-                    registry.lock().await.step(id, msg.clone());
-                    yield DownloadEvent {
-                        event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
-                    };
-                    let status = Command::new(&install.command)
-                        .args(&install.args)
-                        .status()
-                        .await
-                        .with_context(|| format!("failed to run install for {key}"))?;
-                    if !status.success() {
-                        Err(anyhow::anyhow!("install for {key} exited with {status}"))?;
-                    }
+                let msg = format!("installing {key}…");
+                registry.lock().await.step(id, msg.clone());
+                yield DownloadEvent {
+                    event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
+                };
+                let status = Command::new("cargo")
+                    .args(["install", &cfg.krate])
+                    .status()
+                    .await
+                    .with_context(|| format!("failed to cargo install {key}"))?;
+                if !status.success() {
+                    Err(anyhow::anyhow!("cargo install for {key} exited with {status}"))?;
                 }
             }
 
@@ -448,7 +446,6 @@ fn merge_services_filtered(
 
     for (key, cfg) in entries {
         let mut runtime = (*cfg).clone();
-        runtime.install = None;
         runtime.description = None;
         let doc = toml_edit::ser::to_document(&runtime)
             .with_context(|| format!("failed to serialize ServiceConfig for {key}"))?;
