@@ -593,6 +593,9 @@ impl ServiceManager {
 
             let mut cmd = tokio::process::Command::new(&entry.config.command);
             cmd.args(&entry.config.args);
+            for (k, v) in &entry.config.env {
+                cmd.env(k, v);
+            }
 
             match entry.config.kind {
                 ServiceKind::Hook => {

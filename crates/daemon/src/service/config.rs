@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 /// Kind of managed service.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -62,6 +63,9 @@ pub struct ServiceConfig {
     /// Whether the service is enabled.
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Environment variables injected into the child process.
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
     /// Opaque service-specific configuration (forwarded via WHS Configure).
     #[serde(default)]
     pub config: Value,
