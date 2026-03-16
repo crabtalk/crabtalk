@@ -57,6 +57,19 @@ async fn spawn_telegram(
         }
     }
 
+    // Register slash commands so they appear in the Telegram UI.
+    use teloxide::types::BotCommand as TgCommand;
+    let commands = vec![
+        TgCommand::new("switch", "Switch to a different agent"),
+        TgCommand::new("hub", "Manage hub packages (install/uninstall)"),
+    ];
+    if let Err(e) = bot.set_my_commands(commands).await {
+        tracing::warn!(
+            platform = "telegram",
+            "failed to register bot commands: {e}"
+        );
+    }
+
     let (tx, rx) = mpsc::unbounded_channel::<GatewayMessage>();
 
     let poll_bot = bot.clone();
@@ -131,6 +144,7 @@ async fn telegram_loop(
             active_agent,
             chat_id,
             msg.message_id,
+            msg.is_group,
             &content,
             &sender,
             session,
@@ -150,6 +164,7 @@ async fn telegram_loop(
                     active_agent,
                     chat_id,
                     msg.message_id,
+                    msg.is_group,
                     &content,
                     &sender,
                     None,
@@ -173,6 +188,7 @@ async fn tg_stream(
     agent: &str,
     chat_id: i64,
     reply_to_msg_id: i64,
+    is_group: bool,
     content: &str,
     sender: &str,
     session: Option<u64>,
@@ -229,7 +245,7 @@ async fn tg_stream(
                 if rendered.is_empty() || rendered.len() == last_sent_len {
                     continue;
                 }
-                let reply_to = Some(teloxide::types::MessageId(reply_to_msg_id as i32));
+                let reply_to = is_group.then_some(teloxide::types::MessageId(reply_to_msg_id as i32));
                 match msg_id {
                     None => {
                         match crate::telegram::markdown::send_md(bot, ChatId(chat_id), &rendered, reply_to).await {
@@ -278,7 +294,8 @@ async fn tg_stream(
                 }
             }
             None => {
-                let reply_to = Some(teloxide::types::MessageId(reply_to_msg_id as i32));
+                let reply_to =
+                    is_group.then_some(teloxide::types::MessageId(reply_to_msg_id as i32));
                 if let Err(e) =
                     crate::telegram::markdown::send_md(bot, ChatId(chat_id), &final_text, reply_to)
                         .await
