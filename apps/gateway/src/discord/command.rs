@@ -33,6 +33,7 @@ pub(crate) async fn dispatch_command(
                 filters: vec![],
             })),
         },
+        BotCommand::Switch { .. } => return, // Handled inline in the main loop.
     };
 
     let mut rx = client.send(msg).await;

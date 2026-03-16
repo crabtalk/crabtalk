@@ -5,6 +5,8 @@
 
 #[cfg(feature = "serve")]
 pub(crate) mod command;
+#[cfg(feature = "serve")]
+pub(crate) mod markdown;
 
 use crate::message::{Attachment, AttachmentKind, GatewayMessage};
 use compact_str::CompactString;
@@ -75,6 +77,7 @@ fn convert_update(update: Update) -> Option<GatewayMessage> {
 
     Some(GatewayMessage {
         chat_id,
+        message_id: msg.id.0 as i64,
         sender_id,
         sender_name,
         is_bot,

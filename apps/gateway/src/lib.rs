@@ -15,6 +15,8 @@ pub(crate) mod discord;
 pub mod message;
 #[cfg(feature = "serve")]
 pub mod spawn;
+#[cfg(any(feature = "telegram", feature = "discord"))]
+pub(crate) mod stream;
 #[cfg(feature = "telegram")]
 pub(crate) mod telegram;
 

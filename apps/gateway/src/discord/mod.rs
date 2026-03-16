@@ -72,6 +72,7 @@ fn convert_message(msg: Message) -> Option<GatewayMessage> {
 
     Some(GatewayMessage {
         chat_id,
+        message_id: msg.id.get() as i64,
         sender_id,
         sender_name,
         is_bot,

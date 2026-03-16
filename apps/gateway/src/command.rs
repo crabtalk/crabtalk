@@ -7,7 +7,12 @@
 pub(crate) enum BotCommand {
     HubInstall { package: String },
     HubUninstall { package: String },
+    Switch { agent: String },
 }
+
+/// Unknown command hint shown to users.
+pub(crate) const COMMAND_HINT: &str =
+    "Unknown command. Available: /hub install <pkg>, /hub uninstall <pkg>, /switch <agent>";
 
 /// Parse a message content string into a `BotCommand`.
 ///
@@ -18,16 +23,21 @@ pub(crate) fn parse_command(content: &str) -> Option<BotCommand> {
     if !first.starts_with('/') {
         return None;
     }
-    let second = parts.next()?;
-    let arg = parts.next().map(str::to_owned);
 
-    match (first, second) {
-        ("/hub", "install") => Some(BotCommand::HubInstall {
-            package: arg.unwrap_or_default(),
-        }),
-        ("/hub", "uninstall") => Some(BotCommand::HubUninstall {
-            package: arg.unwrap_or_default(),
-        }),
+    match first {
+        "/switch" => {
+            let agent = parts.next()?.to_owned();
+            Some(BotCommand::Switch { agent })
+        }
+        "/hub" => {
+            let sub = parts.next()?;
+            let arg = parts.next().map(str::to_owned).unwrap_or_default();
+            match sub {
+                "install" => Some(BotCommand::HubInstall { package: arg }),
+                "uninstall" => Some(BotCommand::HubUninstall { package: arg }),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }

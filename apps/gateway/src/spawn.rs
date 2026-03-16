@@ -6,7 +6,7 @@
 
 use crate::{client::DaemonClient, config::GatewayConfig};
 #[cfg(any(feature = "telegram", feature = "discord"))]
-use crate::{command::parse_command, message::GatewayMessage};
+use crate::{command::parse_command, message::GatewayMessage, stream::StreamAccumulator};
 use compact_str::CompactString;
 #[cfg(feature = "discord")]
 use serenity::model::id::ChannelId;
@@ -15,11 +15,13 @@ use std::collections::HashMap;
 use std::{collections::HashSet, sync::Arc};
 #[cfg(feature = "telegram")]
 use teloxide::prelude::*;
+#[cfg(feature = "telegram")]
+use teloxide::types::ChatAction;
 use tokio::sync::RwLock;
 #[cfg(any(feature = "telegram", feature = "discord"))]
 use tokio::sync::mpsc;
 #[cfg(any(feature = "telegram", feature = "discord"))]
-use wcore::protocol::message::{ClientMessage, SendMsg, ServerMessage, server_message};
+use wcore::protocol::message::{ClientMessage, ServerMessage, StreamMsg, server_message};
 
 /// Shared set of sender IDs belonging to sibling Walrus bots.
 ///
@@ -27,6 +29,14 @@ use wcore::protocol::message::{ClientMessage, SendMsg, ServerMessage, server_mes
 /// before dispatching messages — senders in this set are silently dropped
 /// to prevent agent-to-agent loops.
 type KnownBots = Arc<RwLock<HashSet<CompactString>>>;
+
+/// Result of a streaming request to the daemon.
+#[cfg(any(feature = "telegram", feature = "discord"))]
+enum StreamResult {
+    Ok { session_id: u64 },
+    SessionError,
+    Failed,
+}
 
 /// Connect configured gateways and spawn message loops.
 ///
@@ -131,8 +141,8 @@ async fn spawn_discord(
 /// Telegram message loop: routes incoming messages to agents or bot commands.
 ///
 /// Maintains a `chat_id → session_id` mapping so consecutive messages from the
-/// same chat reuse the same session. If a session is killed externally, the
-/// error triggers a retry with `session: None` to create a fresh session.
+/// same chat reuse the same session. Uses `StreamMsg` for streaming responses
+/// with periodic message editing.
 async fn telegram_loop(
     mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
     bot: Bot,
@@ -141,6 +151,7 @@ async fn telegram_loop(
     known_bots: KnownBots,
 ) {
     let mut sessions: HashMap<i64, u64> = HashMap::new();
+    let mut chat_agents: HashMap<i64, CompactString> = HashMap::new();
 
     while let Some(msg) = rx.recv().await {
         let chat_id = msg.chat_id;
@@ -153,11 +164,21 @@ async fn telegram_loop(
             continue;
         }
 
-        tracing::info!(%agent, chat_id, "telegram dispatch");
+        let active_agent = chat_agents.get(&chat_id).unwrap_or(&agent);
+        tracing::info!(agent = %active_agent, chat_id, "telegram dispatch");
 
         // Bot command path.
         if content.starts_with('/') {
             match parse_command(&content) {
+                Some(crate::command::BotCommand::Switch { agent: new_agent }) => {
+                    let new_agent: CompactString = new_agent.into();
+                    chat_agents.insert(chat_id, new_agent.clone());
+                    sessions.remove(&chat_id);
+                    let msg = format!("Switched to agent: {new_agent}");
+                    if let Err(e) = bot.send_message(ChatId(chat_id), msg).await {
+                        tracing::warn!("failed to send switch confirmation: {e}");
+                    }
+                }
                 Some(cmd) => {
                     let b = bot.clone();
                     let c = client.clone();
@@ -167,8 +188,10 @@ async fn telegram_loop(
                 }
                 None => {
                     tracing::warn!(chat_id, content, "unrecognised bot command");
-                    let hint = "Unknown command. Available: /hub install <pkg>, /hub uninstall <pkg>, /model download <model>";
-                    if let Err(e) = bot.send_message(ChatId(chat_id), hint).await {
+                    if let Err(e) = bot
+                        .send_message(ChatId(chat_id), crate::command::COMMAND_HINT)
+                        .await
+                    {
                         tracing::warn!("failed to send command hint: {e}");
                     }
                 }
@@ -179,78 +202,198 @@ async fn telegram_loop(
         // Normal agent chat path with session mapping.
         let session = sessions.get(&chat_id).copied();
 
-        let client_msg = ClientMessage::from(SendMsg {
-            agent: agent.clone().into(),
-            content: content.clone(),
-            session,
-            sender: Some(sender.to_string()),
-        });
-        let mut reply_rx = client.send(client_msg).await;
-        let mut retry = false;
-        while let Some(server_msg) = reply_rx.recv().await {
-            match server_msg {
-                ServerMessage {
-                    msg: Some(server_message::Msg::Response(resp)),
-                } => {
-                    sessions.insert(chat_id, resp.session);
-                    if let Err(e) = bot.send_message(ChatId(chat_id), resp.content).await {
-                        tracing::warn!(%agent, "failed to send channel reply: {e}");
-                    }
-                }
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ref err)),
-                } if session.is_some() => {
-                    tracing::warn!(%agent, chat_id, "session error, retrying: {}", err.message);
-                    sessions.remove(&chat_id);
-                    retry = true;
-                }
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(err)),
-                } => {
-                    tracing::warn!(%agent, chat_id, "dispatch error: {}", err.message);
-                }
-                _ => {}
-            }
-        }
+        // Append attachment summary to content if present.
+        let content = match crate::message::attachment_summary(&msg.attachments) {
+            Some(summary) => format!("{content}\n{summary}"),
+            None => content,
+        };
 
-        // Retry with a fresh session if the previous one was stale.
-        if retry {
-            let client_msg = ClientMessage::from(SendMsg {
-                agent: agent.clone().into(),
-                content,
-                session: None,
-                sender: Some(sender.to_string()),
-            });
-            let mut reply_rx = client.send(client_msg).await;
-            while let Some(server_msg) = reply_rx.recv().await {
-                match server_msg {
-                    ServerMessage {
-                        msg: Some(server_message::Msg::Response(resp)),
-                    } => {
-                        sessions.insert(chat_id, resp.session);
-                        if let Err(e) = bot.send_message(ChatId(chat_id), resp.content).await {
-                            tracing::warn!(%agent, "failed to send channel reply: {e}");
-                        }
-                    }
-                    ServerMessage {
-                        msg: Some(server_message::Msg::Error(err)),
-                    } => {
-                        tracing::warn!(%agent, chat_id, "dispatch error on retry: {}", err.message);
-                    }
-                    _ => {}
+        let result = tg_stream(
+            &bot,
+            &client,
+            active_agent,
+            chat_id,
+            msg.message_id,
+            &content,
+            &sender,
+            session,
+        )
+        .await;
+
+        match result {
+            StreamResult::Ok { session_id } => {
+                sessions.insert(chat_id, session_id);
+            }
+            StreamResult::SessionError if session.is_some() => {
+                // Stale session — retry with a fresh one.
+                tracing::warn!(agent = %active_agent, chat_id, "session error, retrying");
+                sessions.remove(&chat_id);
+                let retry = tg_stream(
+                    &bot,
+                    &client,
+                    active_agent,
+                    chat_id,
+                    msg.message_id,
+                    &content,
+                    &sender,
+                    None,
+                )
+                .await;
+                if let StreamResult::Ok { session_id } = retry {
+                    sessions.insert(chat_id, session_id);
                 }
             }
+            StreamResult::SessionError | StreamResult::Failed => {}
         }
     }
 
     tracing::info!(platform = "telegram", "channel loop ended");
 }
 
+/// Send a streaming request to the daemon and edit a Telegram message as
+/// chunks arrive. Returns the session ID on success.
+#[cfg(feature = "telegram")]
+#[allow(clippy::too_many_arguments)]
+async fn tg_stream(
+    bot: &Bot,
+    client: &DaemonClient,
+    agent: &str,
+    chat_id: i64,
+    reply_to_msg_id: i64,
+    content: &str,
+    sender: &str,
+    session: Option<u64>,
+) -> StreamResult {
+    use std::time::Duration;
+
+    let client_msg = ClientMessage::from(StreamMsg {
+        agent: agent.to_string(),
+        content: content.to_string(),
+        session,
+        sender: Some(sender.to_string()),
+    });
+    let mut reply_rx = client.send(client_msg).await;
+    let mut acc = StreamAccumulator::new();
+    let mut msg_id: Option<teloxide::types::MessageId> = None;
+    let mut last_sent_len: usize = 0;
+    let mut debounce = tokio::time::interval(Duration::from_millis(1500));
+    debounce.reset(); // Don't fire immediately.
+
+    // Start typing indicator right away.
+    let typing_bot = bot.clone();
+    let typing_handle = tokio::spawn(async move {
+        loop {
+            if typing_bot
+                .send_chat_action(ChatId(chat_id), ChatAction::Typing)
+                .await
+                .is_err()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(4)).await;
+        }
+    });
+
+    loop {
+        tokio::select! {
+            server_msg = reply_rx.recv() => {
+                match server_msg {
+                    Some(ServerMessage { msg: Some(server_message::Msg::Stream(event)) }) => {
+                        acc.push(&event);
+                        if acc.is_done() {
+                            break;
+                        }
+                    }
+                    Some(ServerMessage { msg: Some(server_message::Msg::Error(err)) }) => {
+                        acc.set_error(err.message);
+                        break;
+                    }
+                    Some(_) => {}
+                    None => break,
+                }
+            }
+            _ = debounce.tick() => {
+                // Send or edit the message with accumulated text.
+                let rendered = acc.render();
+                if rendered.is_empty() || rendered.len() == last_sent_len {
+                    continue;
+                }
+                let reply_to = Some(teloxide::types::MessageId(reply_to_msg_id as i32));
+                match msg_id {
+                    None => {
+                        match crate::telegram::markdown::send_md(bot, ChatId(chat_id), &rendered, reply_to).await {
+                            Ok(sent) => {
+                                msg_id = Some(sent.id);
+                                last_sent_len = rendered.len();
+                            }
+                            Err(e) => tracing::warn!(agent, "failed to send placeholder: {e}"),
+                        }
+                    }
+                    Some(mid) => {
+                        if let Err(e) = crate::telegram::markdown::edit_md(bot, ChatId(chat_id), mid, &rendered).await {
+                            tracing::debug!(agent, "edit failed (may be same text): {e}");
+                        } else {
+                            last_sent_len = rendered.len();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Stop typing indicator.
+    typing_handle.abort();
+
+    // Handle errors.
+    if let Some(err) = acc.error() {
+        tracing::warn!(agent, chat_id, "stream error: {err}");
+        let err_text = format!("Error: {err}");
+        if let Err(e) = bot.send_message(ChatId(chat_id), err_text).await {
+            tracing::warn!(agent, "failed to send error to chat: {e}");
+        }
+        return if session.is_some() {
+            StreamResult::SessionError
+        } else {
+            StreamResult::Failed
+        };
+    }
+
+    // Final edit with complete text.
+    let final_text = acc.render();
+    if !final_text.is_empty() {
+        match msg_id {
+            Some(mid) if final_text.len() != last_sent_len => {
+                if let Err(e) =
+                    crate::telegram::markdown::edit_md(bot, ChatId(chat_id), mid, &final_text).await
+                {
+                    tracing::debug!(agent, "final edit failed: {e}");
+                }
+            }
+            None => {
+                let reply_to = Some(teloxide::types::MessageId(reply_to_msg_id as i32));
+                if let Err(e) =
+                    crate::telegram::markdown::send_md(bot, ChatId(chat_id), &final_text, reply_to)
+                        .await
+                {
+                    tracing::warn!(agent, "failed to send reply: {e}");
+                }
+            }
+            _ => {}
+        }
+    }
+
+    match acc.session() {
+        Some(session_id) => StreamResult::Ok { session_id },
+        None => StreamResult::Failed,
+    }
+}
+
 #[cfg(feature = "discord")]
 /// Discord message loop: routes incoming messages to agents or bot commands.
 ///
 /// Maintains a `chat_id → session_id` mapping so consecutive messages from the
-/// same chat reuse the same session. Same stale-session retry logic as Telegram.
+/// same chat reuse the same session. Uses `StreamMsg` with `StreamAccumulator`,
+/// sends the final accumulated text when the stream completes.
 async fn discord_loop(
     mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
     http: Arc<serenity::http::Http>,
@@ -259,6 +402,7 @@ async fn discord_loop(
     known_bots: KnownBots,
 ) {
     let mut sessions: HashMap<i64, u64> = HashMap::new();
+    let mut chat_agents: HashMap<i64, CompactString> = HashMap::new();
 
     while let Some(msg) = rx.recv().await {
         let chat_id = msg.chat_id;
@@ -272,11 +416,19 @@ async fn discord_loop(
             continue;
         }
 
-        tracing::info!(%agent, chat_id, "discord dispatch");
+        let active_agent = chat_agents.get(&chat_id).unwrap_or(&agent);
+        tracing::info!(agent = %active_agent, chat_id, "discord dispatch");
 
         // Bot command path.
         if content.starts_with('/') {
             match parse_command(&content) {
+                Some(crate::command::BotCommand::Switch { agent: new_agent }) => {
+                    let new_agent: CompactString = new_agent.into();
+                    chat_agents.insert(chat_id, new_agent.clone());
+                    sessions.remove(&chat_id);
+                    let msg = format!("Switched to agent: {new_agent}");
+                    crate::discord::send_text(&http, channel_id, msg).await;
+                }
                 Some(cmd) => {
                     let h = http.clone();
                     let c = client.clone();
@@ -286,8 +438,12 @@ async fn discord_loop(
                 }
                 None => {
                     tracing::warn!(chat_id, content, "unrecognised bot command");
-                    let hint = "Unknown command. Available: /hub install <pkg>, /hub uninstall <pkg>, /model download <model>";
-                    crate::discord::send_text(&http, channel_id, hint.to_owned()).await;
+                    crate::discord::send_text(
+                        &http,
+                        channel_id,
+                        crate::command::COMMAND_HINT.to_owned(),
+                    )
+                    .await;
                 }
             }
             continue;
@@ -296,65 +452,109 @@ async fn discord_loop(
         // Normal agent chat path with session mapping.
         let session = sessions.get(&chat_id).copied();
 
-        let client_msg = ClientMessage::from(SendMsg {
-            agent: agent.clone().into(),
-            content: content.clone(),
-            session,
-            sender: Some(sender.to_string()),
-        });
-        let mut reply_rx = client.send(client_msg).await;
-        let mut retry = false;
-        while let Some(server_msg) = reply_rx.recv().await {
-            match server_msg {
-                ServerMessage {
-                    msg: Some(server_message::Msg::Response(resp)),
-                } => {
-                    sessions.insert(chat_id, resp.session);
-                    crate::discord::send_text(&http, channel_id, resp.content).await;
-                }
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ref err)),
-                } if session.is_some() => {
-                    tracing::warn!(%agent, chat_id, "session error, retrying: {}", err.message);
-                    sessions.remove(&chat_id);
-                    retry = true;
-                }
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(err)),
-                } => {
-                    tracing::warn!(%agent, chat_id, "dispatch error: {}", err.message);
-                }
-                _ => {}
-            }
-        }
+        // Append attachment summary to content if present.
+        let content = match crate::message::attachment_summary(&msg.attachments) {
+            Some(summary) => format!("{content}\n{summary}"),
+            None => content,
+        };
 
-        // Retry with a fresh session if the previous one was stale.
-        if retry {
-            let client_msg = ClientMessage::from(SendMsg {
-                agent: agent.clone().into(),
-                content,
-                session: None,
-                sender: Some(sender.to_string()),
-            });
-            let mut reply_rx = client.send(client_msg).await;
-            while let Some(server_msg) = reply_rx.recv().await {
-                match server_msg {
-                    ServerMessage {
-                        msg: Some(server_message::Msg::Response(resp)),
-                    } => {
-                        sessions.insert(chat_id, resp.session);
-                        crate::discord::send_text(&http, channel_id, resp.content).await;
-                    }
-                    ServerMessage {
-                        msg: Some(server_message::Msg::Error(err)),
-                    } => {
-                        tracing::warn!(%agent, chat_id, "dispatch error on retry: {}", err.message);
-                    }
-                    _ => {}
+        let result = dc_stream(
+            &http,
+            &client,
+            active_agent,
+            channel_id,
+            &content,
+            &sender,
+            session,
+        )
+        .await;
+
+        match result {
+            StreamResult::Ok { session_id } => {
+                sessions.insert(chat_id, session_id);
+            }
+            StreamResult::SessionError if session.is_some() => {
+                tracing::warn!(agent = %active_agent, chat_id, "session error, retrying");
+                sessions.remove(&chat_id);
+                let retry = dc_stream(
+                    &http,
+                    &client,
+                    active_agent,
+                    channel_id,
+                    &content,
+                    &sender,
+                    None,
+                )
+                .await;
+                if let StreamResult::Ok { session_id } = retry {
+                    sessions.insert(chat_id, session_id);
                 }
             }
+            StreamResult::SessionError | StreamResult::Failed => {}
         }
     }
 
     tracing::info!(platform = "discord", "channel loop ended");
+}
+
+/// Send a streaming request to the daemon and post the accumulated response
+/// to a Discord channel when done.
+#[cfg(feature = "discord")]
+async fn dc_stream(
+    http: &Arc<serenity::http::Http>,
+    client: &DaemonClient,
+    agent: &str,
+    channel_id: ChannelId,
+    content: &str,
+    sender: &str,
+    session: Option<u64>,
+) -> StreamResult {
+    let client_msg = ClientMessage::from(StreamMsg {
+        agent: agent.to_string(),
+        content: content.to_string(),
+        session,
+        sender: Some(sender.to_string()),
+    });
+    let mut reply_rx = client.send(client_msg).await;
+    let mut acc = StreamAccumulator::new();
+
+    while let Some(server_msg) = reply_rx.recv().await {
+        match server_msg {
+            ServerMessage {
+                msg: Some(server_message::Msg::Stream(event)),
+            } => {
+                acc.push(&event);
+                if acc.is_done() {
+                    break;
+                }
+            }
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(err)),
+            } => {
+                acc.set_error(err.message);
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(err) = acc.error() {
+        tracing::warn!(agent, "discord stream error: {err}");
+        crate::discord::send_text(http, channel_id, format!("Error: {err}")).await;
+        return if session.is_some() {
+            StreamResult::SessionError
+        } else {
+            StreamResult::Failed
+        };
+    }
+
+    let final_text = acc.render();
+    if !final_text.is_empty() {
+        crate::discord::send_text(http, channel_id, final_text).await;
+    }
+
+    match acc.session() {
+        Some(session_id) => StreamResult::Ok { session_id },
+        None => StreamResult::Failed,
+    }
 }
