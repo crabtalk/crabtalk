@@ -26,6 +26,7 @@ dirs.workspace = true
 async-stream.workspace = true
 clap.workspace = true
 crossterm.workspace = true
+dialoguer.workspace = true
 openssl-sys.workspace = true
 compact_str.workspace = true
 futures-core.workspace = true

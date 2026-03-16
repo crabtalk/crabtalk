@@ -29,6 +29,7 @@ chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 compact_str = { version = "0.8", features = ["serde"] }
 crossterm = "0.28"
+dialoguer = "0.11"
 dirs = "6"
 dotenvy = "0.15"
 candle-core = "0.9"
