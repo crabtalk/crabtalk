@@ -39,6 +39,12 @@ pub struct Package {
     /// Logo URL (for hub display).
     #[serde(default)]
     pub logo: CompactString,
+    /// Source repository URL.
+    #[serde(default)]
+    pub repository: CompactString,
+    /// Project homepage URL.
+    #[serde(default)]
+    pub homepage: CompactString,
     /// Searchable keywords (for hub discovery).
     #[serde(default)]
     pub keywords: Vec<CompactString>,
@@ -52,8 +58,6 @@ pub struct SkillResource {
     pub name: CompactString,
     /// Skill description
     pub description: CompactString,
-    /// Skill repository URL
-    pub repo: CompactString,
     /// Path within the repo to the skill directory
     pub path: CompactString,
 }

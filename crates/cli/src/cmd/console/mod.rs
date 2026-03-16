@@ -1,18 +1,23 @@
 //! Interactive TUI for managing sessions and tasks.
 
 use crate::repl::runner::Runner;
-use crate::tui::{self, border_focused, format_duration, handle_text_input};
+use crate::tui;
 use anyhow::Result;
 use clap::Args;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs},
 };
+use sessions::render_sessions;
+use tasks::{handle_approve_input, render_tasks};
 use wcore::protocol::message::{SessionInfo, TaskInfo};
+
+mod sessions;
+mod tasks;
 
 /// Interactive console for sessions and tasks.
 #[derive(Args, Debug)]
@@ -53,7 +58,7 @@ impl Console {
 // ── Tabs ─────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Tab {
+pub(crate) enum Tab {
     Sessions,
     Tasks,
 }
@@ -61,27 +66,27 @@ enum Tab {
 const TAB_TITLES: &[&str] = &["Sessions", "Tasks"];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Focus {
+pub(crate) enum Focus {
     List,
     Approve,
 }
 
 // ── State ────────────────────────────────────────────────────────────
 
-struct ConsoleState {
-    tab: Tab,
-    focus: Focus,
-    sessions: Vec<SessionInfo>,
-    tasks: Vec<TaskInfo>,
-    selected: usize,
-    cursor: usize,
-    edit_buf: String,
-    status: String,
-    runner: Runner,
+pub(crate) struct ConsoleState {
+    pub(crate) tab: Tab,
+    pub(crate) focus: Focus,
+    pub(crate) sessions: Vec<SessionInfo>,
+    pub(crate) tasks: Vec<TaskInfo>,
+    pub(crate) selected: usize,
+    pub(crate) cursor: usize,
+    pub(crate) edit_buf: String,
+    pub(crate) status: String,
+    pub(crate) runner: Runner,
 }
 
 impl ConsoleState {
-    async fn refresh(&mut self) {
+    pub(crate) async fn refresh(&mut self) {
         match self.tab {
             Tab::Sessions => {
                 self.sessions = self.runner.list_sessions().await.unwrap_or_default();
@@ -198,28 +203,6 @@ async fn handle_list(
     Ok(None)
 }
 
-async fn handle_approve_input(key: crossterm::event::KeyEvent, state: &mut ConsoleState) {
-    match key.code {
-        KeyCode::Esc => {
-            state.focus = Focus::List;
-        }
-        KeyCode::Enter => {
-            if let Some(t) = state.tasks.get(state.selected) {
-                let id = t.id;
-                let response = state.edit_buf.clone();
-                match state.runner.approve_task(id, response).await {
-                    Ok(true) => state.status = format!("Task {id} approved"),
-                    Ok(false) => state.status = format!("Task {id} not blocked"),
-                    Err(e) => state.status = format!("Error: {e}"),
-                }
-            }
-            state.focus = Focus::List;
-            state.refresh().await;
-        }
-        _ => handle_text_input(key.code, &mut state.edit_buf, &mut state.cursor),
-    }
-}
-
 // ── Rendering ───────────────────────────────────────────────────────
 
 fn render(frame: &mut Frame, state: &ConsoleState) {
@@ -262,125 +245,7 @@ fn render(frame: &mut Frame, state: &ConsoleState) {
     render_status(frame, state, vert[2]);
 }
 
-fn render_sessions(frame: &mut Frame, state: &ConsoleState, area: Rect) {
-    let block = Block::default()
-        .title(" Sessions ")
-        .borders(Borders::ALL)
-        .border_style(border_focused());
-
-    if state.sessions.is_empty() {
-        frame.render_widget(Paragraph::new("  No active sessions.").block(block), area);
-        return;
-    }
-
-    let mut lines = vec![Line::from(vec![Span::styled(
-        format!(
-            "  {:<6} {:<16} {:<16} {:<8} {:<10}",
-            "ID", "AGENT", "CREATED BY", "MSGS", "ALIVE"
-        ),
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    )])];
-
-    for (i, s) in state.sessions.iter().enumerate() {
-        let is_selected = i == state.selected;
-        let marker = if is_selected { "> " } else { "  " };
-        let alive = format_duration(s.alive_secs);
-        let text = format!(
-            "{marker}{:<6} {:<16} {:<16} {:<8} {:<10}",
-            s.id, s.agent, s.created_by, s.message_count, alive
-        );
-        let style = if is_selected {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        lines.push(Line::from(Span::styled(text, style)));
-    }
-
-    frame.render_widget(Paragraph::new(lines).block(block), area);
-}
-
-fn render_tasks(frame: &mut Frame, state: &ConsoleState, area: Rect) {
-    let horiz = if state.focus == Focus::Approve {
-        Layout::vertical([Constraint::Min(4), Constraint::Length(3)]).split(area)
-    } else {
-        Layout::vertical([Constraint::Min(4)]).split(area)
-    };
-
-    let block = Block::default()
-        .title(" Tasks ")
-        .borders(Borders::ALL)
-        .border_style(border_focused());
-
-    if state.tasks.is_empty() {
-        frame.render_widget(Paragraph::new("  No active tasks.").block(block), horiz[0]);
-    } else {
-        let mut lines = vec![Line::from(vec![Span::styled(
-            format!(
-                "  {:<6} {:<16} {:<12} {:<10} {:<10}",
-                "ID", "AGENT", "STATUS", "ALIVE", "TOKENS"
-            ),
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        )])];
-
-        for (i, t) in state.tasks.iter().enumerate() {
-            let is_selected = i == state.selected;
-            let marker = if is_selected { "> " } else { "  " };
-            let alive = format_duration(t.alive_secs);
-            let tokens = t.prompt_tokens + t.completion_tokens;
-            let text = format!(
-                "{marker}{:<6} {:<16} {:<12} {:<10} {:<10}",
-                t.id, t.agent, t.status, alive, tokens
-            );
-            let style = if is_selected {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            lines.push(Line::from(Span::styled(text, style)));
-
-            if let Some(q) = &t.blocked_on {
-                let blocked_style = Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::ITALIC);
-                lines.push(Line::from(Span::styled(
-                    format!("         blocked: {q}"),
-                    blocked_style,
-                )));
-            }
-        }
-
-        frame.render_widget(Paragraph::new(lines).block(block), horiz[0]);
-    }
-
-    // Approve input area.
-    if state.focus == Focus::Approve && horiz.len() > 1 {
-        let block = Block::default()
-            .title(" Approve Response ")
-            .borders(Borders::ALL)
-            .border_style(border_focused());
-        let inner = block.inner(horiz[1]);
-        frame.render_widget(block, horiz[1]);
-
-        let byte_pos = tui::char_to_byte(&state.edit_buf, state.cursor);
-        let mut s = state.edit_buf.clone();
-        s.insert(byte_pos, '|');
-        frame.render_widget(
-            Paragraph::new(Span::styled(s, Style::default().fg(Color::Green))),
-            inner,
-        );
-    }
-}
-
-fn render_status(frame: &mut Frame, state: &ConsoleState, area: Rect) {
+fn render_status(frame: &mut Frame, state: &ConsoleState, area: ratatui::layout::Rect) {
     let help = match state.focus {
         Focus::Approve => Line::from(vec![
             Span::styled(" Enter ", Style::default().fg(Color::Cyan)),
