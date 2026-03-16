@@ -1,11 +1,12 @@
 //! Hub package management command.
 
 use crate::repl::runner::Runner;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use daemon::ext::hub::manifest::Manifest;
 use dialoguer::{Input, theme::ColorfulTheme};
 use futures_util::StreamExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use toml_edit::{DocumentMut, value};
 use wcore::paths::CONFIG_DIR;
 use wcore::protocol::message::{HubAction, download_event};
@@ -25,6 +26,15 @@ pub enum HubCommand {
     Install(HubPackage),
     /// Uninstall a hub package.
     Uninstall(HubPackage),
+    /// Test manifest parsing for all .toml files in a hub directory.
+    Test(HubTest),
+}
+
+/// Arguments for the test subcommand.
+#[derive(Args, Debug)]
+pub struct HubTest {
+    /// Path to a manifest .toml file to validate.
+    pub path: PathBuf,
 }
 
 /// Package argument shared by install and uninstall.
@@ -73,6 +83,10 @@ impl HubPackage {
 impl Hub {
     /// Run the hub command.
     pub async fn run(self, runner: &mut Runner) -> Result<()> {
+        if let HubCommand::Test(t) = self.command {
+            return test_manifest(&t.path);
+        }
+
         let (package, action, filters) = match self.command {
             HubCommand::Install(p) => {
                 let filters = p.filters();
@@ -82,6 +96,7 @@ impl Hub {
                 let filters = p.filters();
                 (p.package, HubAction::Uninstall, filters)
             }
+            HubCommand::Test(_) => unreachable!(),
         };
         let completed = {
             let stream = runner.hub_stream(&package, action, filters);
@@ -120,6 +135,16 @@ impl Hub {
 
         Ok(())
     }
+}
+
+/// Parse a single manifest .toml and report success or the parse error.
+fn test_manifest(path: &Path) -> Result<()> {
+    let content =
+        std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+    let manifest: Manifest =
+        toml::from_str(&content).with_context(|| format!("failed to parse {}", path.display()))?;
+    println!("ok  {}", manifest.package.name);
+    Ok(())
 }
 
 /// Scan `[mcps.*]` and `[services.*]` in walrus.toml for empty env values,
