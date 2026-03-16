@@ -3,11 +3,10 @@
 //! Uses serenity gateway (WebSocket) for receiving messages and
 //! `ChannelId::say` for sending replies.
 
-#[cfg(feature = "serve")]
-pub(crate) mod command;
+pub mod command;
 
-use crate::message::{Attachment, AttachmentKind, GatewayMessage};
 use compact_str::CompactString;
+use gateway::message::{Attachment, AttachmentKind, GatewayMessage};
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
@@ -85,10 +84,7 @@ fn convert_message(msg: Message) -> Option<GatewayMessage> {
 }
 
 /// Start the serenity gateway client.
-///
-/// Sends the `Arc<Http>` through `http_tx` once the gateway is ready,
-/// then blocks on the gateway connection until shutdown.
-pub(crate) async fn event_loop(
+pub async fn event_loop(
     token: &str,
     tx: mpsc::UnboundedSender<GatewayMessage>,
     http_tx: oneshot::Sender<Arc<serenity::http::Http>>,
@@ -118,11 +114,7 @@ pub(crate) async fn event_loop(
 }
 
 /// Send a plain-text message to the channel.
-pub(crate) async fn send_text(
-    http: &Arc<serenity::http::Http>,
-    channel_id: ChannelId,
-    content: String,
-) {
+pub async fn send_text(http: &Arc<serenity::http::Http>, channel_id: ChannelId, content: String) {
     if let Err(e) = channel_id.say(http, content).await {
         tracing::warn!("failed to send discord reply: {e}");
     }

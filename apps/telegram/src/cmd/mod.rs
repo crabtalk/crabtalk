@@ -1,12 +1,12 @@
-//! Gateway CLI — clap command definitions.
+//! Telegram gateway CLI — clap command definitions.
 
 use clap::Parser;
 
 pub mod serve;
 
-/// Walrus gateway service.
+/// Walrus Telegram gateway service.
 #[derive(Parser)]
-#[command(name = "walrus-gateway")]
+#[command(name = "walrus-telegram")]
 pub struct App {
     #[command(subcommand)]
     pub command: Command,
@@ -14,12 +14,12 @@ pub struct App {
 
 #[derive(clap::Subcommand)]
 pub enum Command {
-    /// Run the gateway service, connecting to a walrus daemon.
+    /// Run the Telegram gateway, connecting to a walrus daemon.
     Serve {
         /// Daemon UDS socket path to connect to.
         #[arg(long)]
         daemon: String,
-        /// JSON-encoded gateway config (telegram/discord tokens).
+        /// JSON-encoded gateway config.
         #[arg(long, default_value = "{}")]
         config: String,
     },

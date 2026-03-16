@@ -3,7 +3,7 @@
 //! Executes parsed bot commands (hub install/uninstall) by streaming
 //! progress back to the originating Discord channel.
 
-use crate::{client::DaemonClient, command::BotCommand};
+use gateway::{BotCommand, DaemonClient};
 use serenity::model::id::ChannelId;
 use std::sync::Arc;
 use wcore::protocol::message::{
@@ -12,7 +12,7 @@ use wcore::protocol::message::{
 };
 
 /// Execute a bot command, streaming progress messages back to the originating channel.
-pub(crate) async fn dispatch_command(
+pub async fn dispatch_command(
     cmd: BotCommand,
     client: Arc<DaemonClient>,
     http: Arc<serenity::http::Http>,
@@ -33,7 +33,7 @@ pub(crate) async fn dispatch_command(
                 filters: vec![],
             })),
         },
-        BotCommand::Switch { .. } => return, // Handled inline in the main loop.
+        BotCommand::Switch { .. } => return,
     };
 
     let mut rx = client.send(msg).await;
@@ -67,7 +67,6 @@ pub(crate) async fn dispatch_command(
     }
 }
 
-/// Send a plain-text message to the channel.
 async fn send_text(http: &Arc<serenity::http::Http>, channel_id: ChannelId, content: String) {
     if let Err(e) = channel_id.say(http, content).await {
         tracing::warn!("failed to send bot command reply: {e}");

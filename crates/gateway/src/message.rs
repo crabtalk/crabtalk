@@ -60,7 +60,7 @@ impl From<GatewayMessage> for wcore::model::Message {
 /// Build an attachment summary line like `[Attachments: 2 images, 1 file]`.
 ///
 /// Returns `None` if the list is empty.
-pub(crate) fn attachment_summary(attachments: &[Attachment]) -> Option<String> {
+pub fn attachment_summary(attachments: &[Attachment]) -> Option<String> {
     if attachments.is_empty() {
         return None;
     }

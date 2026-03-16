@@ -1,7 +1,7 @@
 //! Walrus Discord gateway entry point.
 
 use clap::Parser;
-use walrus_gateway::cmd::{App, Command};
+use walrus_discord::cmd::{App, Command};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -11,7 +11,7 @@ async fn main() -> anyhow::Result<()> {
     let app = App::parse();
     match app.command {
         Command::Serve { daemon, config } => {
-            walrus_gateway::cmd::serve::run(&daemon, &config).await
+            walrus_discord::cmd::serve::run(&daemon, &config).await
         }
     }
 }

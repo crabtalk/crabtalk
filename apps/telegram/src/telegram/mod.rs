@@ -3,21 +3,19 @@
 //! Uses teloxide long-polling for receiving messages and `Bot::send_message`
 //! for sending replies.
 
-#[cfg(feature = "serve")]
-pub(crate) mod command;
-#[cfg(feature = "serve")]
-pub(crate) mod markdown;
+pub mod command;
+pub mod markdown;
 
-use crate::message::{Attachment, AttachmentKind, GatewayMessage};
 use compact_str::CompactString;
 use futures_util::StreamExt;
+use gateway::message::{Attachment, AttachmentKind, GatewayMessage};
 use teloxide::prelude::*;
 use teloxide::types::{ChatKind, UpdateKind};
 use teloxide::update_listeners::{AsUpdateStream, polling_default};
 use tokio::sync::mpsc;
 
 /// Long-poll loop: receives Telegram updates and forwards them as [`GatewayMessage`]s.
-pub(crate) async fn poll_loop(bot: Bot, tx: mpsc::UnboundedSender<GatewayMessage>) {
+pub async fn poll_loop(bot: Bot, tx: mpsc::UnboundedSender<GatewayMessage>) {
     let mut listener = polling_default(bot).await;
     let stream = listener.as_stream();
     futures_util::pin_mut!(stream);

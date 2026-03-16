@@ -14,7 +14,7 @@ const SPECIAL_CHARS: &[char] = &[
 ];
 
 /// Escape special characters for Telegram MarkdownV2.
-pub(crate) fn escape_markdown_v2(text: &str) -> String {
+pub fn escape_markdown_v2(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + text.len() / 4);
     for ch in text.chars() {
         if SPECIAL_CHARS.contains(&ch) {
@@ -26,9 +26,7 @@ pub(crate) fn escape_markdown_v2(text: &str) -> String {
 }
 
 /// Send a new message with MarkdownV2, falling back to plain text on error.
-///
-/// If `reply_to` is provided, the message will thread as a reply.
-pub(crate) async fn send_md(
+pub async fn send_md(
     bot: &Bot,
     chat_id: ChatId,
     text: &str,
@@ -55,7 +53,7 @@ pub(crate) async fn send_md(
 }
 
 /// Edit an existing message with MarkdownV2, falling back to plain text on error.
-pub(crate) async fn edit_md(
+pub async fn edit_md(
     bot: &Bot,
     chat_id: ChatId,
     message_id: MessageId,

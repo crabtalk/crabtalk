@@ -6,7 +6,7 @@
 use wcore::protocol::message::{StreamEvent, stream_event};
 
 /// Accumulates streaming events into a renderable text buffer.
-pub(crate) struct StreamAccumulator {
+pub struct StreamAccumulator {
     /// Accumulated response text.
     text: String,
     /// Current tool call status line (e.g., "[calling bash, read...]").
@@ -17,6 +17,12 @@ pub(crate) struct StreamAccumulator {
     error: Option<String>,
     /// Whether the stream has ended.
     done: bool,
+}
+
+impl Default for StreamAccumulator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StreamAccumulator {

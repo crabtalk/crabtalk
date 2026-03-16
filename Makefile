@@ -14,7 +14,7 @@
 # make linux-amd64
 VERSION = v$(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
 CARGO = cargo b --profile prod
-PACKAGES = -p openwalrus -p walrus-memory -p walrus-search -p walrus-gateway
+PACKAGES = -p openwalrus -p walrus-memory -p walrus-search -p walrus-telegram -p walrus-discord
 BINS = walrus walrus-memory walrus-search walrus-telegram walrus-discord
 
 # Cross-compilation: set CC/AR so aws-lc-sys cmake uses the right

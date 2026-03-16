@@ -5618,7 +5618,7 @@ dependencies = [
 
 [[package]]
 name = "openwalrus"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8714,7 +8714,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-core"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8734,7 +8734,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-daemon"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8759,27 +8759,39 @@ dependencies = [
 ]
 
 [[package]]
-name = "walrus-gateway"
-version = "0.0.7"
+name = "walrus-discord"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "clap",
  "compact_str 0.8.1",
- "futures-util",
- "serde",
  "serde_json",
  "serenity",
- "teloxide",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "walrus-core",
+ "walrus-gateway",
+]
+
+[[package]]
+name = "walrus-gateway"
+version = "0.0.8"
+dependencies = [
+ "anyhow",
+ "compact_str 0.8.1",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
  "walrus-core",
  "walrus-socket",
 ]
 
 [[package]]
 name = "walrus-memory"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -8806,7 +8818,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-model"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8823,7 +8835,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-search"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "clap",
@@ -8847,7 +8859,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-socket"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8859,7 +8871,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-tcp"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8867,6 +8879,23 @@ dependencies = [
  "tokio",
  "tracing",
  "walrus-core",
+]
+
+[[package]]
+name = "walrus-telegram"
+version = "0.0.8"
+dependencies = [
+ "anyhow",
+ "clap",
+ "compact_str 0.8.1",
+ "futures-util",
+ "serde_json",
+ "teloxide",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "walrus-core",
+ "walrus-gateway",
 ]
 
 [[package]]

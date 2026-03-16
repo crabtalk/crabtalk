@@ -129,7 +129,13 @@ pub fn install(
             .collect();
         if !wanted_services.is_empty() {
             // Auto-install Rust toolchain if cargo is not available.
-            if Command::new("cargo").arg("--version").output().await.is_err() {
+            // Check the well-known path first since the daemon's PATH may not
+            // include ~/.cargo/bin.
+            let cargo = std::env::var_os("HOME")
+                .map(|h| std::path::PathBuf::from(h).join(".cargo/bin/cargo"))
+                .filter(|p| p.exists());
+            let cargo_bin = cargo.as_deref().unwrap_or(Path::new("cargo"));
+            if Command::new(cargo_bin).arg("--version").output().await.is_err() {
                 let msg = "installing rust toolchain…".to_string();
                 registry.lock().await.step(id, msg.clone());
                 yield DownloadEvent {
@@ -151,7 +157,7 @@ pub fn install(
                 yield DownloadEvent {
                     event: Some(download_event::Event::Step(DownloadStep { id, message: msg })),
                 };
-                let status = Command::new("cargo")
+                let status = Command::new(cargo_bin)
                     .args(["install", &cfg.krate])
                     .status()
                     .await

@@ -3,7 +3,7 @@
 //! Executes parsed bot commands (hub install/uninstall) by streaming
 //! progress back to the originating Telegram chat.
 
-use crate::{client::DaemonClient, command::BotCommand};
+use gateway::{BotCommand, DaemonClient};
 use std::sync::Arc;
 use teloxide::prelude::*;
 use wcore::protocol::message::{
@@ -12,12 +12,7 @@ use wcore::protocol::message::{
 };
 
 /// Execute a bot command, streaming progress messages back to the originating chat.
-pub(crate) async fn dispatch_command(
-    cmd: BotCommand,
-    client: Arc<DaemonClient>,
-    bot: Bot,
-    chat_id: i64,
-) {
+pub async fn dispatch_command(cmd: BotCommand, client: Arc<DaemonClient>, bot: Bot, chat_id: i64) {
     let msg = match cmd {
         BotCommand::HubInstall { package } => ClientMessage {
             msg: Some(client_message::Msg::Hub(HubMsg {
@@ -33,7 +28,7 @@ pub(crate) async fn dispatch_command(
                 filters: vec![],
             })),
         },
-        BotCommand::Switch { .. } => return, // Handled inline in the main loop.
+        BotCommand::Switch { .. } => return,
     };
 
     let mut rx = client.send(msg).await;
@@ -67,7 +62,6 @@ pub(crate) async fn dispatch_command(
     }
 }
 
-/// Send a plain-text message to the chat.
 async fn send_text(bot: &Bot, chat_id: i64, content: String) {
     if let Err(e) = bot.send_message(ChatId(chat_id), content).await {
         tracing::warn!("failed to send bot command reply: {e}");
