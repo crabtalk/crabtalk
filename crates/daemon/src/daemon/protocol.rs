@@ -88,10 +88,6 @@ impl Server for Daemon {
                     }
                 }
             }
-            if is_new {
-                rt.close_session(session_id).await;
-            }
-
             yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd { agent: agent.clone() })) };
         }
     }
