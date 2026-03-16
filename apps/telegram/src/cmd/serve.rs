@@ -27,7 +27,14 @@ pub async fn run(daemon_socket: &str, config_json: &str) -> anyhow::Result<()> {
         if tg.token.is_empty() {
             tracing::warn!(platform = "telegram", "token is empty, skipping");
         } else {
-            spawn_telegram(&tg.token, default_agent, client, known_bots).await;
+            spawn_telegram(
+                &tg.token,
+                &tg.allowed_users,
+                default_agent,
+                client,
+                known_bots,
+            )
+            .await;
         }
     } else {
         tracing::warn!(platform = "telegram", "no telegram config provided");
@@ -40,6 +47,7 @@ pub async fn run(daemon_socket: &str, config_json: &str) -> anyhow::Result<()> {
 
 async fn spawn_telegram(
     token: &str,
+    allowed_users: &[i64],
     agent: CompactString,
     client: Arc<DaemonClient>,
     known_bots: KnownBots,
@@ -77,7 +85,15 @@ async fn spawn_telegram(
         crate::telegram::poll_loop(poll_bot, tx).await;
     });
 
-    tokio::spawn(telegram_loop(rx, bot, agent, client, known_bots));
+    let allowed: std::collections::HashSet<i64> = allowed_users.iter().copied().collect();
+    if !allowed.is_empty() {
+        tracing::info!(
+            platform = "telegram",
+            count = allowed.len(),
+            "user whitelist active"
+        );
+    }
+    tokio::spawn(telegram_loop(rx, bot, agent, client, known_bots, allowed));
     tracing::info!(platform = "telegram", "channel transport started");
 }
 
@@ -87,6 +103,7 @@ async fn telegram_loop(
     agent: CompactString,
     client: Arc<DaemonClient>,
     known_bots: KnownBots,
+    allowed_users: std::collections::HashSet<i64>,
 ) {
     let mut sessions: HashMap<i64, u64> = HashMap::new();
     let mut chat_agents: HashMap<i64, CompactString> = HashMap::new();
@@ -98,6 +115,15 @@ async fn telegram_loop(
 
         if known_bots.read().await.contains(&sender) {
             tracing::debug!(%sender, chat_id, "dropping message from known bot");
+            continue;
+        }
+
+        if !allowed_users.is_empty() && !allowed_users.contains(&msg.sender_id) {
+            tracing::debug!(
+                sender_id = msg.sender_id,
+                chat_id,
+                "dropping message from non-allowed user"
+            );
             continue;
         }
 

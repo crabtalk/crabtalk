@@ -25,6 +25,20 @@ walrus-telegram serve --daemon /path/to/daemon.sock --config '{"telegram":{"toke
 
 The bot token is obtained from [@BotFather](https://t.me/BotFather) on Telegram.
 
+### Restrict to specific users
+
+Add `allowed_users` with a list of Telegram user IDs. When set, the bot
+silently ignores messages from anyone not on the list:
+
+```toml
+[services.telegram]
+crate = "walrus-telegram"
+kind = "gateway"
+config = { telegram = { token = "BOT_TOKEN", allowed_users = [123456789] } }
+```
+
+Omit `allowed_users` (or leave it empty) to allow everyone.
+
 ## Features
 
 - Streams AI responses with real-time edit-in-place updates
