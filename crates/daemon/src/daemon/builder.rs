@@ -123,11 +123,10 @@ impl Daemon {
         let mcp_servers = config.mcps.values().cloned().collect::<Vec<_>>();
         let mcp_handler = hook::mcp::McpHandler::load(&mcp_servers).await;
 
+        let task_timeout = std::time::Duration::from_secs(config.system.tasks.task_timeout);
         let tasks = Arc::new(Mutex::new(TaskRegistry::new(
             config.system.tasks.max_concurrent,
             config.system.tasks.viewable_window,
-            std::time::Duration::from_secs(config.system.tasks.task_timeout),
-            event_tx.clone(),
         )));
 
         let sandboxed = detect_sandbox();
@@ -171,6 +170,8 @@ impl Daemon {
                 sandboxed,
                 memory,
                 registry,
+                event_tx.clone(),
+                task_timeout,
             ),
             service_manager,
         ))

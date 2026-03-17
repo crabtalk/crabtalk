@@ -9,6 +9,7 @@
 //! entry point from `event.rs`.
 
 use crate::{
+    daemon::event::DaemonEventSender,
     ext::hub::DownloadRegistry,
     hook::{
         mcp::McpHandler,
@@ -19,7 +20,7 @@ use crate::{
     service::ServiceRegistry,
 };
 use compact_str::CompactString;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use wcore::{AgentConfig, AgentEvent, Hook, ToolRegistry, model::Message};
 
@@ -47,6 +48,10 @@ pub struct DaemonHook {
     pub sandboxed: bool,
     /// Built-in memory (None if disabled or overridden by walrus-memory extension).
     pub memory: Option<BuiltinMemory>,
+    /// Event channel for task dispatch.
+    pub(crate) event_tx: DaemonEventSender,
+    /// Per-task execution timeout.
+    pub(crate) task_timeout: Duration,
     /// Per-agent scope maps, populated during load_agents.
     pub(crate) scopes: BTreeMap<CompactString, AgentScope>,
     /// Sub-agent descriptions for catalog injection into the walrus agent.
@@ -223,6 +228,8 @@ impl DaemonHook {
         sandboxed: bool,
         memory: Option<BuiltinMemory>,
         registry: Option<Arc<ServiceRegistry>>,
+        event_tx: DaemonEventSender,
+        task_timeout: Duration,
     ) -> Self {
         Self {
             skills,
@@ -232,6 +239,8 @@ impl DaemonHook {
             permissions,
             sandboxed,
             memory,
+            event_tx,
+            task_timeout,
             scopes: BTreeMap::new(),
             agent_descriptions: BTreeMap::new(),
             registry,

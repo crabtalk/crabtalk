@@ -82,8 +82,13 @@ impl Daemon {
         tokio::spawn(async move {
             let rt = daemon.runtime.read().await.clone();
             let tasks_arc = rt.hook.tasks.clone();
-            let reg = tasks_arc.clone();
-            tasks_arc.lock().await.promote_next(reg);
+            let mut reg = tasks_arc.lock().await;
+            crate::hook::system::task::tool::try_promote(
+                &mut reg,
+                tasks_arc.clone(),
+                rt.hook.event_tx.clone(),
+                rt.hook.task_timeout,
+            );
         });
     }
 
