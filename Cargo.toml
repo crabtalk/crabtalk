@@ -3,7 +3,7 @@ resolver = "3"
 members = ["apps/*", "crates/*"]
 
 [workspace.package]
-version = "0.0.8"
+version = "0.0.9"
 edition = "2024"
 authors = ["clearloop <tianyi.gc@gmail.com>"]
 license = "GPL-3.0"
@@ -11,14 +11,14 @@ repository = "https://github.com/openwalrus/walrus"
 keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
-gateway = { path = "crates/gateway", package = "walrus-gateway", version = "0.0.8" }
-cli = { path = "crates/cli", package = "openwalrus", version = "0.0.8" }
-daemon = { path = "crates/daemon", package = "walrus-daemon", version = "0.0.8" }
-model = { path = "crates/model", package = "walrus-model", version = "0.0.8" }
-socket = { path = "crates/socket", package = "walrus-socket", version = "0.0.8" }
-tcp = { path = "crates/tcp", package = "walrus-tcp", version = "0.0.8" }
-wcore = { path = "crates/core", package = "walrus-core", version = "0.0.8" }
-wsearch = { path = "apps/search", package = "walrus-search", version = "0.0.8", default-features = false }
+gateway = { path = "crates/gateway", package = "walrus-gateway", version = "0.0.9" }
+cli = { path = "crates/cli", package = "openwalrus", version = "0.0.9" }
+daemon = { path = "crates/daemon", package = "walrus-daemon", version = "0.0.9" }
+model = { path = "crates/model", package = "walrus-model", version = "0.0.9" }
+socket = { path = "crates/socket", package = "walrus-socket", version = "0.0.9" }
+tcp = { path = "crates/tcp", package = "walrus-tcp", version = "0.0.9" }
+wcore = { path = "crates/core", package = "walrus-core", version = "0.0.9" }
+wsearch = { path = "apps/search", package = "walrus-search", version = "0.0.9", default-features = false }
 
 # crabtalk
 crabtalk-core = { path = "../../crabtalk/crates/core" }

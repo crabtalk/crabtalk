@@ -5640,7 +5640,7 @@ dependencies = [
 
 [[package]]
 name = "openwalrus"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8736,7 +8736,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-core"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8757,7 +8757,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-daemon"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8783,7 +8783,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-discord"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "clap",
@@ -8799,7 +8799,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-gateway"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "compact_str 0.8.1",
@@ -8814,7 +8814,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-memory"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "arrow-array",
@@ -8841,7 +8841,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-model"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8861,7 +8861,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-search"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "clap",
@@ -8885,7 +8885,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-socket"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8897,7 +8897,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-tcp"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8909,7 +8909,7 @@ dependencies = [
 
 [[package]]
 name = "walrus-telegram"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "anyhow",
  "clap",
