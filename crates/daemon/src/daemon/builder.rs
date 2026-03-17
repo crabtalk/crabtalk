@@ -23,6 +23,7 @@ use tokio::sync::{Mutex, RwLock};
 use wcore::{AgentConfig, Runtime, ToolRequest};
 
 const SYSTEM_AGENT: &str = include_str!("../../prompts/walrus.md");
+const SKILL_MASTER_AGENT: &str = include_str!("../../prompts/skill-master.md");
 
 impl Daemon {
     /// Build a fully-configured [`Daemon`] from the given config, config
@@ -213,6 +214,13 @@ impl Daemon {
         walrus_config.name = CompactString::from(wcore::paths::DEFAULT_AGENT);
         walrus_config.system_prompt = SYSTEM_AGENT.to_owned();
         runtime.add_agent(walrus_config);
+
+        // Built-in skill-master agent.
+        let mut skill_master = AgentConfig::new("skill-master");
+        skill_master.system_prompt = SKILL_MASTER_AGENT.to_owned();
+        skill_master.description = CompactString::from("Interactive skill recorder");
+        skill_master.thinking = config.system.walrus.thinking;
+        runtime.add_agent(skill_master);
 
         // Sub-agents from TOML — each must have a matching .md file.
         for (name, agent_config) in &config.agents {

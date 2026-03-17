@@ -3,8 +3,9 @@
 use compact_str::CompactString;
 use crabtalk_core::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChunkChoice,
-    Delta as CtDelta, FunctionCall as CtFunctionCall, FunctionDef, Message as CtMessage,
-    Tool as CtTool, ToolCall as CtToolCall, Usage as CtUsage,
+    Delta as CtDelta, FinishReason as CtFinishReason, FunctionCall as CtFunctionCall, FunctionDef,
+    Message as CtMessage, Role as CtRole, Tool as CtTool, ToolCall as CtToolCall, ToolType,
+    Usage as CtUsage,
 };
 use wcore::model::{
     Choice, CompletionMeta, CompletionTokensDetails, Delta, FinishReason, FunctionCall, Message,
@@ -40,13 +41,7 @@ pub fn to_ct_request(req: &Request) -> ChatCompletionRequest {
 }
 
 fn to_ct_message(msg: &Message) -> CtMessage {
-    let role = match msg.role {
-        Role::User => "user",
-        Role::Assistant => "assistant",
-        Role::System => "system",
-        Role::Tool => "tool",
-    }
-    .to_string();
+    let role = convert_role(&msg.role);
 
     let content = if msg.content.is_empty() {
         None
@@ -85,7 +80,7 @@ fn to_ct_message(msg: &Message) -> CtMessage {
 
 fn to_ct_tool(tool: &Tool) -> CtTool {
     CtTool {
-        kind: "function".to_string(),
+        kind: ToolType::Function,
         function: FunctionDef {
             name: tool.name.to_string(),
             description: Some(tool.description.to_string()),
@@ -99,7 +94,7 @@ fn to_ct_tool_call(tc: &ToolCall) -> CtToolCall {
     CtToolCall {
         index: Some(tc.index),
         id: tc.id.to_string(),
-        kind: "function".to_string(),
+        kind: ToolType::Function,
         function: CtFunctionCall {
             name: tc.function.name.to_string(),
             arguments: tc.function.arguments.clone(),
@@ -135,7 +130,7 @@ pub fn from_ct_response(resp: ChatCompletionResponse) -> Response {
             .map(|c| Choice {
                 index: c.index,
                 delta: from_ct_message_delta(&c.message),
-                finish_reason: c.finish_reason.as_deref().and_then(parse_finish_reason),
+                finish_reason: c.finish_reason.map(convert_finish_reason),
                 logprobs: None,
             })
             .collect(),
@@ -166,7 +161,7 @@ fn from_ct_chunk_choice(c: ChunkChoice) -> Choice {
     Choice {
         index: c.index,
         delta: from_ct_delta(&c.delta),
-        finish_reason: c.finish_reason.as_deref().and_then(parse_finish_reason),
+        finish_reason: c.finish_reason.map(convert_finish_reason),
         logprobs: None,
     }
 }
@@ -190,7 +185,7 @@ fn from_ct_message_delta(msg: &CtMessage) -> Delta {
                 .map(|tc| ToolCall {
                     id: CompactString::from(&tc.id),
                     index: tc.index.unwrap_or(0),
-                    call_type: CompactString::from(&tc.kind),
+                    call_type: CompactString::from("function"),
                     function: FunctionCall {
                         name: CompactString::from(&tc.function.name),
                         arguments: tc.function.arguments.clone(),
@@ -203,7 +198,7 @@ fn from_ct_message_delta(msg: &CtMessage) -> Delta {
 
 fn from_ct_delta(d: &CtDelta) -> Delta {
     Delta {
-        role: d.role.as_deref().and_then(parse_role),
+        role: d.role.as_ref().map(convert_ct_role),
         content: d.content.clone(),
         reasoning_content: d.reasoning_content.clone(),
         tool_calls: d.tool_calls.as_ref().map(|tcs| {
@@ -217,8 +212,11 @@ fn from_ct_delta(d: &CtDelta) -> Delta {
                     index: tc.index,
                     call_type: tc
                         .kind
-                        .as_ref()
-                        .map(|s| CompactString::from(&**s))
+                        .map(|k| {
+                            CompactString::from(match k {
+                                ToolType::Function => "function",
+                            })
+                        })
                         .unwrap_or_default(),
                     function: tc
                         .function
@@ -253,23 +251,31 @@ fn from_ct_usage(u: CtUsage) -> Usage {
     }
 }
 
-fn parse_finish_reason(s: &str) -> Option<FinishReason> {
-    match s {
-        "stop" => Some(FinishReason::Stop),
-        "length" => Some(FinishReason::Length),
-        "content_filter" => Some(FinishReason::ContentFilter),
-        "tool_calls" => Some(FinishReason::ToolCalls),
-        "insufficient_system_resource" => Some(FinishReason::InsufficientSystemResource),
-        _ => None,
+fn convert_role(role: &Role) -> CtRole {
+    match role {
+        Role::User => CtRole::User,
+        Role::Assistant => CtRole::Assistant,
+        Role::System => CtRole::System,
+        Role::Tool => CtRole::Tool,
     }
 }
 
-fn parse_role(s: &str) -> Option<Role> {
-    match s {
-        "user" => Some(Role::User),
-        "assistant" => Some(Role::Assistant),
-        "system" => Some(Role::System),
-        "tool" => Some(Role::Tool),
-        _ => None,
+fn convert_ct_role(role: &CtRole) -> Role {
+    match role {
+        CtRole::User => Role::User,
+        CtRole::Assistant => Role::Assistant,
+        CtRole::System => Role::System,
+        CtRole::Tool => Role::Tool,
+        CtRole::Developer | CtRole::Custom(_) => Role::User,
+    }
+}
+
+fn convert_finish_reason(reason: CtFinishReason) -> FinishReason {
+    match reason {
+        CtFinishReason::Stop => FinishReason::Stop,
+        CtFinishReason::Length => FinishReason::Length,
+        CtFinishReason::ToolCalls => FinishReason::ToolCalls,
+        CtFinishReason::ContentFilter => FinishReason::ContentFilter,
+        CtFinishReason::Custom(_) => FinishReason::Stop,
     }
 }

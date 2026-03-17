@@ -1,7 +1,7 @@
 //! Tool dispatch and schema registration for skill tools.
 
 use crate::hook::{DaemonHook, skill::loader};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use wcore::{
     agent::{AsTool, ToolDescription},
     model::Tool,
@@ -28,8 +28,38 @@ impl ToolDescription for LoadSkill {
     const DESCRIPTION: &'static str = "Load a skill by name. Returns its instructions and the skill directory path for resolving relative file references.";
 }
 
+#[derive(Deserialize, schemars::JsonSchema)]
+pub(crate) struct SaveSkill {
+    /// Skill name (lowercase alphanumeric with hyphens, 1-64 chars).
+    pub name: String,
+    /// One-line description of what the skill does.
+    pub description: String,
+    /// The skill body — Markdown instructions for agents.
+    pub body: String,
+    /// Space-separated tool names this skill is allowed to use (optional).
+    #[serde(default)]
+    pub allowed_tools: Option<String>,
+}
+
+impl ToolDescription for SaveSkill {
+    const DESCRIPTION: &'static str = "Save a skill as a SKILL.md file. Creates the skill directory and writes the file with YAML frontmatter.";
+}
+
+/// Serialization target for SKILL.md YAML frontmatter (safe from injection).
+#[derive(Serialize)]
+struct SkillFrontmatter {
+    name: String,
+    description: String,
+    #[serde(rename = "allowed-tools", skip_serializing_if = "Option::is_none")]
+    allowed_tools: Option<String>,
+}
+
 pub(crate) fn tools() -> Vec<Tool> {
-    vec![SearchSkill::as_tool(), LoadSkill::as_tool()]
+    vec![
+        SearchSkill::as_tool(),
+        LoadSkill::as_tool(),
+        SaveSkill::as_tool(),
+    ]
 }
 
 impl DaemonHook {
@@ -62,6 +92,55 @@ impl DaemonHook {
             "no skills found".to_owned()
         } else {
             matches.join("\n")
+        }
+    }
+
+    pub(crate) async fn dispatch_save_skill(&self, args: &str) -> String {
+        let input: SaveSkill = match serde_json::from_str(args) {
+            Ok(v) => v,
+            Err(e) => return format!("invalid arguments: {e}"),
+        };
+        let name = &input.name;
+        if name.is_empty() || name.len() > 64 {
+            return "skill name must be 1-64 characters".to_owned();
+        }
+        if !name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c == '-' || c.is_ascii_digit())
+        {
+            return "skill name must be lowercase alphanumeric with hyphens".to_owned();
+        }
+
+        // Serialize frontmatter via serde_yaml to prevent YAML injection.
+        let fm = SkillFrontmatter {
+            name: name.clone(),
+            description: input.description,
+            allowed_tools: input.allowed_tools,
+        };
+        let yaml = match serde_yaml::to_string(&fm) {
+            Ok(y) => y,
+            Err(e) => return format!("failed to serialize frontmatter: {e}"),
+        };
+        let content = format!("---\n{yaml}---\n\n{}", input.body);
+
+        // Validate by round-tripping through the standard parser.
+        let skill = match loader::parse_skill_md(&content) {
+            Ok(s) => s,
+            Err(e) => return format!("generated skill is invalid: {e}"),
+        };
+
+        // Write to skills directory.
+        let skill_dir = self.skills.skills_dir.join(name);
+        if let Err(e) = tokio::fs::create_dir_all(&skill_dir).await {
+            return format!("failed to create skill directory: {e}");
+        }
+        let skill_file = skill_dir.join("SKILL.md");
+        match tokio::fs::write(&skill_file, &content).await {
+            Ok(()) => {
+                self.skills.registry.lock().await.upsert(skill);
+                format!("skill saved: {}", skill_file.display())
+            }
+            Err(e) => format!("failed to write skill: {e}"),
         }
     }
 

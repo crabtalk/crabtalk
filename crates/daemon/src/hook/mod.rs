@@ -58,7 +58,7 @@ pub struct DaemonHook {
 const BASE_TOOLS: &[&str] = &["read", "write", "edit", "bash"];
 
 /// Skill discovery/loading tools.
-const SKILL_TOOLS: &[&str] = &["search_skill", "load_skill"];
+const SKILL_TOOLS: &[&str] = &["search_skill", "load_skill", "save_skill"];
 
 /// MCP discovery/call tools.
 const MCP_TOOLS: &[&str] = &["search_mcp", "call_mcp_tool"];
@@ -200,6 +200,7 @@ impl DaemonHook {
             "call_mcp_tool" => self.dispatch_call_mcp_tool(args, agent).await,
             "search_skill" => self.dispatch_search_skill(args, agent).await,
             "load_skill" => self.dispatch_load_skill(args, agent).await,
+            "save_skill" => self.dispatch_save_skill(args).await,
             "read" => self.dispatch_read(args).await,
             "write" => self.dispatch_write(args).await,
             "edit" => self.dispatch_edit(args).await,

@@ -20,6 +20,12 @@ impl SkillRegistry {
         self.skills.push(skill);
     }
 
+    /// Add or replace a skill by name.
+    pub fn upsert(&mut self, skill: Skill) {
+        self.skills.retain(|s| s.name != skill.name);
+        self.skills.push(skill);
+    }
+
     /// Get all loaded skills.
     pub fn skills(&self) -> Vec<&Skill> {
         self.skills.iter().collect()
