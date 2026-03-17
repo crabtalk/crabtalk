@@ -67,28 +67,4 @@ pub struct FunctionCall {
     pub arguments: String,
 }
 
-/// Controls which tool is called by the model
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub enum ToolChoice {
-    /// Model will not call any tool
-    #[serde(rename = "none")]
-    None,
-
-    /// Model can pick between generating a message or calling tools
-    #[serde(rename = "auto")]
-    #[default]
-    Auto,
-
-    /// Model must call one or more tools
-    #[serde(rename = "required")]
-    Required,
-
-    /// Model must call the specified function
-    Function(CompactString),
-}
-
-impl From<&str> for ToolChoice {
-    fn from(value: &str) -> Self {
-        ToolChoice::Function(value.into())
-    }
-}
+pub use crabtalk_core::ToolChoice;

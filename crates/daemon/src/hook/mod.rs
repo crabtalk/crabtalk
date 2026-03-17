@@ -215,7 +215,6 @@ impl Hook for DaemonHook {
     }
 }
 
-
 impl DaemonHook {
     /// Create a new DaemonHook with the given backends.
     #[allow(clippy::too_many_arguments)]
@@ -449,4 +448,3 @@ impl DaemonHook {
         }
     }
 }
-

@@ -1,8 +1,8 @@
 //! Tool dispatch, schema registration, and task watcher for task tools.
 
 use crate::daemon::event::{DaemonEvent, DaemonEventSender};
-use crate::hook::{DaemonHook, system::task::TaskRegistry};
 use crate::hook::system::task::TaskStatus;
+use crate::hook::{DaemonHook, system::task::TaskRegistry};
 use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Mutex, mpsc};
@@ -62,8 +62,7 @@ impl DaemonHook {
             );
         }
         drop(reg);
-        serde_json::json!({ "task_id": task_id, "status": initial_status.to_string() })
-            .to_string()
+        serde_json::json!({ "task_id": task_id, "status": initial_status.to_string() }).to_string()
     }
 
     pub(crate) async fn dispatch_check_tasks(&self, args: &str) -> String {
@@ -157,7 +156,10 @@ impl DaemonHook {
         }
         // Unblock ourselves and collect results.
         if let Some(tid) = task_id {
-            self.tasks.lock().await.set_status(tid, TaskStatus::InProgress);
+            self.tasks
+                .lock()
+                .await
+                .set_status(tid, TaskStatus::InProgress);
         }
         let registry = self.tasks.lock().await;
         let results: Vec<serde_json::Value> = input

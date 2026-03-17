@@ -92,7 +92,9 @@ impl ProviderRegistry {
                 .inner
                 .write()
                 .map_err(|_| anyhow!("provider lock poisoned"))?;
-            inner.providers.insert(model_name.clone(), provider);
+            inner
+                .providers
+                .insert(CompactString::from(model_name.as_str()), provider);
         }
         Ok(())
     }

@@ -8,11 +8,11 @@ use compact_str::CompactString;
 use crabtalk_core::{
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChunkChoice,
     Delta as CtDelta, FunctionCall as CtFunctionCall, FunctionDef, Message as CtMessage,
-    Tool as CtTool, ToolCall as CtToolCall, ToolType, Usage as CtUsage,
+    Tool as CtTool, ToolCall as CtToolCall, ToolType,
 };
 use wcore::model::{
-    Choice, CompletionMeta, CompletionTokensDetails, Delta, FunctionCall, Message, Request,
-    Response, StreamChunk, Tool, ToolCall, ToolChoice, Usage,
+    Choice, CompletionMeta, Delta, FunctionCall, Message, Request, Response, StreamChunk, Tool,
+    ToolCall,
 };
 
 /// Convert a wcore Request into a crabtalk ChatCompletionRequest.
@@ -29,7 +29,7 @@ pub fn to_ct_request(req: &Request) -> ChatCompletionRequest {
             .tools
             .as_ref()
             .map(|ts| ts.iter().map(to_ct_tool).collect()),
-        tool_choice: req.tool_choice.as_ref().map(to_ct_tool_choice),
+        tool_choice: req.tool_choice.clone(),
         frequency_penalty: None,
         presence_penalty: None,
         seed: None,
@@ -103,18 +103,6 @@ fn to_ct_tool_call(tc: &ToolCall) -> CtToolCall {
     }
 }
 
-fn to_ct_tool_choice(tc: &ToolChoice) -> serde_json::Value {
-    match tc {
-        ToolChoice::None => serde_json::Value::String("none".to_string()),
-        ToolChoice::Auto => serde_json::Value::String("auto".to_string()),
-        ToolChoice::Required => serde_json::Value::String("required".to_string()),
-        ToolChoice::Function(name) => serde_json::json!({
-            "type": "function",
-            "function": { "name": name.as_str() }
-        }),
-    }
-}
-
 /// Convert a crabtalk ChatCompletionResponse into a wcore Response.
 pub fn from_ct_response(resp: ChatCompletionResponse) -> Response {
     Response {
@@ -135,7 +123,7 @@ pub fn from_ct_response(resp: ChatCompletionResponse) -> Response {
                 logprobs: None,
             })
             .collect(),
-        usage: resp.usage.map(from_ct_usage).unwrap_or_default(),
+        usage: resp.usage.unwrap_or_default(),
     }
 }
 
@@ -154,7 +142,7 @@ pub fn from_ct_chunk(chunk: ChatCompletionChunk) -> StreamChunk {
             .into_iter()
             .map(from_ct_chunk_choice)
             .collect(),
-        usage: chunk.usage.map(from_ct_usage),
+        usage: chunk.usage,
     }
 }
 
@@ -234,20 +222,5 @@ fn from_ct_delta(d: &CtDelta) -> Delta {
                 })
                 .collect()
         }),
-    }
-}
-
-fn from_ct_usage(u: CtUsage) -> Usage {
-    Usage {
-        prompt_tokens: u.prompt_tokens,
-        completion_tokens: u.completion_tokens,
-        total_tokens: u.total_tokens,
-        prompt_cache_hit_tokens: u.prompt_cache_hit_tokens,
-        prompt_cache_miss_tokens: u.prompt_cache_miss_tokens,
-        completion_tokens_details: u
-            .completion_tokens_details
-            .map(|d| CompletionTokensDetails {
-                reasoning_tokens: d.reasoning_tokens,
-            }),
     }
 }

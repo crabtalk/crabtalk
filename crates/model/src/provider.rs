@@ -3,10 +3,7 @@
 //! Wraps `crabtalk_provider::Provider` behind wcore's `Model` trait with
 //! type conversion and retry logic.
 
-use crate::{
-    config::{ApiStandard, ProviderDef},
-    convert,
-};
+use crate::{config::ProviderDef, convert};
 use anyhow::Result;
 use async_stream::try_stream;
 use compact_str::CompactString;
@@ -47,56 +44,17 @@ fn normalize_base_url(url: &str) -> String {
 
 /// Construct a `Provider` from a provider definition and model name.
 pub fn build_provider(def: &ProviderDef, model: &str, client: reqwest::Client) -> Result<Provider> {
-    let api_key = def.api_key.as_deref().unwrap_or("");
+    let mut config = def.clone();
+    config.kind = config.effective_kind();
+    let mut inner = CtProvider::from(&config);
 
-    let inner = match def.effective_standard() {
-        ApiStandard::Anthropic => CtProvider::Anthropic {
-            api_key: api_key.to_string(),
-        },
-        ApiStandard::Google => CtProvider::Google {
-            api_key: api_key.to_string(),
-        },
-        ApiStandard::Azure => {
-            let base_url = def.base_url.as_deref().unwrap_or("").to_string();
-            let api_version = def
-                .api_version
-                .as_deref()
-                .unwrap_or("2024-02-15-preview")
-                .to_string();
-            CtProvider::Azure {
-                base_url,
-                api_key: api_key.to_string(),
-                api_version,
-            }
-        }
-        ApiStandard::Bedrock => CtProvider::Bedrock {
-            region: def.region.clone().unwrap_or_default(),
-            access_key: def.access_key.clone().unwrap_or_default(),
-            secret_key: def.secret_key.clone().unwrap_or_default(),
-        },
-        ApiStandard::Ollama => {
-            let base_url = normalize_base_url(
-                def.base_url
-                    .as_deref()
-                    .unwrap_or("http://localhost:11434/v1"),
-            );
-            CtProvider::OpenAiCompat {
-                base_url,
-                api_key: api_key.to_string(),
-            }
-        }
-        ApiStandard::OpenAI => {
-            let base_url = normalize_base_url(
-                def.base_url
-                    .as_deref()
-                    .unwrap_or("https://api.openai.com/v1"),
-            );
-            CtProvider::OpenAiCompat {
-                base_url,
-                api_key: api_key.to_string(),
-            }
-        }
-    };
+    // Apply walrus-specific base_url normalization (strip endpoint suffixes).
+    if let CtProvider::OpenAiCompat {
+        ref mut base_url, ..
+    } = inner
+    {
+        *base_url = normalize_base_url(base_url);
+    }
 
     Ok(Provider {
         inner,

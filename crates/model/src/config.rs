@@ -25,7 +25,7 @@ impl ModelConfig {
     pub fn validate(providers: &BTreeMap<CompactString, ProviderDef>) -> Result<()> {
         let mut seen = HashSet::new();
         for (name, def) in providers {
-            def.validate(name)?;
+            def.validate(name).map_err(|e| anyhow::anyhow!(e))?;
             for model in &def.models {
                 if !seen.insert(model.clone()) {
                     bail!("duplicate model name '{model}' across providers");
