@@ -34,6 +34,17 @@ impl Provider {
     }
 }
 
+/// Strip known endpoint suffixes so both bare origins and full paths work.
+fn normalize_base_url(url: &str) -> String {
+    let url = url.trim_end_matches('/');
+    for suffix in ["/chat/completions", "/messages", "/embeddings"] {
+        if let Some(stripped) = url.strip_suffix(suffix) {
+            return stripped.to_string();
+        }
+    }
+    url.to_string()
+}
+
 /// Construct a `Provider` from a provider definition and model name.
 pub fn build_provider(def: &ProviderDef, model: &str, client: reqwest::Client) -> Result<Provider> {
     let api_key = def.api_key.as_deref().unwrap_or("");
@@ -64,22 +75,22 @@ pub fn build_provider(def: &ProviderDef, model: &str, client: reqwest::Client) -
             secret_key: def.secret_key.clone().unwrap_or_default(),
         },
         ApiStandard::Ollama => {
-            let base_url = def
-                .base_url
-                .as_deref()
-                .unwrap_or("http://localhost:11434/v1")
-                .to_string();
+            let base_url = normalize_base_url(
+                def.base_url
+                    .as_deref()
+                    .unwrap_or("http://localhost:11434/v1"),
+            );
             CtProvider::OpenAiCompat {
                 base_url,
                 api_key: api_key.to_string(),
             }
         }
         ApiStandard::OpenAI => {
-            let base_url = def
-                .base_url
-                .as_deref()
-                .unwrap_or("https://api.openai.com/v1")
-                .to_string();
+            let base_url = normalize_base_url(
+                def.base_url
+                    .as_deref()
+                    .unwrap_or("https://api.openai.com/v1"),
+            );
             CtProvider::OpenAiCompat {
                 base_url,
                 api_key: api_key.to_string(),

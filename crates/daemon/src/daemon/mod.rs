@@ -41,8 +41,6 @@ pub struct Daemon {
     /// so agents can dispatch tool calls. Stored here so [`Daemon::reload`] can
     /// pass a fresh clone into the rebuilt runtime.
     pub(crate) event_tx: DaemonEventSender,
-    /// Per-agent configurations (name → config).
-    pub(crate) agents_config: BTreeMap<String, AgentConfig>,
 }
 
 impl Daemon {

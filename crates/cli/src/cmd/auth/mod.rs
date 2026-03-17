@@ -41,22 +41,22 @@ pub(crate) struct Preset {
 pub(crate) const PRESETS: &[Preset] = &[
     Preset {
         name: "anthropic",
-        base_url: "https://api.anthropic.com/v1/messages",
+        base_url: "",
         standard: "anthropic",
     },
     Preset {
         name: "openai",
-        base_url: "https://api.openai.com/v1/chat/completions",
+        base_url: "https://api.openai.com/v1",
         standard: "openai",
     },
     Preset {
         name: "deepseek",
-        base_url: "https://api.deepseek.com/v1/chat/completions",
+        base_url: "https://api.deepseek.com/v1",
         standard: "openai",
     },
     Preset {
         name: "ollama",
-        base_url: "http://localhost:11434/v1/chat/completions",
+        base_url: "http://localhost:11434/v1",
         standard: "openai",
     },
     Preset {
