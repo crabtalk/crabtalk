@@ -1,11 +1,9 @@
 //! Stateful Hook implementation for the daemon.
 //!
 //! [`DaemonHook`] composes skill, MCP, OS, and built-in memory sub-hooks plus
-//! external extension services. Built-in memory is active by default; when
-//! the walrus-memory extension registers `recall`, built-in tools are skipped.
-//! `on_build_agent` delegates to skills, memory, and extension services;
-//! `on_register_tools` delegates to all sub-hooks in sequence.
-//! `dispatch_tool` routes every agent tool call by name — the single
+//! external extension services. `on_build_agent` delegates to skills, memory,
+//! and extension services; `on_register_tools` delegates to all sub-hooks in
+//! sequence. `dispatch_tool` routes every agent tool call by name — the single
 //! entry point from `event.rs`.
 
 use crate::{
@@ -46,7 +44,7 @@ pub struct DaemonHook {
     pub permissions: PermissionConfig,
     /// Whether the daemon is running as the `walrus` OS user (sandbox active).
     pub sandboxed: bool,
-    /// Built-in memory (None if disabled or overridden by walrus-memory extension).
+    /// Built-in memory.
     pub memory: Option<BuiltinMemory>,
     /// Event channel for task dispatch.
     pub(crate) event_tx: DaemonEventSender,
@@ -77,13 +75,7 @@ const MEMORY_TOOLS: &[&str] = &["recall", "memory", "user_memory"];
 const TASK_TOOLS: &[&str] = &["spawn_task", "check_tasks", "ask_user", "await_tasks"];
 
 impl Hook for DaemonHook {
-    fn on_build_agent(&self, config: AgentConfig) -> AgentConfig {
-        // Delegate to extension services first (prompt enrichment).
-        let mut config = match self.registry {
-            Some(ref registry) => registry.on_build_agent(config),
-            None => config,
-        };
-
+    fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
         // Inject environment context (OS, working directory, sandbox state).
         config
             .system_prompt
@@ -102,21 +94,12 @@ impl Hook for DaemonHook {
         config
     }
 
-    fn on_compact(&self, agent: &str, prompt: &mut String) {
-        if let Some(ref registry) = self.registry {
-            registry.on_compact(agent, prompt);
-        }
-    }
-
     fn on_before_run(
         &self,
         agent: &str,
         history: &[wcore::model::Message],
     ) -> Vec<wcore::model::Message> {
-        let mut messages = match self.registry {
-            Some(ref registry) => registry.on_before_run(agent, history),
-            None => Vec::new(),
-        };
+        let mut messages = Vec::new();
         if agent == wcore::paths::DEFAULT_AGENT && !self.agent_descriptions.is_empty() {
             let mut block = String::from("<agents>\n");
             for (name, desc) in &self.agent_descriptions {
@@ -137,24 +120,14 @@ impl Hook for DaemonHook {
         tools.insert_all(skill::tool::tools());
         tools.insert_all(system::task::tool::tools());
         if let Some(ref registry) = self.registry {
-            registry.on_register_tools(tools).await;
+            registry.register_tools(tools).await;
         }
-        // Register built-in memory tools only if no extension provides "recall".
-        if self.memory.is_some() && !tools.contains("recall") {
+        if self.memory.is_some() {
             tools.insert_all(system::memory::tool::tools());
         }
     }
 
-    fn on_after_run(&self, agent: &str, history: &[Message], system_prompt: &str) {
-        if let Some(ref registry) = self.registry {
-            registry.on_after_run(agent, history, system_prompt);
-        }
-    }
-
     fn on_after_compact(&self, agent: &str, summary: &str) {
-        if let Some(ref registry) = self.registry {
-            registry.on_after_compact(agent, summary);
-        }
         if let Some(ref mem) = self.memory {
             mem.after_compact(agent, summary);
         }

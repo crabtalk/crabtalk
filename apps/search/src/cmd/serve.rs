@@ -107,10 +107,6 @@ pub async fn run(socket: &Path) -> anyhow::Result<()> {
                     msg: Some(ext_response::Msg::ToolResult(ExtToolResult { result })),
                 }
             }
-            Some(ext_request::Msg::Event(_)) => {
-                // Fire-and-forget — no response expected.
-                continue;
-            }
             Some(ext_request::Msg::GetSchema(_)) => ExtResponse {
                 msg: Some(ext_response::Msg::Error(ExtError {
                     message: "schema not yet implemented".into(),

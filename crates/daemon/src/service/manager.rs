@@ -3,7 +3,6 @@
 use crate::service::config::{ServiceConfig, ServiceKind};
 use anyhow::{Context, Result, bail};
 use compact_str::CompactString;
-use model::ProviderRegistry;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -16,17 +15,15 @@ use tokio::{
     time,
 };
 use wcore::{
-    AgentConfig, CompactHook, Hook, ToolRegistry,
-    model::{Message, Model, Request, Tool},
+    ToolRegistry,
+    model::Tool,
     protocol::{
         PROTOCOL_VERSION,
         codec::{read_message, write_message},
         ext::{
-            Capability, ExtAfterCompact, ExtAfterRun, ExtBeforeRun, ExtBeforeRunResult,
-            ExtBuildAgent, ExtBuildAgentResult, ExtCompact, ExtCompactResult, ExtConfigure,
-            ExtConfigured, ExtError, ExtEvent, ExtHello, ExtInferResult, ExtReady,
+            Capability, ExtConfigure, ExtConfigured, ExtError, ExtHello, ExtReady,
             ExtRegisterTools, ExtRequest, ExtResponse, ExtToolCall, ExtToolResult, ExtToolSchemas,
-            SimpleMessage, ToolsList, capability, ext_request, ext_response,
+            ToolsList, capability, ext_request, ext_response,
         },
     },
 };
@@ -71,46 +68,9 @@ pub struct ServiceRegistry {
     pub query: BTreeMap<String, Arc<ServiceHandle>>,
     /// Tool schemas collected from all extension services.
     pub tool_schemas: Vec<Tool>,
-    /// Services that declared BuildAgent capability.
-    pub build_agent: Vec<Arc<ServiceHandle>>,
-    /// Services that declared BeforeRun capability.
-    pub before_run: Vec<Arc<ServiceHandle>>,
-    /// Services that declared Compact capability.
-    pub compact: Vec<Arc<ServiceHandle>>,
-    /// Services that declared EventObserver capability.
-    pub event_observer: Vec<Arc<ServiceHandle>>,
-    /// Services that declared AfterRun capability.
-    pub after_run: Vec<Arc<ServiceHandle>>,
-    /// Services that declared AfterCompact capability.
-    pub after_compact: Vec<Arc<ServiceHandle>>,
-    /// Model for Infer fulfillment (set after runtime construction).
-    model: Option<ProviderRegistry>,
 }
 
 impl ServiceRegistry {
-    /// Set the model for Infer fulfillment.
-    pub fn set_model(&mut self, model: ProviderRegistry) {
-        self.model = Some(model);
-    }
-
-    /// Fire-and-forget event to all EventObserver services.
-    pub async fn fire_event(&self, agent: &str, event: &str) {
-        let req = ExtRequest {
-            msg: Some(ext_request::Msg::Event(ExtEvent {
-                agent: agent.to_owned(),
-                event: event.to_owned(),
-            })),
-        };
-        for handle in &self.event_observer {
-            if let Err(e) = handle.send(&req).await {
-                tracing::warn!(
-                    service = %handle.name, error = %e,
-                    "Event dispatch failed"
-                );
-            }
-        }
-    }
-
     /// Dispatch a tool call to the owning extension service.
     /// Returns `None` if the tool is not in the registry.
     pub async fn dispatch_tool(
@@ -143,426 +103,11 @@ impl ServiceRegistry {
             },
         )
     }
-}
 
-/// Send an extension request with timeout and uniform error logging.
-/// Returns `Some(response)` on success, `None` on error or timeout.
-async fn send_with_timeout(
-    handle: &ServiceHandle,
-    req: &ExtRequest,
-    timeout_secs: u64,
-    label: &str,
-) -> Option<ExtResponse> {
-    match time::timeout(
-        std::time::Duration::from_secs(timeout_secs),
-        handle.request(req),
-    )
-    .await
-    {
-        Ok(Ok(resp)) => Some(resp),
-        Ok(Err(e)) => {
-            tracing::warn!(service = %handle.name, error = %e, "{label} dispatch failed");
-            None
-        }
-        Err(_) => {
-            tracing::warn!(service = %handle.name, "{label} dispatch timeout");
-            None
-        }
-    }
-}
-
-/// Fan out a request to multiple service handles, collecting extracted results.
-///
-/// Builds the same request for each handle, sends with timeout, and calls
-/// `extract` on successful responses. Skips handles that error or timeout.
-async fn fan_out<T>(
-    handles: &[Arc<ServiceHandle>],
-    req: &ExtRequest,
-    timeout_secs: u64,
-    label: &str,
-    extract: impl Fn(ExtResponse) -> Option<T>,
-) -> Vec<T> {
-    let mut results = Vec::new();
-    for handle in handles {
-        if let Some(resp) = send_with_timeout(handle, req, timeout_secs, label).await
-            && let Some(val) = extract(resp)
-        {
-            results.push(val);
-        }
-    }
-    results
-}
-
-impl Hook for ServiceRegistry {
-    fn on_build_agent(&self, config: AgentConfig) -> AgentConfig {
-        let mut config = config;
-        let req = ExtRequest {
-            msg: Some(ext_request::Msg::BuildAgent(ExtBuildAgent {
-                name: config.name.to_string(),
-                description: config.description.to_string(),
-                system_prompt: config.system_prompt.clone(),
-                tools: config.tools.iter().map(|t| t.to_string()).collect(),
-                skills: config.skills.clone(),
-                mcps: config.mcps.clone(),
-                members: config.members.clone(),
-            })),
-        };
-        let additions: Vec<String> = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(fan_out(
-                &self.build_agent,
-                &req,
-                10,
-                "BuildAgent",
-                |resp| match resp.msg {
-                    Some(ext_response::Msg::BuildAgentResult(ExtBuildAgentResult {
-                        prompt_addition,
-                        ..
-                    })) if !prompt_addition.is_empty() => Some(prompt_addition),
-                    _ => None,
-                },
-            ))
-        });
-        for addition in additions {
-            config.system_prompt.push_str(&addition);
-        }
-        config
-    }
-
-    fn on_compact(&self, agent: &str, prompt: &mut String) {
-        let req = ExtRequest {
-            msg: Some(ext_request::Msg::Compact(ExtCompact {
-                agent: agent.to_owned(),
-                prompt: prompt.clone(),
-            })),
-        };
-        let additions: Vec<String> = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(fan_out(
-                &self.compact,
-                &req,
-                10,
-                "Compact",
-                |resp| match resp.msg {
-                    Some(ext_response::Msg::CompactResult(ExtCompactResult { addition }))
-                        if !addition.is_empty() =>
-                    {
-                        Some(addition)
-                    }
-                    _ => None,
-                },
-            ))
-        });
-        for addition in additions {
-            prompt.push_str(&addition);
-        }
-    }
-
-    fn on_before_run(&self, agent: &str, history: &[Message]) -> Vec<Message> {
-        let req = ExtRequest {
-            msg: Some(ext_request::Msg::BeforeRun(ExtBeforeRun {
-                agent: agent.to_owned(),
-                history: to_simple_messages(history),
-            })),
-        };
-        let batches: Vec<Vec<SimpleMessage>> = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(fan_out(
-                &self.before_run,
-                &req,
-                10,
-                "BeforeRun",
-                |resp| match resp.msg {
-                    Some(ext_response::Msg::BeforeRunResult(ExtBeforeRunResult { messages })) => {
-                        Some(messages)
-                    }
-                    _ => None,
-                },
-            ))
-        });
-        batches
-            .into_iter()
-            .flatten()
-            .map(|sm| match sm.role.as_str() {
-                "assistant" => Message::assistant(sm.content, None, None),
-                "system" => Message::system(&sm.content),
-                _ => Message::user(sm.content),
-            })
-            .collect()
-    }
-
-    fn on_after_run(&self, agent: &str, history: &[Message], system_prompt: &str) {
-        if self.after_run.is_empty() {
-            return;
-        }
-        let simple_history = to_simple_messages(history);
-        let agent = agent.to_owned();
-        let system_prompt = system_prompt.to_owned();
-        let model = self.model.clone();
-
-        for handle in &self.after_run {
-            let handle = Arc::clone(handle);
-            // Filter tools to only those owned by this service.
-            let service_tools: Arc<Vec<Tool>> = Arc::new(
-                self.tool_schemas
-                    .iter()
-                    .filter(|t| {
-                        self.tools
-                            .get(t.name.as_str())
-                            .is_some_and(|h| h.name == handle.name)
-                    })
-                    .cloned()
-                    .collect(),
-            );
-            let tool_handles: Arc<BTreeMap<String, Arc<ServiceHandle>>> = Arc::new(
-                self.tools
-                    .iter()
-                    .filter(|(_, h)| h.name == handle.name)
-                    .map(|(k, v)| (k.clone(), Arc::clone(v)))
-                    .collect(),
-            );
-            let agent = agent.clone();
-            let history = simple_history.clone();
-            let system_prompt = system_prompt.clone();
-            let model = model.clone();
-            tokio::spawn(async move {
-                let req = ExtRequest {
-                    msg: Some(ext_request::Msg::AfterRun(ExtAfterRun {
-                        agent: agent.clone(),
-                        history,
-                        system_prompt: system_prompt.clone(),
-                    })),
-                };
-                let Some(resp) = send_with_timeout(&handle, &req, 30, "AfterRun").await else {
-                    return;
-                };
-                match resp.msg {
-                    Some(ext_response::Msg::AfterRunResult(_)) => {
-                        tracing::debug!(service = %handle.name, "AfterRun complete");
-                    }
-                    Some(ext_response::Msg::InferRequest(infer_req)) => {
-                        if let Some(ref model) = model {
-                            if let Err(e) = infer_fulfill(
-                                model,
-                                &handle,
-                                &agent,
-                                &system_prompt,
-                                infer_req.messages,
-                                &service_tools,
-                                &tool_handles,
-                            )
-                            .await
-                            {
-                                tracing::warn!(
-                                    service = %handle.name,
-                                    error = %e,
-                                    "Infer fulfillment failed"
-                                );
-                            }
-                        } else {
-                            tracing::warn!(
-                                service = %handle.name,
-                                "Infer requested but no model available"
-                            );
-                        }
-                    }
-                    Some(ext_response::Msg::Error(ExtError { message })) => {
-                        tracing::warn!(
-                            service = %handle.name,
-                            error = %message,
-                            "AfterRun service error"
-                        );
-                    }
-                    other => {
-                        tracing::warn!(
-                            service = %handle.name,
-                            "unexpected AfterRun response: {other:?}"
-                        );
-                    }
-                }
-            });
-        }
-    }
-
-    fn on_after_compact(&self, agent: &str, summary: &str) {
-        if self.after_compact.is_empty() {
-            return;
-        }
-        let agent = agent.to_owned();
-        let summary = summary.to_owned();
-        for handle in &self.after_compact {
-            let handle = Arc::clone(handle);
-            let agent = agent.clone();
-            let summary = summary.clone();
-            tokio::spawn(async move {
-                let req = ExtRequest {
-                    msg: Some(ext_request::Msg::AfterCompact(ExtAfterCompact {
-                        agent: agent.clone(),
-                        summary,
-                    })),
-                };
-                if let Some(resp) = send_with_timeout(&handle, &req, 30, "AfterCompact").await {
-                    match resp.msg {
-                        Some(ext_response::Msg::AfterCompactResult(_)) => {
-                            tracing::debug!(service = %handle.name, %agent, "AfterCompact complete");
-                        }
-                        Some(ext_response::Msg::Error(ExtError { message })) => {
-                            tracing::warn!(
-                                service = %handle.name,
-                                error = %message,
-                                "AfterCompact service error"
-                            );
-                        }
-                        other => {
-                            tracing::warn!(
-                                service = %handle.name,
-                                "unexpected AfterCompact response: {other:?}"
-                            );
-                        }
-                    }
-                }
-            });
-        }
-    }
-
-    async fn on_register_tools(&self, tools: &mut ToolRegistry) {
+    /// Register tool schemas into the tool registry.
+    pub async fn register_tools(&self, tools: &mut ToolRegistry) {
         tools.insert_all(self.tool_schemas.clone());
     }
-}
-
-impl CompactHook for ServiceRegistry {
-    fn on_compact(&self, agent: &str, prompt: &mut String) {
-        <Self as Hook>::on_compact(self, agent, prompt);
-    }
-}
-
-/// Convert core `Message` history to proto `SimpleMessage` for extension transport.
-fn to_simple_messages(history: &[Message]) -> Vec<SimpleMessage> {
-    history
-        .iter()
-        .map(|m| SimpleMessage {
-            role: m.role.as_str().to_owned(),
-            content: m.content.clone(),
-        })
-        .collect()
-}
-
-/// Infer fulfillment: mini agent loop using the host agent's model.
-///
-/// Takes the service's messages, builds an LLM request with the host agent's
-/// model and system prompt, auto-attaches service's tools, loops until final text.
-/// Tool calls are dispatched back to the owning service.
-async fn infer_fulfill(
-    model: &ProviderRegistry,
-    handle: &ServiceHandle,
-    agent: &str,
-    system_prompt: &str,
-    initial_messages: Vec<SimpleMessage>,
-    service_tools: &[Tool],
-    tool_handles: &BTreeMap<String, Arc<ServiceHandle>>,
-) -> Result<()> {
-    let model_name = model.active_model();
-
-    // Convert SimpleMessage → Message.
-    // If the service provides its own system message, use that instead of
-    // the host agent's system prompt to avoid conflicting instructions.
-    let has_system = initial_messages.iter().any(|m| m.role == "system");
-    let mut messages: Vec<Message> = Vec::with_capacity(1 + initial_messages.len());
-    if !has_system && !system_prompt.is_empty() {
-        messages.push(Message::system(system_prompt));
-    }
-    for sm in &initial_messages {
-        let msg = match sm.role.as_str() {
-            "assistant" => Message::assistant(&sm.content, None, None),
-            "system" => Message::system(&sm.content),
-            _ => Message::user(&sm.content),
-        };
-        messages.push(msg);
-    }
-
-    // Service tools (pre-filtered by caller).
-    let tools: Vec<Tool> = service_tools.to_vec();
-
-    const MAX_INFER_ITERATIONS: usize = 10;
-    for _ in 0..MAX_INFER_ITERATIONS {
-        let request = Request::new(model_name.clone())
-            .with_messages(messages.clone())
-            .with_tools(tools.clone());
-
-        let response = model.send(&request).await.context("infer LLM call")?;
-        let msg = response
-            .message()
-            .ok_or_else(|| anyhow::anyhow!("no message in LLM response"))?;
-
-        let tool_calls = msg.tool_calls.to_vec();
-        messages.push(msg);
-
-        if tool_calls.is_empty() {
-            // Final text response — extract content and send InferResult.
-            let content = messages
-                .last()
-                .map(|m| m.content.clone())
-                .unwrap_or_default();
-            let result_req = ExtRequest {
-                msg: Some(ext_request::Msg::InferResult(ExtInferResult { content })),
-            };
-            // Read the final response from the service after sending InferResult.
-            let _final_resp = time::timeout(
-                std::time::Duration::from_secs(30),
-                handle.request(&result_req),
-            )
-            .await
-            .context("InferResult timeout")?
-            .context("InferResult send")?;
-            tracing::debug!(service = %handle.name, %agent, "Infer fulfillment complete");
-            return Ok(());
-        }
-
-        // Dispatch tool calls back to the owning service.
-        for tc in &tool_calls {
-            let tool_name = tc.function.name.as_str();
-            let tool_handle = tool_handles
-                .get(tool_name)
-                .ok_or_else(|| anyhow::anyhow!("tool '{tool_name}' not in registry"))?;
-            let tool_req = ExtRequest {
-                msg: Some(ext_request::Msg::ToolCall(ExtToolCall {
-                    name: tool_name.to_owned(),
-                    args: tc.function.arguments.clone(),
-                    agent: agent.to_owned(),
-                    task_id: None,
-                })),
-            };
-            let tool_resp = time::timeout(
-                std::time::Duration::from_secs(30),
-                tool_handle.request(&tool_req),
-            )
-            .await
-            .context("tool call timeout")?
-            .context("tool call")?;
-            let result = match tool_resp.msg {
-                Some(ext_response::Msg::ToolResult(ExtToolResult { result })) => result,
-                Some(ext_response::Msg::Error(ExtError { message })) => {
-                    format!("service error: {message}")
-                }
-                other => format!("unexpected tool response: {other:?}"),
-            };
-            messages.push(Message::tool(result, tc.id.clone()));
-        }
-    }
-
-    tracing::warn!(
-        service = %handle.name,
-        "Infer hit max iterations ({MAX_INFER_ITERATIONS})"
-    );
-    // Send an InferResult so the service doesn't deadlock waiting for a response.
-    let result_req = ExtRequest {
-        msg: Some(ext_request::Msg::InferResult(ExtInferResult {
-            content: format!("infer fulfillment exceeded max iterations ({MAX_INFER_ITERATIONS})"),
-        })),
-    };
-    let _ = time::timeout(
-        std::time::Duration::from_secs(5),
-        handle.request(&result_req),
-    )
-    .await;
-    Ok(())
 }
 
 /// Entry tracking a spawned service process.
@@ -851,7 +396,7 @@ impl ServiceManager {
         Ok((handle, tools))
     }
 
-    /// Populate the registry from a service handle's capabilities and tool schemas.
+    /// Populate the registry from a service handle's capabilities.
     fn register(registry: &mut ServiceRegistry, handle: &Arc<ServiceHandle>) {
         for cap in &handle.capabilities {
             match &cap.cap {
@@ -865,28 +410,7 @@ impl ServiceManager {
                         .query
                         .insert(handle.name.to_string(), Arc::clone(handle));
                 }
-                Some(capability::Cap::BuildAgent(_)) => {
-                    registry.build_agent.push(Arc::clone(handle));
-                }
-                Some(capability::Cap::BeforeRun(_)) => {
-                    registry.before_run.push(Arc::clone(handle));
-                }
-                Some(capability::Cap::Compact(_)) => {
-                    registry.compact.push(Arc::clone(handle));
-                }
-                Some(capability::Cap::EventObserver(_)) => {
-                    registry.event_observer.push(Arc::clone(handle));
-                }
-                Some(capability::Cap::AfterRun(_)) => {
-                    registry.after_run.push(Arc::clone(handle));
-                }
-                Some(capability::Cap::AfterCompact(_)) => {
-                    registry.after_compact.push(Arc::clone(handle));
-                }
-                Some(capability::Cap::Infer(_)) => {
-                    // Response-side capability — not stored in registry.
-                }
-                None => {}
+                _ => {}
             }
         }
     }

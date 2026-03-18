@@ -40,15 +40,6 @@ pub trait Hook: Send + Sync {
         async {}
     }
 
-    /// Called during context compaction to enrich the compaction prompt.
-    ///
-    /// Hooks append memory context (profile facts, recent entries) to the
-    /// prompt before the LLM summarizes the conversation. The runtime passes
-    /// the base prompt from `compact.md`; hooks mutate it in place.
-    ///
-    /// Default: no-op.
-    fn on_compact(&self, _agent: &str, _prompt: &mut String) {}
-
     /// Called by Runtime before each agent run (send_to / stream_to).
     ///
     /// Receives the agent name and conversation history (including the
@@ -59,15 +50,6 @@ pub trait Hook: Send + Sync {
     fn on_before_run(&self, _agent: &str, _history: &[Message]) -> Vec<Message> {
         Vec::new()
     }
-
-    /// Called by Runtime after agent execution completes (send_to / stream_to).
-    ///
-    /// Receives the agent name, final conversation history, and system prompt.
-    /// Synchronous — implementations that need async work should spawn
-    /// their own background tasks internally.
-    ///
-    /// Default: no-op.
-    fn on_after_run(&self, _agent: &str, _history: &[Message], _system_prompt: &str) {}
 
     /// Called when an agent's context is compacted.
     ///

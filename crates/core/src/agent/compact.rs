@@ -17,10 +17,7 @@ impl<M: Model> super::Agent<M> {
             .clone()
             .unwrap_or_else(|| self.model.active_model());
 
-        let mut prompt = COMPACT_PROMPT.to_owned();
-        if let Some(ref hook) = self.compact_hook {
-            hook.on_compact(&self.config.name, &mut prompt);
-        }
+        let prompt = COMPACT_PROMPT.to_owned();
 
         let mut messages = Vec::with_capacity(2 + history.len());
         messages.push(Message::system(&prompt));

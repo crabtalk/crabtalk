@@ -12,7 +12,7 @@
 //! - Agent event types: [`AgentEvent`], [`AgentStep`], [`AgentResponse`], [`AgentStopReason`].
 
 pub use agent::{
-    Agent, AgentBuilder, AgentConfig, CompactHook,
+    Agent, AgentBuilder, AgentConfig,
     config::HeartbeatConfig,
     event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason},
     tool::{ToolRegistry, ToolRequest, ToolSender},

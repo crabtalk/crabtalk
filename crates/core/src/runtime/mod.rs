@@ -8,10 +8,7 @@
 
 use crate::{
     Agent, AgentBuilder, AgentConfig, AgentEvent, AgentResponse, AgentStopReason,
-    agent::{
-        CompactHook,
-        tool::{ToolRegistry, ToolSender},
-    },
+    agent::tool::{ToolRegistry, ToolSender},
     model::{Message, Model, Role},
     runtime::hook::Hook,
 };
@@ -47,7 +44,6 @@ pub struct Runtime<M: Model, H: Hook> {
     next_session_id: AtomicU64,
     tools: ToolRegistry,
     tool_tx: Option<ToolSender>,
-    compact_hook: Option<Arc<dyn CompactHook>>,
 }
 
 impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> {
@@ -67,13 +63,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             next_session_id: AtomicU64::new(1),
             tools,
             tool_tx,
-            compact_hook: None,
         }
-    }
-
-    /// Set the compact hook used for auto-compaction enrichment.
-    pub fn set_compact_hook(&mut self, hook: Arc<dyn CompactHook>) {
-        self.compact_hook = Some(hook);
     }
 
     // --- Tool registry ---
@@ -103,9 +93,6 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             .tools(tools);
         if let Some(tx) = &self.tool_tx {
             builder = builder.tool_tx(tx.clone());
-        }
-        if let Some(ref hook) = self.compact_hook {
-            builder = builder.compact_hook(Arc::clone(hook));
         }
         let agent = builder.build();
         self.agents.insert(name, agent);
@@ -213,10 +200,6 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             self.hook.on_event(&agent_name, &event);
         }
 
-        let system_prompt = &agent_ref.config.system_prompt;
-        self.hook
-            .on_after_run(&agent_name, &session.history, system_prompt);
-
         Ok(response)
     }
 
@@ -299,10 +282,6 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                     yield event;
                 }
             }
-
-            let system_prompt = &agent_ref.config.system_prompt;
-            self.hook
-                .on_after_run(&agent_name, &session.history, system_prompt);
         }
     }
 }
