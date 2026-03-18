@@ -40,6 +40,16 @@ pub trait Hook: Send + Sync {
         async {}
     }
 
+    /// Called by Runtime to preprocess user content before it becomes a message.
+    ///
+    /// Used to resolve slash commands (e.g. `/skill-name args` → skill body + args).
+    /// Returns the transformed content string.
+    ///
+    /// Default: returns content unchanged.
+    fn preprocess(&self, _agent: &str, content: &str) -> String {
+        content.to_owned()
+    }
+
     /// Called by Runtime before each agent run (send_to / stream_to).
     ///
     /// Receives the agent name and conversation history (including the

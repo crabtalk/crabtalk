@@ -36,7 +36,7 @@ impl Completer for ReplHelper {
             .collect();
 
         // Also complete skill names from disk.
-        let slash_prefix = &prefix[1..]; // strip leading '/'
+        let slash_prefix = &prefix[1..];
         if let Some(skills) = list_skill_names() {
             for name in skills {
                 if name.starts_with(slash_prefix) {
@@ -55,12 +55,12 @@ impl Completer for ReplHelper {
 
 /// Result of handling a slash command.
 pub enum SlashResult {
-    /// The line was handled (printed help, switched agent, etc.). Skip sending.
+    /// The line was handled locally (printed help, switched agent, etc.).
     Handled,
-    /// Not a slash command — the caller should send the line normally.
+    /// Not a slash command — send the line as-is.
     NotSlash,
-    /// A skill was loaded — send this content as the message.
-    Skill(String),
+    /// A slash command to forward to the daemon (e.g. `/skill args`).
+    Forward(String),
 }
 
 /// Dispatch a slash command.
@@ -69,7 +69,7 @@ pub async fn handle_slash(agent: &mut String, line: &str) -> Result<SlashResult>
         return Ok(SlashResult::NotSlash);
     }
     let rest = &line[1..];
-    let (cmd, arg) = match rest.find(' ') {
+    let (cmd, _arg) = match rest.find(' ') {
         Some(pos) => (&rest[..pos], Some(rest[pos + 1..].trim())),
         None => (rest, None),
     };
@@ -78,9 +78,9 @@ pub async fn handle_slash(agent: &mut String, line: &str) -> Result<SlashResult>
             println!("Available commands:");
             println!("  /help          — show this help");
             println!("  /switch <name> — switch active agent");
-            println!("  /<skill>       — load and run a skill");
+            println!("  /<skill>       — run a skill");
         }
-        "switch" => match arg {
+        "switch" => match _arg {
             Some(name) if !name.is_empty() => {
                 *agent = name.to_owned();
                 println!("Switched to agent '{name}'.");
@@ -88,33 +88,11 @@ pub async fn handle_slash(agent: &mut String, line: &str) -> Result<SlashResult>
             _ => println!("Usage: /switch <agent-name>"),
         },
         _ => {
-            // Try loading as a skill.
-            if let Some(body) = load_skill_body(cmd) {
-                let content = match arg {
-                    Some(a) if !a.is_empty() => format!("{body}\n\n{a}"),
-                    _ => body,
-                };
-                return Ok(SlashResult::Skill(content));
-            }
-            println!("Unknown command '/{cmd}'. Type /help for available commands.");
+            // Forward to daemon for skill resolution.
+            return Ok(SlashResult::Forward(line.to_owned()));
         }
     }
     Ok(SlashResult::Handled)
-}
-
-/// Load the body of a skill from `~/.openwalrus/skills/{name}/SKILL.md`.
-fn load_skill_body(name: &str) -> Option<String> {
-    // Guard against path traversal.
-    if name.contains("..") || name.contains('/') || name.contains('\\') {
-        return None;
-    }
-    let skill_file = wcore::paths::CONFIG_DIR
-        .join(wcore::paths::SKILLS_DIR)
-        .join(name)
-        .join("SKILL.md");
-    let content = std::fs::read_to_string(&skill_file).ok()?;
-    let (_frontmatter, body) = wcore::utils::split_yaml_frontmatter(&content).ok()?;
-    Some(body.trim().to_owned())
 }
 
 /// List skill directory names for tab completion.

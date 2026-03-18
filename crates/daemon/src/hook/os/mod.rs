@@ -16,9 +16,11 @@ pub(crate) mod tool;
 pub fn environment_block(sandboxed: bool) -> String {
     let mut buf = String::from("\n\n<environment>\n");
     let _ = writeln!(buf, "os: {}", std::env::consts::OS);
-    if let Ok(cwd) = std::env::current_dir() {
-        let _ = writeln!(buf, "working_directory: {}", cwd.display());
-    }
+    let _ = writeln!(
+        buf,
+        "working_directory: {}",
+        wcore::paths::HOME_DIR.display()
+    );
     let _ = writeln!(
         buf,
         "sandbox: {}",

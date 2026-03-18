@@ -91,19 +91,16 @@ impl MarkdownRenderer {
         let _ = self.out.flush();
     }
 
-    /// Print a styled tool-start indicator (dim dots on same line).
-    pub fn push_tool_start(&mut self, _names: &[String]) {
+    /// Print tool call names as a dim line.
+    pub fn push_tool_start(&mut self, names: &[String]) {
         self.flush_thinking();
-        let _ = write!(self.out, "{}", S_DIM.apply_to("..."));
+        let label = names.join(", ");
+        let _ = writeln!(self.out, "{}", S_DIM.apply_to(format!("  [{label}]")));
         let _ = self.out.flush();
     }
 
-    /// Clear tool indicator after completion.
-    pub fn push_tool_done(&mut self) {
-        // Erase the dots: backspace over them and overwrite with spaces.
-        let _ = write!(self.out, "\x08\x08\x08   \x08\x08\x08");
-        let _ = self.out.flush();
-    }
+    /// No-op — tool start already printed a full line.
+    pub fn push_tool_done(&mut self) {}
 
     /// Flush remaining buffer on stream end.
     pub fn finish(&mut self) {

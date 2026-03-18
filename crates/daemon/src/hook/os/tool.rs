@@ -35,9 +35,13 @@ impl crate::hook::DaemonHook {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
+        let cwd = &*wcore::paths::HOME_DIR;
+        let _ = std::fs::create_dir_all(cwd);
         let mut cmd = tokio::process::Command::new(&input.command);
         cmd.args(&input.args)
             .envs(&input.env)
+            .env("HOME", cwd)
+            .current_dir(cwd)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 

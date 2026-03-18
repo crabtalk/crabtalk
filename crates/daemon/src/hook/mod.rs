@@ -86,9 +86,40 @@ impl Hook for DaemonHook {
             }
         }
 
+        // Inject discoverable resource hints so the agent knows what's
+        // available without resorting to bash exploration.
+        let mut hints = Vec::new();
+        let mcp_servers = self.mcp.cached_list();
+        if !mcp_servers.is_empty() {
+            let names: Vec<&str> = mcp_servers.iter().map(|(n, _)| n.as_str()).collect();
+            hints.push(format!(
+                "MCP servers: {}. Use search_mcp to list tools, call_mcp_tool to invoke them.",
+                names.join(", ")
+            ));
+        }
+        if let Ok(reg) = self.skills.registry.try_lock() {
+            let skills: Vec<&str> = reg.skills().iter().map(|s| s.name.as_str()).collect();
+            if !skills.is_empty() {
+                hints.push(format!(
+                    "Skills: {}. Use search_skill to find skills, load_skill to activate one.",
+                    skills.join(", ")
+                ));
+            }
+        }
+        if !hints.is_empty() {
+            config.system_prompt.push_str(&format!(
+                "\n\n<resources>\n{}\n</resources>",
+                hints.join("\n")
+            ));
+        }
+
         // Apply scoped tool whitelist + prompt for sub-agents.
         self.apply_scope(&mut config);
         config
+    }
+
+    fn preprocess(&self, agent: &str, content: &str) -> String {
+        self.resolve_slash_skill(agent, content)
     }
 
     fn on_before_run(
@@ -312,6 +343,42 @@ impl DaemonHook {
             .as_ref()?
             .dispatch_tool(name, args, agent, None)
             .await
+    }
+
+    /// Resolve `/skill-name args` into skill body + args.
+    /// Returns content unchanged if not a slash command or skill not found.
+    fn resolve_slash_skill(&self, agent: &str, content: &str) -> String {
+        let content = content.trim();
+        if !content.starts_with('/') {
+            return content.to_owned();
+        }
+        let rest = &content[1..];
+        let (name, args) = match rest.find(' ') {
+            Some(pos) => (&rest[..pos], Some(rest[pos + 1..].trim())),
+            None => (rest, None),
+        };
+        // Guard against path traversal.
+        if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
+            return content.to_owned();
+        }
+        // Enforce skill scope.
+        if let Some(scope) = self.scopes.get(agent)
+            && !scope.skills.is_empty()
+            && !scope.skills.iter().any(|s| s == name)
+        {
+            return content.to_owned();
+        }
+        let skill_file = self.skills.skills_dir.join(name).join("SKILL.md");
+        let Ok(file_content) = std::fs::read_to_string(&skill_file) else {
+            return content.to_owned();
+        };
+        let Ok(skill) = skill::loader::parse_skill_md(&file_content) else {
+            return content.to_owned();
+        };
+        match args {
+            Some(a) if !a.is_empty() => format!("{}\n\n{a}", skill.body),
+            _ => skill.body,
+        }
     }
 
     /// Route a tool call by name to the appropriate handler.

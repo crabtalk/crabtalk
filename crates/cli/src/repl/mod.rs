@@ -59,7 +59,11 @@ impl ChatRepl {
                     let content = match handle_slash(&mut self.agent, &line).await? {
                         SlashResult::Handled => continue,
                         SlashResult::NotSlash => line,
-                        SlashResult::Skill(content) => content,
+                        SlashResult::Forward(cmd) => {
+                            // Show the slash command dimmed.
+                            println!("{}", console::style(&cmd).dim());
+                            cmd
+                        }
                     };
                     println!();
                     let stream = self.runner.stream(&self.agent, &content);

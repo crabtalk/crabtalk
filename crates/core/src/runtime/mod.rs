@@ -148,12 +148,13 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
     /// Push the user message, strip old auto-injected messages, and inject
     /// fresh ones via `on_before_run`. Returns the agent name.
     fn prepare_history(&self, session: &mut Session, content: &str, sender: &str) -> String {
+        let content = self.hook.preprocess(&session.agent, content);
         if sender.is_empty() {
-            session.history.push(Message::user(content));
+            session.history.push(Message::user(&content));
         } else {
             session
                 .history
-                .push(Message::user_with_sender(content, sender));
+                .push(Message::user_with_sender(&content, sender));
         }
 
         // Strip previous auto-injected messages to avoid accumulation.
