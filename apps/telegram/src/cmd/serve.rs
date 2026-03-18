@@ -2,8 +2,8 @@
 
 use compact_str::CompactString;
 use gateway::{
-    BotCommand, COMMAND_HINT, DaemonClient, GatewayConfig, GatewayMessage, KnownBots,
-    StreamAccumulator, StreamResult, attachment_summary, parse_command,
+    COMMAND_HINT, DaemonClient, GatewayConfig, GatewayMessage, KnownBots, StreamAccumulator,
+    StreamResult, attachment_summary, parse_command,
 };
 use std::{collections::HashMap, path::Path, sync::Arc};
 use teloxide::prelude::*;
@@ -67,10 +67,10 @@ async fn spawn_telegram(
 
     // Register slash commands so they appear in the Telegram UI.
     use teloxide::types::BotCommand as TgCommand;
-    let commands = vec![
-        TgCommand::new("switch", "Switch to a different agent"),
-        TgCommand::new("hub", "Manage hub packages (install/uninstall)"),
-    ];
+    let commands = vec![TgCommand::new(
+        "hub",
+        "Manage hub packages (install/uninstall)",
+    )];
     if let Err(e) = bot.set_my_commands(commands).await {
         tracing::warn!(
             platform = "telegram",
@@ -106,8 +106,6 @@ async fn telegram_loop(
     allowed_users: std::collections::HashSet<i64>,
 ) {
     let mut sessions: HashMap<i64, u64> = HashMap::new();
-    let mut chat_agents: HashMap<i64, CompactString> = HashMap::new();
-
     while let Some(msg) = rx.recv().await {
         let chat_id = msg.chat_id;
         let content = msg.content.clone();
@@ -127,20 +125,10 @@ async fn telegram_loop(
             continue;
         }
 
-        let active_agent = chat_agents.get(&chat_id).unwrap_or(&agent);
-        tracing::info!(agent = %active_agent, chat_id, "telegram dispatch");
+        tracing::info!(agent = %agent, chat_id, "telegram dispatch");
 
         if content.starts_with('/') {
             match parse_command(&content) {
-                Some(BotCommand::Switch { agent: new_agent }) => {
-                    let new_agent: CompactString = new_agent.into();
-                    chat_agents.insert(chat_id, new_agent.clone());
-                    sessions.remove(&chat_id);
-                    let msg = format!("Switched to agent: {new_agent}");
-                    if let Err(e) = bot.send_message(ChatId(chat_id), msg).await {
-                        tracing::warn!("failed to send switch confirmation: {e}");
-                    }
-                }
                 Some(cmd) => {
                     let b = bot.clone();
                     let c = client.clone();
@@ -167,7 +155,7 @@ async fn telegram_loop(
         let result = tg_stream(
             &bot,
             &client,
-            active_agent,
+            &agent,
             chat_id,
             msg.message_id,
             msg.is_group,
@@ -182,12 +170,12 @@ async fn telegram_loop(
                 sessions.insert(chat_id, session_id);
             }
             StreamResult::SessionError if session.is_some() => {
-                tracing::warn!(agent = %active_agent, chat_id, "session error, retrying");
+                tracing::warn!(agent = %&agent, chat_id, "session error, retrying");
                 sessions.remove(&chat_id);
                 let retry = tg_stream(
                     &bot,
                     &client,
-                    active_agent,
+                    &agent,
                     chat_id,
                     msg.message_id,
                     msg.is_group,

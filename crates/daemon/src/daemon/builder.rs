@@ -72,14 +72,9 @@ impl Daemon {
         Option<ServiceManager>,
     )> {
         let manager = Self::build_providers(config)?;
-        let (hook, service_manager) =
-            Self::build_hook(config, config_dir, event_tx, &manager).await?;
+        let (hook, service_manager) = Self::build_hook(config, config_dir, event_tx).await?;
         let tool_tx = Self::build_tool_sender(event_tx);
         let mut runtime = Runtime::new(manager, hook, Some(tool_tx)).await;
-        // Set compact hook on runtime for auto-compaction.
-        if let Some(ref registry) = runtime.hook.registry {
-            runtime.set_compact_hook(Arc::clone(registry) as Arc<dyn wcore::CompactHook>);
-        }
         Self::load_agents(&mut runtime, config_dir, config)?;
         Ok((runtime, service_manager))
     }
@@ -104,13 +99,11 @@ impl Daemon {
     }
 
     /// Build the daemon hook with all backends (skills, MCP, tasks, downloads, memory).
-    /// Built-in memory is active unless the walrus-memory extension provides `recall`.
     /// Returns the hook and an optional ServiceManager for child service lifecycle.
     async fn build_hook(
         config: &DaemonConfig,
         config_dir: &Path,
         event_tx: &DaemonEventSender,
-        manager: &ProviderRegistry,
     ) -> Result<(DaemonHook, Option<ServiceManager>)> {
         let downloads = Arc::new(Mutex::new(DownloadRegistry::new()));
 
@@ -141,24 +134,14 @@ impl Daemon {
             let daemon_socket = wcore::paths::SOCKET_PATH.to_path_buf();
             let mut sm = ServiceManager::new(&config.services, config_dir, daemon_socket);
             sm.spawn_all().await?;
-            let mut registry = sm.handshake_all().await;
-            // Set model for Infer fulfillment before wrapping in Arc.
-            registry.set_model(manager.clone());
+            let registry = sm.handshake_all().await;
             (Some(Arc::new(registry)), Some(sm))
         };
 
-        // Construct built-in memory unless the walrus-memory extension provides "recall".
-        let has_ext_memory = registry
-            .as_ref()
-            .is_some_and(|r| r.tools.contains_key("recall"));
-        let memory = if !has_ext_memory {
-            Some(BuiltinMemory::open(
-                config_dir.join("memory"),
-                config.system.memory.clone(),
-            ))
-        } else {
-            None
-        };
+        let memory = Some(BuiltinMemory::open(
+            config_dir.join("memory"),
+            config.system.memory.clone(),
+        ));
 
         Ok((
             DaemonHook::new(

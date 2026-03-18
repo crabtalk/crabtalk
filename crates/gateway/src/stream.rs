@@ -1,7 +1,7 @@
 //! Platform-agnostic stream accumulator for gateway loops.
 //!
 //! Consumes `StreamEvent` messages from the daemon and builds a text buffer
-//! with inline tool call status. Used by both Telegram and Discord loops.
+//! with inline tool call status. Used by the Telegram loop.
 
 use wcore::protocol::message::{StreamEvent, stream_event};
 

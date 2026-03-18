@@ -1,7 +1,7 @@
 //! UDS client for connecting to the walrus daemon.
 //!
 //! Creates a fresh connection per message to support concurrent sends
-//! from multiple platform adapters (Telegram, Discord).
+//! from platform adapters (Telegram).
 
 use futures_util::StreamExt;
 use std::path::{Path, PathBuf};

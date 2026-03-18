@@ -31,8 +31,7 @@ pub struct Message {
 
     /// The sender identity (runtime-only, never serialized to providers).
     ///
-    /// Convention: empty = local/owner, `"tg:12345"` = Telegram user,
-    /// `"dc:67890"` = Discord user.
+    /// Convention: empty = local/owner, `"tg:12345"` = Telegram user.
     #[serde(skip)]
     pub sender: CompactString,
 }

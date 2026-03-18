@@ -28,7 +28,6 @@ pub async fn dispatch_command(cmd: BotCommand, client: Arc<DaemonClient>, bot: B
                 filters: vec![],
             })),
         },
-        BotCommand::Switch { .. } => return,
     };
 
     let mut rx = client.send(msg).await;

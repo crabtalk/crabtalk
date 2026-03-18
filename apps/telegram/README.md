@@ -43,7 +43,6 @@ Omit `allowed_users` (or leave it empty) to allow everyone.
 
 - Streams AI responses with real-time edit-in-place updates
 - MarkdownV2 formatting with plain-text fallback
-- Per-chat agent selection via `/switch <agent>`
 - Hub install/uninstall commands via `/hub install|uninstall <package>`
 - Attachment forwarding (images, audio, video, files)
 - Automatic session management with error recovery

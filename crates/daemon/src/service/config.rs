@@ -11,7 +11,7 @@ pub enum ServiceKind {
     /// Extension service — speaks Walrus Extension protocol over UDS.
     #[default]
     Extension,
-    /// Gateway service — speaks existing walrus protocol (e.g. Telegram, Discord).
+    /// Gateway service — speaks existing walrus protocol (e.g. Telegram).
     Gateway,
 }
 

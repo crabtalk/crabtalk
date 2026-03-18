@@ -344,19 +344,9 @@ impl Server for Daemon {
         let registry = rt.hook.registry.as_ref();
         let mut services = Vec::new();
         if let Some(reg) = registry {
-            // Collect unique service names from all capability buckets.
+            // Collect unique service names from capability buckets.
             let mut seen = std::collections::HashSet::new();
-            let all_handles: Vec<_> = reg
-                .build_agent
-                .iter()
-                .chain(reg.before_run.iter())
-                .chain(reg.compact.iter())
-                .chain(reg.event_observer.iter())
-                .chain(reg.after_run.iter())
-                .chain(reg.after_compact.iter())
-                .chain(reg.query.values())
-                .chain(reg.tools.values())
-                .collect();
+            let all_handles: Vec<_> = reg.query.values().chain(reg.tools.values()).collect();
             for handle in all_handles {
                 let name = handle.name.to_string();
                 if !seen.insert(name.clone()) {
@@ -372,28 +362,7 @@ impl Server for Daemon {
                         Some(wcore::protocol::ext::capability::Cap::Query(_)) => {
                             Some("query".into())
                         }
-                        Some(wcore::protocol::ext::capability::Cap::BuildAgent(_)) => {
-                            Some("build_agent".into())
-                        }
-                        Some(wcore::protocol::ext::capability::Cap::BeforeRun(_)) => {
-                            Some("before_run".into())
-                        }
-                        Some(wcore::protocol::ext::capability::Cap::Compact(_)) => {
-                            Some("compact".into())
-                        }
-                        Some(wcore::protocol::ext::capability::Cap::EventObserver(_)) => {
-                            Some("event_observer".into())
-                        }
-                        Some(wcore::protocol::ext::capability::Cap::AfterRun(_)) => {
-                            Some("after_run".into())
-                        }
-                        Some(wcore::protocol::ext::capability::Cap::Infer(_)) => {
-                            Some("infer".into())
-                        }
-                        Some(wcore::protocol::ext::capability::Cap::AfterCompact(_)) => {
-                            Some("after_compact".into())
-                        }
-                        None => None,
+                        _ => None,
                     })
                     .collect();
                 services.push(wcore::protocol::message::ServiceInfoMsg {

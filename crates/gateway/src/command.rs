@@ -7,12 +7,11 @@
 pub enum BotCommand {
     HubInstall { package: String },
     HubUninstall { package: String },
-    Switch { agent: String },
 }
 
 /// Unknown command hint shown to users.
 pub const COMMAND_HINT: &str =
-    "Unknown command. Available: /hub install <pkg>, /hub uninstall <pkg>, /switch <agent>";
+    "Unknown command. Available: /hub install <pkg>, /hub uninstall <pkg>";
 
 /// Parse a message content string into a `BotCommand`.
 ///
@@ -25,10 +24,6 @@ pub fn parse_command(content: &str) -> Option<BotCommand> {
     }
 
     match first {
-        "/switch" => {
-            let agent = parts.next()?.to_owned();
-            Some(BotCommand::Switch { agent })
-        }
         "/hub" => {
             let sub = parts.next()?;
             let arg = parts.next().map(str::to_owned).unwrap_or_default();

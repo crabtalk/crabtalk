@@ -18,7 +18,6 @@ pub use config::AgentConfig;
 use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
 use futures_core::Stream;
 use futures_util::StreamExt;
-use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 pub use tool::{AsTool, ToolDescription, ToolRequest, ToolSender};
 
@@ -38,15 +37,6 @@ fn last_sender(history: &[Message]) -> compact_str::CompactString {
         .unwrap_or_default()
 }
 
-/// Callback interface for compaction hooks.
-///
-/// Allows the agent to call back to the runtime's hook during auto-compaction
-/// without requiring Agent to be generic over the Hook type.
-pub trait CompactHook: Send + Sync {
-    /// Enrich the compaction prompt before sending to the LLM.
-    fn on_compact(&self, agent: &str, prompt: &mut String);
-}
-
 /// An immutable agent definition.
 ///
 /// Generic over `M: Model` — stores the model provider alongside config,
@@ -63,8 +53,6 @@ pub struct Agent<M: Model> {
     tools: Vec<Tool>,
     /// Sender for dispatching tool calls to the runtime. None = no tools.
     tool_tx: Option<ToolSender>,
-    /// Compact hook for auto-compaction enrichment.
-    compact_hook: Option<Arc<dyn CompactHook>>,
 }
 
 impl<M: Model> Agent<M> {
