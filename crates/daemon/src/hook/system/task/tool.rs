@@ -1,29 +1,24 @@
-//! Tool dispatch, schema registration, and task watcher for task tools.
+//! Tool schemas and dispatch for delegation tools.
+//!
+//! Three tools: delegate, collect, check_tasks.
 
 use crate::daemon::event::{DaemonEvent, DaemonEventSender};
-use crate::hook::system::task::TaskStatus;
-use crate::hook::{DaemonHook, system::task::TaskRegistry};
+use crate::hook::DaemonHook;
+use crate::hook::system::task::TaskSet;
 use serde::Deserialize;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 use wcore::{
     agent::{AsTool, ToolDescription},
     model::Tool,
-    protocol::message::{
-        ClientMessage, KillMsg, SendMsg, ServerMessage, client_message, server_message,
-    },
+    protocol::message::{ClientMessage, SendMsg, ServerMessage, server_message},
 };
 
 // ── Dispatch helpers on DaemonHook ──────────────────────────────────
 
 impl DaemonHook {
-    pub(crate) async fn dispatch_spawn_task(
-        &self,
-        args: &str,
-        agent: &str,
-        parent_task_id: Option<u64>,
-    ) -> String {
-        let input: SpawnTask = match serde_json::from_str(args) {
+    pub(crate) async fn dispatch_delegate(&self, args: &str, agent: &str) -> String {
+        let input: Delegate = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
@@ -34,142 +29,74 @@ impl DaemonHook {
         {
             return format!("agent '{}' is not in your members list", input.agent);
         }
-        let registry = self.tasks.clone();
-        let mut reg = registry.lock().await;
-        let under_limit = reg.has_slot();
-        let initial_status = if under_limit {
-            TaskStatus::InProgress
-        } else {
-            TaskStatus::Queued
-        };
-        let task_id = reg.create(
-            input.agent.into(),
-            input.message.clone(),
-            agent.into(),
-            parent_task_id,
-            initial_status,
-        );
-        if under_limit {
-            let agent_name = reg.get(task_id).unwrap().agent.clone();
-            dispatch_task(
-                task_id,
-                agent_name,
-                input.message,
-                registry.clone(),
-                self.event_tx.clone(),
-                self.task_timeout,
-                &mut reg,
-            );
+
+        let mut tasks = self.tasks.lock().await;
+        let task_id = tasks.insert(input.agent.clone().into(), input.message.clone());
+
+        // Spawn agent via event channel and collect result in background.
+        let (reply_tx, reply_rx) = mpsc::unbounded_channel();
+        let msg = ClientMessage::from(SendMsg {
+            agent: input.agent,
+            content: input.message,
+            session: None,
+            sender: None,
+        });
+        let _ = self.event_tx.send(DaemonEvent::Message {
+            msg,
+            reply: reply_tx,
+        });
+
+        let tasks_arc = self.tasks.clone();
+        let event_tx = self.event_tx.clone();
+        let handle = tokio::spawn(collect_result(task_id, reply_rx, tasks_arc, event_tx));
+        if let Some(task) = tasks.get_mut(task_id) {
+            task.handle = Some(handle);
         }
-        drop(reg);
-        serde_json::json!({ "task_id": task_id, "status": initial_status.to_string() }).to_string()
+        drop(tasks);
+
+        serde_json::json!({ "task_id": task_id }).to_string()
     }
 
-    pub(crate) async fn dispatch_check_tasks(&self, args: &str) -> String {
-        let input: CheckTasks = match serde_json::from_str(args) {
-            Ok(v) => v,
-            Err(e) => return format!("invalid arguments: {e}"),
-        };
-        let status_filter = input.status.as_deref().and_then(parse_task_status);
-        let registry = self.tasks.lock().await;
-        let tasks = registry.list(
-            input.agent.as_deref(),
-            status_filter,
-            input.parent_id.map(Some),
-        );
-        let entries: Vec<serde_json::Value> = tasks
-            .iter()
-            .map(|t| {
-                serde_json::json!({
-                    "task_id": t.id,
-                    "agent": t.agent.as_str(),
-                    "status": t.status.to_string(),
-                    "description": t.description,
-                    "parent_id": t.parent_id,
-                    "result": t.result,
-                    "error": t.error,
-                    "created_by": t.created_by.as_str(),
-                    "alive_secs": t.created_at.elapsed().as_secs(),
-                    "prompt_tokens": t.prompt_tokens,
-                    "completion_tokens": t.completion_tokens,
-                })
-            })
-            .collect();
-        serde_json::to_string(&entries).unwrap_or_else(|e| format!("serialization error: {e}"))
-    }
-
-    pub(crate) async fn dispatch_ask_user(&self, args: &str, task_id: Option<u64>) -> String {
-        let input: AskUser = match serde_json::from_str(args) {
-            Ok(v) => v,
-            Err(e) => return format!("invalid arguments: {e}"),
-        };
-        let Some(tid) = task_id else {
-            return "ask_user can only be called from within a task context".to_owned();
-        };
-        let rx = {
-            let mut registry = self.tasks.lock().await;
-            match registry.block(tid, input.question) {
-                Some(rx) => rx,
-                None => return format!("task {tid} not found"),
-            }
-        };
-        match rx.await {
-            Ok(response) => response,
-            Err(_) => "user did not respond (channel closed)".to_owned(),
-        }
-    }
-
-    pub(crate) async fn dispatch_await_tasks(&self, args: &str, task_id: Option<u64>) -> String {
-        let input: AwaitTasks = match serde_json::from_str(args) {
+    pub(crate) async fn dispatch_collect(&self, args: &str) -> String {
+        let input: Collect = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
         if input.task_ids.is_empty() {
             return "no task IDs provided".to_owned();
         }
-        // Subscribe to status changes and optionally block ourselves.
-        let mut receivers = Vec::new();
+
+        // Wait for all specified tasks to complete.
+        let mut handles = Vec::new();
         {
-            let mut registry = self.tasks.lock().await;
+            let mut tasks = self.tasks.lock().await;
             for &tid in &input.task_ids {
-                match registry.subscribe_status(tid) {
-                    Some(rx) => receivers.push((tid, rx)),
-                    None => return format!("task {tid} not found"),
-                }
-            }
-            if let Some(tid) = task_id {
-                registry.set_status(tid, TaskStatus::Blocked);
-            }
-        }
-        // Wait for all tasks to reach Finished or Failed.
-        for (_, rx) in &mut receivers {
-            let mut rx = rx.clone();
-            loop {
-                let status = *rx.borrow_and_update();
-                if status == TaskStatus::Finished || status == TaskStatus::Failed {
-                    break;
-                }
-                if rx.changed().await.is_err() {
-                    break;
+                if let Some(task) = tasks.get_mut(tid)
+                    && let Some(handle) = task.handle.take()
+                {
+                    handles.push((tid, handle));
                 }
             }
         }
-        // Unblock ourselves and collect results.
-        if let Some(tid) = task_id {
-            self.tasks
-                .lock()
-                .await
-                .set_status(tid, TaskStatus::InProgress);
+
+        // Await all handles outside the lock.
+        for (tid, handle) in handles {
+            let _ = handle.await;
+            // Result is already stored by collect_result.
+            // Just ensure we waited.
+            let _ = tid;
         }
-        let registry = self.tasks.lock().await;
+
+        // Collect results.
+        let tasks = self.tasks.lock().await;
         let results: Vec<serde_json::Value> = input
             .task_ids
             .iter()
             .map(|&tid| {
-                if let Some(t) = registry.get(tid) {
+                if let Some(t) = tasks.get(tid) {
                     serde_json::json!({
                         "task_id": tid,
-                        "status": t.status.to_string(),
+                        "status": t.status(),
                         "result": t.result,
                         "error": t.error,
                     })
@@ -180,150 +107,117 @@ impl DaemonHook {
             .collect();
         serde_json::to_string(&results).unwrap_or_else(|e| format!("serialization error: {e}"))
     }
-}
 
-// ── Task dispatch and watcher (free functions) ──────────────────────
-
-/// Dispatch a task: send the message via event channel and spawn a watcher.
-/// Must be called while holding the registry lock (to set abort_handle).
-pub(crate) fn dispatch_task(
-    task_id: u64,
-    agent: compact_str::CompactString,
-    message: String,
-    registry: Arc<Mutex<TaskRegistry>>,
-    event_tx: DaemonEventSender,
-    timeout: Duration,
-    reg: &mut TaskRegistry,
-) {
-    let (reply_tx, reply_rx) = mpsc::unbounded_channel();
-    let msg = ClientMessage::from(SendMsg {
-        agent: agent.to_string(),
-        content: message,
-        session: None,
-        sender: None,
-    });
-    let _ = event_tx.send(DaemonEvent::Message {
-        msg,
-        reply: reply_tx,
-    });
-
-    let handle = tokio::spawn(task_watcher(task_id, reply_rx, registry, event_tx, timeout));
-    if let Some(task) = reg.get_mut(task_id) {
-        task.abort_handle = Some(handle.abort_handle());
+    pub(crate) async fn dispatch_check_tasks(&self, args: &str) -> String {
+        let input: CheckTasks = match serde_json::from_str(args) {
+            Ok(v) => v,
+            Err(e) => return format!("invalid arguments: {e}"),
+        };
+        let tasks = self.tasks.lock().await;
+        let all = tasks.list(16);
+        let filtered: Vec<_> = all
+            .into_iter()
+            .filter(|t| input.agent.as_deref().is_none_or(|a| t.agent == a))
+            .collect();
+        let entries: Vec<serde_json::Value> = filtered
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "task_id": t.id,
+                    "agent": t.agent.as_str(),
+                    "status": t.status(),
+                    "description": t.description,
+                    "result": t.result,
+                    "error": t.error,
+                    "alive_secs": t.created_at.elapsed().as_secs(),
+                })
+            })
+            .collect();
+        serde_json::to_string(&entries).unwrap_or_else(|e| format!("serialization error: {e}"))
     }
 }
 
-/// Promote the next queued task if a slot opened up.
-pub(crate) fn try_promote(
-    reg: &mut TaskRegistry,
-    registry: Arc<Mutex<TaskRegistry>>,
-    event_tx: DaemonEventSender,
-    timeout: Duration,
-) {
-    if let Some((id, agent, message)) = reg.promote_next() {
-        dispatch_task(id, agent, message, registry, event_tx, timeout, reg);
-    }
-}
+// ── Background result collector ─────────────────────────────────────
 
-/// Watcher task: awaits reply messages with timeout, closes session, completes task.
-async fn task_watcher(
+/// Collect the agent's response from the reply channel and store it on the task.
+async fn collect_result(
     task_id: u64,
     mut reply_rx: mpsc::UnboundedReceiver<ServerMessage>,
-    registry: Arc<Mutex<TaskRegistry>>,
+    tasks: Arc<Mutex<TaskSet>>,
     event_tx: DaemonEventSender,
-    timeout: Duration,
-) {
+) -> String {
     let mut result_content: Option<String> = None;
     let mut error_msg: Option<String> = None;
     let mut session_id: Option<u64> = None;
 
-    let collect = async {
-        while let Some(msg) = reply_rx.recv().await {
-            match msg.msg {
-                Some(server_message::Msg::Response(resp)) => {
-                    session_id = Some(resp.session);
-                    result_content = Some(resp.content);
-                }
-                Some(server_message::Msg::Error(err)) => {
-                    error_msg = Some(err.message);
-                }
-                _ => {}
+    while let Some(msg) = reply_rx.recv().await {
+        match msg.msg {
+            Some(server_message::Msg::Response(resp)) => {
+                session_id = Some(resp.session);
+                result_content = Some(resp.content);
             }
+            Some(server_message::Msg::Error(err)) => {
+                error_msg = Some(err.message);
+            }
+            _ => {}
         }
-    };
-
-    if tokio::time::timeout(timeout, collect).await.is_err() {
-        error_msg = Some("task timed out".into());
     }
 
-    // Close the task's own session.
+    // Close the agent's session.
     if let Some(sid) = session_id {
-        send_kill(&event_tx, sid);
+        let (reply_tx, _) = mpsc::unbounded_channel();
+        let _ = event_tx.send(DaemonEvent::Message {
+            msg: ClientMessage {
+                msg: Some(wcore::protocol::message::client_message::Msg::Kill(
+                    wcore::protocol::message::KillMsg { session: sid },
+                )),
+            },
+            reply: reply_tx,
+        });
     }
 
-    // Complete task, collect child sessions, promote next.
-    let mut reg = registry.lock().await;
-    let child_sessions: Vec<u64> = reg
-        .children(task_id)
-        .iter()
-        .filter(|t| t.status == TaskStatus::Finished || t.status == TaskStatus::Failed)
-        .filter_map(|t| t.session_id)
-        .collect();
-    reg.complete(task_id, result_content, error_msg);
-    try_promote(&mut reg, registry.clone(), event_tx.clone(), timeout);
-    drop(reg);
-
-    // Auto-close finished sub-task sessions outside the lock.
-    for sid in child_sessions {
-        send_kill(&event_tx, sid);
+    // Store result on the task.
+    let result = result_content.clone().unwrap_or_default();
+    let mut reg = tasks.lock().await;
+    if let Some(task) = reg.get_mut(task_id) {
+        task.session_id = session_id;
+        task.result = result_content;
+        task.error = error_msg;
     }
-}
-
-/// Send a kill message for a session.
-fn send_kill(event_tx: &DaemonEventSender, session: u64) {
-    let (reply_tx, _) = mpsc::unbounded_channel();
-    let _ = event_tx.send(DaemonEvent::Message {
-        msg: ClientMessage {
-            msg: Some(client_message::Msg::Kill(KillMsg { session })),
-        },
-        reply: reply_tx,
-    });
-}
-
-// ── Status parsing ──────────────────────────────────────────────────
-
-fn parse_task_status(s: &str) -> Option<TaskStatus> {
-    match s {
-        "queued" => Some(TaskStatus::Queued),
-        "in_progress" => Some(TaskStatus::InProgress),
-        "blocked" => Some(TaskStatus::Blocked),
-        "finished" => Some(TaskStatus::Finished),
-        "failed" => Some(TaskStatus::Failed),
-        _ => None,
-    }
+    result
 }
 
 // ── Tool schemas ────────────────────────────────────────────────────
 
 pub(crate) fn tools() -> Vec<Tool> {
     vec![
-        SpawnTask::as_tool(),
+        Delegate::as_tool(),
+        Collect::as_tool(),
         CheckTasks::as_tool(),
-        AskUser::as_tool(),
-        AwaitTasks::as_tool(),
     ]
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub(crate) struct SpawnTask {
+pub(crate) struct Delegate {
     /// Target agent name to delegate the task to.
     pub agent: String,
     /// Message/instruction for the target agent.
     pub message: String,
 }
 
-impl ToolDescription for SpawnTask {
-    const DESCRIPTION: &'static str = "Delegate an async task to another agent. Returns task_id and status (in_progress or queued). Use check_tasks to monitor progress.";
+impl ToolDescription for Delegate {
+    const DESCRIPTION: &'static str = "Delegate a task to another agent. The agent runs in an isolated context and returns a compact result. Use collect to gather results.";
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub(crate) struct Collect {
+    /// Task IDs to wait for and collect results from.
+    pub task_ids: Vec<u64>,
+}
+
+impl ToolDescription for Collect {
+    const DESCRIPTION: &'static str =
+        "Wait for delegated tasks to complete and collect their results.";
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -331,35 +225,8 @@ pub(crate) struct CheckTasks {
     /// Filter by agent name.
     #[serde(default)]
     pub agent: Option<String>,
-    /// Filter by status (queued, in_progress, blocked, finished, failed).
-    #[serde(default)]
-    pub status: Option<String>,
-    /// Filter by parent task ID.
-    #[serde(default)]
-    pub parent_id: Option<u64>,
 }
 
 impl ToolDescription for CheckTasks {
-    const DESCRIPTION: &'static str = "Query the task registry. Filterable by agent, status, parent_id. Returns up to 16 most recent tasks.";
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub(crate) struct AskUser {
-    /// Question to ask the user.
-    pub question: String,
-}
-
-impl ToolDescription for AskUser {
-    const DESCRIPTION: &'static str = "Ask the user a question. Blocks the current task until the user responds. Only works within a task context.";
-}
-
-#[derive(Deserialize, schemars::JsonSchema)]
-pub(crate) struct AwaitTasks {
-    /// Task IDs to wait for.
-    pub task_ids: Vec<u64>,
-}
-
-impl ToolDescription for AwaitTasks {
-    const DESCRIPTION: &'static str =
-        "Block until the specified tasks finish. Returns collected results for each task.";
+    const DESCRIPTION: &'static str = "List delegated tasks with their current status.";
 }

@@ -13,12 +13,12 @@ use crate::{
         mcp::McpHandler,
         os::PermissionConfig,
         skill::SkillHandler,
-        system::{memory::Memory, task::TaskRegistry},
+        system::{memory::Memory, task::TaskSet},
     },
     service::ServiceRegistry,
 };
 use compact_str::CompactString;
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
 use wcore::{AgentConfig, AgentEvent, Hook, ToolRegistry, model::Message};
 
@@ -39,7 +39,7 @@ pub(crate) struct AgentScope {
 pub struct DaemonHook {
     pub skills: SkillHandler,
     pub mcp: McpHandler,
-    pub tasks: Arc<Mutex<TaskRegistry>>,
+    pub tasks: Arc<Mutex<TaskSet>>,
     pub downloads: Arc<Mutex<DownloadRegistry>>,
     pub permissions: PermissionConfig,
     /// Whether the daemon is running as the `walrus` OS user (sandbox active).
@@ -48,8 +48,6 @@ pub struct DaemonHook {
     pub memory: Option<Memory>,
     /// Event channel for task dispatch.
     pub(crate) event_tx: DaemonEventSender,
-    /// Per-task execution timeout.
-    pub(crate) task_timeout: Duration,
     /// Per-agent scope maps, populated during load_agents.
     pub(crate) scopes: BTreeMap<CompactString, AgentScope>,
     /// Sub-agent descriptions for catalog injection into the walrus agent.
@@ -72,7 +70,7 @@ const MCP_TOOLS: &[&str] = &["search_mcp", "call_mcp_tool"];
 const MEMORY_TOOLS: &[&str] = &["recall", "remember", "memory", "forget", "soul"];
 
 /// Task delegation tools.
-const TASK_TOOLS: &[&str] = &["spawn_task", "check_tasks", "ask_user", "await_tasks"];
+const TASK_TOOLS: &[&str] = &["delegate", "collect", "check_tasks"];
 
 impl Hook for DaemonHook {
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
@@ -100,7 +98,12 @@ impl Hook for DaemonHook {
         history: &[wcore::model::Message],
     ) -> Vec<wcore::model::Message> {
         let mut messages = Vec::new();
-        if agent == wcore::paths::DEFAULT_AGENT && !self.agent_descriptions.is_empty() {
+        // Any agent with members gets the sub-agent catalog.
+        let has_members = self
+            .scopes
+            .get(agent)
+            .is_some_and(|s| !s.members.is_empty());
+        if has_members && !self.agent_descriptions.is_empty() {
             let mut block = String::from("<agents>\n");
             for (name, desc) in &self.agent_descriptions {
                 block.push_str(&format!("- {name}: {desc}\n"));
@@ -161,30 +164,6 @@ impl Hook for DaemonHook {
                     stop_reason = ?response.stop_reason,
                     "agent run complete"
                 );
-                // Track token usage on the active task for this agent.
-                let (prompt, completion) = response.steps.iter().fold((0u64, 0u64), |(p, c), s| {
-                    (
-                        p + u64::from(s.response.usage.prompt_tokens),
-                        c + u64::from(s.response.usage.completion_tokens),
-                    )
-                });
-                // try_lock: intentionally drops token counts if contended —
-                // telemetry-only, not worth blocking the event observer.
-                if (prompt > 0 || completion > 0)
-                    && let Ok(mut registry) = self.tasks.try_lock()
-                {
-                    let tid = registry
-                        .list(
-                            Some(agent),
-                            Some(system::task::TaskStatus::InProgress),
-                            None,
-                        )
-                        .first()
-                        .map(|t| t.id);
-                    if let Some(tid) = tid {
-                        registry.add_tokens(tid, prompt, completion);
-                    }
-                }
             }
         }
     }
@@ -196,14 +175,13 @@ impl DaemonHook {
     pub fn new(
         skills: SkillHandler,
         mcp: McpHandler,
-        tasks: Arc<Mutex<TaskRegistry>>,
+        tasks: Arc<Mutex<TaskSet>>,
         downloads: Arc<Mutex<DownloadRegistry>>,
         permissions: PermissionConfig,
         sandboxed: bool,
         memory: Option<Memory>,
         registry: Option<Arc<ServiceRegistry>>,
         event_tx: DaemonEventSender,
-        task_timeout: Duration,
     ) -> Self {
         Self {
             skills,
@@ -214,7 +192,6 @@ impl DaemonHook {
             sandboxed,
             memory,
             event_tx,
-            task_timeout,
             scopes: BTreeMap::new(),
             agent_descriptions: BTreeMap::new(),
             registry,
@@ -315,13 +292,7 @@ impl DaemonHook {
 
     /// Check tool permission. Returns `Some(denied_message)` if denied,
     /// `None` if allowed.
-    async fn check_perm(
-        &self,
-        name: &str,
-        args: &str,
-        agent: &str,
-        task_id: Option<u64>,
-    ) -> Option<String> {
+    fn check_perm(&self, name: &str, agent: &str) -> Option<String> {
         // OS tools bypass permission when running in sandbox mode.
         if self.sandboxed && BASE_TOOLS.contains(&name) {
             return None;
@@ -329,46 +300,17 @@ impl DaemonHook {
         use crate::hook::os::ToolPermission;
         match self.permissions.resolve(agent, name) {
             ToolPermission::Deny => Some(format!("permission denied: {name}")),
-            ToolPermission::Ask => {
-                if let Some(tid) = task_id {
-                    let summary = if args.len() > 200 {
-                        format!("{}…", &args[..200])
-                    } else {
-                        args.to_string()
-                    };
-                    let question = format!("{name}: {summary}");
-                    let rx = self.tasks.lock().await.block(tid, question);
-                    if let Some(rx) = rx {
-                        match rx.await {
-                            Ok(resp) if resp == "denied" => {
-                                return Some(format!("permission denied: {name}"));
-                            }
-                            Err(_) => {
-                                return Some(format!("permission denied: {name} (inbox dropped)"));
-                            }
-                            _ => {} // approved → proceed
-                        }
-                    }
-                }
-                // No task_id → can't block, treat as Allow.
-                None
-            }
-            ToolPermission::Allow => None,
+            // Sub-agents are autonomous — Ask treated as Allow.
+            ToolPermission::Ask | ToolPermission::Allow => None,
         }
     }
 
     /// Dispatch to an external extension service if the tool is registered.
     /// Returns `None` if the tool is not in the registry (fall through to in-process).
-    async fn dispatch_external(
-        &self,
-        name: &str,
-        args: &str,
-        agent: &str,
-        task_id: Option<u64>,
-    ) -> Option<String> {
+    async fn dispatch_external(&self, name: &str, args: &str, agent: &str) -> Option<String> {
         self.registry
             .as_ref()?
-            .dispatch_tool(name, args, agent, task_id)
+            .dispatch_tool(name, args, agent, None)
             .await
     }
 
@@ -377,14 +319,8 @@ impl DaemonHook {
     /// This is the single dispatch entry point — `event.rs` calls this
     /// and never matches on tool names itself. Unrecognised names are
     /// forwarded to the MCP bridge after a warn-level log.
-    pub async fn dispatch_tool(
-        &self,
-        name: &str,
-        args: &str,
-        agent: &str,
-        task_id: Option<u64>,
-    ) -> String {
-        if let Some(denied) = self.check_perm(name, args, agent, task_id).await {
+    pub async fn dispatch_tool(&self, name: &str, args: &str, agent: &str) -> String {
+        if let Some(denied) = self.check_perm(name, agent) {
             return denied;
         }
         // Dispatch enforcement: reject tools not in the agent's whitelist.
@@ -404,10 +340,9 @@ impl DaemonHook {
             "write" => self.dispatch_write(args).await,
             "edit" => self.dispatch_edit(args).await,
             "bash" => self.dispatch_bash(args).await,
-            "spawn_task" => self.dispatch_spawn_task(args, agent, task_id).await,
+            "delegate" => self.dispatch_delegate(args, agent).await,
+            "collect" => self.dispatch_collect(args).await,
             "check_tasks" => self.dispatch_check_tasks(args).await,
-            "ask_user" => self.dispatch_ask_user(args, task_id).await,
-            "await_tasks" => self.dispatch_await_tasks(args, task_id).await,
             "recall" => self.dispatch_recall(args).await,
             "remember" => self.dispatch_remember(args).await,
             "memory" => self.dispatch_memory(args).await,
@@ -415,7 +350,7 @@ impl DaemonHook {
             "soul" => self.dispatch_soul(args).await,
             // External extension services, then MCP bridge as final fallback.
             name => {
-                if let Some(result) = self.dispatch_external(name, args, agent, task_id).await {
+                if let Some(result) = self.dispatch_external(name, args, agent).await {
                     return result;
                 }
                 tracing::debug!(tool = name, "forwarding tool to MCP bridge");

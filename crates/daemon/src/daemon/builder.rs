@@ -11,7 +11,7 @@ use crate::{
     ext::hub::DownloadRegistry,
     hook::{
         self, DaemonHook,
-        system::{memory::Memory, task::TaskRegistry},
+        system::{memory::Memory, task::TaskSet},
     },
     service::ServiceManager,
 };
@@ -116,11 +116,7 @@ impl Daemon {
         let mcp_servers = config.mcps.values().cloned().collect::<Vec<_>>();
         let mcp_handler = hook::mcp::McpHandler::load(&mcp_servers).await;
 
-        let task_timeout = std::time::Duration::from_secs(config.system.tasks.task_timeout);
-        let tasks = Arc::new(Mutex::new(TaskRegistry::new(
-            config.system.tasks.max_concurrent,
-            config.system.tasks.viewable_window,
-        )));
+        let tasks = Arc::new(Mutex::new(TaskSet::new()));
 
         let sandboxed = detect_sandbox();
         if sandboxed {
@@ -155,7 +151,6 @@ impl Daemon {
                 memory,
                 registry,
                 event_tx.clone(),
-                task_timeout,
             ),
             service_manager,
         ))

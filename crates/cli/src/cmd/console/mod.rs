@@ -13,7 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Tabs},
 };
 use sessions::render_sessions;
-use tasks::{handle_approve_input, render_tasks};
+use tasks::render_tasks;
 use wcore::protocol::message::{SessionInfo, TaskInfo};
 
 mod sessions;
@@ -31,12 +31,9 @@ impl Console {
         let mut terminal = tui::setup()?;
         let mut state = ConsoleState {
             tab: Tab::Sessions,
-            focus: Focus::List,
             sessions,
             tasks,
             selected: 0,
-            cursor: 0,
-            edit_buf: String::new(),
             status: String::from("Ready"),
             runner,
         };
@@ -65,22 +62,13 @@ pub(crate) enum Tab {
 
 const TAB_TITLES: &[&str] = &["Sessions", "Tasks"];
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Focus {
-    List,
-    Approve,
-}
-
 // ── State ────────────────────────────────────────────────────────────
 
 pub(crate) struct ConsoleState {
     pub(crate) tab: Tab,
-    pub(crate) focus: Focus,
     pub(crate) sessions: Vec<SessionInfo>,
     pub(crate) tasks: Vec<TaskInfo>,
     pub(crate) selected: usize,
-    pub(crate) cursor: usize,
-    pub(crate) edit_buf: String,
     pub(crate) status: String,
     pub(crate) runner: Runner,
 }
@@ -121,7 +109,7 @@ async fn handle_key(
         return Ok(Some(Ok(())));
     }
 
-    if key.code == KeyCode::Tab && state.focus == Focus::List {
+    if key.code == KeyCode::Tab {
         state.tab = match state.tab {
             Tab::Sessions => Tab::Tasks,
             Tab::Tasks => Tab::Sessions,
@@ -131,13 +119,7 @@ async fn handle_key(
         return Ok(None);
     }
 
-    match state.focus {
-        Focus::List => handle_list(key, state).await,
-        Focus::Approve => {
-            handle_approve_input(key, state).await;
-            Ok(None)
-        }
-    }
+    handle_list(key, state).await
 }
 
 async fn handle_list(
@@ -183,20 +165,6 @@ async fn handle_list(
                 }
             }
             state.refresh().await;
-        }
-        KeyCode::Char('a') => {
-            // Approve a blocked task.
-            if state.tab == Tab::Tasks {
-                if let Some(t) = state.tasks.get(state.selected)
-                    && t.blocked_on.is_some()
-                {
-                    state.focus = Focus::Approve;
-                    state.edit_buf.clear();
-                    state.cursor = 0;
-                } else {
-                    state.status = String::from("Task is not blocked");
-                }
-            }
         }
         _ => {}
     }
@@ -246,37 +214,17 @@ fn render(frame: &mut Frame, state: &ConsoleState) {
 }
 
 fn render_status(frame: &mut Frame, state: &ConsoleState, area: ratatui::layout::Rect) {
-    let help = match state.focus {
-        Focus::Approve => Line::from(vec![
-            Span::styled(" Enter ", Style::default().fg(Color::Cyan)),
-            Span::raw("Send  "),
-            Span::styled("Esc ", Style::default().fg(Color::Cyan)),
-            Span::raw("Cancel  "),
-            Span::styled("| ", Style::default().fg(Color::DarkGray)),
-            Span::styled(&state.status, Style::default().fg(Color::Green)),
-        ]),
-        Focus::List => {
-            let mut spans = vec![
-                Span::styled(" Tab ", Style::default().fg(Color::Cyan)),
-                Span::raw("Switch  "),
-                Span::styled("r ", Style::default().fg(Color::Cyan)),
-                Span::raw("Refresh  "),
-                Span::styled("d ", Style::default().fg(Color::Cyan)),
-                Span::raw("Kill  "),
-            ];
-            if state.tab == Tab::Tasks {
-                spans.push(Span::styled("a ", Style::default().fg(Color::Cyan)));
-                spans.push(Span::raw("Approve  "));
-            }
-            spans.push(Span::styled("q ", Style::default().fg(Color::Cyan)));
-            spans.push(Span::raw("Quit  "));
-            spans.push(Span::styled("| ", Style::default().fg(Color::DarkGray)));
-            spans.push(Span::styled(
-                &state.status,
-                Style::default().fg(Color::Green),
-            ));
-            Line::from(spans)
-        }
-    };
-    frame.render_widget(Paragraph::new(help), area);
+    let spans = vec![
+        Span::styled(" Tab ", Style::default().fg(Color::Cyan)),
+        Span::raw("Switch  "),
+        Span::styled("r ", Style::default().fg(Color::Cyan)),
+        Span::raw("Refresh  "),
+        Span::styled("d ", Style::default().fg(Color::Cyan)),
+        Span::raw("Kill  "),
+        Span::styled("q ", Style::default().fg(Color::Cyan)),
+        Span::raw("Quit  "),
+        Span::styled("| ", Style::default().fg(Color::DarkGray)),
+        Span::styled(&state.status, Style::default().fg(Color::Green)),
+    ];
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }

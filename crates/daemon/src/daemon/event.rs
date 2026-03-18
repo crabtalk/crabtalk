@@ -52,7 +52,7 @@ impl Daemon {
             match event {
                 DaemonEvent::Message { msg, reply } => self.handle_message(msg, reply),
                 DaemonEvent::ToolCall(req) => self.handle_tool_call(req),
-                DaemonEvent::Heartbeat { agent } => self.handle_heartbeat(agent),
+                DaemonEvent::Heartbeat { .. } => {} // No-op: no queue promotion needed.
                 DaemonEvent::Shutdown => {
                     tracing::info!("event loop shutting down");
                     break;
@@ -76,22 +76,6 @@ impl Daemon {
         });
     }
 
-    /// Handle a heartbeat tick for a specific agent: promote queued tasks.
-    fn handle_heartbeat(&self, _agent: CompactString) {
-        let daemon = self.clone();
-        tokio::spawn(async move {
-            let rt = daemon.runtime.read().await.clone();
-            let tasks_arc = rt.hook.tasks.clone();
-            let mut reg = tasks_arc.lock().await;
-            crate::hook::system::task::tool::try_promote(
-                &mut reg,
-                tasks_arc.clone(),
-                rt.hook.event_tx.clone(),
-                rt.hook.task_timeout,
-            );
-        });
-    }
-
     /// Route a tool call through `DaemonHook::dispatch_tool`.
     fn handle_tool_call(&self, req: ToolRequest) {
         let runtime = self.runtime.clone();
@@ -100,7 +84,7 @@ impl Daemon {
             let rt = runtime.read().await.clone();
             let result = rt
                 .hook
-                .dispatch_tool(&req.name, &req.args, &req.agent, req.task_id)
+                .dispatch_tool(&req.name, &req.args, &req.agent)
                 .await;
             let _ = req.reply.send(result);
         });

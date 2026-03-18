@@ -123,51 +123,26 @@ impl Server for Daemon {
 
     async fn list_tasks(&self) -> Result<Vec<TaskInfo>> {
         let rt = self.runtime.read().await.clone();
-        let registry = rt.hook.tasks.lock().await;
-        let tasks = registry.list(None, None, None);
-        Ok(tasks
-            .into_iter()
-            .map(crate::hook::system::task::TaskRegistry::task_info)
-            .collect())
+        let tasks = rt.hook.tasks.lock().await;
+        Ok(tasks.list(16).iter().map(|t| t.to_info()).collect())
     }
 
     async fn kill_task(&self, task_id: u64) -> Result<bool> {
-        use crate::hook::system::task::TaskStatus;
         let rt = self.runtime.read().await.clone();
-        let tasks = rt.hook.tasks.clone();
-        let mut registry = tasks.lock().await;
-        let Some(task) = registry.get(task_id) else {
-            return Ok(false);
+        let session_id = {
+            let tasks = rt.hook.tasks.lock().await;
+            tasks.get(task_id).and_then(|t| t.session_id)
         };
-        match task.status {
-            TaskStatus::InProgress | TaskStatus::Blocked => {
-                let session_id = task.session_id;
-                registry.kill(task_id);
-                crate::hook::system::task::tool::try_promote(
-                    &mut registry,
-                    tasks.clone(),
-                    rt.hook.event_tx.clone(),
-                    rt.hook.task_timeout,
-                );
-                // Close associated session outside the lock.
-                if let Some(sid) = session_id {
-                    drop(registry);
-                    rt.close_session(sid).await;
-                }
-                Ok(true)
-            }
-            TaskStatus::Queued => {
-                registry.remove(task_id);
-                Ok(true)
-            }
-            _ => Ok(false),
+        let killed = rt.hook.tasks.lock().await.kill(task_id);
+        if killed && let Some(sid) = session_id {
+            rt.close_session(sid).await;
         }
+        Ok(killed)
     }
 
-    async fn approve_task(&self, task_id: u64, response: String) -> Result<bool> {
-        let rt = self.runtime.read().await.clone();
-        let mut registry = rt.hook.tasks.lock().await;
-        Ok(registry.approve(task_id, response))
+    async fn approve_task(&self, _task_id: u64, _response: String) -> Result<bool> {
+        // Approval system removed — sub-agents are autonomous.
+        Ok(false)
     }
 
     fn hub(
@@ -201,18 +176,8 @@ impl Server for Daemon {
     }
 
     fn subscribe_tasks(&self) -> impl futures_core::Stream<Item = Result<TaskEvent>> + Send {
-        let runtime = self.runtime.clone();
-        async_stream::try_stream! {
-            let rt = runtime.read().await.clone();
-            let mut rx = rt.hook.tasks.lock().await.subscribe();
-            loop {
-                match rx.recv().await {
-                    Ok(event) => yield event,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                }
-            }
-        }
+        // Task subscription removed — tasks are lightweight JoinHandles now.
+        futures_util::stream::empty()
     }
 
     async fn list_downloads(&self) -> Result<Vec<DownloadInfo>> {
