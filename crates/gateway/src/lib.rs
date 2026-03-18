@@ -1,7 +1,7 @@
 //! Shared gateway types for OpenWalrus platform adapters.
 //!
 //! Provides configuration, message types, daemon client, stream accumulation,
-//! and bot command parsing used by both the Telegram and Discord binaries.
+//! and bot command parsing used by the Telegram binary.
 
 use compact_str::CompactString;
 use std::{collections::HashSet, path::Path, sync::Arc};
@@ -15,7 +15,7 @@ pub mod stream;
 
 pub use client::DaemonClient;
 pub use command::{BotCommand, COMMAND_HINT, parse_command};
-pub use config::{DiscordConfig, GatewayConfig, TelegramConfig};
+pub use config::{GatewayConfig, TelegramConfig};
 pub use message::{Attachment, AttachmentKind, GatewayMessage, attachment_summary};
 pub use stream::StreamAccumulator;
 

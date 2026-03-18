@@ -21,7 +21,7 @@ use wcore::{
 
 /// Inbound event from any source, processed by the central event loop.
 pub enum DaemonEvent {
-    /// A client message from any source (socket, telegram, discord).
+    /// A client message from any source (socket, telegram).
     /// Reply channel streams `ServerMessage`s back to the caller.
     Message {
         /// The parsed client message.
