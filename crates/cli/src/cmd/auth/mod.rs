@@ -47,22 +47,32 @@ pub(crate) const PRESETS: &[Preset] = &[
     Preset {
         name: "openai",
         base_url: "https://api.openai.com/v1",
-        standard: "openai",
+        standard: "openai_compat",
     },
     Preset {
         name: "deepseek",
         base_url: "https://api.deepseek.com/v1",
-        standard: "openai",
+        standard: "openai_compat",
+    },
+    Preset {
+        name: "google",
+        base_url: "",
+        standard: "google",
     },
     Preset {
         name: "ollama",
         base_url: "http://localhost:11434/v1",
-        standard: "openai",
+        standard: "ollama",
+    },
+    Preset {
+        name: "azure",
+        base_url: "",
+        standard: "azure",
     },
     Preset {
         name: "custom",
         base_url: "",
-        standard: "openai",
+        standard: "openai_compat",
     },
 ];
 

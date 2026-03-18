@@ -201,13 +201,20 @@ fn handle_provider_editing(key: crossterm::event::KeyEvent, state: &mut AuthStat
     }
 }
 
+const STANDARDS: &[&str] = &[
+    "openai_compat",
+    "anthropic",
+    "google",
+    "bedrock",
+    "ollama",
+    "azure",
+];
+
 fn toggle_standard(state: &mut AuthState, pi: usize) {
     let p = &mut state.providers[pi];
-    p.standard = if p.standard == "anthropic" {
-        "openai".to_string()
-    } else {
-        "anthropic".to_string()
-    };
+    let cur = STANDARDS.iter().position(|s| *s == p.standard).unwrap_or(0);
+    let next = (cur + 1) % STANDARDS.len();
+    p.standard = STANDARDS[next].to_string();
     state.edit_buf = state.providers[pi].standard.clone();
     state.cursor = state.edit_buf.chars().count();
 }
