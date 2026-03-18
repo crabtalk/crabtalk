@@ -10,9 +10,9 @@ use transport::uds::{ClientConfig, Connection, WalrusClient};
 use wcore::protocol::{
     api::Client,
     message::{
-        ApproveMsg, ClientMessage, ConfigMsg, GetConfig, HubAction, HubMsg, KillMsg, KillTaskMsg,
-        SendMsg, SendResponse, ServerMessage, SessionInfo, StreamMsg, TaskInfo, client_message,
-        download_event, server_message, stream_event,
+        ClientMessage, ConfigMsg, GetConfig, HubAction, HubMsg, KillMsg, KillTaskMsg,
+        ServerMessage, SessionInfo, StreamMsg, TaskInfo, client_message, download_event,
+        server_message, stream_event,
     },
 };
 
@@ -24,8 +24,8 @@ pub enum OutputChunk {
     Thinking(String),
     /// Tool execution started with these tool calls (name, arguments JSON).
     ToolStart(Vec<(String, String)>),
-    /// Tool execution completed.
-    ToolDone,
+    /// Tool execution completed (true = success, false = failure).
+    ToolDone(bool),
 }
 
 /// Transport-agnostic connection to walrusd.
@@ -92,21 +92,6 @@ impl Runner {
         })
     }
 
-    /// Send a one-shot message and return the response content.
-    pub async fn send(&mut self, agent: &str, content: &str) -> Result<String> {
-        let resp = self
-            .transport
-            .request(ClientMessage::from(SendMsg {
-                agent: agent.to_string(),
-                content: content.to_string(),
-                session: None,
-                sender: None,
-            }))
-            .await?;
-        let resp = SendResponse::try_from(resp)?;
-        Ok(resp.content)
-    }
-
     /// Stream a response, yielding typed output chunks.
     pub fn stream<'a>(
         &'a mut self,
@@ -149,7 +134,7 @@ impl Runner {
                         }
                         Some(stream_event::Event::ToolResult(_)) => None,
                         Some(stream_event::Event::ToolsComplete(_)) => {
-                            Some(Ok(OutputChunk::ToolDone))
+                            Some(Ok(OutputChunk::ToolDone(true)))
                         }
                         Some(stream_event::Event::Start(_)) => None,
                         Some(stream_event::Event::End(_)) => None,
@@ -299,30 +284,6 @@ impl Runner {
             ServerMessage {
                 msg: Some(server_message::Msg::Config(ConfigMsg { config })),
             } => Ok(config),
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(e)),
-            } => {
-                anyhow::bail!("server error ({}): {}", e.code, e.message)
-            }
-            other => anyhow::bail!("unexpected response: {other:?}"),
-        }
-    }
-
-    /// Approve a blocked task. Returns true if the task was blocked and approved.
-    pub async fn approve_task(&mut self, task_id: u64, response: String) -> Result<bool> {
-        let msg = ClientMessage {
-            msg: Some(client_message::Msg::Approve(ApproveMsg {
-                task_id,
-                response,
-            })),
-        };
-        match self.transport.request(msg).await? {
-            ServerMessage {
-                msg: Some(server_message::Msg::Pong(_)),
-            } => Ok(true),
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(e)),
-            } if e.code == 404 => Ok(false),
             ServerMessage {
                 msg: Some(server_message::Msg::Error(e)),
             } => {
