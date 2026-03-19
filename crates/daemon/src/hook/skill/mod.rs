@@ -1,8 +1,8 @@
-//! Crabtalk skill registry — tag-indexed skill matching and prompt enrichment.
+//! Crabtalk skill registry — skill matching and prompt enrichment.
 //!
 //! Skills are named units of agent behavior loaded from Markdown files with
 //! YAML frontmatter (agentskills.io format). The [`SkillRegistry`] indexes
-//! skills by tags for dynamic discovery via `search_skill` and `load_skill`.
+//! skills for discovery via the `skill` tool.
 
 pub use {
     handler::SkillHandler,

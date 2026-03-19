@@ -58,7 +58,7 @@ pub struct DaemonHook {
 const BASE_TOOLS: &[&str] = &["bash"];
 
 /// Skill discovery/loading tools.
-const SKILL_TOOLS: &[&str] = &["search_skill", "load_skill", "save_skill"];
+const SKILL_TOOLS: &[&str] = &["skill"];
 
 /// MCP discovery/call tools.
 const MCP_TOOLS: &[&str] = &["search_mcp", "call_mcp_tool"];
@@ -99,7 +99,7 @@ impl Hook for DaemonHook {
             let skills: Vec<&str> = reg.skills().iter().map(|s| s.name.as_str()).collect();
             if !skills.is_empty() {
                 hints.push(format!(
-                    "Skills: {}. Use search_skill to find skills, load_skill to activate one.",
+                    "Skills: {}. Use the skill tool to load one by name.",
                     skills.join(", ")
                 ));
             }
@@ -387,9 +387,7 @@ impl DaemonHook {
         match name {
             "search_mcp" => self.dispatch_search_mcp(args, agent).await,
             "call_mcp_tool" => self.dispatch_call_mcp_tool(args, agent).await,
-            "search_skill" => self.dispatch_search_skill(args, agent).await,
-            "load_skill" => self.dispatch_load_skill(args, agent).await,
-            "save_skill" => self.dispatch_save_skill(args).await,
+            "skill" => self.dispatch_skill(args, agent).await,
             "bash" => self.dispatch_bash(args).await,
             "delegate" => self.dispatch_delegate(args, agent).await,
             "collect" => self.dispatch_collect(args).await,
