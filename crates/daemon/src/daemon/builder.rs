@@ -8,7 +8,6 @@
 use crate::{
     Daemon, DaemonConfig,
     daemon::event::{DaemonEvent, DaemonEventSender},
-    ext::hub::DownloadRegistry,
     hook::{
         self, DaemonHook,
         system::{memory::Memory, task::TaskSet},
@@ -16,6 +15,7 @@ use crate::{
     service::ServiceManager,
 };
 use anyhow::Result;
+use crabhub::DownloadRegistry;
 use model::ProviderRegistry;
 use std::{path::Path, sync::Arc};
 use tokio::sync::{Mutex, RwLock};

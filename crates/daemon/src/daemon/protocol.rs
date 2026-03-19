@@ -157,14 +157,14 @@ impl Server for Daemon {
             let registry = rt.hook.downloads.clone();
             match action {
                 HubAction::Install => {
-                    let s = crate::ext::hub::package::install(package, registry, filters);
+                    let s = crabhub::package::install(package, registry, filters);
                     pin_mut!(s);
                     while let Some(event) = s.next().await {
                         yield event?;
                     }
                 }
                 HubAction::Uninstall => {
-                    let s = crate::ext::hub::package::uninstall(package, registry, filters);
+                    let s = crabhub::package::uninstall(package, registry, filters);
                     pin_mut!(s);
                     while let Some(event) = s.next().await {
                         yield event?;

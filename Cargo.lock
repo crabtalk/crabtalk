@@ -385,6 +385,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
+name = "crabhub"
+version = "0.0.10"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "crabtalk-core",
+ "futures-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "toml_edit",
+ "tracing",
+]
+
+[[package]]
 name = "crabllm-core"
 version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -418,6 +434,7 @@ dependencies = [
  "async-stream",
  "clap",
  "console",
+ "crabhub",
  "crabtalk-core",
  "crabtalk-daemon",
  "crabtalk-transport",
@@ -454,6 +471,7 @@ dependencies = [
  "prost-build",
  "schemars 1.2.1",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
 ]
@@ -465,6 +483,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "chrono",
+ "crabhub",
  "crabtalk-core",
  "crabtalk-model",
  "crabtalk-transport",

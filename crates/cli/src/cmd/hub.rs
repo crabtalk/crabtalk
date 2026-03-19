@@ -3,7 +3,7 @@
 use crate::repl::runner::Runner;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
-use daemon::ext::hub::manifest::Manifest;
+use crabhub::manifest::Manifest;
 use dialoguer::{Input, theme::ColorfulTheme};
 use futures_util::StreamExt;
 use std::path::{Path, PathBuf};

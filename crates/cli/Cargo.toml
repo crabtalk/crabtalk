@@ -15,6 +15,7 @@ name = "crabtalk"
 path = "src/bin/main.rs"
 
 [dependencies]
+crabhub.workspace = true
 daemon.workspace = true
 transport.workspace = true
 wcore.workspace = true

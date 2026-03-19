@@ -8,7 +8,6 @@
 
 use crate::{
     daemon::event::DaemonEventSender,
-    ext::hub::DownloadRegistry,
     hook::{
         mcp::McpHandler,
         os::PermissionConfig,
@@ -17,6 +16,7 @@ use crate::{
     },
     service::ServiceRegistry,
 };
+use crabhub::DownloadRegistry;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
 use wcore::{AgentConfig, AgentEvent, Hook, ToolRegistry, model::Message};
