@@ -1,0 +1,22 @@
+[package]
+name = "crabhub"
+description = "Hub package management for Crabtalk"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+wcore.workspace = true
+# crates.io
+anyhow.workspace = true
+async-stream.workspace = true
+futures-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["process"] }
+toml.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true
