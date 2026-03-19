@@ -21,7 +21,6 @@ use tokio::sync::{Mutex, RwLock};
 use wcore::{AgentConfig, Runtime, ToolRequest};
 
 const SYSTEM_AGENT: &str = include_str!("../../prompts/crab.md");
-const SKILL_MASTER_AGENT: &str = include_str!("../../prompts/skill-master.md");
 
 impl Daemon {
     /// Build a fully-configured [`Daemon`] from the given config, config
@@ -171,13 +170,6 @@ impl Daemon {
             .map(|m| m.build_soul())
             .unwrap_or_else(|| SYSTEM_AGENT.to_owned());
         runtime.add_agent(crab_config);
-
-        // Built-in skill-master agent.
-        let mut skill_master = AgentConfig::new("skill-master");
-        skill_master.system_prompt = SKILL_MASTER_AGENT.to_owned();
-        skill_master.description = "Interactive skill recorder".to_owned();
-        skill_master.thinking = config.system.crab.thinking;
-        runtime.add_agent(skill_master);
 
         // Sub-agents from TOML — each must have a matching .md file.
         for (name, agent_config) in &config.agents {
