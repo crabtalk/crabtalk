@@ -47,12 +47,12 @@ impl ToolDescription for Forget {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub(crate) struct MemoryTool {
+pub(crate) struct Memory {
     /// The full content to write to MEMORY.md — your curated overview.
     pub content: String,
 }
 
-impl ToolDescription for MemoryTool {
+impl ToolDescription for Memory {
     const DESCRIPTION: &'static str = "Overwrite MEMORY.md — your curated overview injected every session. Read it before overwriting.";
 }
 
@@ -71,7 +71,7 @@ pub(crate) fn tools() -> Vec<Tool> {
         Recall::as_tool(),
         Remember::as_tool(),
         Forget::as_tool(),
-        MemoryTool::as_tool(),
+        Memory::as_tool(),
         Soul::as_tool(),
     ]
 }
@@ -111,7 +111,7 @@ impl DaemonHook {
     }
 
     pub(crate) async fn dispatch_memory(&self, args: &str) -> String {
-        let input: MemoryTool = match serde_json::from_str(args) {
+        let input: Memory = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
