@@ -67,6 +67,8 @@ pub struct MarkdownRenderer {
     first_line: bool,
     /// Stored tool labels for rewriting blinking → green/red.
     tool_labels: Vec<String>,
+    /// Number of tool result lines printed (for cursor arithmetic).
+    tool_result_lines: usize,
 }
 
 impl Default for MarkdownRenderer {
@@ -85,6 +87,7 @@ impl MarkdownRenderer {
             started: false,
             first_line: false,
             tool_labels: Vec::new(),
+            tool_result_lines: 0,
         }
     }
 
@@ -152,6 +155,23 @@ impl MarkdownRenderer {
         let _ = self.out.flush();
     }
 
+    /// Print a tool result as an indented tree under the tool labels.
+    ///
+    /// For bash results (JSON with stdout/stderr/exit_code), parse and show
+    /// stdout and stderr as separate indented sub-items. For other tools,
+    /// show the raw output indented.
+    pub fn push_tool_result(&mut self, output: &str) {
+        let indent = "    ";
+        let lines = format_tool_result(output);
+        let mut count = 0;
+        for line in &lines {
+            let _ = writeln!(self.out, "{PAD}{indent}{}", S_DIM.apply_to(line));
+            count += 1;
+        }
+        self.tool_result_lines += count;
+        let _ = self.out.flush();
+    }
+
     /// Rewrite tool lines: green `⏺` on success, red on failure.
     pub fn push_tool_done(&mut self, success: bool) {
         let count = self.tool_labels.len();
@@ -166,8 +186,8 @@ impl MarkdownRenderer {
             S_RED.apply_to("⏺")
         };
 
-        // Move cursor up to the first tool line (+1 for trailing blank line).
-        let up = count + 1;
+        // Move cursor up to the first tool line (+1 for trailing blank line + result lines).
+        let up = count + 1 + self.tool_result_lines;
         let _ = write!(self.out, "\x1b[{up}A");
         for label in &self.tool_labels {
             let _ = write!(
@@ -176,10 +196,12 @@ impl MarkdownRenderer {
                 style(label).bold().dim()
             );
         }
-        // Rewrite the trailing blank line (cursor is already on it).
-        let _ = write!(self.out, "\r{ERASE_LINE}\n");
+        // Skip past result lines and trailing blank line.
+        let skip = self.tool_result_lines + 1;
+        let _ = write!(self.out, "\x1b[{skip}B");
         let _ = self.out.flush();
         self.tool_labels.clear();
+        self.tool_result_lines = 0;
     }
 
     /// Flush remaining buffer on stream end.
@@ -416,10 +438,12 @@ pub fn welcome_banner(model: Option<&str>) -> String {
     let title = format!("  Crabtalk{model_part} — Ctrl+D to exit");
     let width = title.len().min(60);
     let rule: String = "─".repeat(width);
-    let home = wcore::paths::HOME_DIR.display();
-    let home_line = style(format!("  ~ {home}")).bold().dim();
+    let cwd = std::env::current_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "?".to_string());
+    let cwd_line = style(format!("  ~ {cwd}")).bold().dim();
     format!(
-        "{}\n{}\n{home_line}",
+        "{}\n{}\n{cwd_line}",
         S_BANNER.apply_to(&title),
         S_DIM.apply_to(format!("  {rule}")),
     )
@@ -466,6 +490,80 @@ fn find_closing(chars: &[char], start: usize, pattern: &str) -> Option<usize> {
 /// Find a single closing character in chars starting at `start`.
 fn find_closing_char(chars: &[char], start: usize, closing: char) -> Option<usize> {
     (start..chars.len()).find(|&i| chars[i] == closing)
+}
+
+/// Format tool result output for display.
+///
+/// For bash JSON results, parse and show stdout/stderr as separate lines.
+/// For other tools, show the raw output truncated.
+fn format_tool_result(output: &str) -> Vec<String> {
+    let max_lines = 10;
+    let max_line_len = 120;
+
+    // Try to parse as bash JSON result.
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(output)
+        && let (Some(stdout), Some(stderr), Some(exit_code)) = (
+            v.get("stdout").and_then(|s| s.as_str()),
+            v.get("stderr").and_then(|s| s.as_str()),
+            v.get("exit_code").and_then(|c| c.as_i64()),
+        )
+    {
+        let mut lines = Vec::new();
+        if !stdout.is_empty() {
+            for line in stdout.lines().take(max_lines) {
+                let truncated = truncate_str(line, max_line_len);
+                lines.push(truncated);
+            }
+            if stdout.lines().count() > max_lines {
+                lines.push(format!(
+                    "... ({} more lines)",
+                    stdout.lines().count() - max_lines
+                ));
+            }
+        }
+        if !stderr.is_empty() {
+            lines.push(format!(
+                "stderr: {}",
+                truncate_str(stderr.lines().next().unwrap_or(""), max_line_len)
+            ));
+            for line in stderr.lines().skip(1).take(3) {
+                lines.push(format!("  {}", truncate_str(line, max_line_len)));
+            }
+        }
+        if exit_code != 0 {
+            lines.push(format!("exit_code: {exit_code}"));
+        }
+        if lines.is_empty() {
+            lines.push("(no output)".to_string());
+        }
+        return lines;
+    }
+
+    // Generic tool result — show first few lines.
+    let mut lines: Vec<String> = output
+        .lines()
+        .take(max_lines)
+        .map(|l| truncate_str(l, max_line_len))
+        .collect();
+    if output.lines().count() > max_lines {
+        lines.push(format!(
+            "... ({} more lines)",
+            output.lines().count() - max_lines
+        ));
+    }
+    if lines.is_empty() {
+        lines.push("(no output)".to_string());
+    }
+    lines
+}
+
+/// Truncate a string to `max` characters, appending "..." if truncated.
+fn truncate_str(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max])
+    }
 }
 
 /// Format a tool label for display. For bash, show the command inline.

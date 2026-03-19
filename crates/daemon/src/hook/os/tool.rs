@@ -30,24 +30,31 @@ pub(crate) fn tools() -> Vec<Tool> {
 
 impl crate::hook::DaemonHook {
     /// Dispatch a `bash` tool call — run a command directly.
+    ///
+    /// Returns structured JSON: `{"stdout":"...","stderr":"...","exit_code":N}`.
     pub(crate) async fn dispatch_bash(&self, args: &str) -> String {
         let input: Bash = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
-        let cwd = &*wcore::paths::HOME_DIR;
-        let _ = std::fs::create_dir_all(cwd);
+        let cwd = &self.cwd;
         let mut cmd = tokio::process::Command::new(&input.command);
         cmd.args(&input.args)
             .envs(&input.env)
-            .env("HOME", cwd)
             .current_dir(cwd)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 
         let child = match cmd.spawn() {
             Ok(c) => c,
-            Err(e) => return format!("bash failed: {e}"),
+            Err(e) => {
+                return serde_json::json!({
+                    "stdout": "",
+                    "stderr": format!("bash failed: {e}"),
+                    "exit_code": -1
+                })
+                .to_string();
+            }
         };
 
         match tokio::time::timeout(std::time::Duration::from_secs(30), child.wait_with_output())
@@ -56,16 +63,26 @@ impl crate::hook::DaemonHook {
             Ok(Ok(output)) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                if stderr.is_empty() {
-                    stdout.into_owned()
-                } else if stdout.is_empty() {
-                    stderr.into_owned()
-                } else {
-                    format!("{stdout}\n{stderr}")
-                }
+                let exit_code = output.status.code().unwrap_or(-1);
+                serde_json::json!({
+                    "stdout": stdout.as_ref(),
+                    "stderr": stderr.as_ref(),
+                    "exit_code": exit_code
+                })
+                .to_string()
             }
-            Ok(Err(e)) => format!("bash failed: {e}"),
-            Err(_) => "bash timed out after 30 seconds".to_owned(),
+            Ok(Err(e)) => serde_json::json!({
+                "stdout": "",
+                "stderr": format!("bash failed: {e}"),
+                "exit_code": -1
+            })
+            .to_string(),
+            Err(_) => serde_json::json!({
+                "stdout": "",
+                "stderr": "bash timed out after 30 seconds",
+                "exit_code": -1
+            })
+            .to_string(),
         }
     }
 }

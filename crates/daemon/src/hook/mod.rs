@@ -43,6 +43,8 @@ pub struct DaemonHook {
     pub permissions: PermissionConfig,
     /// Whether the daemon is running as the `crabtalk` OS user (sandbox active).
     pub sandboxed: bool,
+    /// Working directory for agent commands (caller's cwd at daemon startup).
+    pub cwd: std::path::PathBuf,
     /// Built-in memory.
     pub memory: Option<Memory>,
     /// Event channel for task dispatch.
@@ -76,7 +78,7 @@ impl Hook for DaemonHook {
         // Inject environment context (OS, working directory, sandbox state).
         config
             .system_prompt
-            .push_str(&os::environment_block(self.sandboxed));
+            .push_str(&os::environment_block(&self.cwd, self.sandboxed));
 
         // Inject built-in memory prompt if active.
         if let Some(ref mem) = self.memory {
@@ -211,6 +213,7 @@ impl DaemonHook {
         downloads: Arc<Mutex<DownloadRegistry>>,
         permissions: PermissionConfig,
         sandboxed: bool,
+        cwd: std::path::PathBuf,
         memory: Option<Memory>,
         registry: Option<Arc<ServiceRegistry>>,
         event_tx: DaemonEventSender,
@@ -222,6 +225,7 @@ impl DaemonHook {
             downloads,
             permissions,
             sandboxed,
+            cwd,
             memory,
             event_tx,
             scopes: BTreeMap::new(),

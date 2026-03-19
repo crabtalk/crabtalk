@@ -22,7 +22,8 @@ pub static TCP_PORT_FILE: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("
 /// Logs directory (`~/.crabtalk/logs/`).
 pub static LOGS_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("logs"));
 
-/// Agent working directory (`~/.crabtalk/home/`).
+/// Fallback working directory for the system service (`~/.crabtalk/home/`).
+/// Agent commands use the daemon's actual cwd instead.
 pub static HOME_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("home"));
 
 /// Agents subdirectory (contains *.md files).

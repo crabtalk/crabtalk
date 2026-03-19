@@ -8,7 +8,7 @@ use rustyline::{
 };
 use std::{borrow::Cow, path::Path};
 
-pub const SLASH_COMMANDS: &[&str] = &["/help", "/switch"];
+pub const SLASH_COMMANDS: &[&str] = &["/help"];
 
 /// Rustyline helper providing tab-completion and highlighting for slash commands.
 #[derive(rustyline::Helper, rustyline::Hinter, rustyline::Validator)]
@@ -98,7 +98,7 @@ pub enum SlashResult {
 }
 
 /// Dispatch a slash command.
-pub async fn handle_slash(agent: &mut String, line: &str) -> Result<SlashResult> {
+pub async fn handle_slash(line: &str) -> Result<SlashResult> {
     if !line.starts_with('/') {
         return Ok(SlashResult::NotSlash);
     }
@@ -110,17 +110,9 @@ pub async fn handle_slash(agent: &mut String, line: &str) -> Result<SlashResult>
     match cmd {
         "help" => {
             println!("Available commands:");
-            println!("  /help          — show this help");
-            println!("  /switch <name> — switch active agent");
-            println!("  /<skill>       — run a skill");
+            println!("  /help    — show this help");
+            println!("  /<skill> — run a skill");
         }
-        "switch" => match _arg {
-            Some(name) if !name.is_empty() => {
-                *agent = name.to_owned();
-                println!("Switched to agent '{name}'.");
-            }
-            _ => println!("Usage: /switch <agent-name>"),
-        },
         _ => {
             // Forward to daemon for skill resolution.
             return Ok(SlashResult::Forward(line.to_owned()));

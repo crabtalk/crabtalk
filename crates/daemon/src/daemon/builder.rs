@@ -139,6 +139,8 @@ impl Daemon {
             Box::new(crate::hook::system::memory::storage::FsStorage),
         ));
 
+        let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
+
         Ok((
             DaemonHook::new(
                 skills,
@@ -147,6 +149,7 @@ impl Daemon {
                 downloads,
                 config.permissions.clone(),
                 sandboxed,
+                cwd,
                 memory,
                 registry,
                 event_tx.clone(),

@@ -24,6 +24,8 @@ pub enum OutputChunk {
     Thinking(String),
     /// Tool execution started with these tool calls (name, arguments JSON).
     ToolStart(Vec<(String, String)>),
+    /// Tool result returned (tool name, result content).
+    ToolResult(String, String),
     /// Tool execution completed (true = success, false = failure).
     ToolDone(bool),
 }
@@ -132,7 +134,9 @@ impl Runner {
                                 .collect();
                             Some(Ok(OutputChunk::ToolStart(calls)))
                         }
-                        Some(stream_event::Event::ToolResult(_)) => None,
+                        Some(stream_event::Event::ToolResult(tr)) => Some(Ok(
+                            OutputChunk::ToolResult(tr.call_id.clone(), tr.output.clone()),
+                        )),
                         Some(stream_event::Event::ToolsComplete(_)) => {
                             Some(Ok(OutputChunk::ToolDone(true)))
                         }

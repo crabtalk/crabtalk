@@ -51,36 +51,59 @@ impl ChatRepl {
         println!();
 
         let prompt = styled_prompt(&self.agent);
+        let cont_prompt = "  .. ";
         loop {
-            match self.editor.readline(&prompt) {
-                Ok(line) => {
-                    let line = line.trim().to_string();
-                    if line.is_empty() {
-                        continue;
-                    }
-                    let _ = self.editor.add_history_entry(&line);
-                    let content = match handle_slash(&mut self.agent, &line).await? {
-                        SlashResult::Handled => continue,
-                        SlashResult::NotSlash => line,
-                        SlashResult::Forward(cmd) => {
-                            // Show the slash command dimmed.
-                            println!("{}", console::style(&cmd).dim());
-                            cmd
-                        }
-                    };
-                    println!();
-                    let stream = self.runner.stream(&self.agent, &content);
-                    stream_to_terminal(stream).await?;
-                    println!();
-                }
+            let line = match self.read_input(&prompt, cont_prompt) {
+                Ok(line) => line,
                 Err(ReadlineError::Interrupted) => continue,
                 Err(ReadlineError::Eof) => break,
                 Err(e) => return Err(e.into()),
+            };
+            if line.is_empty() {
+                continue;
             }
+            let _ = self.editor.add_history_entry(&line);
+            let content = match handle_slash(&line).await? {
+                SlashResult::Handled => continue,
+                SlashResult::NotSlash => line,
+                SlashResult::Forward(cmd) => {
+                    // Show the slash command dimmed.
+                    println!("{}", console::style(&cmd).dim());
+                    cmd
+                }
+            };
+            println!();
+            let stream = self.runner.stream(&self.agent, &content);
+            stream_to_terminal(stream).await?;
+            println!();
         }
 
         self.save_history();
         Ok(())
+    }
+
+    /// Read a potentially multi-line input.
+    ///
+    /// Lines ending with `\` are continued on the next line. The backslash
+    /// is stripped and a newline is inserted in its place.
+    fn read_input(&mut self, prompt: &str, cont_prompt: &str) -> rustyline::Result<String> {
+        let mut buf = String::new();
+        let mut first = true;
+        loop {
+            let p = if first { prompt } else { cont_prompt };
+            first = false;
+            let line = self.editor.readline(p)?;
+            let trimmed = line.trim_end();
+            if let Some(prefix) = trimmed.strip_suffix('\\') {
+                buf.push_str(prefix);
+                buf.push('\n');
+            } else {
+                buf.push_str(trimmed);
+                break;
+            }
+        }
+        let result = buf.trim().to_string();
+        Ok(result)
     }
 
     /// Try to extract the model name from daemon config.
@@ -127,6 +150,9 @@ async fn stream_to_terminal(stream: impl Stream<Item = Result<OutputChunk>>) -> 
                     }
                     Some(Ok(OutputChunk::ToolStart(calls))) => {
                         renderer.push_tool_start(&calls);
+                    }
+                    Some(Ok(OutputChunk::ToolResult(_id, output))) => {
+                        renderer.push_tool_result(&output);
                     }
                     Some(Ok(OutputChunk::ToolDone(success))) => {
                         renderer.push_tool_done(success);
