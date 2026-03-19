@@ -31,12 +31,12 @@ pub struct Cli {
 }
 
 impl Cli {
-    /// Build a `RUST_LOG`-style filter string from the `-v` count on `daemon start`.
+    /// Build a `RUST_LOG`-style filter string from the `-v` count on `daemon run`.
     ///
     /// Returns `None` when no `-v` flag is present (fall back to `RUST_LOG` env).
     pub fn log_filter(&self) -> Option<&'static str> {
         if let Command::Daemon(ref d) = self.command
-            && let daemon::DaemonCommand::Start { verbose } = d.command
+            && let daemon::DaemonCommand::Run { verbose } = d.command
             && verbose > 0
         {
             Some(match verbose {
@@ -68,7 +68,6 @@ impl Cli {
         match self.command {
             Command::Auth(cmd) => cmd.run(),
             Command::Attach(cmd) => {
-                attach::ensure_providers(&socket_path).await?;
                 let runner = connect(cmd.tcp, &socket_path).await?;
                 cmd.run(runner, agent).await
             }
@@ -97,7 +96,7 @@ pub enum Command {
     Console(console::Console),
     /// Install or uninstall hub packages.
     Hub(hub::Hub),
-    /// Manage the crabtalk daemon (start, reload, install, uninstall).
+    /// Manage the crabtalk daemon (run, start, stop, reload).
     Daemon(daemon::Daemon),
     /// Manage gateways (telegram start/stop). Forwards to crabtalk-gateway.
     Gateway(gateway::Gateway),

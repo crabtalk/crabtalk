@@ -4,10 +4,9 @@ use crate::cmd::auth::PRESETS;
 use crate::repl::{ChatRepl, runner::Runner};
 use anyhow::Result;
 use clap::Args;
-use dialoguer::{Input, Select, theme::ColorfulTheme};
+use dialoguer::{Input, Password, Select, theme::ColorfulTheme};
 use std::path::Path;
 use toml_edit::{Array, DocumentMut, Item, Table, value};
-use wcore::paths::CONFIG_DIR;
 
 /// Attach to an agent and start an interactive chat REPL.
 #[derive(Args, Debug)]
@@ -26,23 +25,6 @@ impl Attach {
     }
 }
 
-/// Check if providers are configured; prompt and reload the daemon if empty.
-pub async fn ensure_providers(socket_path: &Path) -> Result<()> {
-    let config_path = CONFIG_DIR.join("crab.toml");
-    if !config_path.exists() {
-        return Ok(());
-    }
-
-    let config = ::daemon::DaemonConfig::load(&config_path)?;
-    if config.provider.is_empty() {
-        setup_provider(&config_path)?;
-        if let Ok(mut runner) = Runner::connect(socket_path).await {
-            let _ = runner.reload().await;
-        }
-    }
-    Ok(())
-}
-
 /// Interactive provider setup for first-time daemon start.
 pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
     let theme = ColorfulTheme::default();
@@ -57,9 +39,9 @@ pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
     let preset = &PRESETS[idx];
 
     let api_key = if preset.name != "ollama" {
-        let key: String = Input::with_theme(&theme)
+        let key: String = Password::with_theme(&theme)
             .with_prompt("API key")
-            .interact_text()?;
+            .interact()?;
         if key.is_empty() {
             anyhow::bail!("API key is required for {}", preset.name);
         }
@@ -76,11 +58,20 @@ pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
         preset.base_url.to_string()
     };
 
-    let default_model = default_model_for(preset.name);
-    let model: String = Input::with_theme(&theme)
-        .with_prompt("Model name")
-        .default(default_model.to_string())
-        .interact_text()?;
+    let model: String = if let Some(default) = default_model_for(preset.name) {
+        Input::with_theme(&theme)
+            .with_prompt("Model name")
+            .default(default.to_string())
+            .interact_text()?
+    } else {
+        let m: String = Input::with_theme(&theme)
+            .with_prompt("Model name")
+            .interact_text()?;
+        if m.is_empty() {
+            anyhow::bail!("model name is required");
+        }
+        m
+    };
 
     // Write to crab.toml.
     let content = std::fs::read_to_string(config_path)?;
@@ -120,13 +111,13 @@ pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn default_model_for(provider: &str) -> &str {
+fn default_model_for(provider: &str) -> Option<&str> {
     match provider {
-        "anthropic" => "claude-sonnet-4-5-20250514",
-        "openai" => "gpt-4o",
-        "google" => "gemini-2.5-pro",
-        "ollama" => "llama3",
-        "azure" => "gpt-4o",
-        _ => "default",
+        "anthropic" => Some("claude-sonnet-4-5-20250514"),
+        "openai" => Some("gpt-4o"),
+        "google" => Some("gemini-2.5-pro"),
+        "ollama" => Some("llama3"),
+        "azure" => Some("gpt-4o"),
+        _ => None,
     }
 }

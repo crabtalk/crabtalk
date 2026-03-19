@@ -8,7 +8,7 @@
     <array>
         <string>{binary}</string>
         <string>daemon</string>
-        <string>start</string>
+        <string>run</string>
         <string>-v</string>
     </array>
     <key>WorkingDirectory</key>
