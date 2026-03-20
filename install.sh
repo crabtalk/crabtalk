@@ -155,7 +155,11 @@ determine_install_dir() {
         INSTALL_DIR="$CRABTALK_INSTALL_DIR"
         return
     fi
-    INSTALL_DIR="/usr/local/bin"
+    if [ -w "/usr/local/bin" ]; then
+        INSTALL_DIR="/usr/local/bin"
+    else
+        INSTALL_DIR="${HOME}/.local/bin"
+    fi
 }
 
 has_prebuilt() {
@@ -204,19 +208,9 @@ install_binary() {
         err "expected binary '${BINARY_NAME}' not found in tarball"
     fi
 
-    # Place binary in install dir, handling permissions.
-    if [ -w "$INSTALL_DIR" ]; then
-        cp "${TMPDIR_PATH}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-        chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
-    elif confirm "use sudo to install to ${INSTALL_DIR}?"; then
-        sudo cp "${TMPDIR_PATH}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-        sudo chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
-    else
-        INSTALL_DIR="${HOME}/.local/bin"
-        mkdir -p "$INSTALL_DIR"
-        cp "${TMPDIR_PATH}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-        chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
-    fi
+    mkdir -p "$INSTALL_DIR"
+    cp "${TMPDIR_PATH}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+    chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
 
     info "installed ${BINARY_NAME} to ${INSTALL_DIR}/${BINARY_NAME}"
     rm -rf "$TMPDIR_PATH"
@@ -237,15 +231,40 @@ post_install() {
         return
     fi
 
-    # Check if the install dir is in PATH.
+    # Ensure the install dir is in PATH.
     case ":${PATH}:" in
         *":${INSTALL_DIR:-}:"*) ;;
         *)
             if [ -n "${INSTALL_DIR:-}" ]; then
+                _export_line="export PATH=\"${INSTALL_DIR}:\$PATH\""
                 echo ""
                 warn "${INSTALL_DIR} is not in your PATH"
-                info "add it with:"
-                printf "  export PATH=\"%s:\$PATH\"\n" "$INSTALL_DIR" >&2
+
+                # Detect the user's shell profile.
+                _profile=""
+                case "${SHELL:-}" in
+                    */zsh)  _profile="$HOME/.zshrc" ;;
+                    */bash)
+                        if [ -f "$HOME/.bashrc" ]; then
+                            _profile="$HOME/.bashrc"
+                        elif [ -f "$HOME/.bash_profile" ]; then
+                            _profile="$HOME/.bash_profile"
+                        fi
+                        ;;
+                    */fish) _profile="$HOME/.config/fish/config.fish" ;;
+                esac
+
+                if [ -n "$_profile" ] && confirm "add ${INSTALL_DIR} to PATH in ${_profile}?"; then
+                    echo "$_export_line" >> "$_profile"
+                    info "added to ${_profile} — restart your shell or run:"
+                    printf "  %s\n" "$_export_line" >&2
+                else
+                    info "add it manually:"
+                    printf "  %s\n" "$_export_line" >&2
+                fi
+
+                # Make it available for the rest of this script.
+                export PATH="${INSTALL_DIR}:$PATH"
                 echo "" >&2
             fi
             ;;
@@ -253,6 +272,12 @@ post_install() {
 
     echo ""
     "$BIN_PATH" --help
+
+    # Offer to start the daemon (includes auth setup on first run).
+    echo ""
+    if confirm "start the daemon now?"; then
+        "$BIN_PATH" daemon start
+    fi
 }
 
 cleanup() {
