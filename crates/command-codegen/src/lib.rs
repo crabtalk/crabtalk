@@ -62,12 +62,12 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let run_arm = match args.kind.as_str() {
         "mcp" => quote! {
-            #command_enum::Run => {
+            #command_enum::Run { .. } => {
                 crabtalk_command::run_mcp(self).await?
             }
         },
         "client" => quote! {
-            #command_enum::Run => {
+            #command_enum::Run { .. } => {
                 self.run().await?
             }
         },
@@ -96,11 +96,19 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[derive(Debug, clap::Subcommand)]
         pub enum #command_enum {
             #[doc = #start_doc]
-            Start,
+            Start {
+                /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
+                #[arg(short, long, action = clap::ArgAction::Count)]
+                verbose: u8,
+            },
             #[doc = #stop_doc]
             Stop,
             #[doc = #run_doc]
-            Run,
+            Run {
+                /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
+                #[arg(short, long, action = clap::ArgAction::Count)]
+                verbose: u8,
+            },
             #[doc = #logs_doc]
             Logs {
                 #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -115,7 +123,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
             ) -> crabtalk_command::anyhow::Result<()> {
                 use crabtalk_command::Service as _;
                 match action {
-                    #command_enum::Start => self.start()?,
+                    #command_enum::Start { verbose } => self.start(verbose)?,
                     #command_enum::Stop => self.stop()?,
                     #run_arm
                     #command_enum::Logs { tail_args } => {
@@ -129,7 +137,11 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
         impl #command_enum {
             /// Init tracing, build a tokio runtime, and run the command.
             pub fn start(self, svc: #struct_name) {
-                crabtalk_command::run(move || async move { svc.exec(self).await });
+                let verbose = match &self {
+                    Self::Run { verbose } | Self::Start { verbose } => *verbose,
+                    _ => 0,
+                };
+                crabtalk_command::run(verbose, move || async move { svc.exec(self).await });
             }
         }
     };

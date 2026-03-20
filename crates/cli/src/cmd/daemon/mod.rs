@@ -35,7 +35,11 @@ pub enum DaemonCommand {
         tail_args: Vec<String>,
     },
     /// Install and start crabtalk as a system service (launchd/systemd).
-    Start,
+    Start {
+        /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
+        #[arg(short, long, action = clap::ArgAction::Count)]
+        verbose: u8,
+    },
     /// Stop and uninstall the crabtalk system service.
     Stop,
 }
@@ -46,7 +50,7 @@ impl Daemon {
             DaemonCommand::Run { .. } => start::start().await,
             DaemonCommand::Reload => reload(socket_path).await,
             DaemonCommand::Logs { tail_args } => logs::logs(&tail_args),
-            DaemonCommand::Start => service::install(),
+            DaemonCommand::Start { verbose } => service::install(verbose.max(1)),
             DaemonCommand::Stop => service::uninstall(),
         }
     }

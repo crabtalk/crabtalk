@@ -58,7 +58,7 @@ fn ensure_config() -> anyhow::Result<()> {
 
 fn main() {
     let app = App::parse();
-    if matches!(&app.action, GatewayTelegramCommand::Start)
+    if matches!(&app.action, GatewayTelegramCommand::Start { .. })
         && let Err(e) = ensure_config()
     {
         eprintln!("Error: {e}");

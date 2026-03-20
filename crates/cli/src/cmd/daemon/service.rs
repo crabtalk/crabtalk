@@ -25,7 +25,7 @@ fn ensure_providers() -> Result<()> {
     Ok(())
 }
 
-fn render_daemon_template(template: &str) -> Result<String> {
+fn render_daemon_template(template: &str, verbose: u8) -> Result<String> {
     let binary = std::env::current_exe()?;
     let path_env = std::env::var("PATH").unwrap_or_default();
     Ok(template
@@ -33,15 +33,16 @@ fn render_daemon_template(template: &str) -> Result<String> {
         .replace("{description}", "Crabtalk Daemon")
         .replace("{log_name}", "daemon")
         .replace("{binary}", &binary.display().to_string())
+        .replace("-v", &crabtalk_command::verbose_flag(verbose))
         .replace("{logs_dir}", &LOGS_DIR.display().to_string())
         .replace("{config_dir}", &CONFIG_DIR.display().to_string())
         .replace("{path}", &path_env))
 }
 
 #[cfg(target_os = "macos")]
-pub fn install() -> Result<()> {
+pub fn install(verbose: u8) -> Result<()> {
     ensure_providers()?;
-    let rendered = render_daemon_template(LAUNCHD_TEMPLATE)?;
+    let rendered = render_daemon_template(LAUNCHD_TEMPLATE, verbose)?;
     crabtalk_command::install(&rendered, LABEL)
 }
 
@@ -51,9 +52,9 @@ pub fn uninstall() -> Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-pub fn install() -> Result<()> {
+pub fn install(verbose: u8) -> Result<()> {
     ensure_providers()?;
-    let rendered = render_daemon_template(SYSTEMD_TEMPLATE)?;
+    let rendered = render_daemon_template(SYSTEMD_TEMPLATE, verbose)?;
     crabtalk_command::install(&rendered, LABEL)
 }
 
@@ -63,7 +64,7 @@ pub fn uninstall() -> Result<()> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub fn install() -> Result<()> {
+pub fn install(_verbose: u8) -> Result<()> {
     anyhow::bail!("daemon start is only supported on macOS and Linux")
 }
 
