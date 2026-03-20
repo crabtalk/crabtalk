@@ -1,7 +1,6 @@
 //! macOS launchd service management.
 
 use crate::paths::LOGS_DIR;
-use crate::service::{ServiceParams, render_template};
 use anyhow::Result;
 
 fn launchctl_domain() -> String {
@@ -13,16 +12,14 @@ fn launchctl_domain() -> String {
     format!("gui/{uid}")
 }
 
-pub fn install(template: &str, params: &ServiceParams<'_>) -> Result<()> {
+pub fn install(rendered: &str, label: &str) -> Result<()> {
     let plist_path = dirs::home_dir()
         .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?
-        .join(format!("Library/LaunchAgents/{}.plist", params.label));
+        .join(format!("Library/LaunchAgents/{label}.plist"));
 
     if plist_path.exists() {
-        uninstall(params)?;
+        uninstall(label)?;
     }
-
-    let plist = render_template(template, params);
 
     std::fs::create_dir_all(&*LOGS_DIR)?;
 
@@ -30,7 +27,7 @@ pub fn install(template: &str, params: &ServiceParams<'_>) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
 
-    std::fs::write(&plist_path, plist)?;
+    std::fs::write(&plist_path, rendered)?;
     println!("wrote {}", plist_path.display());
 
     let output = std::process::Command::new("launchctl")
@@ -46,16 +43,16 @@ pub fn install(template: &str, params: &ServiceParams<'_>) -> Result<()> {
     Ok(())
 }
 
-pub fn uninstall(params: &ServiceParams<'_>) -> Result<()> {
+pub fn uninstall(label: &str) -> Result<()> {
     let plist_path = dirs::home_dir()
         .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?
-        .join(format!("Library/LaunchAgents/{}.plist", params.label));
+        .join(format!("Library/LaunchAgents/{label}.plist"));
 
     if !plist_path.exists() {
         anyhow::bail!("service not installed ({})", plist_path.display());
     }
 
-    let service_target = format!("{}/{}", launchctl_domain(), params.label);
+    let service_target = format!("{}/{label}", launchctl_domain());
     let status = std::process::Command::new("launchctl")
         .args(["bootout", &service_target])
         .status()?;

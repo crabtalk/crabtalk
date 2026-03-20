@@ -26,6 +26,10 @@ pub mod model;
 pub mod paths;
 pub mod protocol;
 mod runtime;
-#[cfg(feature = "service")]
 pub mod service;
 pub mod utils;
+
+#[cfg(feature = "mcp")]
+pub use axum;
+#[cfg(feature = "mcp")]
+pub use rmcp;

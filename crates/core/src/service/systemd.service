@@ -1,12 +1,12 @@
 [Unit]
-Description=Crabtalk Search MCP Server
+Description={description}
 After=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory={config_dir}
 Environment=PATH={path}
-ExecStart={binary} run
+ExecStart={binary} {subcommand} run
 Restart=always
 RestartSec=3
 

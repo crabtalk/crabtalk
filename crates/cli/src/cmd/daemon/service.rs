@@ -2,12 +2,14 @@
 
 use crate::cmd::attach::setup_provider;
 use anyhow::Result;
-use wcore::{paths::CONFIG_DIR, service::ServiceParams};
+use wcore::paths::{CONFIG_DIR, LOGS_DIR};
 
 #[cfg(target_os = "macos")]
 const LAUNCHD_TEMPLATE: &str = include_str!("launchd.plist");
 #[cfg(target_os = "linux")]
 const SYSTEMD_TEMPLATE: &str = include_str!("systemd.service");
+
+const LABEL: &str = "ai.crabtalk.crabtalk";
 
 /// Check if providers are configured; scaffold config and prompt if needed.
 fn ensure_providers() -> Result<()> {
@@ -23,47 +25,41 @@ fn ensure_providers() -> Result<()> {
     Ok(())
 }
 
-fn daemon_params() -> Result<ServiceParams<'static>> {
-    // Leak the binary path so we can return 'static refs.
-    // Only called once per process invocation.
-    let binary = Box::leak(std::env::current_exe()?.into_boxed_path());
-    let socket = Box::leak(wcore::paths::SOCKET_PATH.clone().into_boxed_path());
-    let config_path = Box::leak(CONFIG_DIR.join("crab.toml").into_boxed_path());
-    Ok(ServiceParams {
-        label: "ai.crabtalk.crabtalk",
-        description: "Crabtalk Daemon",
-        subcommand: "daemon",
-        log_name: "daemon",
-        binary,
-        socket,
-        config_path,
-    })
+fn render_daemon_template(template: &str) -> Result<String> {
+    let binary = std::env::current_exe()?;
+    let path_env = std::env::var("PATH").unwrap_or_default();
+    Ok(template
+        .replace("{label}", LABEL)
+        .replace("{description}", "Crabtalk Daemon")
+        .replace("{log_name}", "daemon")
+        .replace("{binary}", &binary.display().to_string())
+        .replace("{logs_dir}", &LOGS_DIR.display().to_string())
+        .replace("{config_dir}", &CONFIG_DIR.display().to_string())
+        .replace("{path}", &path_env))
 }
 
 #[cfg(target_os = "macos")]
 pub fn install() -> Result<()> {
     ensure_providers()?;
-    let params = daemon_params()?;
-    wcore::service::install(LAUNCHD_TEMPLATE, &params)
+    let rendered = render_daemon_template(LAUNCHD_TEMPLATE)?;
+    wcore::service::install(&rendered, LABEL)
 }
 
 #[cfg(target_os = "macos")]
 pub fn uninstall() -> Result<()> {
-    let params = daemon_params()?;
-    wcore::service::uninstall(&params)
+    wcore::service::uninstall(LABEL)
 }
 
 #[cfg(target_os = "linux")]
 pub fn install() -> Result<()> {
     ensure_providers()?;
-    let params = daemon_params()?;
-    wcore::service::install(SYSTEMD_TEMPLATE, &params)
+    let rendered = render_daemon_template(SYSTEMD_TEMPLATE)?;
+    wcore::service::install(&rendered, LABEL)
 }
 
 #[cfg(target_os = "linux")]
 pub fn uninstall() -> Result<()> {
-    let params = daemon_params()?;
-    wcore::service::uninstall(&params)
+    wcore::service::uninstall(LABEL)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]

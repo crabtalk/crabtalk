@@ -1,12 +1,10 @@
 //! Linux systemd service management.
 
 use crate::paths::LOGS_DIR;
-use crate::service::{ServiceParams, render_template};
 use anyhow::Result;
 
-pub fn install(template: &str, params: &ServiceParams<'_>) -> Result<()> {
-    let unit = render_template(template, params);
-    let unit_name = format!("{}.service", params.label);
+pub fn install(rendered: &str, label: &str) -> Result<()> {
+    let unit_name = format!("{label}.service");
 
     let unit_dir = dirs::home_dir()
         .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?
@@ -15,7 +13,7 @@ pub fn install(template: &str, params: &ServiceParams<'_>) -> Result<()> {
     std::fs::create_dir_all(&*LOGS_DIR)?;
 
     let unit_path = unit_dir.join(&unit_name);
-    std::fs::write(&unit_path, unit)?;
+    std::fs::write(&unit_path, rendered)?;
     println!("wrote {}", unit_path.display());
 
     let status = std::process::Command::new("systemctl")
@@ -29,8 +27,8 @@ pub fn install(template: &str, params: &ServiceParams<'_>) -> Result<()> {
     Ok(())
 }
 
-pub fn uninstall(params: &ServiceParams<'_>) -> Result<()> {
-    let unit_name = format!("{}.service", params.label);
+pub fn uninstall(label: &str) -> Result<()> {
+    let unit_name = format!("{label}.service");
 
     let unit_path = dirs::home_dir()
         .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?

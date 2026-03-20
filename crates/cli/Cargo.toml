@@ -18,7 +18,7 @@ path = "src/bin/main.rs"
 crabhub.workspace = true
 daemon.workspace = true
 transport.workspace = true
-wcore = { workspace = true, features = ["service"] }
+wcore.workspace = true
 
 # crates.io
 anyhow.workspace = true

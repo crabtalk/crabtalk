@@ -585,6 +585,8 @@ version = "0.0.10"
 dependencies = [
  "anyhow",
  "async-stream",
+ "axum",
+ "clap",
  "crabllm-core",
  "dirs",
  "futures-core",
@@ -592,6 +594,7 @@ dependencies = [
  "heck",
  "prost",
  "prost-build",
+ "rmcp",
  "schemars 1.2.1",
  "serde",
  "serde_json",
@@ -667,7 +670,6 @@ dependencies = [
 name = "crabtalk-search"
 version = "0.0.10"
 dependencies = [
- "anyhow",
  "axum",
  "clap",
  "crabtalk-core",

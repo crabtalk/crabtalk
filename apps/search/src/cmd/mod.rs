@@ -55,28 +55,44 @@ pub enum Command {
         init: bool,
     },
 
-    /// Install and start the search MCP server as a system service.
+    /// Manage the search MCP service.
     #[cfg(feature = "mcp")]
-    Start,
+    #[command(subcommand)]
+    Service(wcore::service::ServiceAction),
+}
 
-    /// Stop and uninstall the search MCP server system service.
-    #[cfg(feature = "mcp")]
-    Stop,
+#[cfg(feature = "mcp")]
+struct SearchService;
 
-    /// Run the search MCP server directly (used by launchd/systemd).
-    #[cfg(feature = "mcp")]
-    Run,
+#[cfg(feature = "mcp")]
+impl wcore::service::Service for SearchService {
+    fn name(&self) -> &str {
+        env!("CARGO_PKG_NAME").strip_prefix("crabtalk-").unwrap()
+    }
+    fn description(&self) -> &str {
+        env!("CARGO_PKG_DESCRIPTION")
+    }
+    fn label(&self) -> &str {
+        "ai.crabtalk.search"
+    }
+    fn subcommand(&self) -> &str {
+        "service"
+    }
+}
 
-    /// View search service logs.
-    ///
-    /// Extra flags (e.g. `-f`, `-n 100`) are passed through to `tail`.
-    /// Defaults to `-n 50` if no flags are given.
-    #[cfg(feature = "mcp")]
-    Logs {
-        /// Arguments passed through to `tail` (e.g. `-f`, `-n 100`).
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        tail_args: Vec<String>,
-    },
+#[cfg(feature = "mcp")]
+impl wcore::service::McpService for SearchService {
+    fn router(&self) -> axum::Router {
+        use crate::mcp::SearchServer;
+        use rmcp::transport::streamable_http_server::{
+            StreamableHttpService, session::local::LocalSessionManager,
+        };
+
+        let config = Default::default();
+        let service: StreamableHttpService<SearchServer, LocalSessionManager> =
+            StreamableHttpService::new(|| Ok(SearchServer::new()), Default::default(), config);
+        axum::Router::new().nest_service("/mcp", service)
+    }
 }
 
 impl App {
@@ -115,90 +131,14 @@ impl App {
                 config_cmd::run(&config, init);
             }
             #[cfg(feature = "mcp")]
-            Command::Start => {
-                cmd_start()?;
-            }
-            #[cfg(feature = "mcp")]
-            Command::Stop => {
-                cmd_stop()?;
-            }
-            #[cfg(feature = "mcp")]
-            Command::Run => {
-                cmd_run().await.map_err(|e| Error::Config(e.to_string()))?;
-            }
-            #[cfg(feature = "mcp")]
-            Command::Logs { tail_args } => {
-                wcore::service::logs("search", &tail_args)
+            Command::Service(action) => {
+                action
+                    .exec_mcp(&SearchService)
+                    .await
                     .map_err(|e| Error::Config(e.to_string()))?;
             }
         }
 
         Ok(())
     }
-}
-
-#[cfg(feature = "mcp")]
-fn cmd_start() -> Result<(), Error> {
-    use crate::service;
-
-    let binary = std::env::current_exe().map_err(|e| Error::Config(e.to_string()))?;
-    let dummy = std::path::Path::new("");
-    let params = service::ServiceParams {
-        label: "ai.crabtalk.search",
-        description: "Search MCP Server",
-        subcommand: "",
-        log_name: "search",
-        binary: &binary,
-        socket: dummy,
-        config_path: dummy,
-    };
-    service::install_search(&params).map_err(|e: anyhow::Error| Error::Config(e.to_string()))?;
-    Ok(())
-}
-
-#[cfg(feature = "mcp")]
-fn cmd_stop() -> Result<(), Error> {
-    use crate::service;
-
-    let binary = std::env::current_exe().map_err(|e| Error::Config(e.to_string()))?;
-    let dummy = std::path::Path::new("");
-    let params = service::ServiceParams {
-        label: "ai.crabtalk.search",
-        description: "Search MCP Server",
-        subcommand: "",
-        log_name: "search",
-        binary: &binary,
-        socket: dummy,
-        config_path: dummy,
-    };
-    service::uninstall(&params).map_err(|e| Error::Config(e.to_string()))?;
-
-    let port_file = wcore::paths::RUN_DIR.join("search.port");
-    let _ = std::fs::remove_file(&port_file);
-    Ok(())
-}
-
-#[cfg(feature = "mcp")]
-async fn cmd_run() -> Result<(), Box<dyn std::error::Error>> {
-    use crate::mcp::SearchServer;
-    use rmcp::transport::streamable_http_server::{
-        StreamableHttpService, session::local::LocalSessionManager,
-    };
-
-    let config = Default::default();
-    let service: StreamableHttpService<SearchServer, LocalSessionManager> =
-        StreamableHttpService::new(|| Ok(SearchServer::new()), Default::default(), config);
-
-    let router = axum::Router::new().nest_service("/mcp", service);
-    let tcp_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    let addr = tcp_listener.local_addr()?;
-
-    // Write port file to ~/.crabtalk/run/search.port
-    let run_dir = &*wcore::paths::RUN_DIR;
-    std::fs::create_dir_all(run_dir)?;
-    std::fs::write(run_dir.join("search.port"), addr.port().to_string())?;
-
-    eprintln!("MCP server listening on {addr}");
-    axum::serve(tcp_listener, router).await?;
-    Ok(())
 }

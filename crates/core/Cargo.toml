@@ -12,7 +12,8 @@ keywords.workspace = true
 
 [features]
 default = []
-service = []
+mcp = ["dep:axum", "dep:rmcp", "dep:clap"]
+client = ["dep:clap"]
 
 [dependencies]
 # crabllm
@@ -30,6 +31,10 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+# optional (service features)
+axum = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+rmcp = { workspace = true, optional = true }
 
 [build-dependencies]
 prost-build.workspace = true

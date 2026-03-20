@@ -8,7 +8,6 @@ pub mod client;
 pub mod command;
 pub mod config;
 pub mod message;
-pub mod service;
 pub mod stream;
 pub mod telegram;
 
