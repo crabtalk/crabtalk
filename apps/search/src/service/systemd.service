@@ -1,0 +1,14 @@
+[Unit]
+Description=Crabtalk Search MCP Server
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={config_dir}
+Environment=PATH={path}
+ExecStart={binary} run
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

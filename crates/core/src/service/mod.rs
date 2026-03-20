@@ -51,3 +51,31 @@ pub fn install(_template: &str, _params: &ServiceParams<'_>) -> anyhow::Result<(
 pub fn uninstall(_params: &ServiceParams<'_>) -> anyhow::Result<()> {
     anyhow::bail!("service uninstall is only supported on macOS and Linux")
 }
+
+/// View service logs by delegating to `tail`.
+///
+/// `log_name` corresponds to the `{log_name}.log` file under `~/.crabtalk/logs/`.
+/// Extra args (e.g. `-f`, `-n 100`) are passed through to `tail`.
+/// Defaults to `-n 50` if no extra args are given.
+pub fn logs(log_name: &str, tail_args: &[String]) -> anyhow::Result<()> {
+    let path = LOGS_DIR.join(format!("{log_name}.log"));
+    if !path.exists() {
+        anyhow::bail!("log file not found: {}", path.display());
+    }
+
+    let args = if tail_args.is_empty() {
+        vec!["-n".to_owned(), "50".to_owned()]
+    } else {
+        tail_args.to_vec()
+    };
+
+    let status = std::process::Command::new("tail")
+        .args(&args)
+        .arg(&path)
+        .status()
+        .map_err(|e| anyhow::anyhow!("failed to run tail: {e}"))?;
+    if !status.success() {
+        anyhow::bail!("tail exited with {status}");
+    }
+    Ok(())
+}

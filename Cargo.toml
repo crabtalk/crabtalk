@@ -21,8 +21,8 @@ wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.10" }
 wsearch = { path = "apps/search", package = "crabtalk-search", version = "0.0.10", default-features = false }
 
 # crabllm
-crabllm-core = "0.0.6"
-crabllm-provider = "0.0.6"
+crabllm-core = "0.0.7"
+crabllm-provider = "0.0.7"
 
 # crates.io
 anyhow = "1"
@@ -44,12 +44,14 @@ ratatui = "0.29"
 scraper = "0.22"
 prost = "0.13"
 prost-build = "0.13"
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
     "json",
+    "query",
     "stream",
-    "rustls-tls",
+    "rustls",
 ] }
-rmcp = { version = "0.16", features = ["client", "transport-child-process"] }
+rmcp = { version = "0.16", features = ["client", "transport-child-process", "server", "macros", "transport-streamable-http-server"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 rustyline = { version = "15", features = ["derive"] }
 schemars = "1.1.0"
 serde = { version = "1", features = ["derive"] }

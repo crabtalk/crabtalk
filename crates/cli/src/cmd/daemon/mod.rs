@@ -45,14 +45,7 @@ impl Daemon {
         match self.command {
             DaemonCommand::Run { .. } => start::start().await,
             DaemonCommand::Reload => reload(socket_path).await,
-            DaemonCommand::Logs { tail_args } => {
-                let args = if tail_args.is_empty() {
-                    vec!["-n".to_owned(), "50".to_owned()]
-                } else {
-                    tail_args
-                };
-                logs::logs(&args)
-            }
+            DaemonCommand::Logs { tail_args } => logs::logs(&tail_args),
             DaemonCommand::Start => service::install(),
             DaemonCommand::Stop => service::uninstall(),
         }

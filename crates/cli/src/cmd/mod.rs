@@ -3,13 +3,14 @@
 use crate::repl::runner::Runner;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use std::{ffi::OsString, path::PathBuf};
+use std::ffi::OsString;
 use wcore::paths::TCP_PORT_FILE;
 
 pub mod attach;
 pub mod auth;
 pub mod console;
 pub mod daemon;
+pub mod external;
 pub mod hub;
 
 /// Crabtalk CLI client — connects to crabtalk daemon via Unix domain socket.
@@ -58,7 +59,37 @@ impl Cli {
                 cmd.run(&mut runner).await
             }
             Command::Daemon(cmd) => cmd.run(&socket_path).await,
-            Command::External(args) => run_external(args),
+            Command::Ls => {
+                let run_dir = &*wcore::paths::RUN_DIR;
+                let mut found = false;
+                if let Ok(entries) = std::fs::read_dir(run_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) != Some("port") {
+                            continue;
+                        }
+                        let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
+                            continue;
+                        };
+                        if name == "crabtalk" {
+                            continue;
+                        }
+                        if let Ok(contents) = std::fs::read_to_string(&path)
+                            && let Ok(port) = contents.trim().parse::<u16>()
+                        {
+                            let alive = std::net::TcpStream::connect(("127.0.0.1", port)).is_ok();
+                            let status = if alive { "running" } else { "stale" };
+                            println!("{name}\t:{port}\t{status}");
+                            found = true;
+                        }
+                    }
+                }
+                if !found {
+                    println!("no services running");
+                }
+                Ok(())
+            }
+            Command::External(args) => external::run(args),
         }
     }
 }
@@ -76,6 +107,8 @@ pub enum Command {
     Hub(hub::Hub),
     /// Manage the crabtalk daemon (run, start, stop, reload).
     Daemon(daemon::Daemon),
+    /// List running services.
+    Ls,
     /// Forward to an external `crabtalk-{name}` binary (cargo-style).
     #[command(external_subcommand)]
     External(Vec<OsString>),
@@ -115,48 +148,4 @@ async fn connect_uds(socket_path: &std::path::Path) -> Result<Runner> {
             socket_path.display()
         )
     })
-}
-
-/// Find `crabtalk-{name}` next to the current exe or on PATH, then exec it.
-fn run_external(args: Vec<OsString>) -> Result<()> {
-    let name = args
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("no subcommand provided"))?
-        .to_string_lossy();
-    let bin_name = format!("crabtalk-{name}");
-
-    let binary = find_external_binary(&bin_name).ok_or_else(|| {
-        anyhow::anyhow!("{bin_name} not found on PATH or next to crabtalk binary")
-    })?;
-
-    let status = std::process::Command::new(&binary)
-        .args(&args[1..])
-        .status()
-        .with_context(|| format!("failed to run {}", binary.display()))?;
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
-    }
-    Ok(())
-}
-
-/// Look for an external binary next to the current exe, then on PATH.
-fn find_external_binary(name: &str) -> Option<PathBuf> {
-    if let Ok(current) = std::env::current_exe()
-        && let Some(dir) = current.parent()
-    {
-        let candidate = dir.join(name);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    let path = std::env::var("PATH").unwrap_or_default();
-    for dir in path.split(':') {
-        let candidate = PathBuf::from(dir).join(name);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    None
 }

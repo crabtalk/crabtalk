@@ -22,7 +22,7 @@ async-stream.workspace = true
 chrono.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
-rmcp.workspace = true
+rmcp = { workspace = true, features = ["transport-streamable-http-client-reqwest"] }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -18,6 +18,7 @@ required-features = ["cli"]
 [features]
 default = ["cli"]
 cli = ["dep:clap", "dep:tracing-subscriber"]
+mcp = ["dep:rmcp", "dep:schemars", "dep:axum", "dep:anyhow", "dep:wcore", "cli"]
 
 [dependencies]
 clap = { workspace = true, optional = true }
@@ -34,3 +35,8 @@ tracing.workspace = true
 tracing-subscriber = { workspace = true, optional = true }
 url.workspace = true
 percent-encoding.workspace = true
+axum = { workspace = true, optional = true }
+rmcp = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+wcore = { workspace = true, features = ["service"], optional = true }

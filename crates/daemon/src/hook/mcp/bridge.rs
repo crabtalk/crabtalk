@@ -5,7 +5,7 @@ use rmcp::{
     ServiceExt,
     model::{CallToolRequestParams, RawContent},
     service::{RoleClient, RunningService},
-    transport::TokioChildProcess,
+    transport::{StreamableHttpClientTransport, TokioChildProcess},
 };
 use std::collections::BTreeMap;
 use tokio::sync::Mutex;
@@ -63,6 +63,34 @@ impl McpBridge {
         command: tokio::process::Command,
     ) -> Result<Vec<String>> {
         let transport = TokioChildProcess::new(command)?;
+        let peer: RunningService<RoleClient, ()> = ().serve(transport).await?;
+
+        let mcp_tools = peer.list_all_tools().await?;
+        let mut tool_names = Vec::with_capacity(mcp_tools.len());
+
+        {
+            let mut cache = self.tool_cache.lock().await;
+            for mcp_tool in &mcp_tools {
+                let ct_tool = self::convert_tool(mcp_tool);
+                tool_names.push(ct_tool.name.to_string());
+                cache.insert(ct_tool.name.to_string(), ct_tool);
+            }
+        }
+
+        self.peers.lock().await.push(ConnectedPeer {
+            name,
+            peer,
+            tools: tool_names.clone(),
+        });
+
+        Ok(tool_names)
+    }
+
+    /// Connect to a named MCP server via streamable HTTP transport.
+    ///
+    /// Returns the list of tool names registered by this server.
+    pub async fn connect_http_named(&self, name: String, url: &str) -> Result<Vec<String>> {
+        let transport = StreamableHttpClientTransport::from_uri(url);
         let peer: RunningService<RoleClient, ()> = ().serve(transport).await?;
 
         let mcp_tools = peer.list_all_tools().await?;
