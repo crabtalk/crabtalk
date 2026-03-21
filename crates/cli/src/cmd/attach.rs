@@ -15,12 +15,15 @@ pub struct Attach {
     /// Reads the port from ~/.crabtalk/run/crabtalk.port.
     #[arg(long, default_missing_value = "true", num_args = 0)]
     pub tcp: bool,
+    /// Agent to attach to.
+    #[arg(long, default_value = "crab")]
+    pub agent: String,
 }
 
 impl Attach {
     /// Enter the interactive REPL with the given runner and agent.
-    pub async fn run(self, runner: Runner, agent: String) -> Result<()> {
-        let mut repl = ChatRepl::new(runner, agent)?;
+    pub async fn run(self, runner: Runner) -> Result<()> {
+        let mut repl = ChatRepl::new(runner, self.agent)?;
         repl.run().await
     }
 }

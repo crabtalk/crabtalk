@@ -48,7 +48,7 @@ impl Cli {
             Command::Auth(cmd) => cmd.run(),
             Command::Attach(cmd) => {
                 let runner = connect(cmd.tcp, &socket_path).await?;
-                cmd.run(runner, "crab".to_owned()).await
+                cmd.run(runner).await
             }
             Command::Console(cmd) => {
                 let runner = connect_uds(&socket_path).await?;
