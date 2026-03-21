@@ -150,7 +150,7 @@ pub(crate) struct AuthState {
 
 impl AuthState {
     fn load() -> Result<Self> {
-        let config_path = wcore::paths::CONFIG_DIR.join("crab.toml");
+        let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
         let mut providers = Vec::new();
         let mut active_model = String::new();
         let mut gateways = Vec::new();
@@ -279,7 +279,7 @@ impl AuthState {
     }
 
     fn save(&mut self) -> Result<()> {
-        let config_path = wcore::paths::CONFIG_DIR.join("crab.toml");
+        let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
         std::fs::create_dir_all(&*wcore::paths::CONFIG_DIR)
             .with_context(|| format!("cannot create {}", wcore::paths::CONFIG_DIR.display()))?;
 

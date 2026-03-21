@@ -48,7 +48,7 @@ impl Daemon {
     /// and `shutdown_tx`, then integrates its own channels by cloning
     /// `event_tx` and sending [`DaemonEvent::Message`] variants.
     pub async fn start(config_dir: &Path) -> Result<DaemonHandle> {
-        let config_path = config_dir.join("crab.toml");
+        let config_path = config_dir.join(wcore::paths::CONFIG_FILE);
         let config = DaemonConfig::load(&config_path)?;
         tracing::info!("loaded configuration from {}", config_path.display());
 

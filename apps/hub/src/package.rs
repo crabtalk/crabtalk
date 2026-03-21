@@ -70,7 +70,7 @@ impl HubFilter {
 /// Install a hub package.
 ///
 /// Syncs the hub repo, reads the manifest, merges MCP servers
-/// into `crab.toml`, copies skill directories into `~/.crabtalk/skills/`,
+/// into `config.toml`, copies skill directories into `~/.crabtalk/skills/`,
 /// and installs agents (prompt files + their declared skills).
 ///
 /// When `filters` is non-empty, only matching components are installed.
@@ -87,7 +87,7 @@ pub async fn install(package: &str, filters: &[String], on_step: impl Fn(&str)) 
     let (scope, name) = parse_package(package)?;
     let manifest = read_manifest(scope, name)?;
 
-    // Merge MCP servers (convert McpResource → McpServerConfig for crab.toml).
+    // Merge MCP servers (convert McpResource → McpServerConfig for config.toml).
     let wanted_mcps: Vec<_> = manifest
         .mcps
         .iter()
@@ -161,7 +161,7 @@ pub async fn install(package: &str, filters: &[String], on_step: impl Fn(&str)) 
         install_agents_filtered(scope, &wanted_agents)?;
     }
 
-    // Register commands (merge metadata into crab.toml).
+    // Register commands (merge metadata into config.toml).
     let wanted_cmds: Vec<_> = manifest
         .commands
         .iter()
@@ -178,7 +178,7 @@ pub async fn install(package: &str, filters: &[String], on_step: impl Fn(&str)) 
 /// Uninstall a hub package.
 ///
 /// Reads the manifest from the local hub repo (no network sync), removes MCP
-/// servers from `crab.toml`, deletes skill directories and agent prompt files.
+/// servers from `config.toml`, deletes skill directories and agent prompt files.
 ///
 /// When `filters` is non-empty, only matching components are removed.
 /// Progress messages are reported via `on_step`.
@@ -317,14 +317,14 @@ pub fn read_manifest(scope: &str, name: &str) -> Result<manifest::Manifest> {
     toml::from_str(&content).with_context(|| format!("invalid manifest at {}", path.display()))
 }
 
-/// Merge serializable entries into a named section of `crab.toml`.
+/// Merge serializable entries into a named section of `config.toml`.
 fn merge_section_filtered<T: serde::Serialize>(
     section: &str,
     entries: &[(&String, &T)],
 ) -> Result<()> {
     use toml_edit::DocumentMut;
 
-    let config_path = CONFIG_DIR.join("crab.toml");
+    let config_path = CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
     let content = std::fs::read_to_string(&config_path)
         .with_context(|| format!("cannot read {}", config_path.display()))?;
     let mut doc: DocumentMut = content
@@ -349,11 +349,11 @@ fn merge_section_filtered<T: serde::Serialize>(
     Ok(())
 }
 
-/// Remove keys from a TOML section in `crab.toml`.
+/// Remove keys from a TOML section in `config.toml`.
 fn remove_keys_from_section(section: &str, keys: &[&String]) -> Result<()> {
     use toml_edit::DocumentMut;
 
-    let config_path = CONFIG_DIR.join("crab.toml");
+    let config_path = CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
     let content = std::fs::read_to_string(&config_path)
         .with_context(|| format!("cannot read {}", config_path.display()))?;
     let mut doc: DocumentMut = content

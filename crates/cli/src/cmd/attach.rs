@@ -76,7 +76,7 @@ pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
         m
     };
 
-    // Write to crab.toml.
+    // Write to config.toml.
     let content = std::fs::read_to_string(config_path)?;
     let mut doc: DocumentMut = content.parse()?;
 

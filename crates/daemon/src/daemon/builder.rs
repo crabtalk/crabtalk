@@ -39,7 +39,7 @@ impl Daemon {
     /// In-flight requests that already hold a reference to the old runtime
     /// complete normally. New requests after the swap see the new runtime.
     pub async fn reload(&self) -> Result<()> {
-        let config = DaemonConfig::load(&self.config_dir.join("crab.toml"))?;
+        let config = DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
         let new_runtime = Self::build_runtime(&config, &self.config_dir, &self.event_tx).await?;
         *self.runtime.write().await = Arc::new(new_runtime);
         tracing::info!("daemon reloaded");
@@ -69,7 +69,7 @@ impl Daemon {
             .crab
             .model
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("system.crab.model is required in crab.toml"))?;
+            .ok_or_else(|| anyhow::anyhow!("system.crab.model is required in config.toml"))?;
         let registry = ProviderRegistry::from_providers(active_model.clone(), &config.provider)?;
 
         tracing::info!(

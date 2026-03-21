@@ -191,7 +191,7 @@ impl Server for Daemon {
             serde_json::from_str(&config).context("invalid DaemonConfig JSON")?;
         let toml_str =
             toml::to_string_pretty(&parsed).context("failed to serialize config to TOML")?;
-        let config_path = self.config_dir.join("crab.toml");
+        let config_path = self.config_dir.join(wcore::paths::CONFIG_FILE);
         std::fs::write(&config_path, toml_str)
             .with_context(|| format!("failed to write {}", config_path.display()))?;
         self.reload().await
@@ -221,6 +221,6 @@ impl Server for Daemon {
 impl Daemon {
     /// Load the current `DaemonConfig` from disk.
     fn load_config(&self) -> Result<crate::DaemonConfig> {
-        crate::DaemonConfig::load(&self.config_dir.join("crab.toml"))
+        crate::DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))
     }
 }

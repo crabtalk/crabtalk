@@ -7,7 +7,7 @@ pub async fn start() -> Result<()> {
     daemon::config::scaffold_config_dir(&CONFIG_DIR)?;
 
     // Check if providers are configured; prompt if empty.
-    let config_path = CONFIG_DIR.join("crab.toml");
+    let config_path = CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
     let config = daemon::DaemonConfig::load(&config_path)?;
     if config.provider.is_empty() {
         crate::cmd::attach::setup_provider(&config_path)?;

@@ -127,7 +127,7 @@ impl Hub {
             println!("Done: {pkg}");
 
             // Env var prompting + daemon reload.
-            let config_path = CONFIG_DIR.join("crab.toml");
+            let config_path = CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
             if config_path.exists() {
                 let changed = prompt_empty_env_vars(&config_path)?;
                 if changed {
@@ -193,7 +193,7 @@ fn test_manifest(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Scan `[mcps.*]` in crab.toml for empty env values,
+/// Scan `[mcps.*]` in config.toml for empty env values,
 /// prompt the user for each one, and write non-empty responses back.
 /// Returns `true` if any values were filled.
 fn prompt_empty_env_vars(config_path: &Path) -> Result<bool> {

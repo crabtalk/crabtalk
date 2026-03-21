@@ -13,7 +13,7 @@ const LABEL: &str = "ai.crabtalk.crabtalk";
 
 /// Check if providers are configured; scaffold config and prompt if needed.
 fn ensure_providers() -> Result<()> {
-    let config_path = CONFIG_DIR.join("crab.toml");
+    let config_path = CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
     if !config_path.exists() {
         ::daemon::config::scaffold_config_dir(&CONFIG_DIR)?;
     }

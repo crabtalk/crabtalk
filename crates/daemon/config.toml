@@ -64,7 +64,7 @@ soul_editable = true
 # Agents — per-agent configurations.
 #
 # Each [agents.<name>] section configures a named agent. The agent's system
-# prompt is loaded from ~/.crabtalk/agents/<name>.md.
+# prompt is loaded from ~/.crabtalk/local/agents/<name>.md.
 # ---------------------------------------------------------------------------
 
 # [agents.researcher]
