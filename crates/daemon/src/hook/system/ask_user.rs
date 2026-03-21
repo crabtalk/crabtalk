@@ -9,15 +9,38 @@ use wcore::{
     model::Tool,
 };
 
-/// Ask the user one or more questions and wait for their reply.
+/// A single option the user can choose from.
+#[derive(Deserialize, schemars::JsonSchema)]
+pub(crate) struct QuestionOption {
+    /// Concise option label (1-5 words).
+    pub label: String,
+    /// Explanation of the choice.
+    pub description: String,
+}
+
+/// A structured question with predefined options.
+#[derive(Deserialize, schemars::JsonSchema)]
+pub(crate) struct Question {
+    /// Full question text.
+    pub question: String,
+    /// Short UI title for the question (max 12 chars, e.g. "Database").
+    pub header: String,
+    /// Predefined choices for the user.
+    pub options: Vec<QuestionOption>,
+    /// Allow multiple selections.
+    #[serde(default)]
+    pub multi_select: bool,
+}
+
+/// Ask the user one or more structured questions and wait for their reply.
 #[derive(Deserialize, schemars::JsonSchema)]
 pub(crate) struct AskUser {
     /// The questions to ask the user.
-    pub questions: Vec<String>,
+    pub questions: Vec<Question>,
 }
 
 impl ToolDescription for AskUser {
-    const DESCRIPTION: &'static str = "Ask the user one or more questions and wait for their reply. Use when you need clarification or approval before proceeding.";
+    const DESCRIPTION: &'static str = r#"Ask the user one or more structured questions with predefined options. Each question needs a short UI header, the full question text, and options with labels and descriptions. The user picks from the options or types a free-text "Other" answer. Returns JSON mapping question text to selected label. For multi_select, the answer is a comma-joined string like "Option A, Option B"."#;
 }
 
 pub(crate) fn tools() -> Vec<Tool> {
@@ -50,10 +73,12 @@ impl DaemonHook {
             }
             Err(_) => {
                 self.pending_asks.lock().await.remove(&session_id);
+                let headers: Vec<&str> =
+                    input.questions.iter().map(|q| q.header.as_str()).collect();
                 format!(
                     "ask_user timed out after {}s: no reply received for: {}",
                     ASK_USER_TIMEOUT.as_secs(),
-                    input.questions.join("; "),
+                    headers.join("; "),
                 )
             }
         }

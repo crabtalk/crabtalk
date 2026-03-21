@@ -3,7 +3,7 @@
 //! Consumes `StreamEvent` messages from the daemon and builds a text buffer
 //! with inline tool call status. Used by the Telegram loop.
 
-use wcore::protocol::message::{StreamEvent, stream_event};
+use wcore::protocol::message::{AskQuestion, StreamEvent, stream_event};
 
 /// Accumulates streaming events into a renderable text buffer.
 pub struct StreamAccumulator {
@@ -17,8 +17,8 @@ pub struct StreamAccumulator {
     error: Option<String>,
     /// Whether the stream has ended.
     done: bool,
-    /// Pending questions from an `AskUserEvent`.
-    pending_questions: Option<Vec<String>>,
+    /// Pending structured questions from an `AskUserEvent`.
+    pending_questions: Option<Vec<AskQuestion>>,
 }
 
 impl Default for StreamAccumulator {
@@ -63,8 +63,8 @@ impl StreamAccumulator {
                 self.done = true;
             }
             Some(stream_event::Event::AskUser(ask)) => {
-                let formatted = ask.questions.join("\n");
-                self.tool_line = Some(format!("[question: {}]", formatted));
+                let headers: Vec<&str> = ask.questions.iter().map(|q| q.header.as_str()).collect();
+                self.tool_line = Some(format!("[question: {}]", headers.join(", ")));
                 self.pending_questions = Some(ask.questions.clone());
             }
             None => {}
@@ -92,12 +92,12 @@ impl StreamAccumulator {
     }
 
     /// Pending questions from an `AskUserEvent`, if any.
-    pub fn pending_questions(&self) -> Option<&[String]> {
+    pub fn pending_questions(&self) -> Option<&[AskQuestion]> {
         self.pending_questions.as_deref()
     }
 
     /// Take and clear the pending questions.
-    pub fn take_pending_questions(&mut self) -> Option<Vec<String>> {
+    pub fn take_pending_questions(&mut self) -> Option<Vec<AskQuestion>> {
         self.pending_questions.take()
     }
 

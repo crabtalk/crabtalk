@@ -143,7 +143,19 @@ message StreamEnd {
 }
 
 message AskUserEvent {
-  repeated string questions = 1;
+  repeated AskQuestion questions = 1;
+}
+
+message AskQuestion {
+  string question = 1;
+  string header = 2;
+  repeated AskOption options = 3;
+  bool multi_select = 4;
+}
+
+message AskOption {
+  string label = 1;
+  string description = 2;
 }
 
 message ReplyToAsk {

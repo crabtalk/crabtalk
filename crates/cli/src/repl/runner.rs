@@ -10,9 +10,9 @@ use transport::uds::{ClientConfig, Connection, CrabtalkClient};
 use wcore::protocol::{
     api::Client,
     message::{
-        AgentEventMsg, ClientMessage, ConfigMsg, GetConfig, HubAction, HubMsg, KillMsg, ReplyToAsk,
-        ServerMessage, SessionInfo, StreamMsg, SubscribeEvents, client_message, download_event,
-        server_message, stream_event,
+        AgentEventMsg, AskQuestion, ClientMessage, ConfigMsg, GetConfig, HubAction, HubMsg,
+        KillMsg, ReplyToAsk, ServerMessage, SessionInfo, StreamMsg, SubscribeEvents,
+        client_message, download_event, server_message, stream_event,
     },
 };
 
@@ -28,9 +28,9 @@ pub enum OutputChunk {
     ToolResult(String, String),
     /// Tool execution completed (true = success, false = failure).
     ToolDone(bool),
-    /// Agent is asking the user questions. Carries questions and session ID.
+    /// Agent is asking the user structured questions. Carries questions and session ID.
     AskUser {
-        questions: Vec<String>,
+        questions: Vec<AskQuestion>,
         session: u64,
     },
 }

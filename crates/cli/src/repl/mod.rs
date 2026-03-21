@@ -9,7 +9,8 @@ use anyhow::Result;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use rustyline::{Editor, config::CompletionType, error::ReadlineError, history::DefaultHistory};
-use std::{path::PathBuf, pin::pin};
+use std::{collections::HashMap, path::PathBuf, pin::pin};
+use wcore::protocol::message::AskQuestion;
 
 pub mod command;
 pub mod render;
@@ -134,18 +135,6 @@ fn history_file_path() -> Option<PathBuf> {
     Some(wcore::paths::CONFIG_DIR.join("history"))
 }
 
-/// Read a line from stdin in a blocking context.
-async fn read_stdin_line(prompt: &str) -> Result<String> {
-    let prompt = prompt.to_owned();
-    tokio::task::spawn_blocking(move || {
-        eprint!("{prompt}");
-        let mut buf = String::new();
-        std::io::stdin().read_line(&mut buf)?;
-        Ok(buf.trim().to_owned())
-    })
-    .await?
-}
-
 /// Consume a stream of output chunks and render them via `MarkdownRenderer`.
 async fn stream_to_terminal(
     stream: impl Stream<Item = Result<OutputChunk>>,
@@ -176,10 +165,7 @@ async fn stream_to_terminal(
                     Some(Ok(OutputChunk::AskUser { questions, session })) => {
                         renderer.finish();
                         println!();
-                        for q in &questions {
-                            println!("{}", console::style(q).yellow());
-                        }
-                        let reply = read_stdin_line("> ").await?;
+                        let reply = ask_user_interactive(&questions).await?;
                         if let Err(e) = send_reply(conn_info, session, reply).await {
                             eprintln!("failed to send reply: {e}");
                         }
@@ -202,4 +188,72 @@ async fn stream_to_terminal(
 
     renderer.finish();
     Ok(())
+}
+
+/// Present structured questions interactively using dialoguer.
+///
+/// Returns a JSON string mapping question text to selected label(s).
+async fn ask_user_interactive(questions: &[AskQuestion]) -> Result<String> {
+    let questions = questions.to_vec();
+    tokio::task::spawn_blocking(move || {
+        use dialoguer::{Input, MultiSelect, Select, theme::ColorfulTheme};
+
+        let theme = ColorfulTheme::default();
+        let mut answers: HashMap<String, String> = HashMap::new();
+
+        for q in &questions {
+            println!("{}", console::style(&q.header).bold().cyan());
+            println!("{}", console::style(&q.question).yellow());
+
+            // Build item labels: "label — description"
+            let mut items: Vec<String> = q
+                .options
+                .iter()
+                .map(|o| {
+                    if o.description.is_empty() {
+                        o.label.clone()
+                    } else {
+                        format!("{} — {}", o.label, o.description)
+                    }
+                })
+                .collect();
+            items.push("Other".to_string());
+
+            if q.multi_select {
+                let selections = MultiSelect::with_theme(&theme).items(&items).interact()?;
+
+                let other_idx = items.len() - 1;
+                if selections.contains(&other_idx) {
+                    let text: String = Input::with_theme(&theme)
+                        .with_prompt("Your answer")
+                        .interact_text()?;
+                    answers.insert(q.question.clone(), text);
+                } else {
+                    let labels: Vec<&str> = selections
+                        .iter()
+                        .map(|&i| q.options[i].label.as_str())
+                        .collect();
+                    answers.insert(q.question.clone(), labels.join(", "));
+                }
+            } else {
+                let selection = Select::with_theme(&theme)
+                    .items(&items)
+                    .default(0)
+                    .interact()?;
+
+                let other_idx = items.len() - 1;
+                if selection == other_idx {
+                    let text: String = Input::with_theme(&theme)
+                        .with_prompt("Your answer")
+                        .interact_text()?;
+                    answers.insert(q.question.clone(), text);
+                } else {
+                    answers.insert(q.question.clone(), q.options[selection].label.clone());
+                }
+            }
+        }
+
+        Ok(serde_json::to_string(&answers)?)
+    })
+    .await?
 }

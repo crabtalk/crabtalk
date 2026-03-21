@@ -8,7 +8,7 @@ pub use gateway::*;
 
 use futures_util::StreamExt;
 use teloxide::prelude::*;
-use teloxide::types::{ChatKind, UpdateKind};
+use teloxide::types::{CallbackQuery, ChatKind, UpdateKind};
 use teloxide::update_listeners::{AsUpdateStream, polling_default};
 use tokio::sync::mpsc;
 
@@ -37,10 +37,40 @@ pub async fn poll_loop(bot: Bot, tx: mpsc::UnboundedSender<GatewayMessage>) {
 
 /// Convert a teloxide `Update` to a `GatewayMessage`.
 fn convert_update(update: Update) -> Option<GatewayMessage> {
-    let UpdateKind::Message(msg) = update.kind else {
-        return None;
-    };
+    match update.kind {
+        UpdateKind::CallbackQuery(cq) => convert_callback_query(cq),
+        UpdateKind::Message(msg) => convert_message(msg),
+        _ => None,
+    }
+}
 
+/// Convert a `CallbackQuery` into a `GatewayMessage` carrying callback data as content.
+fn convert_callback_query(cq: CallbackQuery) -> Option<GatewayMessage> {
+    let data = cq.data?;
+    let msg_ref = cq.message?;
+    let chat = msg_ref.chat().clone();
+    let msg_id = msg_ref.id();
+    let sender_id = cq.from.id.0 as i64;
+    let sender_name = cq.from.first_name.clone();
+    let is_bot = cq.from.is_bot;
+    let is_group = matches!(chat.kind, ChatKind::Public(_));
+
+    Some(GatewayMessage {
+        chat_id: chat.id.0,
+        message_id: msg_id.0 as i64,
+        sender_id,
+        sender_name,
+        is_bot,
+        is_group,
+        content: data,
+        attachments: Vec::new(),
+        reply_to: None,
+        timestamp: 0,
+    })
+}
+
+/// Convert a regular `Message` update into a `GatewayMessage`.
+fn convert_message(msg: teloxide::types::Message) -> Option<GatewayMessage> {
     let chat_id = msg.chat.id.0;
     let sender = msg.from.as_ref();
     let sender_id = sender.map(|u| u.id.0 as i64).unwrap_or(0);

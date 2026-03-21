@@ -8,9 +8,10 @@ use wcore::AgentEvent;
 use wcore::protocol::{
     api::Server,
     message::{
-        AgentEventMsg, AskUserEvent, DownloadEvent, DownloadInfo, HubAction, SendMsg, SendResponse,
-        SessionInfo, StreamChunk, StreamEnd, StreamEvent, StreamMsg, StreamStart, StreamThinking,
-        ToolCallInfo, ToolResultEvent, ToolStartEvent, ToolsCompleteEvent, stream_event,
+        AgentEventMsg, AskOption, AskQuestion, AskUserEvent, DownloadEvent, DownloadInfo,
+        HubAction, SendMsg, SendResponse, SessionInfo, StreamChunk, StreamEnd, StreamEvent,
+        StreamMsg, StreamStart, StreamThinking, ToolCallInfo, ToolResultEvent, ToolStartEvent,
+        ToolsCompleteEvent, stream_event,
     },
 };
 
@@ -64,8 +65,8 @@ impl Server for Daemon {
                         yield StreamEvent { event: Some(stream_event::Event::Thinking(StreamThinking { content: text })) };
                     }
                     AgentEvent::ToolCallsStart(calls) => {
-                        // Extract questions from ask_user calls.
-                        let ask_questions: Vec<String> = calls
+                        // Extract structured questions from ask_user calls.
+                        let ask_questions: Vec<AskQuestion> = calls
                             .iter()
                             .filter(|c| c.function.name == "ask_user")
                             .filter_map(|c| {
@@ -73,6 +74,15 @@ impl Server for Daemon {
                                     .ok()
                             })
                             .flat_map(|a| a.questions)
+                            .map(|q| AskQuestion {
+                                question: q.question,
+                                header: q.header,
+                                options: q.options.into_iter().map(|o| AskOption {
+                                    label: o.label,
+                                    description: o.description,
+                                }).collect(),
+                                multi_select: q.multi_select,
+                            })
                             .collect();
 
                         yield StreamEvent { event: Some(stream_event::Event::ToolStart(ToolStartEvent {

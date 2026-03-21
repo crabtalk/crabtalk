@@ -6,10 +6,10 @@ use crate::{
 };
 use std::{collections::HashMap, path::Path, sync::Arc};
 use teloxide::prelude::*;
-use teloxide::types::ChatAction;
+use teloxide::types::{ChatAction, InlineKeyboardButton, InlineKeyboardMarkup};
 use tokio::sync::mpsc;
 use wcore::protocol::message::{
-    ClientMessage, ReplyToAsk, ServerMessage, StreamMsg, server_message,
+    AskQuestion, ClientMessage, ReplyToAsk, ServerMessage, StreamMsg, server_message,
 };
 
 /// Run the Telegram gateway service.
@@ -277,6 +277,8 @@ async fn tg_stream(
     let mut last_sent_len: usize = 0;
     let mut debounce = tokio::time::interval(Duration::from_millis(1500));
     debounce.reset();
+    let mut pending_ask_questions: Option<Vec<AskQuestion>> = None;
+    let mut multi_select_state: HashMap<usize, Vec<usize>> = HashMap::new();
 
     let typing_bot = bot.clone();
     let typing_handle = tokio::spawn(async move {
@@ -299,9 +301,8 @@ async fn tg_stream(
                     Some(ServerMessage { msg: Some(server_message::Msg::Stream(event)) }) => {
                         acc.push(&event);
 
-                        // When ask_user fires, flush text immediately so the
-                        // question is visible in the chat.
-                        if acc.pending_questions().is_some() {
+                        // When ask_user fires, flush text and send inline keyboard.
+                        if let Some(questions) = acc.take_pending_questions() {
                             let rendered = acc.render();
                             if !rendered.is_empty() && rendered.len() != last_sent_len {
                                 let reply_to = is_group.then_some(teloxide::types::MessageId(reply_to_msg_id as i32));
@@ -319,6 +320,19 @@ async fn tg_stream(
                                     }
                                 }
                             }
+                            // Send each question with an inline keyboard.
+                            for (qi, q) in questions.iter().enumerate() {
+                                let keyboard = build_ask_keyboard(qi, q);
+                                let text = format!("📋 {}\n{}", q.header, q.question);
+                                if let Err(e) = bot
+                                    .send_message(ChatId(chat_id), text)
+                                    .reply_markup(keyboard)
+                                    .await
+                                {
+                                    tracing::warn!(agent, "failed to send ask keyboard: {e}");
+                                }
+                            }
+                            pending_ask_questions = Some(questions);
                         }
 
                         if acc.is_done() {
@@ -335,17 +349,37 @@ async fn tg_stream(
             }
             reply = reply_rx.recv() => {
                 if let Some(reply_content) = reply
-                    && acc.pending_questions().is_some()
+                    && let Some(ref questions) = pending_ask_questions
                 {
-                    // Forward the reply to the daemon as ReplyToAsk.
-                    if let Some(session_id) = acc.session() {
-                        let reply_msg = ClientMessage::from(ReplyToAsk {
-                            session: session_id,
-                            content: reply_content,
-                        });
-                        let _ = client.send(reply_msg).await;
+                    // Try to parse as callback data: "ask:qi:oi" or "ask:qi:done"
+                    let resolved = if reply_content.starts_with("ask:") {
+                        handle_ask_callback(
+                            &reply_content,
+                            questions,
+                            &mut multi_select_state,
+                            bot,
+                            ChatId(chat_id),
+                        ).await
+                    } else {
+                        // Raw text reply — use as-is for the first question.
+                        let mut answers = HashMap::new();
+                        if let Some(q) = questions.first() {
+                            answers.insert(q.question.clone(), reply_content);
+                        }
+                        Some(serde_json::to_string(&answers).unwrap_or_default())
+                    };
+
+                    if let Some(json_reply) = resolved {
+                        if let Some(session_id) = acc.session() {
+                            let reply_msg = ClientMessage::from(ReplyToAsk {
+                                session: session_id,
+                                content: json_reply,
+                            });
+                            let _ = client.send(reply_msg).await;
+                        }
+                        pending_ask_questions = None;
+                        multi_select_state.clear();
                     }
-                    acc.take_pending_questions();
                 }
             }
             _ = debounce.tick() => {
@@ -417,5 +451,106 @@ async fn tg_stream(
     match acc.session() {
         Some(session_id) => StreamResult::Ok { session_id },
         None => StreamResult::Failed,
+    }
+}
+
+/// Build an inline keyboard for a single question.
+fn build_ask_keyboard(question_idx: usize, q: &AskQuestion) -> InlineKeyboardMarkup {
+    let mut rows: Vec<Vec<InlineKeyboardButton>> = q
+        .options
+        .iter()
+        .enumerate()
+        .map(|(oi, opt)| {
+            vec![InlineKeyboardButton::callback(
+                opt.label.clone(),
+                format!("ask:{question_idx}:{oi}"),
+            )]
+        })
+        .collect();
+
+    if q.multi_select {
+        rows.push(vec![InlineKeyboardButton::callback(
+            "✓ Done".to_string(),
+            format!("ask:{question_idx}:done"),
+        )]);
+    }
+
+    rows.push(vec![InlineKeyboardButton::callback(
+        "Other…".to_string(),
+        format!("ask:{question_idx}:other"),
+    )]);
+
+    InlineKeyboardMarkup::new(rows)
+}
+
+/// Handle an ask callback like "ask:0:1" or "ask:0:done" or "ask:0:other".
+///
+/// Returns `Some(json_reply)` when the answer is complete (single select picked,
+/// or multi-select "Done" pressed). Returns `None` when toggling a multi-select
+/// option (waiting for "Done").
+async fn handle_ask_callback(
+    data: &str,
+    questions: &[AskQuestion],
+    multi_state: &mut HashMap<usize, Vec<usize>>,
+    bot: &Bot,
+    chat_id: ChatId,
+) -> Option<String> {
+    let parts: Vec<&str> = data.split(':').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+
+    let qi: usize = parts[1].parse().ok()?;
+    let q = questions.get(qi)?;
+
+    if parts[2] == "other" {
+        // Ask the user to type a reply. For now, signal that we need free text.
+        if let Err(e) = bot.send_message(chat_id, "Please type your answer:").await {
+            tracing::warn!("failed to send other prompt: {e}");
+        }
+        return None;
+    }
+
+    if parts[2] == "done" {
+        // Multi-select done — build the answer.
+        let selected = multi_state.remove(&qi).unwrap_or_default();
+        let labels: Vec<&str> = selected
+            .iter()
+            .filter_map(|&i| q.options.get(i).map(|o| o.label.as_str()))
+            .collect();
+        let mut answers = HashMap::new();
+        answers.insert(q.question.clone(), labels.join(", "));
+        return Some(serde_json::to_string(&answers).unwrap_or_default());
+    }
+
+    let oi: usize = parts[2].parse().ok()?;
+
+    if q.multi_select {
+        // Toggle the option.
+        let entry = multi_state.entry(qi).or_default();
+        if let Some(pos) = entry.iter().position(|&i| i == oi) {
+            entry.remove(pos);
+        } else {
+            entry.push(oi);
+        }
+        // Acknowledge the toggle.
+        if let Some(opt) = q.options.get(oi) {
+            let selected = entry.contains(&oi);
+            let mark = if selected { "☑" } else { "☐" };
+            let _ = bot
+                .send_message(chat_id, format!("{mark} {}", opt.label))
+                .await;
+        }
+        None
+    } else {
+        // Single select — answer immediately.
+        let label = q
+            .options
+            .get(oi)
+            .map(|o| o.label.clone())
+            .unwrap_or_default();
+        let mut answers = HashMap::new();
+        answers.insert(q.question.clone(), label);
+        Some(serde_json::to_string(&answers).unwrap_or_default())
     }
 }

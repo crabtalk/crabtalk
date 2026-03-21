@@ -725,6 +725,7 @@ dependencies = [
  "crabtalk-transport",
  "dialoguer",
  "futures-util",
+ "serde_json",
  "teloxide",
  "tokio",
  "tracing",
