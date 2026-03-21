@@ -65,19 +65,6 @@ async fn spawn_telegram(
         }
     }
 
-    // Register slash commands so they appear in the Telegram UI.
-    use teloxide::types::BotCommand as TgCommand;
-    let commands = vec![TgCommand::new(
-        "hub",
-        "Manage hub packages (install/uninstall)",
-    )];
-    if let Err(e) = bot.set_my_commands(commands).await {
-        tracing::warn!(
-            platform = "telegram",
-            "failed to register bot commands: {e}"
-        );
-    }
-
     let (tx, rx) = mpsc::unbounded_channel::<GatewayMessage>();
 
     let poll_bot = bot.clone();

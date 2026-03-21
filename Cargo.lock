@@ -714,7 +714,6 @@ version = "0.0.11"
 dependencies = [
  "anyhow",
  "clap",
- "crabhub",
  "crabtalk-command",
  "crabtalk-core",
  "crabtalk-gateway",

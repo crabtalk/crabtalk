@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use wcore::CommandConfig;
 
 /// Crabtalk resource manifest.
 #[derive(Serialize, Deserialize)]
@@ -128,4 +127,15 @@ pub struct AgentResource {
     /// Skill keys from `[skills.*]` in the same manifest to auto-install
     #[serde(default)]
     pub skills: Vec<String>,
+}
+
+/// Command service metadata for hub registration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandConfig {
+    /// Human-readable description.
+    pub description: String,
+    /// Executable name (resolved via PATH) or absolute path.
+    pub binary: String,
+    /// Clap subcommand with start/stop/run/logs actions.
+    pub subcommand: String,
 }
