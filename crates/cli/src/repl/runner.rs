@@ -10,9 +10,9 @@ use transport::uds::{ClientConfig, Connection, CrabtalkClient};
 use wcore::protocol::{
     api::Client,
     message::{
-        AgentEventMsg, AskQuestion, ClientMessage, ConfigMsg, GetConfig, HubAction, HubMsg,
-        KillMsg, ReplyToAsk, ServerMessage, SessionInfo, StreamMsg, SubscribeEvents,
-        client_message, download_event, server_message, stream_event,
+        AgentEventMsg, AskQuestion, ClientMessage, ConfigMsg, GetConfig, KillMsg, ReplyToAsk,
+        ServerMessage, SessionInfo, StreamMsg, SubscribeEvents, client_message, server_message,
+        stream_event,
     },
 };
 
@@ -184,32 +184,6 @@ impl Runner {
                 std::future::ready(Some(chunk))
             })
             .filter_map(std::future::ready)
-    }
-
-    /// Send a hub install/uninstall request and return a stream of progress events.
-    pub fn hub_stream(
-        &mut self,
-        package: &str,
-        action: HubAction,
-        filters: Vec<String>,
-    ) -> impl Stream<Item = Result<download_event::Event>> + '_ {
-        self.transport
-            .request_stream(ClientMessage {
-                msg: Some(client_message::Msg::Hub(HubMsg {
-                    package: package.to_string(),
-                    action: action.into(),
-                    filters,
-                })),
-            })
-            .take_while(|r| {
-                std::future::ready(!matches!(
-                    r,
-                    Ok(ServerMessage {
-                        msg: Some(server_message::Msg::Download(e))
-                    }) if matches!(e.event, Some(download_event::Event::Completed(_)))
-                ))
-            })
-            .map(|r: Result<ServerMessage>| r.and_then(download_event::Event::try_from))
     }
 
     /// List active sessions on the daemon.

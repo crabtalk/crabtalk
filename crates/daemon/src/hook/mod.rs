@@ -9,7 +9,6 @@ use crate::{
     daemon::event::DaemonEventSender,
     hook::{mcp::McpHandler, skill::SkillHandler, system::memory::Memory},
 };
-use crabhub::DownloadRegistry;
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -38,7 +37,6 @@ pub(crate) struct AgentScope {
 pub struct DaemonHook {
     pub skills: SkillHandler,
     pub mcp: McpHandler,
-    pub downloads: Arc<Mutex<DownloadRegistry>>,
     /// Working directory for agent commands (caller's cwd at daemon startup).
     pub cwd: std::path::PathBuf,
     /// Built-in memory.
@@ -214,11 +212,9 @@ impl Hook for DaemonHook {
 
 impl DaemonHook {
     /// Create a new DaemonHook with the given backends.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         skills: SkillHandler,
         mcp: McpHandler,
-        downloads: Arc<Mutex<DownloadRegistry>>,
         cwd: std::path::PathBuf,
         memory: Option<Memory>,
         event_tx: DaemonEventSender,
@@ -227,7 +223,6 @@ impl DaemonHook {
         Self {
             skills,
             mcp,
-            downloads,
             cwd,
             memory,
             event_tx,

@@ -11,18 +11,13 @@ message ClientMessage {
     SendMsg send = 1;
     StreamMsg stream = 2;
     Ping ping = 3;
-    HubMsg hub = 4;
-    Sessions sessions = 5;
-    KillMsg kill = 6;
-    // Fields 7-11 removed (task protocol).
-    Downloads downloads = 12;
-    SubscribeDownloads subscribe_downloads = 13;
-    GetConfig get_config = 14;
-    SetConfigMsg set_config = 15;
-    // Fields 16-20 removed (service protocol).
-    ReloadMsg reload = 21;
-    SubscribeEvents subscribe_events = 22;
-    ReplyToAsk reply_to_ask = 23;
+    Sessions sessions = 4;
+    KillMsg kill = 5;
+    GetConfig get_config = 6;
+    SetConfigMsg set_config = 7;
+    ReloadMsg reload = 8;
+    SubscribeEvents subscribe_events = 9;
+    ReplyToAsk reply_to_ask = 10;
   }
 }
 
@@ -42,23 +37,8 @@ message StreamMsg {
 
 message Ping {}
 message Sessions {}
-message Downloads {}
-message SubscribeDownloads {}
 message SubscribeEvents {}
 message GetConfig {}
-
-message HubMsg {
-  string package = 1;
-  HubAction action = 2;
-  // Optional filters: "skill:name", "mcp:name", "agent:name".
-  // If empty, all components are installed/uninstalled.
-  repeated string filters = 3;
-}
-
-enum HubAction {
-  HUB_ACTION_INSTALL = 0;
-  HUB_ACTION_UNINSTALL = 1;
-}
 
 message KillMsg {
   uint64 session = 1;
@@ -76,15 +56,11 @@ message ServerMessage {
   oneof msg {
     SendResponse response = 1;
     StreamEvent stream = 2;
-    DownloadEvent download = 3;
-    ErrorMsg error = 4;
-    Pong pong = 5;
-    SessionList sessions = 6;
-    DownloadList downloads = 7;
-    // Fields 8-10 removed (task protocol).
-    ConfigMsg config = 11;
-    // Fields 12-15 removed (service protocol).
-    AgentEventMsg agent_event = 16;
+    ErrorMsg error = 3;
+    Pong pong = 4;
+    SessionList sessions = 5;
+    ConfigMsg config = 6;
+    AgentEventMsg agent_event = 7;
   }
 }
 
@@ -163,60 +139,6 @@ message ReplyToAsk {
   string content = 2;
 }
 
-enum DownloadKind {
-  DOWNLOAD_KIND_HUB = 0;
-  DOWNLOAD_KIND_EMBEDDINGS = 1;
-  DOWNLOAD_KIND_SKILL = 2;
-  DOWNLOAD_KIND_HOOK = 3;
-}
-
-message DownloadEvent {
-  oneof event {
-    DownloadCreated created = 1;
-    DownloadProgress progress = 2;
-    DownloadStep step = 3;
-    DownloadCompleted completed = 4;
-    DownloadFailed failed = 5;
-  }
-}
-
-message DownloadCreated {
-  uint64 id = 1;
-  DownloadKind kind = 2;
-  string label = 3;
-}
-
-message DownloadProgress {
-  uint64 id = 1;
-  uint64 bytes = 2;
-  uint64 total_bytes = 3;
-}
-
-message DownloadStep {
-  uint64 id = 1;
-  string message = 2;
-}
-
-message DownloadCompleted {
-  uint64 id = 1;
-}
-
-message DownloadFailed {
-  uint64 id = 1;
-  string error = 2;
-}
-
-message DownloadInfo {
-  uint64 id = 1;
-  DownloadKind kind = 2;
-  string label = 3;
-  string status = 4;
-  uint64 bytes_downloaded = 5;
-  uint64 total_bytes = 6;
-  optional string error = 7;
-  uint64 alive_secs = 8;
-}
-
 message ErrorMsg {
   uint32 code = 1;
   string message = 2;
@@ -249,10 +171,6 @@ message AgentEventMsg {
 
 message SessionList {
   repeated SessionInfo sessions = 1;
-}
-
-message DownloadList {
-  repeated DownloadInfo downloads = 1;
 }
 
 message ConfigMsg {

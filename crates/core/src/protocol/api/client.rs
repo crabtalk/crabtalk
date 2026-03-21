@@ -1,9 +1,8 @@
 //! Client trait — transport primitives plus typed provided methods.
 
 use crate::protocol::message::{
-    ClientMessage, ConfigMsg, DownloadEvent, ErrorMsg, GetConfig, HubMsg, Ping, SendMsg,
-    SendResponse, ServerMessage, SetConfigMsg, StreamEvent, StreamMsg, SubscribeDownloads,
-    client_message, download_event, server_message, stream_event,
+    ClientMessage, ConfigMsg, ErrorMsg, GetConfig, Ping, SendMsg, SendResponse, ServerMessage,
+    SetConfigMsg, StreamEvent, StreamMsg, client_message, server_message, stream_event,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -25,9 +24,9 @@ pub trait Client: Send {
     /// Send a `ClientMessage` and receive a stream of `ServerMessage`s.
     ///
     /// This is a raw transport primitive — the stream reads indefinitely.
-    /// Callers must detect the terminal sentinel (e.g. `StreamEnd`,
-    /// `DownloadEnd`) and stop consuming. The typed streaming methods
-    /// handle this automatically.
+    /// Callers must detect the terminal sentinel (e.g. `StreamEnd`)
+    /// and stop consuming. The typed streaming methods handle this
+    /// automatically.
     fn request_stream(
         &mut self,
         msg: ClientMessage,
@@ -60,27 +59,6 @@ pub trait Client: Send {
             .map(|r| r.and_then(stream_event::Event::try_from))
     }
 
-    /// Install or uninstall a hub package, streaming download events.
-    fn hub(
-        &mut self,
-        req: HubMsg,
-    ) -> impl Stream<Item = Result<download_event::Event>> + Send + '_ {
-        self.request_stream(ClientMessage {
-            msg: Some(client_message::Msg::Hub(req)),
-        })
-        .take_while(|r| {
-            std::future::ready(!matches!(
-                r,
-                Ok(ServerMessage {
-                    msg: Some(server_message::Msg::Download(DownloadEvent {
-                        event: Some(download_event::Event::Completed(_))
-                    }))
-                })
-            ))
-        })
-        .map(|r| r.and_then(download_event::Event::try_from))
-    }
-
     /// Ping the server (keepalive).
     fn ping(&mut self) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
@@ -101,20 +79,6 @@ pub trait Client: Send {
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
         }
-    }
-
-    /// Subscribe to download lifecycle events.
-    ///
-    /// Streams `download_event::Event`s indefinitely until the connection closes.
-    fn subscribe_downloads(
-        &mut self,
-    ) -> impl Stream<Item = Result<download_event::Event>> + Send + '_ {
-        self.request_stream(ClientMessage {
-            msg: Some(client_message::Msg::SubscribeDownloads(
-                SubscribeDownloads {},
-            )),
-        })
-        .map(|r| r.and_then(download_event::Event::try_from))
     }
 
     /// Get the full daemon config as JSON.

@@ -1,9 +1,8 @@
 //! Server trait — one async method per protocol operation.
 
 use crate::protocol::message::{
-    AgentEventMsg, ClientMessage, ConfigMsg, DownloadEvent, DownloadInfo, DownloadList, ErrorMsg,
-    HubAction, Pong, SendMsg, SendResponse, ServerMessage, SessionInfo, SessionList, StreamEvent,
-    StreamMsg, client_message, server_message,
+    AgentEventMsg, ClientMessage, ConfigMsg, ErrorMsg, Pong, SendMsg, SendResponse, ServerMessage,
+    SessionInfo, SessionList, StreamEvent, StreamMsg, client_message, server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -50,29 +49,11 @@ pub trait Server: Sync {
     /// Handle `Ping` — keepalive.
     fn ping(&self) -> impl std::future::Future<Output = Result<()>> + Send;
 
-    /// Handle `Hub` — install or uninstall a hub package.
-    ///
-    /// `filters` restricts which components to install. Format: `"kind:name"`
-    /// (e.g. `"skill:playwright-cli"`, `"mcp:playwright"`). Empty = install all.
-    fn hub(
-        &self,
-        package: String,
-        action: HubAction,
-        filters: Vec<String>,
-    ) -> impl Stream<Item = Result<DownloadEvent>> + Send;
-
     /// Handle `Sessions` — list active sessions.
     fn list_sessions(&self) -> impl std::future::Future<Output = Result<Vec<SessionInfo>>> + Send;
 
     /// Handle `Kill` — close a session by ID.
     fn kill_session(&self, session: u64) -> impl std::future::Future<Output = Result<bool>> + Send;
-
-    /// Handle `Downloads` — list downloads in the registry.
-    fn list_downloads(&self)
-    -> impl std::future::Future<Output = Result<Vec<DownloadInfo>>> + Send;
-
-    /// Handle `SubscribeDownloads` — stream download lifecycle events.
-    fn subscribe_downloads(&self) -> impl Stream<Item = Result<DownloadEvent>> + Send;
 
     /// Handle `SubscribeEvents` — stream agent events.
     fn subscribe_events(&self) -> impl Stream<Item = Result<AgentEventMsg>> + Send;
@@ -121,14 +102,6 @@ pub trait Server: Sync {
                         Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                client_message::Msg::Hub(hub_msg) => {
-                    let action = hub_msg.action();
-                    let s = self.hub(hub_msg.package, action, hub_msg.filters);
-                    tokio::pin!(s);
-                    while let Some(result) = s.next().await {
-                        yield result_to_msg(result);
-                    }
-                }
                 client_message::Msg::Sessions(_) => {
                     yield match self.list_sessions().await {
                         Ok(sessions) => ServerMessage {
@@ -146,21 +119,6 @@ pub trait Server: Sync {
                         ),
                         Err(e) => server_error(500, e.to_string()),
                     };
-                }
-                client_message::Msg::Downloads(_) => {
-                    yield match self.list_downloads().await {
-                        Ok(downloads) => ServerMessage {
-                            msg: Some(server_message::Msg::Downloads(DownloadList { downloads })),
-                        },
-                        Err(e) => server_error(500, e.to_string()),
-                    };
-                }
-                client_message::Msg::SubscribeDownloads(_) => {
-                    let s = self.subscribe_downloads();
-                    tokio::pin!(s);
-                    while let Some(result) = s.next().await {
-                        yield result_to_msg(result);
-                    }
                 }
                 client_message::Msg::GetConfig(_) => {
                     yield match self.get_config().await {

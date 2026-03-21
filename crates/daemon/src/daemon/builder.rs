@@ -11,10 +11,9 @@ use crate::{
     hook::{self, DaemonHook, system::memory::Memory},
 };
 use anyhow::Result;
-use crabhub::DownloadRegistry;
 use model::ProviderRegistry;
 use std::{path::Path, sync::Arc};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use wcore::{AgentConfig, Runtime, ToolRequest};
 
 const SYSTEM_AGENT: &str = include_str!("../../prompts/crab.md");
@@ -80,14 +79,12 @@ impl Daemon {
         Ok(registry)
     }
 
-    /// Build the daemon hook with all backends (skills, MCP, tasks, downloads, memory).
+    /// Build the daemon hook with all backends (skills, MCP, tasks, memory).
     async fn build_hook(
         config: &DaemonConfig,
         config_dir: &Path,
         event_tx: &DaemonEventSender,
     ) -> Result<DaemonHook> {
-        let downloads = Arc::new(Mutex::new(DownloadRegistry::new()));
-
         let skills_dir = config_dir.join(wcore::paths::SKILLS_DIR);
         let skills = hook::skill::SkillHandler::load(skills_dir).unwrap_or_else(|e| {
             tracing::warn!("failed to load skills: {e}");
@@ -108,7 +105,6 @@ impl Daemon {
         Ok(DaemonHook::new(
             skills,
             mcp_handler,
-            downloads,
             cwd,
             memory,
             event_tx.clone(),
