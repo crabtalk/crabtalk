@@ -3,13 +3,11 @@
 use crate::repl::runner::Runner;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
-use crabhub::manifest::Manifest;
-use dialoguer::{Input, theme::ColorfulTheme};
-use futures_util::StreamExt;
+use crabhub::manifest::{Manifest, SetupConfig};
+use dialoguer::{Input, MultiSelect, theme::ColorfulTheme};
 use std::path::{Path, PathBuf};
 use toml_edit::{DocumentMut, value};
 use wcore::paths::CONFIG_DIR;
-use wcore::protocol::message::{HubAction, download_event};
 
 /// Manage hub packages.
 #[derive(Args, Debug)]
@@ -61,7 +59,7 @@ pub struct HubPackage {
 }
 
 impl HubPackage {
-    /// Build protocol-level filter strings from the CLI flags.
+    /// Build filter strings from the CLI flags.
     fn filters(&self) -> Vec<String> {
         let mut out = Vec::new();
         for s in &self.skill {
@@ -78,6 +76,13 @@ impl HubPackage {
         }
         out
     }
+
+    fn has_filters(&self) -> bool {
+        !self.skill.is_empty()
+            || !self.mcp.is_empty()
+            || !self.agent.is_empty()
+            || !self.command.is_empty()
+    }
 }
 
 impl Hub {
@@ -87,41 +92,47 @@ impl Hub {
             return test_manifest(&t.path);
         }
 
-        let (package, action, filters) = match self.command {
+        let (pkg, is_install, has_flags, explicit_filters) = match self.command {
             HubCommand::Install(p) => {
+                let has = p.has_filters();
                 let filters = p.filters();
-                (p.package, HubAction::Install, filters)
+                (p.package, true, has, filters)
             }
             HubCommand::Uninstall(p) => {
+                let has = p.has_filters();
                 let filters = p.filters();
-                (p.package, HubAction::Uninstall, filters)
+                (p.package, false, has, filters)
             }
             HubCommand::Test(_) => unreachable!(),
         };
-        let completed = {
-            let stream = runner.hub_stream(&package, action, filters);
-            futures_util::pin_mut!(stream);
-            let mut completed = false;
-            while let Some(result) = stream.next().await {
-                match result? {
-                    download_event::Event::Created(c) => {
-                        println!("Starting hub operation for {}...", c.label);
-                    }
-                    download_event::Event::Step(s) => println!("  {}", s.message),
-                    download_event::Event::Completed(_) => {
-                        println!("Done: {package}");
-                        completed = true;
-                    }
-                    download_event::Event::Failed(f) => {
-                        anyhow::bail!("hub operation failed: {}", f.error);
-                    }
-                    _ => {}
-                }
-            }
-            completed
-        };
 
-        if completed && action == HubAction::Install {
+        let on_step = |msg: &str| println!("  {msg}");
+
+        if is_install {
+            // Sync hub repo and read manifest for picker + setup.
+            let (scope, name) = crabhub::package::parse_package(&pkg)?;
+            let hub_dir = CONFIG_DIR.join("hub");
+            let hub_url = "https://github.com/aspect-build/crabtalk-hub";
+            crabhub::package::git_sync(hub_url, &hub_dir).await?;
+            let manifest = crabhub::package::read_manifest(scope, name)?;
+
+            // Determine filters: explicit flags bypass picker.
+            let filters = if has_flags {
+                explicit_filters
+            } else {
+                pick_components(&manifest)?
+            };
+
+            // Collect setup configs for selected components before install.
+            let setups = collect_setups(&manifest, &filters);
+
+            crabhub::package::install(&pkg, &filters, on_step).await?;
+            println!("Done: {pkg}");
+
+            // Run setup commands.
+            run_setups(&setups);
+
+            // Env var prompting + daemon reload.
             let config_path = CONFIG_DIR.join("crab.toml");
             if config_path.exists() {
                 let changed = prompt_empty_env_vars(&config_path)?;
@@ -131,9 +142,95 @@ impl Hub {
                 }
                 println!("\nRun `crabtalk auth` to reconfigure these values later.");
             }
+        } else {
+            crabhub::package::uninstall(&pkg, &explicit_filters, on_step).await?;
+            println!("Done: {pkg}");
         }
 
         Ok(())
+    }
+}
+
+/// Show an interactive component picker. Returns filter strings.
+/// If only one component exists, skips the picker and returns empty (install all).
+fn pick_components(manifest: &Manifest) -> Result<Vec<String>> {
+    let mut items: Vec<String> = Vec::new();
+    for key in manifest.skills.keys() {
+        items.push(format!("skill:{key}"));
+    }
+    for key in manifest.mcps.keys() {
+        items.push(format!("mcp:{key}"));
+    }
+    for key in manifest.agents.keys() {
+        items.push(format!("agent:{key}"));
+    }
+    for key in manifest.commands.keys() {
+        items.push(format!("command:{key}"));
+    }
+
+    // Single component or empty — install everything, no picker needed.
+    if items.len() <= 1 {
+        return Ok(vec![]);
+    }
+
+    let defaults: Vec<bool> = vec![true; items.len()];
+    let theme = ColorfulTheme::default();
+    let selections = MultiSelect::with_theme(&theme)
+        .with_prompt("Select components to install")
+        .items(&items)
+        .defaults(&defaults)
+        .interact()?;
+
+    // All selected — no filter needed.
+    if selections.len() == items.len() {
+        return Ok(vec![]);
+    }
+
+    Ok(selections.into_iter().map(|i| items[i].clone()).collect())
+}
+
+/// Collect setup configs for the selected components.
+fn collect_setups<'a>(
+    manifest: &'a Manifest,
+    filters: &[String],
+) -> Vec<(&'a str, &'a SetupConfig)> {
+    let mut setups: Vec<(&str, &SetupConfig)> = Vec::new();
+    let no_filter = filters.is_empty();
+
+    for (key, res) in &manifest.skills {
+        if let Some(ref setup) = res.setup
+            && (no_filter || filters.iter().any(|f| f == &format!("skill:{key}")))
+        {
+            setups.push((key, setup));
+        }
+    }
+    for (key, res) in &manifest.mcps {
+        if let Some(ref setup) = res.setup
+            && (no_filter || filters.iter().any(|f| f == &format!("mcp:{key}")))
+        {
+            setups.push((key, setup));
+        }
+    }
+
+    setups
+}
+
+/// Run setup commands, printing messages. Failures are non-fatal.
+fn run_setups(setups: &[(&str, &SetupConfig)]) {
+    for (name, setup) in setups {
+        println!("\nRunning setup for {name}: {}", setup.message);
+        let status = std::process::Command::new("sh")
+            .args(["-c", &setup.run])
+            .status();
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => {
+                eprintln!("  Setup for {name} exited with {s}");
+            }
+            Err(e) => {
+                eprintln!("  Setup for {name} failed: {e}");
+            }
+        }
     }
 }
 

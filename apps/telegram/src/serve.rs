@@ -153,9 +153,8 @@ async fn telegram_loop(
             match parse_command(&content) {
                 Some(cmd) => {
                     let b = bot.clone();
-                    let c = client.clone();
                     tokio::spawn(async move {
-                        crate::command::dispatch_command(cmd, c, b, chat_id).await;
+                        crate::command::dispatch_command(cmd, b, chat_id).await;
                     });
                 }
                 None => {

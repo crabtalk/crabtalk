@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use wcore::{CommandConfig, McpServerConfig};
+use wcore::CommandConfig;
 
 /// Crabtalk resource manifest.
 #[derive(Serialize, Deserialize)]
@@ -12,7 +12,7 @@ pub struct Manifest {
 
     /// MCP server configs
     #[serde(default)]
-    pub mcps: BTreeMap<String, McpServerConfig>,
+    pub mcps: BTreeMap<String, McpResource>,
 
     /// Skill resources
     #[serde(default)]
@@ -46,6 +46,63 @@ pub struct Package {
     pub keywords: Vec<String>,
 }
 
+/// An MCP server resource in a hub manifest.
+#[derive(Serialize, Deserialize)]
+#[serde(default)]
+pub struct McpResource {
+    /// Server name. If empty, defaults to the command.
+    pub name: String,
+    /// Command to spawn (stdio transport).
+    pub command: String,
+    /// Command arguments.
+    pub args: Vec<String>,
+    /// Environment variables.
+    pub env: BTreeMap<String, String>,
+    /// Auto-restart on failure.
+    pub auto_restart: bool,
+    /// HTTP URL for streamable HTTP transport.
+    pub url: Option<String>,
+    /// Optional setup command to run after install.
+    pub setup: Option<SetupConfig>,
+}
+
+impl Default for McpResource {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            command: String::new(),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+            auto_restart: true,
+            url: None,
+            setup: None,
+        }
+    }
+}
+
+impl McpResource {
+    /// Convert to the runtime MCP config (without setup).
+    pub fn to_server_config(&self) -> wcore::McpServerConfig {
+        wcore::McpServerConfig {
+            name: self.name.clone(),
+            command: self.command.clone(),
+            args: self.args.clone(),
+            env: self.env.clone(),
+            auto_restart: self.auto_restart,
+            url: self.url.clone(),
+        }
+    }
+}
+
+/// A setup command to run after install.
+#[derive(Serialize, Deserialize)]
+pub struct SetupConfig {
+    /// Shell command to execute.
+    pub run: String,
+    /// Human-readable message shown before running.
+    pub message: String,
+}
+
 /// A skill resource.
 #[derive(Serialize, Deserialize)]
 pub struct SkillResource {
@@ -56,6 +113,9 @@ pub struct SkillResource {
     pub description: String,
     /// Path within the repo to the skill directory
     pub path: String,
+    /// Optional setup command to run after install.
+    #[serde(default)]
+    pub setup: Option<SetupConfig>,
 }
 
 /// An agent resource — system prompt + skill bundle.

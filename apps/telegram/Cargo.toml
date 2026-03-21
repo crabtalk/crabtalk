@@ -13,6 +13,7 @@ name = "crabtalk-telegram"
 path = "src/bin/main.rs"
 
 [dependencies]
+crabhub.workspace = true
 gateway.workspace = true
 wcore.workspace = true
 transport.workspace = true

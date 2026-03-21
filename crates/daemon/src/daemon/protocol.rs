@@ -8,10 +8,9 @@ use wcore::AgentEvent;
 use wcore::protocol::{
     api::Server,
     message::{
-        AgentEventMsg, AskOption, AskQuestion, AskUserEvent, DownloadEvent, DownloadInfo,
-        HubAction, SendMsg, SendResponse, SessionInfo, StreamChunk, StreamEnd, StreamEvent,
-        StreamMsg, StreamStart, StreamThinking, ToolCallInfo, ToolResultEvent, ToolStartEvent,
-        ToolsCompleteEvent, stream_event,
+        AgentEventMsg, AskOption, AskQuestion, AskUserEvent, SendMsg, SendResponse, SessionInfo,
+        StreamChunk, StreamEnd, StreamEvent, StreamMsg, StreamStart, StreamThinking, ToolCallInfo,
+        ToolResultEvent, ToolStartEvent, ToolsCompleteEvent, stream_event,
     },
 };
 
@@ -150,63 +149,11 @@ impl Server for Daemon {
         Ok(rt.close_session(session).await)
     }
 
-    fn hub(
-        &self,
-        package: String,
-        action: HubAction,
-        filters: Vec<String>,
-    ) -> impl futures_core::Stream<Item = Result<DownloadEvent>> + Send {
-        let runtime = self.runtime.clone();
-        async_stream::try_stream! {
-            let rt = runtime.read().await.clone();
-            let registry = rt.hook.downloads.clone();
-            match action {
-                HubAction::Install => {
-                    let s = crabhub::package::install(package, registry, filters);
-                    pin_mut!(s);
-                    while let Some(event) = s.next().await {
-                        yield event?;
-                    }
-                }
-                HubAction::Uninstall => {
-                    let s = crabhub::package::uninstall(package, registry, filters);
-                    pin_mut!(s);
-                    while let Some(event) = s.next().await {
-                        yield event?;
-                    }
-                }
-            }
-        }
-    }
-
-    async fn list_downloads(&self) -> Result<Vec<DownloadInfo>> {
-        let rt = self.runtime.read().await.clone();
-        let registry = rt.hook.downloads.lock().await;
-        Ok(registry.list())
-    }
-
     fn subscribe_events(&self) -> impl futures_core::Stream<Item = Result<AgentEventMsg>> + Send {
         let runtime = self.runtime.clone();
         async_stream::try_stream! {
             let rt = runtime.read().await.clone();
             let mut rx = rt.hook.subscribe_events();
-            loop {
-                match rx.recv().await {
-                    Ok(event) => yield event,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                }
-            }
-        }
-    }
-
-    fn subscribe_downloads(
-        &self,
-    ) -> impl futures_core::Stream<Item = Result<DownloadEvent>> + Send {
-        let runtime = self.runtime.clone();
-        async_stream::try_stream! {
-            let rt = runtime.read().await.clone();
-            let mut rx = rt.hook.downloads.lock().await.subscribe();
             loop {
                 match rx.recv().await {
                     Ok(event) => yield event,

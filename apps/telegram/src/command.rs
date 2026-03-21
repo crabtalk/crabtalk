@@ -1,63 +1,33 @@
 //! Telegram bot command dispatch.
 //!
-//! Executes parsed bot commands (hub install/uninstall) by streaming
-//! progress back to the originating Telegram chat.
+//! Executes parsed bot commands (hub install/uninstall) by calling
+//! crabhub library functions directly and streaming progress back
+//! to the originating Telegram chat.
 
-use crate::{BotCommand, DaemonClient};
-use std::sync::Arc;
+use crate::BotCommand;
 use teloxide::prelude::*;
-use wcore::protocol::message::{
-    ClientMessage, DownloadCreated, DownloadStep, HubAction, HubMsg, ServerMessage, client_message,
-    download_event, server_message,
-};
 
 /// Execute a bot command, streaming progress messages back to the originating chat.
-pub async fn dispatch_command(cmd: BotCommand, client: Arc<DaemonClient>, bot: Bot, chat_id: i64) {
-    let msg = match cmd {
-        BotCommand::HubInstall { package } => ClientMessage {
-            msg: Some(client_message::Msg::Hub(HubMsg {
-                package,
-                action: HubAction::Install as i32,
-                filters: vec![],
-            })),
-        },
-        BotCommand::HubUninstall { package } => ClientMessage {
-            msg: Some(client_message::Msg::Hub(HubMsg {
-                package,
-                action: HubAction::Uninstall as i32,
-                filters: vec![],
-            })),
-        },
+pub async fn dispatch_command(cmd: BotCommand, bot: Bot, chat_id: i64) {
+    let (package, is_install) = match cmd {
+        BotCommand::HubInstall { package } => (package, true),
+        BotCommand::HubUninstall { package } => (package, false),
     };
 
-    let mut rx = client.send(msg).await;
-    while let Some(server_msg) = rx.recv().await {
-        match server_msg {
-            ServerMessage {
-                msg: Some(server_message::Msg::Download(event)),
-            } => match event.event {
-                Some(download_event::Event::Created(DownloadCreated { label, .. })) => {
-                    send_text(&bot, chat_id, format!("Starting: {label}...")).await;
-                }
-                Some(download_event::Event::Step(DownloadStep { message, .. })) => {
-                    send_text(&bot, chat_id, format!("  {message}")).await;
-                }
-                Some(download_event::Event::Progress(_)) => {}
-                Some(download_event::Event::Completed(_)) => {
-                    send_text(&bot, chat_id, "Done".to_string()).await;
-                }
-                Some(download_event::Event::Failed(f)) => {
-                    send_text(&bot, chat_id, format!("Failed: {}", f.error)).await;
-                }
-                None => {}
-            },
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(err)),
-            } => {
-                tracing::warn!("command error: {}", err.message);
-            }
-            _ => {}
-        }
+    send_text(&bot, chat_id, format!("Starting: {package}...")).await;
+    let on_step = |msg: &str| {
+        tracing::info!("hub: {msg}");
+    };
+
+    let result = if is_install {
+        crabhub::package::install(&package, &[], on_step).await
+    } else {
+        crabhub::package::uninstall(&package, &[], on_step).await
+    };
+
+    match result {
+        Ok(()) => send_text(&bot, chat_id, format!("Done: {package}")).await,
+        Err(e) => send_text(&bot, chat_id, format!("Failed: {e}")).await,
     }
 }
 

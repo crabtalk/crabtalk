@@ -512,15 +512,11 @@ name = "crabhub"
 version = "0.0.11"
 dependencies = [
  "anyhow",
- "async-stream",
  "crabtalk-core",
- "futures-core",
  "serde",
- "serde_json",
  "tokio",
  "toml",
  "toml_edit",
- "tracing",
 ]
 
 [[package]]
@@ -635,7 +631,6 @@ dependencies = [
  "anyhow",
  "async-stream",
  "chrono",
- "crabhub",
  "crabtalk-core",
  "crabtalk-model",
  "crabtalk-transport",
@@ -719,6 +714,7 @@ version = "0.0.11"
 dependencies = [
  "anyhow",
  "clap",
+ "crabhub",
  "crabtalk-command",
  "crabtalk-core",
  "crabtalk-gateway",

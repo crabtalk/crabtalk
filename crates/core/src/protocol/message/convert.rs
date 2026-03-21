@@ -1,8 +1,8 @@
 //! Conversions between protocol message types.
 
 use crate::protocol::proto::{
-    AgentEventMsg, ClientMessage, DownloadEvent, ReplyToAsk, SendMsg, SendResponse, ServerMessage,
-    StreamEvent, StreamMsg, client_message, download_event, server_message, stream_event,
+    AgentEventMsg, ClientMessage, ReplyToAsk, SendMsg, SendResponse, ServerMessage, StreamEvent,
+    StreamMsg, client_message, server_message, stream_event,
 };
 
 // ── ClientMessage constructors ───────────────────────────────────
@@ -49,14 +49,6 @@ impl From<StreamEvent> for ServerMessage {
     }
 }
 
-impl From<DownloadEvent> for ServerMessage {
-    fn from(e: DownloadEvent) -> Self {
-        Self {
-            msg: Some(server_message::Msg::Download(e)),
-        }
-    }
-}
-
 impl From<AgentEventMsg> for ServerMessage {
     fn from(e: AgentEventMsg) -> Self {
         Self {
@@ -93,18 +85,6 @@ impl TryFrom<ServerMessage> for stream_event::Event {
             Some(server_message::Msg::Stream(e)) => {
                 e.event.ok_or_else(|| anyhow::anyhow!("empty stream event"))
             }
-            _ => Err(error_or_unexpected(msg)),
-        }
-    }
-}
-
-impl TryFrom<ServerMessage> for download_event::Event {
-    type Error = anyhow::Error;
-    fn try_from(msg: ServerMessage) -> anyhow::Result<Self> {
-        match msg.msg {
-            Some(server_message::Msg::Download(e)) => e
-                .event
-                .ok_or_else(|| anyhow::anyhow!("empty download event")),
             _ => Err(error_or_unexpected(msg)),
         }
     }
