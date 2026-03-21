@@ -120,12 +120,16 @@ impl Runner {
         agent: &'a str,
         content: &'a str,
     ) -> impl Stream<Item = Result<OutputChunk>> + Send + 'a {
+        let cwd = std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned());
         self.transport
             .request_stream(ClientMessage::from(StreamMsg {
                 agent: agent.to_string(),
                 content: content.to_string(),
                 session: None,
                 sender: None,
+                cwd,
             }))
             .take_while(|r| {
                 std::future::ready(!matches!(

@@ -91,6 +91,7 @@ fn spawn_agent_task(
             content: message,
             session: None,
             sender: None,
+            cwd: None,
         });
         if event_tx
             .send(DaemonEvent::Message {

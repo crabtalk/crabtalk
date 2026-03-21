@@ -32,12 +32,17 @@ impl crate::hook::DaemonHook {
     /// Dispatch a `bash` tool call — run a command directly.
     ///
     /// Returns structured JSON: `{"stdout":"...","stderr":"...","exit_code":N}`.
-    pub(crate) async fn dispatch_bash(&self, args: &str) -> String {
+    pub(crate) async fn dispatch_bash(&self, args: &str, session_id: Option<u64>) -> String {
         let input: Bash = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
-        let cwd = &self.cwd;
+        let session_cwd = if let Some(id) = session_id {
+            self.session_cwds.lock().await.get(&id).cloned()
+        } else {
+            None
+        };
+        let cwd = session_cwd.as_deref().unwrap_or(&self.cwd);
         let mut cmd = tokio::process::Command::new(&input.command);
         cmd.args(&input.args)
             .envs(&input.env)

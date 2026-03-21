@@ -168,7 +168,9 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         session.history.retain(|m| !m.auto_injected);
 
         let agent_name = session.agent.clone();
-        let recall_msgs = self.hook.on_before_run(&agent_name, &session.history);
+        let recall_msgs = self
+            .hook
+            .on_before_run(&agent_name, session.id, &session.history);
         if !recall_msgs.is_empty() {
             let insert_pos = session.history.len().saturating_sub(1);
             for (i, msg) in recall_msgs.into_iter().enumerate() {

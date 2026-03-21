@@ -11,6 +11,7 @@ use crate::{
 };
 use std::{
     collections::{BTreeMap, HashMap},
+    path::PathBuf,
     sync::Arc,
 };
 use tokio::sync::{Mutex, broadcast, oneshot};
@@ -51,6 +52,9 @@ pub struct DaemonHook {
     events_tx: broadcast::Sender<AgentEventMsg>,
     /// Pending `ask_user` oneshots, keyed by session_id.
     pub(crate) pending_asks: Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>,
+    /// Per-session working directory overrides. Populated by protocol handler,
+    /// used by `dispatch_bash` to resolve the caller's cwd.
+    pub(crate) session_cwds: Arc<Mutex<HashMap<u64, PathBuf>>>,
 }
 
 /// Base tools always included in every agent's whitelist.
@@ -70,10 +74,9 @@ const TASK_TOOLS: &[&str] = &["delegate"];
 
 impl Hook for DaemonHook {
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
-        // Inject environment context (OS, working directory).
-        config
-            .system_prompt
-            .push_str(&os::environment_block(&self.cwd));
+        // Inject environment context (OS info). Working directory is
+        // injected per-session in on_before_run.
+        config.system_prompt.push_str(&os::environment_block());
 
         // Inject built-in memory prompt if active.
         if let Some(ref mem) = self.memory {
@@ -122,6 +125,7 @@ impl Hook for DaemonHook {
     fn on_before_run(
         &self,
         agent: &str,
+        session_id: u64,
         history: &[wcore::model::Message],
     ) -> Vec<wcore::model::Message> {
         let mut messages = Vec::new();
@@ -143,6 +147,19 @@ impl Hook for DaemonHook {
         if let Some(ref mem) = self.memory {
             messages.extend(mem.before_run(history));
         }
+        // Inject per-session working directory.
+        let cwd = self
+            .session_cwds
+            .try_lock()
+            .ok()
+            .and_then(|m| m.get(&session_id).cloned())
+            .unwrap_or_else(|| self.cwd.clone());
+        let mut cwd_msg = Message::user(format!(
+            "<environment>\nworking_directory: {}\n</environment>",
+            cwd.display()
+        ));
+        cwd_msg.auto_injected = true;
+        messages.push(cwd_msg);
         messages
     }
 
@@ -230,6 +247,7 @@ impl DaemonHook {
             agent_descriptions: BTreeMap::new(),
             events_tx,
             pending_asks: Arc::new(Mutex::new(HashMap::new())),
+            session_cwds: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -368,7 +386,7 @@ impl DaemonHook {
         match name {
             "mcp" => self.dispatch_mcp(args, agent).await,
             "skill" => self.dispatch_skill(args, agent).await,
-            "bash" => self.dispatch_bash(args).await,
+            "bash" => self.dispatch_bash(args, session_id).await,
             "delegate" => self.dispatch_delegate(args, agent).await,
             "recall" => self.dispatch_recall(args).await,
             "remember" => self.dispatch_remember(args).await,

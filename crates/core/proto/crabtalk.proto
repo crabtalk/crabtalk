@@ -26,6 +26,7 @@ message SendMsg {
   string content = 2;
   optional uint64 session = 3;
   optional string sender = 4;
+  optional string cwd = 5;
 }
 
 message StreamMsg {
@@ -33,6 +34,7 @@ message StreamMsg {
   string content = 2;
   optional uint64 session = 3;
   optional string sender = 4;
+  optional string cwd = 5;
 }
 
 message Ping {}
