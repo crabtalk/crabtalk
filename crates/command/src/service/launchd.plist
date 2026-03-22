@@ -7,7 +7,6 @@
     <key>ProgramArguments</key>
     <array>
         <string>{binary}</string>
-        <string>{subcommand}</string>
         <string>run</string>
         {verbose_arg}
     </array>

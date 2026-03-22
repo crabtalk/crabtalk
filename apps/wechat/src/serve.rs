@@ -221,6 +221,7 @@ async fn wx_stream(
     ctx_tokens: &ContextTokens,
     user_ids: &UserIdMap,
 ) -> StreamResult {
+    tracing::info!(agent, chat_id, %sender, ?session, "starting stream");
     let client_msg = ClientMessage::from(StreamMsg {
         agent: agent.to_string(),
         content: content.to_string(),
@@ -308,6 +309,7 @@ async fn wx_stream(
 
     let final_text = acc.render();
     if !final_text.is_empty() {
+        tracing::info!(agent, chat_id, len = final_text.len(), "sending reply");
         let to_user = user_ids.lock().unwrap().get(&chat_id).cloned();
         let ctx = ctx_tokens
             .lock()
@@ -319,14 +321,24 @@ async fn wx_stream(
                 crate::api::send_message(http, base_url, token, &to, &ct, &final_text).await
             {
                 tracing::warn!(agent, chat_id, "failed to send reply: {e}");
+            } else {
+                tracing::info!(agent, chat_id, "reply sent");
             }
         } else {
             tracing::warn!(agent, chat_id, "no user_id or context_token for reply");
         }
+    } else {
+        tracing::debug!(agent, chat_id, "stream ended with empty response");
     }
 
     match acc.session() {
-        Some(session_id) => StreamResult::Ok { session_id },
-        None => StreamResult::Failed,
+        Some(session_id) => {
+            tracing::info!(agent, chat_id, session_id, "stream completed");
+            StreamResult::Ok { session_id }
+        }
+        None => {
+            tracing::warn!(agent, chat_id, "stream completed without session");
+            StreamResult::Failed
+        }
     }
 }

@@ -14,6 +14,9 @@ use std::{
 };
 use tokio::sync::mpsc;
 
+/// Error code returned by the server when the bot session has expired.
+const SESSION_EXPIRED_ERRCODE: i32 = -14;
+
 /// Shared context token cache: from_user_id → last context_token.
 pub type ContextTokens = Arc<Mutex<HashMap<String, String>>>;
 
@@ -63,32 +66,64 @@ pub async fn poll_loop(
     user_ids: UserIdMap,
 ) {
     let mut buf = load_sync_buf();
+    tracing::info!(
+        base_url = %base_url,
+        sync_buf_len = buf.len(),
+        "poll loop starting"
+    );
 
     loop {
+        tracing::debug!("polling getupdates");
         match api::get_updates(&client, &base_url, &token, &buf).await {
             Ok(resp) => {
-                if let Some(errcode) = resp.errcode
-                    && errcode != 0
-                {
+                // Check for API-level errors.
+                let errcode = resp.errcode.unwrap_or(0);
+                let ret = resp.ret;
+                if errcode != 0 || ret != 0 {
+                    let code = if errcode != 0 { errcode } else { ret };
                     tracing::warn!(
-                        errcode,
+                        code,
                         errmsg = resp.errmsg.as_deref().unwrap_or(""),
                         "getupdates error"
                     );
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+                    if code == SESSION_EXPIRED_ERRCODE {
+                        // Session expired — reset sync buf and pause before retry.
+                        tracing::error!(
+                            "bot session expired (errcode {code}), resetting sync buf, pausing 30s"
+                        );
+                        buf.clear();
+                        save_sync_buf(&buf);
+                        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    } else {
+                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    }
                     continue;
+                }
+
+                if !resp.msgs.is_empty() {
+                    tracing::info!(count = resp.msgs.len(), "received messages");
                 }
 
                 for msg in &resp.msgs {
                     // Skip bot messages (message_type 2 = BOT).
                     if msg.message_type == 2 {
+                        tracing::debug!(from = %msg.from_user_id, "skipping bot message");
                         continue;
                     }
 
                     let text = extract_text(msg);
                     if text.is_empty() {
+                        tracing::debug!(from = %msg.from_user_id, "skipping empty message");
                         continue;
                     }
+
+                    tracing::info!(
+                        from = %msg.from_user_id,
+                        len = text.len(),
+                        has_context_token = msg.context_token.is_some(),
+                        "inbound message"
+                    );
 
                     let chat_id = hash_user_id(&msg.from_user_id);
 
@@ -126,6 +161,7 @@ pub async fn poll_loop(
                 if let Some(new_buf) = resp.get_updates_buf
                     && new_buf != buf
                 {
+                    tracing::debug!(len = new_buf.len(), "sync buf updated");
                     buf = new_buf;
                     save_sync_buf(&buf);
                 }

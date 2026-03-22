@@ -25,34 +25,7 @@ impl GatewayWechat {
 #[command(name = "crabtalk-wechat", about = "Crabtalk WeChat gateway")]
 struct App {
     #[command(subcommand)]
-    action: AppCommand,
-}
-
-#[derive(clap::Subcommand)]
-enum AppCommand {
-    /// Service subcommand group.
-    #[command(name = "gateway-wechat")]
-    Gateway {
-        #[command(subcommand)]
-        action: GatewayWechatCommand,
-    },
-    /// Install and start the gateway-wechat service.
-    Start {
-        #[arg(short, long, action = clap::ArgAction::Count)]
-        verbose: u8,
-    },
-    /// Stop and uninstall the gateway-wechat service.
-    Stop,
-    /// Run the gateway-wechat service directly (used by launchd/systemd).
-    Run {
-        #[arg(short, long, action = clap::ArgAction::Count)]
-        verbose: u8,
-    },
-    /// View gateway-wechat service logs.
-    Logs {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        tail_args: Vec<String>,
-    },
+    action: GatewayWechatCommand,
 }
 
 fn config_path() -> std::path::PathBuf {
@@ -102,7 +75,7 @@ async fn qr_login() -> anyhow::Result<(String, String)> {
         match status.status.as_str() {
             "wait" => {}
             // NOTE: the server returns "scaned" (sic) — not a typo on our side.
-            "scaned" => {
+            "scaned" | "scanned" => {
                 if !scanned {
                     println!("Scanned! Confirm on your phone...");
                     scanned = true;
@@ -129,22 +102,11 @@ async fn qr_login() -> anyhow::Result<(String, String)> {
 
 fn main() {
     let app = App::parse();
-
-    // Flatten: both `crabtalk-wechat start` and
-    // `crabtalk-wechat gateway-wechat start` resolve to the same command.
-    let action = match app.action {
-        AppCommand::Gateway { action } => action,
-        AppCommand::Start { verbose } => GatewayWechatCommand::Start { verbose },
-        AppCommand::Stop => GatewayWechatCommand::Stop,
-        AppCommand::Run { verbose } => GatewayWechatCommand::Run { verbose },
-        AppCommand::Logs { tail_args } => GatewayWechatCommand::Logs { tail_args },
-    };
-
-    if matches!(&action, GatewayWechatCommand::Start { .. })
+    if matches!(&app.action, GatewayWechatCommand::Start { .. })
         && let Err(e) = ensure_config()
     {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
-    action.start(GatewayWechat);
+    app.action.start(GatewayWechat);
 }

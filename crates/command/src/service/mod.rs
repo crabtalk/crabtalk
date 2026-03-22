@@ -31,7 +31,7 @@ pub trait Service {
     /// Install and start the service.
     fn start(&self, verbose: u8) -> anyhow::Result<()> {
         let binary = std::env::current_exe()?;
-        let rendered = render_service_template(self, &binary, self.name(), verbose);
+        let rendered = render_service_template(self, &binary, verbose);
         install(&rendered, self.label())
     }
 
@@ -63,7 +63,6 @@ pub fn verbose_flag(count: u8) -> String {
 pub fn render_service_template(
     svc: &(impl Service + ?Sized),
     binary: &Path,
-    subcommand: &str,
     verbose: u8,
 ) -> String {
     let path_env = std::env::var("PATH").unwrap_or_default();
@@ -72,14 +71,18 @@ pub fn render_service_template(
     #[cfg(target_os = "linux")]
     let template = SYSTEMD_TEMPLATE;
     let verbose_arg = if verbose > 0 {
-        format!("<string>{}</string>", verbose_flag(verbose))
+        let flag = verbose_flag(verbose);
+        #[cfg(target_os = "macos")]
+        let arg = format!("<string>{flag}</string>");
+        #[cfg(target_os = "linux")]
+        let arg = flag;
+        arg
     } else {
         String::new()
     };
     template
         .replace("{label}", svc.label())
         .replace("{description}", svc.description())
-        .replace("{subcommand}", subcommand)
         .replace("{verbose_arg}", &verbose_arg)
         .replace("{log_name}", svc.name())
         .replace("{binary}", &binary.display().to_string())
@@ -92,7 +95,6 @@ pub fn render_service_template(
 pub fn render_service_template(
     _svc: &(impl Service + ?Sized),
     _binary: &Path,
-    _subcommand: &str,
     _verbose: u8,
 ) -> String {
     String::new()
