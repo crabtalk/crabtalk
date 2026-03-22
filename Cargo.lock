@@ -690,6 +690,7 @@ version = "0.0.12"
 dependencies = [
  "anyhow",
  "axum",
+ "base64",
  "clap",
  "crabtalk-command",
  "lru 0.14.0",

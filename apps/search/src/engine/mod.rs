@@ -1,4 +1,7 @@
+pub mod bing;
+pub mod brave;
 pub mod duckduckgo;
+pub mod mojeek;
 pub mod wikipedia;
 
 use crate::error::EngineError;
@@ -18,24 +21,39 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EngineId {
-    Wikipedia,
+    Bing,
+    Brave,
     DuckDuckGo,
+    Mojeek,
+    Wikipedia,
 }
 
 impl EngineId {
-    pub const ALL: &[EngineId] = &[EngineId::Wikipedia, EngineId::DuckDuckGo];
+    pub const ALL: &[EngineId] = &[
+        EngineId::Bing,
+        EngineId::Brave,
+        EngineId::DuckDuckGo,
+        EngineId::Mojeek,
+        EngineId::Wikipedia,
+    ];
 
     pub fn name(&self) -> &'static str {
         match self {
-            Self::Wikipedia => "Wikipedia",
+            Self::Bing => "Bing",
+            Self::Brave => "Brave",
             Self::DuckDuckGo => "DuckDuckGo",
+            Self::Mojeek => "Mojeek",
+            Self::Wikipedia => "Wikipedia",
         }
     }
 
     pub fn description(&self) -> &'static str {
         match self {
-            Self::Wikipedia => "Wikipedia opensearch API",
+            Self::Bing => "Bing HTML scraper",
+            Self::Brave => "Brave Search scraper",
             Self::DuckDuckGo => "DuckDuckGo HTML scraper",
+            Self::Mojeek => "Mojeek HTML scraper",
+            Self::Wikipedia => "Wikipedia opensearch API",
         }
     }
 }
@@ -92,8 +110,11 @@ impl EngineRegistry {
             .iter()
             .map(|id| {
                 let engine: Arc<dyn SearchEngineDyn> = match id {
-                    EngineId::Wikipedia => Arc::new(wikipedia::Wikipedia),
+                    EngineId::Bing => Arc::new(bing::Bing),
+                    EngineId::Brave => Arc::new(brave::Brave),
                     EngineId::DuckDuckGo => Arc::new(duckduckgo::DuckDuckGo),
+                    EngineId::Mojeek => Arc::new(mojeek::Mojeek),
+                    EngineId::Wikipedia => Arc::new(wikipedia::Wikipedia),
                 };
                 (*id, engine)
             })
