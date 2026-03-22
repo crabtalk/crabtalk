@@ -151,17 +151,19 @@ pub async fn git_sync(url: &str, dest: &Path, branch: Option<&str>) -> Result<()
     let dest_str = dest.to_string_lossy();
 
     if dest.exists() {
-        // Fetch the specific branch (or all) from origin.
-        // With --depth=1 and a specific branch, git only updates FETCH_HEAD,
-        // not refs/remotes/origin/<branch>, so we reset to FETCH_HEAD.
-        let ref_name = if branch.is_some() {
-            "FETCH_HEAD"
-        } else {
-            "origin/HEAD"
+        // Use an explicit refspec so git creates a proper remote tracking ref.
+        // Plain `git fetch origin <branch>` only updates FETCH_HEAD which goes
+        // stale across calls with different branches.
+        let (refspec, ref_name) = match branch {
+            Some(b) => (
+                format!("+refs/heads/{b}:refs/remotes/origin/{b}"),
+                format!("origin/{b}"),
+            ),
+            None => (String::new(), "origin/HEAD".to_string()),
         };
         let mut args = vec!["-C", &*dest_str, "fetch", "--depth=1", "origin"];
-        if let Some(b) = branch {
-            args.push(b);
+        if !refspec.is_empty() {
+            args.push(&refspec);
         }
         let status = Command::new("git")
             .args(&args)
