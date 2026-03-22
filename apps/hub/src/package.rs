@@ -75,6 +75,27 @@ pub async fn install(
         None
     };
 
+    // Create symlinks from manifest `links` to the cached repo.
+    if let Some(ref dir) = repo_dir {
+        for link in &manifest.package.links {
+            let target = expand_tilde(link);
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("failed to create {}", parent.display()))?;
+            }
+            // Remove stale symlink or skip if a real directory exists.
+            if target.is_symlink() {
+                let _ = std::fs::remove_file(&target);
+            }
+            if !target.exists() {
+                on_step(&format!("linking {}…", target.display()));
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(dir, &target)
+                    .with_context(|| format!("failed to symlink {}", target.display()))?;
+            }
+        }
+    }
+
     // Run command-type setup from the cached repo.
     if let Some(Setup::Command { ref command }) = manifest.package.setup
         && let Some(ref dir) = repo_dir
@@ -124,6 +145,17 @@ pub async fn uninstall(package: &str, on_step: impl Fn(&str)) -> Result<()> {
             .unwrap_or(false)
     {
         let _ = std::fs::remove_dir(&scope_dir);
+    }
+
+    // Remove symlinks created during install.
+    if let Some(ref manifest) = manifest {
+        for link in &manifest.package.links {
+            let target = expand_tilde(link);
+            if target.is_symlink() {
+                on_step(&format!("unlinking {}…", target.display()));
+                let _ = std::fs::remove_file(&target);
+            }
+        }
     }
 
     // Prune cached repo if no other package references it.
@@ -203,6 +235,16 @@ pub fn parse_package(package: &str) -> Result<(&str, &str)> {
         (Some(s), Some(n)) => Ok((s, n)),
         _ => anyhow::bail!("package must be in `scope/name` format, got: {package}"),
     }
+}
+
+/// Expand a leading `~` to the user's home directory.
+fn expand_tilde(path: &str) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join(rest);
+        }
+    }
+    PathBuf::from(path)
 }
 
 /// Read and deserialize the manifest for a package from the local hub repo.
