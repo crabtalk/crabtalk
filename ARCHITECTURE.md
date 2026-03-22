@@ -1,6 +1,6 @@
 ## Architecture
 
-Crabtalk is a daemon-based LLM agent orchestrator. Local-first, composable.
+Crabtalk is daemon-based LLM agent infrastructure.
 
 ### Crates (`crates/`)
 
