@@ -80,8 +80,10 @@ impl Hub {
                         .repo_dir
                         .as_ref()
                         .context("prompt setup requires a repository but none was cloned")?;
-                    std::fs::read_to_string(repo_dir.join(prompt))
-                        .with_context(|| format!("failed to read setup prompt: {}", prompt))?
+                    let raw = std::fs::read_to_string(repo_dir.join(prompt))
+                        .with_context(|| format!("failed to read setup prompt: {}", prompt))?;
+                    // Replace <REPO_DIR> placeholder with the actual cached repo path.
+                    raw.replace("<REPO_DIR>", &repo_dir.display().to_string())
                 } else {
                     prompt.clone()
                 };

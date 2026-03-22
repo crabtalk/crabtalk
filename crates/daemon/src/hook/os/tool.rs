@@ -10,11 +10,8 @@ use wcore::{
 
 #[derive(Deserialize, JsonSchema)]
 pub(crate) struct Bash {
-    /// Executable to run (e.g. `"ls"`, `"python3"`).
+    /// Shell command to run (e.g. `"ls -la"`, `"cat foo.txt | grep bar"`).
     pub command: String,
-    /// Arguments to pass to the executable.
-    #[serde(default)]
-    pub args: Vec<String>,
     /// Environment variables to set for the process.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
@@ -43,8 +40,9 @@ impl crate::hook::DaemonHook {
             None
         };
         let cwd = session_cwd.as_deref().unwrap_or(&self.cwd);
-        let mut cmd = tokio::process::Command::new(&input.command);
-        cmd.args(&input.args)
+
+        let mut cmd = tokio::process::Command::new("bash");
+        cmd.args(["-c", &input.command])
             .envs(&input.env)
             .current_dir(cwd)
             .stdout(std::process::Stdio::piped())
