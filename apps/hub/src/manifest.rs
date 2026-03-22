@@ -43,10 +43,6 @@ pub struct Package {
     /// Searchable keywords (for hub discovery).
     #[serde(default)]
     pub keywords: Vec<String>,
-    /// Symlink targets — paths where the cached repo should be linked.
-    /// Supports `~` expansion for home directory.
-    #[serde(default)]
-    pub links: Vec<String>,
     /// Setup configuration (run after install).
     #[serde(default)]
     pub setup: Option<Setup>,
