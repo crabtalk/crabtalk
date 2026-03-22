@@ -18,6 +18,28 @@ pub struct TelegramConfig {
     pub allowed_users: Vec<i64>,
 }
 
+/// WeChat bot configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WechatConfig {
+    /// Bot token from QR code login.
+    pub token: String,
+    /// API base URL (default: `https://ilinkai.weixin.qq.com`).
+    #[serde(default = "WechatConfig::default_base_url")]
+    pub base_url: String,
+    /// Optional whitelist of WeChat user IDs (e.g. `xxx@im.wechat`).
+    ///
+    /// When non-empty only messages from these users are processed;
+    /// everyone else is silently ignored.
+    #[serde(default)]
+    pub allowed_users: Vec<String>,
+}
+
+impl WechatConfig {
+    fn default_base_url() -> String {
+        "https://ilinkai.weixin.qq.com".to_string()
+    }
+}
+
 /// Top-level gateway configuration.
 ///
 /// Deserialized from `~/.crabtalk/gateway.toml`.
@@ -25,6 +47,8 @@ pub struct TelegramConfig {
 pub struct GatewayConfig {
     /// Telegram bot config. Absent means no Telegram bot.
     pub telegram: Option<TelegramConfig>,
+    /// WeChat bot config. Absent means no WeChat bot.
+    pub wechat: Option<WechatConfig>,
 }
 
 impl GatewayConfig {

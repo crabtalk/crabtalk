@@ -12,7 +12,7 @@ pub mod stream;
 
 pub use client::DaemonClient;
 pub use command::{BotCommand, COMMAND_HINT, parse_command};
-pub use config::{GatewayConfig, TelegramConfig};
+pub use config::{GatewayConfig, TelegramConfig, WechatConfig};
 pub use message::{Attachment, AttachmentKind, GatewayMessage, attachment_summary};
 pub use stream::StreamAccumulator;
 

@@ -1,0 +1,29 @@
+[package]
+name = "crabtalk-wechat"
+description = "WeChat gateway for Crabtalk"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[[bin]]
+name = "crabtalk-wechat"
+path = "src/bin/main.rs"
+
+[dependencies]
+gateway.workspace = true
+wcore.workspace = true
+transport.workspace = true
+crabtalk-command.workspace = true
+
+anyhow.workspace = true
+base64.workspace = true
+clap.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true

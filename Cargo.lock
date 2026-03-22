@@ -740,6 +740,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabtalk-wechat"
+version = "0.0.12"
+dependencies = [
+ "anyhow",
+ "base64",
+ "clap",
+ "crabtalk-command",
+ "crabtalk-core",
+ "crabtalk-gateway",
+ "crabtalk-transport",
+ "rand 0.9.2",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

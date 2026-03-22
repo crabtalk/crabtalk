@@ -13,6 +13,7 @@ keywords = ["llm", "agent", "ai"]
 [workspace.dependencies]
 crabhub = { path = "apps/hub", package = "crabhub", version = "0.0.12" }
 crabtalk-telegram = { path = "apps/telegram", version = "0.0.12" }
+crabtalk-wechat = { path = "apps/wechat", version = "0.0.12" }
 gateway = { path = "crates/gateway", package = "crabtalk-gateway", version = "0.0.12" }
 cli = { path = "crates/cli", package = "crabtalk", version = "0.0.12" }
 daemon = { path = "crates/daemon", package = "crabtalk-daemon", version = "0.0.12" }
@@ -28,6 +29,7 @@ crabllm-core = "0.0.7"
 crabllm-provider = "0.0.7"
 
 # crates.io
+base64 = "0.22"
 anyhow = "1"
 proc-macro2 = "1"
 quote = "1"
@@ -105,6 +107,3 @@ debug = false
 debug-assertions = false
 overflow-checks = false
 strip = true
-
-[workspace.metadata.conta]
-packages = ["wcore", "transport", "gateway", "model", "daemon", "cli"]
