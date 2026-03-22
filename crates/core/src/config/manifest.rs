@@ -142,6 +142,16 @@ pub fn resolve_manifests(config_dir: &Path) -> ResolvedManifest {
         }
     }
 
+    // External tool skill directories (lowest priority).
+    if let Some(ref home) = dirs::home_dir() {
+        for dir in [".claude/skills", ".codex/skills", ".openclaw/skills"] {
+            let path = home.join(dir);
+            if path.exists() {
+                resolved.skill_dirs.push(path);
+            }
+        }
+    }
+
     resolved
 }
 
