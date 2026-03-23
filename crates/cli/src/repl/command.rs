@@ -166,6 +166,15 @@ fn list_skill_names() -> Option<Vec<String>> {
         }
     }
 
+    // External tool skill directories.
+    if let Some(home) = dirs::home_dir() {
+        for dir in [".claude/skills", ".codex/skills", ".openclaw/skills"] {
+            if let Some(names) = list_skill_dirs(&home.join(dir)) {
+                all_names.extend(names);
+            }
+        }
+    }
+
     if all_names.is_empty() {
         None
     } else {

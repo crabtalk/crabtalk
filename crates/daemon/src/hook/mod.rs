@@ -346,7 +346,7 @@ impl DaemonHook {
     /// Tokens that don't match a skill are left as-is.
     fn resolve_slash_skill(&self, agent: &str, content: &str) -> String {
         let scope = self.scopes.get(agent);
-        let mut appended = Vec::new();
+        let mut appended: Vec<(String, String)> = Vec::new();
         let mut rest = content;
 
         while let Some(slash) = rest.find('/') {
@@ -377,7 +377,7 @@ impl DaemonHook {
                 let Ok(skill) = skill::loader::parse_skill_md(&file_content) else {
                     continue;
                 };
-                appended.push(skill.body);
+                appended.push((name.to_owned(), skill.body));
                 found = true;
                 break;
             }
@@ -389,7 +389,11 @@ impl DaemonHook {
         if appended.is_empty() {
             return content.to_owned();
         }
-        format!("{}\n\n{}", content, appended.join("\n\n"))
+        let blocks: Vec<String> = appended
+            .iter()
+            .map(|(name, body)| format!("<skill name=\"{name}\">\n{body}\n</skill>"))
+            .collect();
+        format!("{}\n\n{}", content, blocks.join("\n\n"))
     }
 
     /// Route a tool call by name to the appropriate handler.

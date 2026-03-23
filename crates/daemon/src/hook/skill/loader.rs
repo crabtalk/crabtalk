@@ -21,22 +21,13 @@ struct SkillFrontmatter {
     #[serde(default)]
     metadata: BTreeMap<String, String>,
     #[serde(default, rename = "allowed-tools")]
-    allowed_tools: Option<String>,
+    allowed_tools: Vec<String>,
 }
 
 /// Parse a SKILL.md file (YAML frontmatter + Markdown body) into a [`Skill`].
 pub fn parse_skill_md(content: &str) -> anyhow::Result<Skill> {
     let (frontmatter, body) = split_yaml_frontmatter(content)?;
     let fm: SkillFrontmatter = serde_yml::from_str(frontmatter)?;
-
-    let allowed_tools = fm
-        .allowed_tools
-        .map(|s| {
-            s.split_whitespace()
-                .map(|s| s.to_owned())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
 
     let metadata = fm.metadata;
 
@@ -46,7 +37,7 @@ pub fn parse_skill_md(content: &str) -> anyhow::Result<Skill> {
         license: fm.license,
         compatibility: fm.compatibility,
         metadata,
-        allowed_tools,
+        allowed_tools: fm.allowed_tools,
         body: body.to_owned(),
     })
 }
