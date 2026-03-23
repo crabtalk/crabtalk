@@ -8,8 +8,8 @@
 //! `run()` collects its events and returns the final response.
 
 use crate::model::{
-    Choice, CompletionMeta, Delta, Message, MessageBuilder, Model, Request, Response, Role, Tool,
-    Usage,
+    Choice, CompletionMeta, Delta, FunctionCall, Message, MessageBuilder, Model, Request, Response,
+    Role, Tool, ToolCall, Usage,
 };
 use anyhow::Result;
 use async_stream::stream;
@@ -214,6 +214,7 @@ impl<M: Model> Agent<M> {
                 let mut last_meta = CompletionMeta::default();
                 let mut last_usage = None;
                 let mut stream_error = None;
+                let mut tool_begin_emitted = false;
 
                 {
                     let mut chunk_stream = std::pin::pin!(self.model.stream(request));
@@ -234,6 +235,24 @@ impl<M: Model> Agent<M> {
                                     last_usage = chunk.usage.clone();
                                 }
                                 builder.accept(&chunk);
+                                // Emit ToolCallsBegin as soon as tool names appear
+                                // in the builder, so the CLI can show markers while
+                                // args are still streaming.
+                                if !tool_begin_emitted && !builder.tool_call_names().is_empty() {
+                                    tool_begin_emitted = true;
+                                    let calls: Vec<_> = builder
+                                        .tool_call_names()
+                                        .into_iter()
+                                        .map(|name| ToolCall {
+                                            function: FunctionCall {
+                                                name: name.to_owned(),
+                                                arguments: String::new(),
+                                            },
+                                            ..Default::default()
+                                        })
+                                        .collect();
+                                    yield AgentEvent::ToolCallsBegin(calls);
+                                }
                             }
                             Err(e) => {
                                 stream_error = Some(e.to_string());
@@ -296,6 +315,8 @@ impl<M: Model> Agent<M> {
                 let has_tool_calls = !tool_calls.is_empty();
 
                 // Dispatch tool calls if any.
+                //
+                // Batch the tool calls
                 let mut tool_results = Vec::new();
                 if has_tool_calls {
                     let sender = last_sender(history);

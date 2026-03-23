@@ -65,23 +65,7 @@ pub async fn install(
 
     // Read the manifest from the hub directory.
     let manifest = read_manifest_from(&hub_dir, scope, name)?;
-
-    // Copy manifest to packages/scope/name.toml.
-    on_step("installing manifest…");
-    let packages_dir = CONFIG_DIR.join(wcore::paths::PACKAGES_DIR);
-    let scope_dir = packages_dir.join(scope);
-    std::fs::create_dir_all(&scope_dir)
-        .with_context(|| format!("failed to create {}", scope_dir.display()))?;
-    let manifest_dst = scope_dir.join(format!("{name}.toml"));
     let manifest_src = hub_dir.join(scope).join(format!("{name}.toml"));
-
-    std::fs::copy(&manifest_src, &manifest_dst).with_context(|| {
-        format!(
-            "failed to copy manifest {} → {}",
-            manifest_src.display(),
-            manifest_dst.display()
-        )
-    })?;
 
     // Clone the source repo to .cache/repos/{slug}/ if it has a repository URL.
     let repo_dir = if !manifest.package.repository.is_empty() {
@@ -126,6 +110,22 @@ pub async fn install(
     if !manifest.commands.is_empty() {
         install_commands(&manifest, &on_step).await?;
     }
+
+    // Copy manifest to packages/scope/name.toml — done last so a failed
+    // setup doesn't leave a half-installed package that blocks re-install.
+    on_step("installing manifest…");
+    let packages_dir = CONFIG_DIR.join(wcore::paths::PACKAGES_DIR);
+    let scope_dir = packages_dir.join(scope);
+    std::fs::create_dir_all(&scope_dir)
+        .with_context(|| format!("failed to create {}", scope_dir.display()))?;
+    let manifest_dst = scope_dir.join(format!("{name}.toml"));
+    std::fs::copy(&manifest_src, &manifest_dst).with_context(|| {
+        format!(
+            "failed to copy manifest {} → {}",
+            manifest_src.display(),
+            manifest_dst.display()
+        )
+    })?;
 
     Ok(InstallResult {
         setup: manifest.package.setup,
@@ -293,9 +293,8 @@ async fn find_cargo(on_step: &impl Fn(&str)) -> Result<PathBuf> {
         .context("failed to run rustup installer")?;
     anyhow::ensure!(status.success(), "rustup installation failed");
 
-    // Rustup installs cargo to ~/.cargo/bin/cargo.
     let home = std::env::var("HOME").unwrap_or_default();
-    let cargo = PathBuf::from(home).join(".cargo/bin/cargo");
+    let cargo = PathBuf::from(&home).join(".cargo/bin/cargo");
     anyhow::ensure!(
         cargo.exists(),
         "cargo not found at {} after rustup install",
@@ -304,7 +303,7 @@ async fn find_cargo(on_step: &impl Fn(&str)) -> Result<PathBuf> {
     Ok(cargo)
 }
 
-/// Look for a binary on PATH.
+/// Look for a binary on PATH, falling back to `~/.cargo/bin`.
 fn which(name: &str) -> Option<PathBuf> {
     let path = std::env::var("PATH").unwrap_or_default();
     for dir in path.split(':') {
@@ -313,6 +312,14 @@ fn which(name: &str) -> Option<PathBuf> {
             return Some(candidate);
         }
     }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let candidate = PathBuf::from(home).join(".cargo/bin").join(name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
     None
 }
 

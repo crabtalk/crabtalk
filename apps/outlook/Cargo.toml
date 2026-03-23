@@ -15,9 +15,16 @@ path = "src/bin/main.rs"
 required-features = ["cli"]
 
 [features]
-default = ["cli"]
+default = ["cli", "mcp"]
 cli = ["dep:clap", "dep:tracing-subscriber"]
-mcp = ["dep:rmcp", "dep:schemars", "dep:axum", "dep:crabtalk-command", "dep:anyhow", "cli"]
+mcp = [
+    "dep:rmcp",
+    "dep:schemars",
+    "dep:axum",
+    "dep:crabtalk-command",
+    "dep:anyhow",
+    "cli",
+]
 
 [dependencies]
 chrono.workspace = true

@@ -78,6 +78,16 @@ impl Server for Daemon {
                     AgentEvent::ThinkingDelta(text) => {
                         yield StreamEvent { event: Some(stream_event::Event::Thinking(StreamThinking { content: text })) };
                     }
+                    AgentEvent::ToolCallsBegin(calls) => {
+                        // Early notification — tool names known, args still streaming.
+                        // Send ToolStart for CLI markers, skip AskUser extraction.
+                        yield StreamEvent { event: Some(stream_event::Event::ToolStart(ToolStartEvent {
+                            calls: calls.into_iter().map(|c| ToolCallInfo {
+                                name: c.function.name.to_string(),
+                                arguments: String::new(),
+                            }).collect(),
+                        })) };
+                    }
                     AgentEvent::ToolCallsStart(calls) => {
                         // Extract structured questions from ask_user calls.
                         let ask_questions: Vec<AskQuestion> = calls

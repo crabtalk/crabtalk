@@ -76,9 +76,19 @@ impl Daemon {
     ///
     /// In-flight requests that already hold a reference to the old runtime
     /// complete normally. New requests after the swap see the new runtime.
+    /// Active sessions are preserved across the reload.
     pub async fn reload(&self) -> Result<()> {
         let config = DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
-        let new_runtime = Self::build_runtime(&config, &self.config_dir, &self.event_tx).await?;
+        let mut new_runtime =
+            Self::build_runtime(&config, &self.config_dir, &self.event_tx).await?;
+
+        // Carry sessions from old runtime into the new one so gateways
+        // (wechat, telegram, etc.) don't lose conversation state.
+        {
+            let old_runtime = self.runtime.read().await;
+            (**old_runtime).transfer_sessions(&mut new_runtime).await;
+        }
+
         *self.runtime.write().await = Arc::new(new_runtime);
         tracing::info!("daemon reloaded");
         Ok(())

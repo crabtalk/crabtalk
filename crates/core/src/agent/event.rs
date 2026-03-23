@@ -18,7 +18,9 @@ pub enum AgentEvent {
     TextDelta(String),
     /// Thinking/reasoning content delta from the model.
     ThinkingDelta(String),
-    /// Model is calling tools (with the tool calls).
+    /// Early notification: model is generating tool calls (names only, args incomplete).
+    ToolCallsBegin(Vec<ToolCall>),
+    /// Model is calling tools (with the complete tool calls).
     ToolCallsStart(Vec<ToolCall>),
     /// A single tool completed execution.
     ToolResult {

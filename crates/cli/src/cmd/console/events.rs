@@ -68,7 +68,7 @@ pub(super) fn render_events(
                 Span::styled(
                     format!("{}#{} ", entry.msg.agent, entry.msg.session),
                     Style::default()
-                        .fg(Color::Blue)
+                        .fg(Color::LightMagenta)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(

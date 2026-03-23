@@ -161,6 +161,15 @@ impl MessageBuilder {
         has_content
     }
 
+    /// Peek at accumulated tool call names (if any have non-empty names).
+    pub fn tool_call_names(&self) -> Vec<&str> {
+        self.calls
+            .values()
+            .filter(|c| !c.function.name.is_empty())
+            .map(|c| c.function.name.as_str())
+            .collect()
+    }
+
     /// Build the message
     pub fn build(mut self) -> Message {
         if !self.calls.is_empty() {

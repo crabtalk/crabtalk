@@ -11,6 +11,12 @@ pub struct OutlookServer {
     client: OutlookClient,
 }
 
+impl Default for OutlookServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OutlookServer {
     pub fn new() -> Self {
         let config = Config::load().expect("failed to load outlook config");

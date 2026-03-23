@@ -1,3 +1,5 @@
+#[cfg(feature = "mcp")]
+use crate::token::Token;
 use crate::{auth, config::Config, error::Error, token::token_path};
 use clap::{Parser, Subcommand};
 
@@ -51,6 +53,13 @@ impl App {
             }
             #[cfg(feature = "mcp")]
             Command::Mcp(action) => {
+                let path = token_path();
+                if Token::load(&path).is_err() {
+                    let config = Config::load()?;
+                    let token = auth::authorize(&config).await?;
+                    token.save(&path)?;
+                    eprintln!("Token saved to {}", path.display());
+                }
                 Outlook
                     .exec(action)
                     .await

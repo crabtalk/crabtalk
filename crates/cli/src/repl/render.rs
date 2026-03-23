@@ -5,9 +5,11 @@
 
 use console::{Style, Term, style};
 use heck::ToUpperCamelCase;
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::{
     io::{BufWriter, Stdout, Write},
     sync::LazyLock,
+    time::Duration,
 };
 use syntect::{
     easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet,
@@ -35,7 +37,7 @@ static SKIN: LazyLock<MadSkin> = LazyLock::new(|| {
     skin.headers[0].left_margin = 2;
     skin.headers[1]
         .compound_style
-        .set_fgbg(Color::Blue, Color::Reset);
+        .set_fgbg(Color::Magenta, Color::Reset);
     skin.headers[1].compound_style.add_attr(Attribute::Bold);
     skin.headers[1].left_margin = 2;
     skin.headers[2]
@@ -52,8 +54,6 @@ const PAD: &str = "  ";
 /// Tool result indent (aligns with label text after `⏺ `).
 const TOOL_PAD: &str = "  ";
 
-const BLINK_ON: &str = "\x1b[5m";
-const RESET: &str = "\x1b[0m";
 const ERASE_LINE: &str = "\x1b[2K";
 
 fn term_width() -> usize {
@@ -87,6 +87,8 @@ pub struct MarkdownRenderer {
     after_tool: bool,
     /// Whether any tool result in the current batch indicated failure.
     tool_failed: bool,
+    /// Blinking spinner for waiting states (runs on background OS thread).
+    spinner: Option<ProgressBar>,
 }
 
 impl Default for MarkdownRenderer {
@@ -108,12 +110,45 @@ impl MarkdownRenderer {
             tool_result_lines: 0,
             after_tool: false,
             tool_failed: false,
+            spinner: None,
+        }
+    }
+
+    /// Show a blinking dim `⏺` while waiting for content.
+    /// Renders to stdout so all terminal writes are on one fd (no race).
+    pub fn start_waiting(&mut self) {
+        let _ = self.out.flush();
+        self.clear_waiting();
+        let sp = ProgressBar::with_draw_target(None, ProgressDrawTarget::stdout());
+        sp.set_style(
+            ProgressStyle::default_spinner()
+                .tick_strings(&["⏺", " ", " "])
+                .template("{spinner:.dim}")
+                .expect("valid template"),
+        );
+        sp.enable_steady_tick(Duration::from_millis(500));
+        sp.tick();
+        self.spinner = Some(sp);
+    }
+
+    /// Stop the spinner and erase its line atomically.
+    ///
+    /// Holds the stdout lock while abandoning to prevent the spinner
+    /// thread from writing one last frame after the erase.
+    fn clear_waiting(&mut self) {
+        if let Some(sp) = self.spinner.take() {
+            let stdout = std::io::stdout();
+            let mut lock = stdout.lock();
+            sp.abandon();
+            let _ = write!(lock, "\r{ERASE_LINE}");
+            let _ = lock.flush();
         }
     }
 
     /// Print the `⏺` marker at column 0 if this is the first text output.
     fn ensure_started(&mut self) {
         if !self.started {
+            self.clear_waiting();
             let _ = write!(self.out, "⏺ ");
             self.started = true;
             self.first_line = true;
@@ -121,6 +156,10 @@ impl MarkdownRenderer {
     }
 
     pub fn push_text(&mut self, chunk: &str) {
+        if chunk.is_empty() {
+            return;
+        }
+
         if matches!(self.state, RenderState::Thinking) {
             self.state = RenderState::Normal;
         }
@@ -129,6 +168,7 @@ impl MarkdownRenderer {
 
         // After a tool block, print a new `⏺` marker for continuing text.
         if self.after_tool {
+            self.clear_waiting();
             let _ = write!(self.out, "⏺ ");
             self.first_line = true;
             self.after_tool = false;
@@ -136,16 +176,43 @@ impl MarkdownRenderer {
 
         for ch in chunk.chars() {
             if ch == '\n' {
-                let line = std::mem::take(&mut self.line_buf);
-                self.render_line(&line);
+                if self.first_line {
+                    if self.line_buf.starts_with("```") || self.line_buf.starts_with('|') {
+                        // Code block / table — need render_line for state machine.
+                        let _ = write!(self.out, "\r{ERASE_LINE}⏺ ");
+                        self.first_line = false;
+                        let line = std::mem::take(&mut self.line_buf);
+                        self.render_line(&line);
+                    } else {
+                        // Normal text — inline output is the final render.
+                        let _ = writeln!(self.out);
+                        self.first_line = false;
+                        self.last_was_blank = self.line_buf.is_empty();
+                        self.line_buf.clear();
+                    }
+                } else {
+                    let line = std::mem::take(&mut self.line_buf);
+                    self.render_line(&line);
+                }
             } else {
                 self.line_buf.push(ch);
+                // Stream first line chars inline for immediate visibility.
+                if self.first_line {
+                    let _ = write!(self.out, "{ch}");
+                }
             }
         }
+
         let _ = self.out.flush();
     }
 
     pub fn push_thinking(&mut self, chunk: &str) {
+        if chunk.is_empty() {
+            return;
+        }
+
+        self.clear_waiting();
+
         if !matches!(self.state, RenderState::Thinking) {
             self.state = RenderState::Thinking;
         }
@@ -155,11 +222,24 @@ impl MarkdownRenderer {
     }
 
     pub fn push_tool_start(&mut self, calls: &[(String, String)]) {
-        self.flush_thinking();
-        if !self.line_buf.is_empty() {
-            let line = std::mem::take(&mut self.line_buf);
-            self.render_md_line(&line);
+        // Skip if markers already shown (early ToolCallsBegin already handled).
+        if !self.tool_labels.is_empty() {
+            return;
         }
+        self.flush_thinking();
+        // Finalize any pending text BEFORE clear_waiting, so \r{ERASE_LINE}
+        // doesn't eat inline text on the first line.
+        if !self.line_buf.is_empty() {
+            if self.first_line {
+                let _ = writeln!(self.out);
+                self.first_line = false;
+                self.line_buf.clear();
+            } else {
+                let line = std::mem::take(&mut self.line_buf);
+                self.render_md_line(&line);
+            }
+        }
+        self.clear_waiting();
         if !self.last_was_blank {
             let _ = writeln!(self.out);
         }
@@ -168,18 +248,43 @@ impl MarkdownRenderer {
         self.tool_labels.clear();
         self.tool_failed = false;
         for (name, args) in calls {
-            let label = format_tool_label(name, args);
-            let _ = writeln!(
-                self.out,
-                "{BLINK_ON}⏺{RESET} {}",
-                style(&label).bold().dim()
-            );
-            self.tool_labels.push(label);
+            self.tool_labels.push(format_tool_label(name, args));
         }
         let _ = self.out.flush();
+
+        // Show tool marker with braille spinner on stdout.
+        let msg = self.tool_labels.join(", ");
+        let sp = ProgressBar::with_draw_target(None, ProgressDrawTarget::stdout());
+        sp.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.dim} {msg:.bold.dim}")
+                .expect("valid template"),
+        );
+        sp.set_message(msg);
+        sp.enable_steady_tick(Duration::from_millis(80));
+        sp.tick();
+        self.spinner = Some(sp);
+    }
+
+    /// Replace the spinner with static dim markers on stdout so
+    /// push_tool_result / push_tool_done can use cursor movement.
+    fn solidify_tool_markers(&mut self) {
+        if self.spinner.is_some() {
+            self.clear_waiting();
+            for label in &self.tool_labels {
+                let _ = writeln!(
+                    self.out,
+                    "{} {}",
+                    S_DIM.apply_to("⏺"),
+                    style(label).bold().dim()
+                );
+            }
+            let _ = self.out.flush();
+        }
     }
 
     pub fn push_tool_result(&mut self, output: &str) {
+        self.solidify_tool_markers();
         if is_tool_failure(output) {
             self.tool_failed = true;
         }
@@ -202,6 +307,7 @@ impl MarkdownRenderer {
     }
 
     pub fn push_tool_done(&mut self, _success: bool) {
+        self.solidify_tool_markers();
         let count = self.tool_labels.len();
         if count == 0 {
             return;
@@ -235,19 +341,28 @@ impl MarkdownRenderer {
 
     pub fn finish(&mut self) {
         if !self.tool_labels.is_empty() {
+            // push_tool_done → solidify_tool_markers handles the spinner.
             self.push_tool_done(false);
+        } else {
+            self.clear_waiting();
         }
         self.flush_thinking();
 
         if !self.line_buf.is_empty() {
-            let line = std::mem::take(&mut self.line_buf);
-            match &self.state {
-                RenderState::CodeBlock { .. } => {
-                    self.flush_code_block_raw(&line);
-                }
-                _ => {
-                    self.ensure_started();
-                    self.render_md_line(&line);
+            if self.first_line {
+                // First line was streamed inline — just finalize.
+                let _ = writeln!(self.out);
+                self.line_buf.clear();
+            } else {
+                let line = std::mem::take(&mut self.line_buf);
+                match &self.state {
+                    RenderState::CodeBlock { .. } => {
+                        self.flush_code_block_raw(&line);
+                    }
+                    _ => {
+                        self.ensure_started();
+                        self.render_md_line(&line);
+                    }
                 }
             }
         }

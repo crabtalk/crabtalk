@@ -143,6 +143,7 @@ pub(crate) async fn stream_to_terminal(
 ) -> Result<()> {
     let mut stream = pin!(stream);
     let mut renderer = MarkdownRenderer::new();
+    renderer.start_waiting();
 
     loop {
         tokio::select! {

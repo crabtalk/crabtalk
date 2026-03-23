@@ -305,7 +305,7 @@ fn draw(frame: &mut ratatui::Frame, state: &AskState) {
         .select(state.focused)
         .highlight_style(
             Style::default()
-                .fg(Color::Blue)
+                .fg(Color::LightMagenta)
                 .add_modifier(Modifier::BOLD),
         )
         .style(Style::default().fg(Color::DarkGray))

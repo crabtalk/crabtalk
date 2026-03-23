@@ -151,6 +151,20 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         self.active_sessions.read().await.contains(&id)
     }
 
+    /// Move all sessions from this runtime into `dest`.
+    ///
+    /// Used during daemon reload to preserve gateway sessions. The `dest`
+    /// runtime must not yet be shared (call before wrapping in `Arc`).
+    pub async fn transfer_sessions<M2: Model, H2: Hook>(&self, dest: &mut Runtime<M2, H2>) {
+        let sessions = self.sessions.read().await;
+        let dest_sessions = dest.sessions.get_mut();
+        for (id, session) in sessions.iter() {
+            dest_sessions.insert(*id, session.clone());
+        }
+        let next = self.next_session_id.load(Ordering::Relaxed);
+        dest.next_session_id.store(next, Ordering::Relaxed);
+    }
+
     // --- Execution ---
 
     /// Push the user message, strip old auto-injected messages, and inject

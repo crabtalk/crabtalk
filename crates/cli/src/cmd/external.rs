@@ -93,14 +93,9 @@ fn install_rustup() -> Result<()> {
     Ok(())
 }
 
-/// Check if cargo is available on PATH.
+/// Check if cargo is available on PATH or in `~/.cargo/bin`.
 fn has_cargo() -> bool {
-    Command::new("cargo")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    find_binary("cargo").is_some()
 }
 
 /// Prompt the user for yes/no confirmation.
@@ -112,7 +107,8 @@ fn confirm(prompt: &str) -> Result<bool> {
     Ok(matches!(input.trim(), "y" | "Y"))
 }
 
-/// Look for an external binary next to the current exe, then on PATH.
+/// Look for an external binary next to the current exe, then on PATH,
+/// then in `~/.cargo/bin` as a fallback.
 fn find_binary(name: &str) -> Option<PathBuf> {
     if let Ok(current) = std::env::current_exe()
         && let Some(dir) = current.parent()
@@ -126,6 +122,14 @@ fn find_binary(name: &str) -> Option<PathBuf> {
     let path = std::env::var("PATH").unwrap_or_default();
     for dir in path.split(':') {
         let candidate = PathBuf::from(dir).join(name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    // Fallback: ~/.cargo/bin may not be on PATH yet.
+    if let Ok(home) = std::env::var("HOME") {
+        let candidate = PathBuf::from(home).join(".cargo/bin").join(name);
         if candidate.exists() {
             return Some(candidate);
         }
