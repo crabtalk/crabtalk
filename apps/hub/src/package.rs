@@ -30,9 +30,25 @@ pub async fn install(
     package: &str,
     branch: Option<&str>,
     path: Option<&Path>,
+    force: bool,
     on_step: impl Fn(&str),
 ) -> Result<InstallResult> {
     let (scope, name) = parse_package(package)?;
+
+    // Check if already installed.
+    if !force {
+        let manifest_path = CONFIG_DIR
+            .join(wcore::paths::PACKAGES_DIR)
+            .join(scope)
+            .join(format!("{name}.toml"));
+        if manifest_path.exists() {
+            on_step("already installed, use --force to overwrite");
+            return Ok(InstallResult {
+                setup: None,
+                repo_dir: None,
+            });
+        }
+    }
 
     // Resolve the hub directory — use a local path or sync from remote.
     let hub_dir = if let Some(p) = path {

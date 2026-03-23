@@ -44,6 +44,9 @@ pub struct HubTest {
 pub struct HubInstall {
     /// Package identifier in `scope/name` format.
     pub package: String,
+    /// Overwrite if already installed.
+    #[arg(long)]
+    pub force: bool,
 }
 
 /// Package argument shared by uninstall.
@@ -60,9 +63,9 @@ impl Hub {
             return test_manifest(&t.path);
         }
 
-        let (pkg, is_install) = match self.command {
-            HubCommand::Install(p) => (p.package, true),
-            HubCommand::Uninstall(p) => (p.package, false),
+        let (pkg, force, is_install) = match self.command {
+            HubCommand::Install(p) => (p.package, p.force, true),
+            HubCommand::Uninstall(p) => (p.package, false, false),
             HubCommand::Test(_) => unreachable!(),
         };
 
@@ -73,6 +76,7 @@ impl Hub {
                 &pkg,
                 self.branch.as_deref(),
                 self.path.as_deref(),
+                force,
                 on_step,
             )
             .await?;
