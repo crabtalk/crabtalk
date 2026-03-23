@@ -98,11 +98,31 @@ impl Hook for DaemonHook {
             ));
         }
         if let Ok(reg) = self.skills.registry.try_lock() {
-            let skills: Vec<&str> = reg.skills().iter().map(|s| s.name.as_str()).collect();
-            if !skills.is_empty() {
+            let all_skills = reg.skills();
+            // If the agent declares specific skills, show only those with
+            // descriptions. Otherwise show all skills.
+            let visible: Vec<_> = if config.skills.is_empty() {
+                all_skills.iter().collect()
+            } else {
+                all_skills
+                    .iter()
+                    .filter(|s| config.skills.iter().any(|n| n == &s.name))
+                    .collect()
+            };
+            if !visible.is_empty() {
+                let lines: Vec<String> = visible
+                    .iter()
+                    .map(|s| {
+                        if s.description.is_empty() {
+                            format!("- {}", s.name)
+                        } else {
+                            format!("- {}: {}", s.name, s.description)
+                        }
+                    })
+                    .collect();
                 hints.push(format!(
-                    "Skills: {}. Use the skill tool to load one by name.",
-                    skills.join(", ")
+                    "Skills (use the skill tool to load one by name):\n{}",
+                    lines.join("\n")
                 ));
             }
         }

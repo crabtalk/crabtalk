@@ -9,13 +9,50 @@ use crate::{
     Daemon, DaemonConfig,
     config::{ResolvedManifest, resolve_manifests},
     daemon::event::{DaemonEvent, DaemonEventSender},
-    hook::{self, DaemonHook, system::memory::Memory},
+    hook::{self, DaemonHook, skill::loader, system::memory::Memory},
 };
 use anyhow::Result;
 use model::ProviderRegistry;
-use std::{path::Path, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tokio::sync::RwLock;
 use wcore::{AgentConfig, Runtime, ToolRequest};
+
+/// Resolve qualified package references in an agent's skill list.
+///
+/// Entries containing `/` (e.g. `"crabtalk/gstack"`) are treated as package
+/// references. Each is expanded to the individual skill names found in that
+/// package's skill directory. Plain skill names are left as-is.
+fn resolve_package_skills(
+    skills: &mut Vec<String>,
+    package_skill_dirs: &BTreeMap<String, PathBuf>,
+) {
+    let mut resolved = Vec::new();
+    for entry in skills.drain(..) {
+        if entry.contains('/') {
+            if let Some(dir) = package_skill_dirs.get(&entry) {
+                match loader::load_skills_dir(dir) {
+                    Ok(registry) => {
+                        for skill in registry.skills() {
+                            resolved.push(skill.name.clone());
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("failed to resolve package skills for '{entry}': {e}");
+                    }
+                }
+            } else {
+                tracing::warn!("unknown package skill reference: '{entry}'");
+            }
+        } else {
+            resolved.push(entry);
+        }
+    }
+    *skills = resolved;
+}
 
 const SYSTEM_AGENT: &str = include_str!("../../prompts/crab.md");
 
@@ -184,6 +221,7 @@ impl Daemon {
             let mut agent = agent_config.clone();
             agent.name = name.clone();
             agent.system_prompt = prompt.clone();
+            resolve_package_skills(&mut agent.skills, &manifest.package_skill_dirs);
             tracing::info!("registered agent '{name}' (thinking={})", agent.thinking);
             runtime.add_agent(agent);
         }

@@ -87,6 +87,9 @@ pub struct ResolvedManifest {
     pub skill_dirs: Vec<PathBuf>,
     /// Agent directories to scan (local first, then packages).
     pub agent_dirs: Vec<PathBuf>,
+    /// Package identifier → skill directory for resolving qualified skill
+    /// references (e.g. `"crabtalk/gstack"` → repo skill dir).
+    pub package_skill_dirs: BTreeMap<String, PathBuf>,
 }
 
 /// Resolve all manifests into a single merged view.
@@ -172,6 +175,9 @@ fn load_package_manifest(config_dir: &Path, path: &Path, resolved: &mut Resolved
         }
     };
 
+    // Derive package identifier by stripping the .toml extension.
+    let package_id = source.strip_suffix(".toml").unwrap_or(&source).to_owned();
+
     // Resolve cached repo dirs for skills/agents.
     if let Some(ref pkg) = manifest.package
         && !pkg.repository.is_empty()
@@ -181,6 +187,9 @@ fn load_package_manifest(config_dir: &Path, path: &Path, resolved: &mut Resolved
         if repo_dir.exists() {
             // Push repo root — skills are discovered recursively by SKILL.md.
             resolved.skill_dirs.push(repo_dir.clone());
+            resolved
+                .package_skill_dirs
+                .insert(package_id, repo_dir.clone());
             let agents = repo_dir.join("agents");
             if agents.exists() && agents.is_dir() {
                 resolved.agent_dirs.push(agents);
