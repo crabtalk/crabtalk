@@ -3,6 +3,20 @@
 use anyhow::Result;
 use wcore::paths::LOGS_DIR;
 
+/// Embedded systemd service template.
+pub const TEMPLATE: &str = include_str!("systemd.service");
+
+/// Check if a systemd service is installed.
+pub fn is_installed(label: &str) -> bool {
+    dirs::home_dir()
+        .map(|h| {
+            h.join(format!(".config/systemd/user/{label}.service"))
+                .exists()
+        })
+        .unwrap_or(false)
+}
+
+/// Install a systemd service.
 pub fn install(rendered: &str, label: &str) -> Result<()> {
     let unit_name = format!("{label}.service");
 
@@ -27,6 +41,7 @@ pub fn install(rendered: &str, label: &str) -> Result<()> {
     Ok(())
 }
 
+/// Uninstall a systemd service.
 pub fn uninstall(label: &str) -> Result<()> {
     let unit_name = format!("{label}.service");
 

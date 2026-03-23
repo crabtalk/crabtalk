@@ -54,6 +54,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     let label = args.label.unwrap_or_else(|| format!("ai.crabtalk.{name}"));
 
     let command_enum = format_ident!("{}Command", struct_name);
+    let cli_name = format!("crabtalk-{name}");
 
     let start_doc = format!("Install and start the {name} service.");
     let stop_doc = format!("Stop and uninstall the {name} service.");
@@ -62,12 +63,12 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let run_arm = match args.kind.as_str() {
         "mcp" => quote! {
-            #command_enum::Run { .. } => {
+            #command_enum::Run => {
                 crabtalk_command::run_mcp(self).await?
             }
         },
         "client" => quote! {
-            #command_enum::Run { .. } => {
+            #command_enum::Run => {
                 self.run().await?
             }
         },
@@ -93,22 +94,29 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
+        /// CLI wrapper with global `--verbose` flag.
+        #[derive(Debug, clap::Parser)]
+        #[command(name = #cli_name)]
+        pub struct CrabtalkCli {
+            /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
+            #[arg(short, long, action = clap::ArgAction::Count, global = true)]
+            pub verbose: u8,
+            #[command(subcommand)]
+            pub action: #command_enum,
+        }
+
         #[derive(Debug, clap::Subcommand)]
         pub enum #command_enum {
             #[doc = #start_doc]
             Start {
-                /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
-                #[arg(short, long, action = clap::ArgAction::Count)]
-                verbose: u8,
+                /// Re-install even if already installed.
+                #[arg(short, long)]
+                force: bool,
             },
             #[doc = #stop_doc]
             Stop,
             #[doc = #run_doc]
-            Run {
-                /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
-                #[arg(short, long, action = clap::ArgAction::Count)]
-                verbose: u8,
-            },
+            Run,
             #[doc = #logs_doc]
             Logs {
                 #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -123,7 +131,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
             ) -> crabtalk_command::anyhow::Result<()> {
                 use crabtalk_command::Service as _;
                 match action {
-                    #command_enum::Start { verbose } => self.start(verbose)?,
+                    #command_enum::Start { force } => self.start(force)?,
                     #command_enum::Stop => self.stop()?,
                     #run_arm
                     #command_enum::Logs { tail_args } => {
@@ -134,14 +142,12 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
-        impl #command_enum {
+        impl CrabtalkCli {
             /// Init tracing, build a tokio runtime, and run the command.
             pub fn start(self, svc: #struct_name) {
-                let verbose = match &self {
-                    Self::Run { verbose } | Self::Start { verbose } => *verbose,
-                    _ => 0,
-                };
-                crabtalk_command::run(verbose, move || async move { svc.exec(self).await });
+                crabtalk_command::run(self.verbose, move || async move {
+                    svc.exec(self.action).await
+                });
             }
         }
     };

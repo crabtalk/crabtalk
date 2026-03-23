@@ -28,10 +28,10 @@ impl Cli {
     /// Returns `None` when no `-v` flag is present (fall back to `RUST_LOG` env).
     pub fn log_filter(&self) -> Option<&'static str> {
         if let Command::Daemon(ref d) = self.command
-            && let daemon::DaemonCommand::Run { verbose } = d.command
-            && verbose > 0
+            && matches!(d.command, daemon::DaemonCommand::Run)
+            && d.verbose > 0
         {
-            Some(match verbose {
+            Some(match d.verbose {
                 1 => "crabtalk=info",
                 2 => "crabtalk=debug",
                 _ => "crabtalk=trace",

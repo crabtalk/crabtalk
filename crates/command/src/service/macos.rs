@@ -3,6 +3,9 @@
 use anyhow::Result;
 use wcore::paths::LOGS_DIR;
 
+/// Embedded launchd service template.
+pub const TEMPLATE: &str = include_str!("launchd.plist");
+
 fn launchctl_domain() -> String {
     let uid = std::process::Command::new("id")
         .arg("-u")
@@ -10,6 +13,15 @@ fn launchctl_domain() -> String {
         .expect("failed to run `id -u`");
     let uid = String::from_utf8_lossy(&uid.stdout).trim().to_string();
     format!("gui/{uid}")
+}
+
+pub fn is_installed(label: &str) -> bool {
+    dirs::home_dir()
+        .map(|h| {
+            h.join(format!("Library/LaunchAgents/{label}.plist"))
+                .exists()
+        })
+        .unwrap_or(false)
 }
 
 pub fn install(rendered: &str, label: &str) -> Result<()> {

@@ -3,7 +3,9 @@ pub use crabtalk_command_codegen::command;
 pub use wcore;
 
 pub mod service;
-pub use service::{Service, install, render_service_template, uninstall, verbose_flag, view_logs};
+pub use service::{
+    Service, install, is_installed, render_service_template, uninstall, verbose_flag, view_logs,
+};
 
 #[cfg(feature = "mcp")]
 pub use axum;

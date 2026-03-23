@@ -11,6 +11,9 @@ mod start;
 /// Manage the crabtalk daemon.
 #[derive(Args, Debug)]
 pub struct Daemon {
+    /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
+    #[arg(short, long, action = clap::ArgAction::Count, global = true)]
+    pub verbose: u8,
     #[command(subcommand)]
     pub command: DaemonCommand,
 }
@@ -18,11 +21,7 @@ pub struct Daemon {
 #[derive(Subcommand, Debug)]
 pub enum DaemonCommand {
     /// Run the daemon in the foreground.
-    Run {
-        /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
-        #[arg(short, long, action = clap::ArgAction::Count)]
-        verbose: u8,
-    },
+    Run,
     /// Trigger a hot-reload of the running daemon.
     Reload,
     /// View daemon logs (delegates to `tail`).
@@ -36,9 +35,9 @@ pub enum DaemonCommand {
     },
     /// Install and start crabtalk as a system service (launchd/systemd).
     Start {
-        /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
-        #[arg(short, long, action = clap::ArgAction::Count)]
-        verbose: u8,
+        /// Re-install even if already installed.
+        #[arg(short, long)]
+        force: bool,
     },
     /// Stop and uninstall the crabtalk system service.
     Stop,
@@ -47,10 +46,10 @@ pub enum DaemonCommand {
 impl Daemon {
     pub async fn run(self, socket_path: &Path) -> Result<()> {
         match self.command {
-            DaemonCommand::Run { .. } => start::start().await,
+            DaemonCommand::Run => start::start().await,
             DaemonCommand::Reload => reload(socket_path).await,
             DaemonCommand::Logs { tail_args } => logs::logs(&tail_args),
-            DaemonCommand::Start { verbose } => service::install(verbose.max(1)),
+            DaemonCommand::Start { force } => service::install(self.verbose.max(1), force),
             DaemonCommand::Stop => service::uninstall(),
         }
     }

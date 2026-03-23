@@ -17,13 +17,6 @@ impl GatewayWechat {
     }
 }
 
-#[derive(Parser)]
-#[command(name = "crabtalk-wechat", about = "Crabtalk WeChat gateway")]
-struct App {
-    #[command(subcommand)]
-    action: GatewayWechatCommand,
-}
-
 fn config_path() -> std::path::PathBuf {
     wcore::paths::CONFIG_DIR.join("config").join("wechat.toml")
 }
@@ -99,12 +92,12 @@ async fn qr_login() -> anyhow::Result<(String, String)> {
 }
 
 fn main() {
-    let app = App::parse();
-    if matches!(&app.action, GatewayWechatCommand::Start { .. })
+    let cli = CrabtalkCli::parse();
+    if matches!(&cli.action, GatewayWechatCommand::Start { .. })
         && let Err(e) = ensure_config()
     {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
-    app.action.start(GatewayWechat);
+    cli.start(GatewayWechat);
 }

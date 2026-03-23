@@ -7,13 +7,19 @@ use wcore::paths::{CONFIG_DIR, LOGS_DIR, RUN_DIR};
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+mod unknown;
 
-// ── Embedded templates ──────────────────────────────────────────────
+// ── Low-level install/uninstall ─────────────────────────────────────
 
 #[cfg(target_os = "macos")]
-const LAUNCHD_TEMPLATE: &str = include_str!("launchd.plist");
+pub use macos::{TEMPLATE, install, is_installed, uninstall};
+
 #[cfg(target_os = "linux")]
-const SYSTEMD_TEMPLATE: &str = include_str!("systemd.service");
+pub use linux::{TEMPLATE, install, is_installed, uninstall};
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+pub use unknown::{install, is_installed, uninstall};
 
 // ── Service trait ───────────────────────────────────────────────────
 
@@ -29,7 +35,14 @@ pub trait Service {
     fn label(&self) -> &str;
 
     /// Install and start the service.
-    fn start(&self, _verbose: u8) -> anyhow::Result<()> {
+    ///
+    /// If the service is already installed, prints a message and returns
+    /// unless `force` is set, in which case it re-installs.
+    fn start(&self, force: bool) -> anyhow::Result<()> {
+        if !force && is_installed(self.label()) {
+            println!("{} is already running", self.name());
+            return Ok(());
+        }
         let binary = std::env::current_exe()?;
         let rendered = render_service_template(self, &binary);
         install(&rendered, self.label())
@@ -62,11 +75,7 @@ pub fn verbose_flag(count: u8) -> String {
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn render_service_template(svc: &(impl Service + ?Sized), binary: &Path) -> String {
     let path_env = std::env::var("PATH").unwrap_or_default();
-    #[cfg(target_os = "macos")]
-    let template = LAUNCHD_TEMPLATE;
-    #[cfg(target_os = "linux")]
-    let template = SYSTEMD_TEMPLATE;
-    template
+    TEMPLATE
         .replace("{label}", svc.label())
         .replace("{description}", svc.description())
         .replace("{log_name}", svc.name())
@@ -79,24 +88,6 @@ pub fn render_service_template(svc: &(impl Service + ?Sized), binary: &Path) -> 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub fn render_service_template(_svc: &(impl Service + ?Sized), _binary: &Path) -> String {
     String::new()
-}
-
-// ── Low-level install/uninstall ─────────────────────────────────────
-
-#[cfg(target_os = "macos")]
-pub use macos::{install, uninstall};
-
-#[cfg(target_os = "linux")]
-pub use linux::{install, uninstall};
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub fn install(_rendered: &str, _label: &str) -> anyhow::Result<()> {
-    anyhow::bail!("service install is only supported on macOS and Linux")
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub fn uninstall(_label: &str) -> anyhow::Result<()> {
-    anyhow::bail!("service uninstall is only supported on macOS and Linux")
 }
 
 /// View service logs by delegating to `tail`.

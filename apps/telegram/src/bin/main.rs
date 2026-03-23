@@ -16,13 +16,6 @@ impl GatewayTelegram {
     }
 }
 
-#[derive(Parser)]
-#[command(name = "crabtalk-telegram", about = "Crabtalk Telegram gateway")]
-struct App {
-    #[command(subcommand)]
-    action: GatewayTelegramCommand,
-}
-
 fn config_path() -> std::path::PathBuf {
     wcore::paths::CONFIG_DIR
         .join("config")
@@ -57,12 +50,12 @@ fn ensure_config() -> anyhow::Result<()> {
 }
 
 fn main() {
-    let app = App::parse();
-    if matches!(&app.action, GatewayTelegramCommand::Start { .. })
+    let cli = CrabtalkCli::parse();
+    if matches!(&cli.action, GatewayTelegramCommand::Start { .. })
         && let Err(e) = ensure_config()
     {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
-    app.action.start(GatewayTelegram);
+    cli.start(GatewayTelegram);
 }

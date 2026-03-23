@@ -40,7 +40,11 @@ fn render_daemon_template(template: &str, verbose: u8) -> Result<String> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn install(verbose: u8) -> Result<()> {
+pub fn install(verbose: u8, force: bool) -> Result<()> {
+    if !force && crabtalk_command::is_installed(LABEL) {
+        println!("daemon is already running");
+        return Ok(());
+    }
     ensure_providers()?;
     let rendered = render_daemon_template(LAUNCHD_TEMPLATE, verbose)?;
     crabtalk_command::install(&rendered, LABEL)
@@ -52,7 +56,11 @@ pub fn uninstall() -> Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-pub fn install(verbose: u8) -> Result<()> {
+pub fn install(verbose: u8, force: bool) -> Result<()> {
+    if !force && crabtalk_command::is_installed(LABEL) {
+        println!("daemon is already running");
+        return Ok(());
+    }
     ensure_providers()?;
     let rendered = render_daemon_template(SYSTEMD_TEMPLATE, verbose)?;
     crabtalk_command::install(&rendered, LABEL)
@@ -64,7 +72,7 @@ pub fn uninstall() -> Result<()> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub fn install(_verbose: u8) -> Result<()> {
+pub fn install(_verbose: u8, _force: bool) -> Result<()> {
     anyhow::bail!("daemon start is only supported on macOS and Linux")
 }
 
