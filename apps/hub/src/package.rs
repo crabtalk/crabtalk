@@ -212,10 +212,10 @@ pub fn parse_package(package: &str) -> Result<(&str, &str)> {
 
 /// Install command crates from a manifest via `cargo install`.
 async fn install_commands(manifest: &manifest::Manifest, on_step: &impl Fn(&str)) -> Result<()> {
-    ensure_cargo(on_step).await?;
+    let cargo = find_cargo(on_step).await?;
     for (name, cmd) in &manifest.commands {
         on_step(&format!("installing command {name} ({})…", cmd.krate));
-        let status = tokio::process::Command::new("cargo")
+        let status = tokio::process::Command::new(&cargo)
             .args(["install", &cmd.krate])
             .status()
             .await
@@ -229,10 +229,10 @@ async fn install_commands(manifest: &manifest::Manifest, on_step: &impl Fn(&str)
     Ok(())
 }
 
-/// Ensure cargo is available, installing rustup if needed.
-async fn ensure_cargo(on_step: &impl Fn(&str)) -> Result<()> {
-    if has_cargo() {
-        return Ok(());
+/// Locate cargo, installing rustup if needed. Returns the path to the cargo binary.
+async fn find_cargo(on_step: &impl Fn(&str)) -> Result<PathBuf> {
+    if let Some(cargo) = which("cargo") {
+        return Ok(cargo);
     }
 
     on_step("installing Rust via rustup…");
@@ -246,32 +246,27 @@ async fn ensure_cargo(on_step: &impl Fn(&str)) -> Result<()> {
         .context("failed to run rustup installer")?;
     anyhow::ensure!(status.success(), "rustup installation failed");
 
-    // Source cargo env so it's available for the rest of this process.
-    let cargo_env = format!("{}/.cargo/env", std::env::var("HOME").unwrap_or_default());
-    if std::path::Path::new(&cargo_env).exists() {
-        if let Some(path) = tokio::process::Command::new("sh")
-            .args(["-c", &format!(". '{cargo_env}' && echo $PATH")])
-            .output()
-            .await
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-        {
-            unsafe { std::env::set_var("PATH", path.trim()) }
-        }
-    }
-
-    anyhow::ensure!(has_cargo(), "cargo not found after rustup install");
-    Ok(())
+    // Rustup installs cargo to ~/.cargo/bin/cargo.
+    let home = std::env::var("HOME").unwrap_or_default();
+    let cargo = PathBuf::from(home).join(".cargo/bin/cargo");
+    anyhow::ensure!(
+        cargo.exists(),
+        "cargo not found at {} after rustup install",
+        cargo.display()
+    );
+    Ok(cargo)
 }
 
-/// Check if cargo is available on PATH.
-fn has_cargo() -> bool {
-    std::process::Command::new("cargo")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+/// Look for a binary on PATH.
+fn which(name: &str) -> Option<PathBuf> {
+    let path = std::env::var("PATH").unwrap_or_default();
+    for dir in path.split(':') {
+        let candidate = PathBuf::from(dir).join(name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 /// Read and deserialize the manifest for a package from the local hub repo.
