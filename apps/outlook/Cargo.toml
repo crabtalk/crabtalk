@@ -1,0 +1,38 @@
+[package]
+name = "crabtalk-outlook"
+description = "Outlook MCP server for email and calendar automation via Microsoft Graph API"
+keywords = ["outlook", "mcp", "email", "calendar"]
+categories = ["command-line-utilities"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "crabtalk-outlook"
+path = "src/bin/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = ["dep:clap", "dep:tracing-subscriber"]
+mcp = ["dep:rmcp", "dep:schemars", "dep:axum", "dep:crabtalk-command", "dep:anyhow", "cli"]
+
+[dependencies]
+chrono.workspace = true
+clap = { workspace = true, optional = true }
+dirs.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+axum = { workspace = true, optional = true }
+crabtalk-command = { workspace = true, features = ["mcp"], optional = true }
+rmcp = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }

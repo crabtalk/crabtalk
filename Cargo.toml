@@ -22,6 +22,7 @@ transport = { path = "crates/transport", package = "crabtalk-transport", version
 wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.12" }
 crabtalk-command = { path = "crates/command", version = "0.0.12" }
 crabtalk-command-codegen = { path = "crates/command-codegen", version = "0.0.12" }
+woutlook = { path = "apps/outlook", package = "crabtalk-outlook", version = "0.0.12", default-features = false }
 wsearch = { path = "apps/search", package = "crabtalk-search", version = "0.0.12", default-features = false }
 
 # crabllm

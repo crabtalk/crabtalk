@@ -685,6 +685,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabtalk-outlook"
+version = "0.0.12"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "clap",
+ "crabtalk-command",
+ "dirs",
+ "reqwest 0.13.2",
+ "rmcp",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "crabtalk-search"
 version = "0.0.12"
 dependencies = [
