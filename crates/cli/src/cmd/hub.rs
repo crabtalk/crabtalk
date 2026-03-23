@@ -13,6 +13,9 @@ pub struct Hub {
     /// Branch of the hub repo to sync.
     #[arg(long)]
     pub branch: Option<String>,
+    /// Path to a local hub repo (skip remote sync).
+    #[arg(long)]
+    pub path: Option<PathBuf>,
     /// Hub subcommand.
     #[command(subcommand)]
     pub command: HubCommand,
@@ -66,7 +69,13 @@ impl Hub {
         let on_step = |msg: &str| println!("  {msg}");
 
         if is_install {
-            let result = crabhub::package::install(&pkg, self.branch.as_deref(), on_step).await?;
+            let result = crabhub::package::install(
+                &pkg,
+                self.branch.as_deref(),
+                self.path.as_deref(),
+                on_step,
+            )
+            .await?;
             println!("Done: {pkg}");
 
             // Reload daemon to pick up new components.

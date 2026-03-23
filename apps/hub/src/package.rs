@@ -29,19 +29,26 @@ pub struct InstallResult {
 pub async fn install(
     package: &str,
     branch: Option<&str>,
+    path: Option<&Path>,
     on_step: impl Fn(&str),
 ) -> Result<InstallResult> {
     let (scope, name) = parse_package(package)?;
 
-    // Sync hub repo (clone or update).
-    on_step("syncing hub…");
-    let hub_dir = CONFIG_DIR.join("hub");
-    git_sync(CRABTALK_HUB, &hub_dir, branch)
-        .await
-        .context("failed to sync hub repo")?;
+    // Resolve the hub directory — use a local path or sync from remote.
+    let hub_dir = if let Some(p) = path {
+        anyhow::ensure!(p.exists(), "hub path {} does not exist", p.display());
+        p.to_path_buf()
+    } else {
+        on_step("syncing hub…");
+        let dir = CONFIG_DIR.join("hub");
+        git_sync(CRABTALK_HUB, &dir, branch)
+            .await
+            .context("failed to sync hub repo")?;
+        dir
+    };
 
-    // Read the manifest from the hub repo.
-    let manifest = read_manifest(scope, name)?;
+    // Read the manifest from the hub directory.
+    let manifest = read_manifest_from(&hub_dir, scope, name)?;
 
     // Copy manifest to packages/scope/name.toml.
     on_step("installing manifest…");
@@ -51,6 +58,7 @@ pub async fn install(
         .with_context(|| format!("failed to create {}", scope_dir.display()))?;
     let manifest_dst = scope_dir.join(format!("{name}.toml"));
     let manifest_src = hub_dir.join(scope).join(format!("{name}.toml"));
+
     std::fs::copy(&manifest_src, &manifest_dst).with_context(|| {
         format!(
             "failed to copy manifest {} → {}",
@@ -269,9 +277,13 @@ fn which(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Read and deserialize the manifest for a package from the local hub repo.
+/// Read and deserialize a manifest from the default hub directory.
 pub fn read_manifest(scope: &str, name: &str) -> Result<manifest::Manifest> {
-    let hub_dir = CONFIG_DIR.join("hub");
+    read_manifest_from(&CONFIG_DIR.join("hub"), scope, name)
+}
+
+/// Read and deserialize a manifest from a given hub directory.
+pub fn read_manifest_from(hub_dir: &Path, scope: &str, name: &str) -> Result<manifest::Manifest> {
     let path = hub_dir.join(scope).join(format!("{name}.toml"));
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("cannot read manifest at {}", path.display()))?;
