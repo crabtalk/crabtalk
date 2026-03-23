@@ -16,6 +16,16 @@ CARGO_CRATE="crabtalk"
 AUTO_YES=0
 TMPDIR_PATH=""
 
+NVM_INSTALL_URL="https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh"
+CRABTALK_ENV="${HOME}/.crabtalk/env"
+
+# State set by find_* / ensure_* functions.
+RUST_FOUND=0
+CARGO_BIN_DIR=""
+NODE_FOUND=0
+NVM_FOUND=0
+NODE_BIN_DIR=""
+
 # --- Utility functions ---
 
 setup_colors() {
@@ -68,6 +78,14 @@ need_cmd() {
 
 check_cmd() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# Check whether a directory is already in PATH.
+in_path() {
+    case ":${PATH}:" in
+        *":$1:"*) return 0 ;;
+        *)        return 1 ;;
+    esac
 }
 
 # --- Detection functions ---
@@ -169,18 +187,96 @@ has_prebuilt() {
     esac
 }
 
-# --- Installation functions ---
+# --- Toolchain detection ---
 
-ensure_cargo() {
+# Locate nvm.sh from well-known paths. Sets _nvm_sh if found.
+locate_nvm_sh() {
+    _nvm_sh=""
+    for _dir in "${NVM_DIR:-}" "$HOME/.nvm" "$HOME/.local/share/nvm"; do
+        if [ -n "$_dir" ] && [ -s "$_dir/nvm.sh" ]; then
+            _nvm_sh="$_dir/nvm.sh"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Source nvm into the current shell if not already loaded.
+source_nvm() {
+    if check_cmd nvm; then
+        return 0
+    fi
+    if locate_nvm_sh; then
+        NVM_DIR="$(dirname "$_nvm_sh")"
+        export NVM_DIR
+        # shellcheck disable=SC1090
+        . "$_nvm_sh"
+        return 0
+    fi
+    return 1
+}
+
+find_rust() {
+    RUST_FOUND=0
+    CARGO_BIN_DIR=""
+
+    # Already in PATH.
     if check_cmd cargo; then
+        RUST_FOUND=1
+        CARGO_BIN_DIR="$(dirname "$(command -v cargo)")"
+        info "found cargo at $(command -v cargo)"
         return
     fi
 
-    info "cargo not found, installing via rustup..."
-    if ! check_cmd curl; then
-        err "need 'curl' to install rustup"
+    # Check well-known locations.
+    _cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+    if [ -x "$_cargo_home/bin/cargo" ]; then
+        RUST_FOUND=1
+        CARGO_BIN_DIR="$_cargo_home/bin"
+        info "found cargo at $_cargo_home/bin/cargo (not in PATH)"
+        return
+    fi
+}
+
+find_node() {
+    NODE_FOUND=0
+    NVM_FOUND=0
+    NODE_BIN_DIR=""
+
+    # Already in PATH.
+    if check_cmd node; then
+        NODE_FOUND=1
+        NODE_BIN_DIR="$(dirname "$(command -v node)")"
+        info "found node at $(command -v node)"
+        return
     fi
 
+    # Try sourcing nvm to pick up an installed node.
+    if source_nvm; then
+        NVM_FOUND=1
+        if check_cmd node; then
+            NODE_FOUND=1
+            NODE_BIN_DIR="$(dirname "$(command -v node)")"
+            info "found node via nvm at $(command -v node)"
+            return
+        fi
+        info "found nvm but no node version installed"
+        return
+    fi
+}
+
+# --- Installation functions ---
+
+ensure_rust() {
+    if [ "$RUST_FOUND" = "1" ]; then
+        return
+    fi
+
+    if ! confirm "cargo is required to build crabtalk on this platform. install rust via rustup?"; then
+        err "cannot proceed without cargo"
+    fi
+
+    info "installing rust via rustup..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     # shellcheck disable=SC1091
     . "$HOME/.cargo/env"
@@ -188,7 +284,165 @@ ensure_cargo() {
     if ! check_cmd cargo; then
         err "cargo still not found after rustup install"
     fi
+
+    RUST_FOUND=1
+    CARGO_BIN_DIR="$HOME/.cargo/bin"
     info "cargo installed successfully"
+}
+
+ensure_node() {
+    if [ "$NODE_FOUND" = "1" ]; then
+        return
+    fi
+
+    # nvm exists but no node — just need to install a version.
+    if [ "$NVM_FOUND" = "1" ]; then
+        if ! confirm "nvm is installed but no node version found. install node LTS for crabtalk skills (npx)?"; then
+            warn "skills requiring npx will not work without node"
+            return
+        fi
+
+        nvm install --lts
+        nvm use --lts
+
+        NODE_FOUND=1
+        NODE_BIN_DIR="$(dirname "$(command -v node)")"
+        info "node $(node --version) installed via nvm"
+        return
+    fi
+
+    # Nothing found — install nvm + node.
+    if ! confirm "node.js is required to run crabtalk skills (npx). install via nvm?"; then
+        warn "skills requiring npx will not work without node"
+        return
+    fi
+
+    info "installing nvm..."
+    curl -fsSL "$NVM_INSTALL_URL" | PROFILE=/dev/null bash
+
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    # shellcheck disable=SC1091
+    . "$NVM_DIR/nvm.sh"
+
+    info "installing node LTS..."
+    nvm install --lts
+    nvm use --lts
+
+    if ! check_cmd node; then
+        err "node still not found after nvm install"
+    fi
+
+    NODE_FOUND=1
+    NVM_FOUND=1
+    NODE_BIN_DIR="$(dirname "$(command -v node)")"
+    info "node $(node --version) installed via nvm"
+}
+
+# --- Environment file ---
+
+write_crabtalk_env() {
+    _env_paths=""
+
+    # Collect directories that need to be in PATH.
+    if [ -n "$CARGO_BIN_DIR" ] && ! in_path "$CARGO_BIN_DIR"; then
+        _env_paths="$CARGO_BIN_DIR"
+    fi
+
+    if [ -n "${INSTALL_DIR:-}" ] && ! in_path "$INSTALL_DIR"; then
+        if [ -n "$_env_paths" ]; then
+            _env_paths="$INSTALL_DIR:$_env_paths"
+        else
+            _env_paths="$INSTALL_DIR"
+        fi
+    fi
+
+    # For nvm-managed node we source nvm.sh instead of hardcoding the bin path,
+    # because the path changes with every node version update.
+    _nvm_source=""
+    if [ "$NVM_FOUND" = "1" ]; then
+        _nvm_source="export NVM_DIR=\"\${NVM_DIR:-\$HOME/.nvm}\"
+[ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\""
+    elif [ -n "$NODE_BIN_DIR" ] && ! in_path "$NODE_BIN_DIR"; then
+        # Node installed without nvm (system package, etc.) — add to PATH directly.
+        if [ -n "$_env_paths" ]; then
+            _env_paths="$NODE_BIN_DIR:$_env_paths"
+        else
+            _env_paths="$NODE_BIN_DIR"
+        fi
+    fi
+
+    # Nothing to write.
+    if [ -z "$_env_paths" ] && [ -z "$_nvm_source" ]; then
+        return
+    fi
+
+    mkdir -p "$(dirname "$CRABTALK_ENV")"
+
+    {
+        echo "# crabtalk environment — sourced by shell profile"
+        echo "# Generated by install.sh — edits may be overwritten."
+        if [ -n "$_env_paths" ]; then
+            echo "export PATH=\"$_env_paths:\$PATH\""
+        fi
+        if [ -n "$_nvm_source" ]; then
+            echo "$_nvm_source"
+        fi
+    } > "$CRABTALK_ENV"
+
+    info "wrote ${CRABTALK_ENV}"
+}
+
+setup_shell_profile() {
+    if [ ! -f "$CRABTALK_ENV" ]; then
+        return
+    fi
+
+    _source_line=". \"$CRABTALK_ENV\""
+
+    # Detect the user's shell profile.
+    _profile=""
+    case "${SHELL:-}" in
+        */zsh)  _profile="$HOME/.zshrc" ;;
+        */bash)
+            if [ -f "$HOME/.bashrc" ]; then
+                _profile="$HOME/.bashrc"
+            elif [ -f "$HOME/.bash_profile" ]; then
+                _profile="$HOME/.bash_profile"
+            fi
+            ;;
+        */fish) _profile="$HOME/.config/fish/config.fish" ;;
+    esac
+
+    if [ -z "$_profile" ]; then
+        warn "could not detect shell profile"
+        info "add this to your shell profile manually:"
+        printf "  %s\n" "$_source_line" >&2
+        return
+    fi
+
+    # Already present.
+    if [ -f "$_profile" ] && grep -qF ".crabtalk/env" "$_profile" 2>/dev/null; then
+        return
+    fi
+
+    echo ""
+    if confirm "add crabtalk environment to ${_profile}?"; then
+        # fish uses different source syntax.
+        if [ "${SHELL:-}" != "${SHELL%fish}" ]; then
+            echo "source \"$CRABTALK_ENV\"" >> "$_profile"
+        else
+            echo "$_source_line" >> "$_profile"
+        fi
+        info "added to ${_profile} — restart your shell or run:"
+        printf "  %s\n" "$_source_line" >&2
+    else
+        info "add it manually:"
+        printf "  %s\n" "$_source_line" >&2
+    fi
+
+    # Source it now so the rest of this script can use the paths.
+    # shellcheck disable=SC1090
+    . "$CRABTALK_ENV"
 }
 
 # Download and install a prebuilt binary from GitHub releases.
@@ -231,44 +485,10 @@ post_install() {
         return
     fi
 
-    # Ensure the install dir is in PATH.
-    case ":${PATH}:" in
-        *":${INSTALL_DIR:-}:"*) ;;
-        *)
-            if [ -n "${INSTALL_DIR:-}" ]; then
-                _export_line="export PATH=\"${INSTALL_DIR}:\$PATH\""
-                echo ""
-                warn "${INSTALL_DIR} is not in your PATH"
-
-                # Detect the user's shell profile.
-                _profile=""
-                case "${SHELL:-}" in
-                    */zsh)  _profile="$HOME/.zshrc" ;;
-                    */bash)
-                        if [ -f "$HOME/.bashrc" ]; then
-                            _profile="$HOME/.bashrc"
-                        elif [ -f "$HOME/.bash_profile" ]; then
-                            _profile="$HOME/.bash_profile"
-                        fi
-                        ;;
-                    */fish) _profile="$HOME/.config/fish/config.fish" ;;
-                esac
-
-                if [ -n "$_profile" ] && confirm "add ${INSTALL_DIR} to PATH in ${_profile}?"; then
-                    echo "$_export_line" >> "$_profile"
-                    info "added to ${_profile} — restart your shell or run:"
-                    printf "  %s\n" "$_export_line" >&2
-                else
-                    info "add it manually:"
-                    printf "  %s\n" "$_export_line" >&2
-                fi
-
-                # Make it available for the rest of this script.
-                export PATH="${INSTALL_DIR}:$PATH"
-                echo "" >&2
-            fi
-            ;;
-    esac
+    # Set up toolchain environment.
+    ensure_node
+    write_crabtalk_env
+    setup_shell_profile
 
     echo ""
     "$BIN_PATH" --help
@@ -298,6 +518,10 @@ main() {
     determine_install_dir
     trap cleanup EXIT
 
+    # Detect available toolchains.
+    find_rust
+    find_node
+
     # --- Existing installation check ---
     if [ -n "$EXISTING_PATH" ]; then
         warn "${BINARY_NAME} is already installed at ${EXISTING_PATH}"
@@ -318,7 +542,7 @@ main() {
     # --- Unsupported platform fallback ---
     warn "no prebuilt binary available for ${OS}-${ARCH}."
     info "falling back to cargo install..."
-    ensure_cargo
+    ensure_rust
     cargo install "$CARGO_CRATE"
     post_install
 }

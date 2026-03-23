@@ -214,6 +214,7 @@ impl<M: Model> Agent<M> {
                 let mut last_meta = CompletionMeta::default();
                 let mut last_usage = None;
                 let mut stream_error = None;
+                let mut tool_start_emitted = false;
 
                 {
                     let mut chunk_stream = std::pin::pin!(self.model.stream(request));
@@ -225,6 +226,22 @@ impl<M: Model> Agent<M> {
                                 }
                                 if let Some(reason) = chunk.reasoning_content() {
                                     yield AgentEvent::ThinkingDelta(reason.to_owned());
+                                }
+                                // Emit ToolCallsStart as soon as we see tool call
+                                // names, so the CLI can show blinking markers while
+                                // arguments are still streaming.
+                                if !tool_start_emitted {
+                                    if let Some(calls) = chunk.tool_calls() {
+                                        let named: Vec<_> = calls
+                                            .iter()
+                                            .filter(|c| !c.function.name.is_empty())
+                                            .cloned()
+                                            .collect();
+                                        if !named.is_empty() {
+                                            tool_start_emitted = true;
+                                            yield AgentEvent::ToolCallsStart(named);
+                                        }
+                                    }
                                 }
                                 if let Some(r) = chunk.reason() {
                                     finish_reason = Some(r.clone());
@@ -299,7 +316,9 @@ impl<M: Model> Agent<M> {
                 let mut tool_results = Vec::new();
                 if has_tool_calls {
                     let sender = last_sender(history);
-                    yield AgentEvent::ToolCallsStart(tool_calls.clone());
+                    if !tool_start_emitted {
+                        yield AgentEvent::ToolCallsStart(tool_calls.clone());
+                    }
                     for tc in &tool_calls {
                         let result = self
                             .dispatch_tool(&tc.function.name, &tc.function.arguments, &sender, session_id)
