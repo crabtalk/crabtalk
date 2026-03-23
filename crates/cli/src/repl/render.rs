@@ -131,10 +131,17 @@ impl MarkdownRenderer {
         self.spinner = Some(sp);
     }
 
-    /// Stop the spinner without moving the cursor.
+    /// Stop the spinner and erase its line atomically.
+    ///
+    /// Holds the stdout lock while abandoning to prevent the spinner
+    /// thread from writing one last frame after the erase.
     fn clear_waiting(&mut self) {
         if let Some(sp) = self.spinner.take() {
+            let stdout = std::io::stdout();
+            let mut lock = stdout.lock();
             sp.abandon();
+            let _ = write!(lock, "\r{ERASE_LINE}");
+            let _ = lock.flush();
         }
     }
 
@@ -142,7 +149,7 @@ impl MarkdownRenderer {
     fn ensure_started(&mut self) {
         if !self.started {
             self.clear_waiting();
-            let _ = write!(self.out, "\r{ERASE_LINE}⏺ ");
+            let _ = write!(self.out, "⏺ ");
             self.started = true;
             self.first_line = true;
         }
@@ -205,7 +212,6 @@ impl MarkdownRenderer {
         }
 
         self.clear_waiting();
-        let _ = write!(self.out, "\r{ERASE_LINE}");
 
         if !matches!(self.state, RenderState::Thinking) {
             self.state = RenderState::Thinking;
@@ -234,7 +240,6 @@ impl MarkdownRenderer {
             }
         }
         self.clear_waiting();
-        let _ = write!(self.out, "\r{ERASE_LINE}");
         if !self.last_was_blank {
             let _ = writeln!(self.out);
         }
@@ -266,7 +271,6 @@ impl MarkdownRenderer {
     fn solidify_tool_markers(&mut self) {
         if self.spinner.is_some() {
             self.clear_waiting();
-            let _ = write!(self.out, "\r{ERASE_LINE}");
             for label in &self.tool_labels {
                 let _ = writeln!(
                     self.out,
