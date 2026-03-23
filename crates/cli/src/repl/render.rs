@@ -247,17 +247,16 @@ impl MarkdownRenderer {
         }
         let _ = self.out.flush();
 
-        // Show tool marker as a blinking spinner on stdout.
+        // Show tool marker with braille spinner on stdout.
         let msg = self.tool_labels.join(", ");
         let sp = ProgressBar::with_draw_target(None, ProgressDrawTarget::stdout());
         sp.set_style(
             ProgressStyle::default_spinner()
-                .tick_strings(&["⏺", " ", " "])
                 .template("{spinner:.dim} {msg:.bold.dim}")
                 .expect("valid template"),
         );
         sp.set_message(msg);
-        sp.enable_steady_tick(Duration::from_millis(500));
+        sp.enable_steady_tick(Duration::from_millis(80));
         sp.tick();
         self.spinner = Some(sp);
     }
