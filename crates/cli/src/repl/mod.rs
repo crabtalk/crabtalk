@@ -9,9 +9,10 @@ use anyhow::Result;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use rustyline::{Editor, config::CompletionType, error::ReadlineError, history::DefaultHistory};
-use std::{collections::HashMap, path::PathBuf, pin::pin};
+use std::{path::PathBuf, pin::pin};
 use wcore::protocol::message::AskQuestion;
 
+mod ask;
 pub mod command;
 pub mod render;
 pub mod runner;
@@ -190,69 +191,13 @@ pub(crate) async fn stream_to_terminal(
     Ok(())
 }
 
-/// Present structured questions interactively using dialoguer.
+/// Present structured questions via inline ratatui TUI.
 ///
 /// Returns a JSON string mapping question text to selected label(s).
 async fn ask_user_interactive(questions: &[AskQuestion]) -> Result<String> {
     let questions = questions.to_vec();
     tokio::task::spawn_blocking(move || {
-        use dialoguer::{Input, MultiSelect, Select, theme::ColorfulTheme};
-
-        let theme = ColorfulTheme::default();
-        let mut answers: HashMap<String, String> = HashMap::new();
-
-        for q in &questions {
-            println!("{}", console::style(&q.header).bold().cyan());
-            println!("{}", console::style(&q.question).yellow());
-
-            // Build item labels: "label — description"
-            let mut items: Vec<String> = q
-                .options
-                .iter()
-                .map(|o| {
-                    if o.description.is_empty() {
-                        o.label.clone()
-                    } else {
-                        format!("{} — {}", o.label, o.description)
-                    }
-                })
-                .collect();
-            items.push("Other".to_string());
-
-            if q.multi_select {
-                let selections = MultiSelect::with_theme(&theme).items(&items).interact()?;
-
-                let other_idx = items.len() - 1;
-                if selections.contains(&other_idx) {
-                    let text: String = Input::with_theme(&theme)
-                        .with_prompt("Your answer")
-                        .interact_text()?;
-                    answers.insert(q.question.clone(), text);
-                } else {
-                    let labels: Vec<&str> = selections
-                        .iter()
-                        .map(|&i| q.options[i].label.as_str())
-                        .collect();
-                    answers.insert(q.question.clone(), labels.join(", "));
-                }
-            } else {
-                let selection = Select::with_theme(&theme)
-                    .items(&items)
-                    .default(0)
-                    .interact()?;
-
-                let other_idx = items.len() - 1;
-                if selection == other_idx {
-                    let text: String = Input::with_theme(&theme)
-                        .with_prompt("Your answer")
-                        .interact_text()?;
-                    answers.insert(q.question.clone(), text);
-                } else {
-                    answers.insert(q.question.clone(), q.options[selection].label.clone());
-                }
-            }
-        }
-
+        let answers = ask::run_ask_inline(&questions)?;
         Ok(serde_json::to_string(&answers)?)
     })
     .await?
