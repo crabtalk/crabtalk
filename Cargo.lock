@@ -693,6 +693,7 @@ dependencies = [
  "chrono",
  "clap",
  "crabtalk-command",
+ "crabtalk-core",
  "dirs",
  "reqwest 0.13.2",
  "rmcp",

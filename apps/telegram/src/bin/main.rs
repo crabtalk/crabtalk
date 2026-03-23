@@ -1,7 +1,7 @@
 //! `crabtalk-telegram` binary — Telegram gateway for Crabtalk.
 
 use clap::Parser;
-use crabtalk_telegram::{GatewayConfig, config::TelegramConfig};
+use crabtalk_telegram::config::TelegramConfig;
 use dialoguer::{Password, theme::ColorfulTheme};
 
 #[crabtalk_command::command(kind = "client", label = "ai.crabtalk.gateway-telegram")]
@@ -10,12 +10,8 @@ struct GatewayTelegram;
 impl GatewayTelegram {
     async fn run(&self) -> anyhow::Result<()> {
         let socket = wcore::paths::SOCKET_PATH.clone();
-        let config_path = wcore::paths::CONFIG_DIR.join("gateway.toml");
-        let config = if config_path.exists() {
-            GatewayConfig::load(&config_path)?
-        } else {
-            GatewayConfig::default()
-        };
+        let config_path = config_path();
+        let config = TelegramConfig::load(&config_path)?;
         crabtalk_telegram::serve::run(&socket.to_string_lossy(), &config).await
     }
 }
@@ -27,31 +23,35 @@ struct App {
     action: GatewayTelegramCommand,
 }
 
-fn default_config_path() -> std::path::PathBuf {
-    wcore::paths::CONFIG_DIR.join("gateway.toml")
+fn config_path() -> std::path::PathBuf {
+    wcore::paths::CONFIG_DIR
+        .join("config")
+        .join("telegram.toml")
 }
 
 fn ensure_config() -> anyhow::Result<()> {
-    let config_path = default_config_path();
-    let mut config = if config_path.exists() {
-        GatewayConfig::load(&config_path)?
+    let path = config_path();
+    let needs_token = if path.exists() {
+        TelegramConfig::load(&path)
+            .map(|c| c.token.is_empty())
+            .unwrap_or(true)
     } else {
-        GatewayConfig::default()
+        true
     };
 
-    if config.telegram.as_ref().is_none_or(|t| t.token.is_empty()) {
+    if needs_token {
         let token = Password::with_theme(&ColorfulTheme::default())
             .with_prompt("Telegram bot token (from @BotFather)")
             .interact()?;
         if token.is_empty() {
             anyhow::bail!("token cannot be empty");
         }
-        config.telegram = Some(TelegramConfig {
+        let config = TelegramConfig {
             token,
             allowed_users: vec![],
-        });
-        config.save(&config_path)?;
-        println!("saved config to {}", config_path.display());
+        };
+        config.save(&path)?;
+        println!("saved config to {}", path.display());
     }
     Ok(())
 }

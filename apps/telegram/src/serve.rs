@@ -1,9 +1,10 @@
 //! Telegram gateway serve logic.
 
 use crate::{
-    COMMAND_HINT, DaemonClient, GatewayConfig, GatewayMessage, KnownBots, StreamAccumulator,
-    StreamResult, attachment_summary, parse_command,
+    COMMAND_HINT, DaemonClient, GatewayMessage, KnownBots, StreamAccumulator, StreamResult,
+    attachment_summary, parse_command,
 };
+use gateway::config::TelegramConfig;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use teloxide::prelude::*;
 use teloxide::types::{ChatAction, InlineKeyboardButton, InlineKeyboardMarkup};
@@ -13,7 +14,7 @@ use wcore::protocol::message::{
 };
 
 /// Run the Telegram gateway service.
-pub async fn run(daemon_socket: &str, config: &GatewayConfig) -> anyhow::Result<()> {
+pub async fn run(daemon_socket: &str, config: &TelegramConfig) -> anyhow::Result<()> {
     let client = Arc::new(DaemonClient::new(Path::new(daemon_socket)));
 
     let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
@@ -23,21 +24,17 @@ pub async fn run(daemon_socket: &str, config: &GatewayConfig) -> anyhow::Result<
     let known_bots: KnownBots =
         Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new()));
 
-    if let Some(tg) = &config.telegram {
-        if tg.token.is_empty() {
-            tracing::warn!(platform = "telegram", "token is empty, skipping");
-        } else {
-            spawn_telegram(
-                &tg.token,
-                &tg.allowed_users,
-                default_agent,
-                client,
-                known_bots,
-            )
-            .await;
-        }
+    if config.token.is_empty() {
+        tracing::warn!(platform = "telegram", "token is empty, skipping");
     } else {
-        tracing::warn!(platform = "telegram", "no telegram config provided");
+        spawn_telegram(
+            &config.token,
+            &config.allowed_users,
+            default_agent,
+            client,
+            known_bots,
+        )
+        .await;
     }
 
     tokio::signal::ctrl_c().await?;

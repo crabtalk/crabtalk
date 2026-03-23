@@ -1,6 +1,7 @@
 use crate::error::Error;
 use serde::Deserialize;
 use std::path::PathBuf;
+use wcore::paths::CONFIG_DIR;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -34,9 +35,5 @@ impl Config {
 }
 
 pub fn config_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_default()
-        .join(".crabtalk")
-        .join("outlook")
-        .join("config.toml")
+    CONFIG_DIR.join("config").join("outlook.toml")
 }

@@ -1,9 +1,9 @@
 //! WeChat gateway serve logic.
 
 use crate::{
-    ContextTokens, DaemonClient, GatewayConfig, GatewayMessage, StreamAccumulator, StreamResult,
-    UserIdMap,
+    ContextTokens, DaemonClient, GatewayMessage, StreamAccumulator, StreamResult, UserIdMap,
 };
+use gateway::config::WechatConfig;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::mpsc;
 use wcore::protocol::message::{
@@ -11,21 +11,17 @@ use wcore::protocol::message::{
 };
 
 /// Run the WeChat gateway service.
-pub async fn run(daemon_socket: &str, config: &GatewayConfig) -> anyhow::Result<()> {
+pub async fn run(daemon_socket: &str, config: &WechatConfig) -> anyhow::Result<()> {
     let client = Arc::new(DaemonClient::new(Path::new(daemon_socket)));
 
     let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
     let default_agent = crate::resolve_default_agent(&agents_dir);
     tracing::info!(agent = %default_agent, "wechat gateway starting");
 
-    if let Some(wc) = &config.wechat {
-        if wc.token.is_empty() {
-            tracing::warn!(platform = "wechat", "token is empty, skipping");
-        } else {
-            spawn_wechat(wc, default_agent, client).await;
-        }
+    if config.token.is_empty() {
+        tracing::warn!(platform = "wechat", "token is empty, skipping");
     } else {
-        tracing::warn!(platform = "wechat", "no wechat config provided");
+        spawn_wechat(config, default_agent, client).await;
     }
 
     tokio::signal::ctrl_c().await?;

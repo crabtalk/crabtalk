@@ -1,7 +1,7 @@
 //! `crabtalk-wechat` binary — WeChat gateway for Crabtalk.
 
 use clap::Parser;
-use crabtalk_wechat::{GatewayConfig, config::WechatConfig};
+use crabtalk_wechat::config::WechatConfig;
 
 const DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
 
@@ -11,12 +11,8 @@ struct GatewayWechat;
 impl GatewayWechat {
     async fn run(&self) -> anyhow::Result<()> {
         let socket = wcore::paths::SOCKET_PATH.clone();
-        let config_path = wcore::paths::CONFIG_DIR.join("gateway.toml");
-        let config = if config_path.exists() {
-            GatewayConfig::load(&config_path)?
-        } else {
-            GatewayConfig::default()
-        };
+        let path = config_path();
+        let config = WechatConfig::load(&path)?;
         crabtalk_wechat::serve::run(&socket.to_string_lossy(), &config).await
     }
 }
@@ -29,29 +25,31 @@ struct App {
 }
 
 fn config_path() -> std::path::PathBuf {
-    wcore::paths::CONFIG_DIR.join("gateway.toml")
+    wcore::paths::CONFIG_DIR.join("config").join("wechat.toml")
 }
 
-/// Ensure a WeChat token exists in gateway.toml, running QR login if needed.
+/// Ensure a WeChat token exists in config/wechat.toml, running QR login if needed.
 ///
 /// Runs before the service runtime starts (same pattern as Telegram's
 /// ensure_config). Uses a one-off tokio runtime for the HTTP calls.
 fn ensure_config() -> anyhow::Result<()> {
     let path = config_path();
-    let mut config = if path.exists() {
-        GatewayConfig::load(&path)?
+    let needs_token = if path.exists() {
+        WechatConfig::load(&path)
+            .map(|c| c.token.is_empty())
+            .unwrap_or(true)
     } else {
-        GatewayConfig::default()
+        true
     };
 
-    if config.wechat.as_ref().is_none_or(|w| w.token.is_empty()) {
+    if needs_token {
         let rt = tokio::runtime::Runtime::new()?;
         let (token, base_url) = rt.block_on(qr_login())?;
-        config.wechat = Some(WechatConfig {
+        let config = WechatConfig {
             token,
             base_url,
             allowed_users: vec![],
-        });
+        };
         config.save(&path)?;
         println!("saved config to {}", path.display());
     }
