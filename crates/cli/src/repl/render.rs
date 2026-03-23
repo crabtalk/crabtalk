@@ -35,7 +35,7 @@ static SKIN: LazyLock<MadSkin> = LazyLock::new(|| {
     skin.headers[0].left_margin = 2;
     skin.headers[1]
         .compound_style
-        .set_fgbg(Color::Blue, Color::Reset);
+        .set_fgbg(Color::Magenta, Color::Reset);
     skin.headers[1].compound_style.add_attr(Attribute::Bold);
     skin.headers[1].left_margin = 2;
     skin.headers[2]
