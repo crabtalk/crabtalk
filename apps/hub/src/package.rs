@@ -99,18 +99,26 @@ pub async fn install(
         None
     };
 
-    // Run command-type setup from the cached repo.
-    if let Some(Setup::Command { ref command }) = manifest.package.setup
+    // Run script-type setup from the cached repo.
+    if let Some(Setup::Script { ref script }) = manifest.package.setup
         && let Some(ref dir) = repo_dir
     {
-        on_step("running setup command…");
-        let status = tokio::process::Command::new("sh")
-            .args(["-c", command])
-            .current_dir(dir)
-            .status()
-            .await
-            .with_context(|| format!("failed to run setup command: {command}"))?;
-        anyhow::ensure!(status.success(), "setup command exited with {status}");
+        on_step("running setup script…");
+        let status = if script.ends_with(".sh") {
+            tokio::process::Command::new("bash")
+                .arg(script)
+                .current_dir(dir)
+                .status()
+                .await
+        } else {
+            tokio::process::Command::new("bash")
+                .args(["-c", script])
+                .current_dir(dir)
+                .status()
+                .await
+        }
+        .with_context(|| format!("failed to run setup script: {script}"))?;
+        anyhow::ensure!(status.success(), "setup script exited with {status}");
     }
 
     // Auto-install command crates via `cargo install`.
