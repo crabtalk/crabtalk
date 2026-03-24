@@ -1,11 +1,11 @@
 //! Session — conversation container with append-only JSONL persistence.
 //!
-//! Each session is identified by `(agent, created_by)` and maps to a single
-//! JSONL file: `~/.crabtalk/sessions/{agent}_{sender_slug}.jsonl`.
+//! Files are organized as `sessions/{YYYY-MM-DD}/{agent}_{sender}_{seq}.jsonl`.
+//! After `set_title`, renamed to `{agent}_{sender}_{seq}_{title_slug}.jsonl`.
 //!
-//! The file is append-only. Compact markers (`{"compact":"..."}`) separate
-//! archived history from the working context. Loading reads from the last
-//! compact marker forward.
+//! Append-only. Compact markers (`{"compact":"..."}`) separate archived
+//! history from the working context. Loading reads from the last compact
+//! marker forward.
 
 use crate::model::Message;
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,8 @@ pub struct SessionMeta {
     pub agent: String,
     pub created_by: String,
     pub created_at: String,
+    #[serde(default)]
+    pub title: String,
 }
 
 /// A JSONL line that is either a message or a compact marker.
@@ -43,6 +45,8 @@ pub struct Session {
     pub history: Vec<Message>,
     /// Origin of this session (e.g. "user", "tg:12345").
     pub created_by: String,
+    /// Conversation title (set by the `set_title` tool).
+    pub title: String,
     /// When this session was loaded/created in this process.
     pub created_at: Instant,
     /// Path to the JSONL persistence file.
@@ -57,31 +61,32 @@ impl Session {
             agent: agent.into(),
             history: Vec::new(),
             created_by: created_by.into(),
+            title: String::new(),
             created_at: Instant::now(),
             file_path: None,
         }
     }
 
-    /// Initialize the JSONL file for this session using identity-based naming.
+    /// Initialize a new JSONL file in the date-organized directory structure.
     ///
-    /// If the file already exists, opens for append. If new, writes the meta
-    /// header line.
+    /// Creates `{sessions_dir}/{today}/{agent}_{sender}_{seq}.jsonl` with
+    /// seq auto-incremented within the day directory.
     pub fn init_file(&mut self, sessions_dir: &Path) {
-        let _ = fs::create_dir_all(sessions_dir);
-        let slug = sender_slug(&self.created_by);
-        let filename = format!("{}_{slug}.jsonl", self.agent);
-        let path = sessions_dir.join(filename);
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let date_dir = sessions_dir.join(&today);
+        let _ = fs::create_dir_all(&date_dir);
 
-        if path.exists() {
-            // File already exists — just set the path, don't truncate.
-            self.file_path = Some(path);
-            return;
-        }
+        let slug = sender_slug(&self.created_by);
+        let prefix = format!("{}_{slug}_", self.agent);
+        let seq = next_seq(&date_dir, &prefix);
+        let filename = format!("{prefix}{seq}.jsonl");
+        let path = date_dir.join(filename);
 
         let meta = SessionMeta {
             agent: self.agent.clone(),
             created_by: self.created_by.clone(),
             created_at: chrono::Utc::now().to_rfc3339(),
+            title: String::new(),
         };
 
         match OpenOptions::new()
@@ -98,6 +103,53 @@ impl Session {
             }
             Err(e) => tracing::warn!("failed to create session file: {e}"),
         }
+    }
+
+    /// Set the conversation title and rename the file to include the title slug.
+    pub fn set_title(&mut self, title: &str) {
+        self.title = title.to_string();
+
+        let Some(ref old_path) = self.file_path else {
+            return;
+        };
+
+        // Rewrite meta line with the title.
+        self.rewrite_meta();
+
+        // Rename file: insert title slug before `.jsonl`.
+        let title_slug = sender_slug(title);
+        if title_slug.is_empty() {
+            return;
+        }
+        let old_name = old_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let new_name = format!("{old_name}_{title_slug}.jsonl");
+        let new_path = old_path.with_file_name(new_name);
+        if fs::rename(old_path, &new_path).is_ok() {
+            self.file_path = Some(new_path);
+        }
+    }
+
+    /// Rewrite the meta line (first line) of the JSONL file.
+    fn rewrite_meta(&self) {
+        let Some(ref path) = self.file_path else {
+            return;
+        };
+        let Ok(content) = fs::read_to_string(path) else {
+            return;
+        };
+        let meta = SessionMeta {
+            agent: self.agent.clone(),
+            created_by: self.created_by.clone(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            title: self.title.clone(),
+        };
+        let Ok(meta_json) = serde_json::to_string(&meta) else {
+            return;
+        };
+        // Replace only the first line.
+        let rest = content.find('\n').map(|i| &content[i..]).unwrap_or("");
+        let new_content = format!("{meta_json}{rest}");
+        let _ = fs::write(path, new_content);
     }
 
     /// Append messages to the JSONL file. Skips auto-injected messages.
@@ -151,13 +203,11 @@ impl Session {
         let reader = BufReader::new(file);
         let mut lines = reader.lines();
 
-        // First line is meta.
         let meta_line = lines
             .next()
             .ok_or_else(|| anyhow::anyhow!("empty session file"))??;
         let meta: SessionMeta = serde_json::from_str(&meta_line)?;
 
-        // Read all remaining lines, tracking the last compact position.
         let mut all_lines: Vec<String> = Vec::new();
         let mut last_compact_idx: Option<usize> = None;
 
@@ -166,7 +216,6 @@ impl Session {
             if line.trim().is_empty() {
                 continue;
             }
-            // Check if this is a compact marker.
             if line.contains("\"compact\"")
                 && let Ok(SessionLine::Compact { .. }) = serde_json::from_str(&line)
             {
@@ -175,17 +224,16 @@ impl Session {
             all_lines.push(line);
         }
 
-        // Build context from the last compact marker forward.
         let context_start = last_compact_idx.unwrap_or_default();
 
         let mut messages = Vec::new();
         for (i, line) in all_lines[context_start..].iter().enumerate() {
-            if i == 0 && last_compact_idx.is_some() {
-                // First line after compact marker IS the compact line — convert to user message.
-                if let Ok(SessionLine::Compact { compact }) = serde_json::from_str(line) {
-                    messages.push(Message::user(&compact));
-                    continue;
-                }
+            if i == 0
+                && last_compact_idx.is_some()
+                && let Ok(SessionLine::Compact { compact }) = serde_json::from_str(line)
+            {
+                messages.push(Message::user(&compact));
+                continue;
             }
             if let Ok(msg) = serde_json::from_str::<Message>(line) {
                 messages.push(msg);
@@ -196,24 +244,89 @@ impl Session {
     }
 }
 
-/// Sanitize a sender string into a filesystem-safe slug.
-pub fn sender_slug(sender: &str) -> String {
-    sender
-        .chars()
+/// Find the latest session file for an (agent, created_by) identity.
+///
+/// Scans date directories in descending order, then finds the highest seq
+/// file matching the identity prefix.
+pub fn find_latest_session(sessions_dir: &Path, agent: &str, created_by: &str) -> Option<PathBuf> {
+    let slug = sender_slug(created_by);
+    let prefix = format!("{agent}_{slug}_");
+
+    // List date directories, sorted descending.
+    let mut date_dirs: Vec<PathBuf> = fs::read_dir(sessions_dir)
+        .ok()?
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.path())
+        .collect();
+    date_dirs.sort_by(|a, b| b.cmp(a));
+
+    for dir in date_dirs {
+        // Find all matching files in this date dir.
+        let mut matches: Vec<(u32, PathBuf)> = fs::read_dir(&dir)
+            .ok()?
+            .flatten()
+            .filter_map(|e| {
+                let path = e.path();
+                let name = path.file_name()?.to_str()?;
+                if !name.starts_with(&prefix) || !name.ends_with(".jsonl") {
+                    return None;
+                }
+                // Extract seq from `{prefix}{seq}...jsonl`
+                let after_prefix = &name[prefix.len()..];
+                let seq_str = after_prefix.split(|c: char| !c.is_ascii_digit()).next()?;
+                let seq: u32 = seq_str.parse().ok()?;
+                Some((seq, path))
+            })
+            .collect();
+
+        if matches.is_empty() {
+            continue;
+        }
+
+        // Return highest seq.
+        matches.sort_by(|a, b| b.0.cmp(&a.0));
+        return Some(matches.into_iter().next()?.1);
+    }
+
+    None
+}
+
+/// Compute the next seq number for a given prefix in a directory.
+fn next_seq(dir: &Path, prefix: &str) -> u32 {
+    let max = fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name();
+            let name = name.to_str()?;
+            if !name.starts_with(prefix) || !name.ends_with(".jsonl") {
+                return None;
+            }
+            let after_prefix = &name[prefix.len()..];
+            let seq_str = after_prefix.split(|c: char| !c.is_ascii_digit()).next()?;
+            seq_str.parse::<u32>().ok()
+        })
+        .max()
+        .unwrap_or(0);
+    max + 1
+}
+
+/// Sanitize a string into a filesystem-safe slug.
+pub fn sender_slug(s: &str) -> String {
+    s.chars()
         .map(|c| {
             if c.is_alphanumeric() || c == '-' {
-                c
+                c.to_ascii_lowercase()
             } else {
                 '-'
             }
         })
         .collect::<String>()
-        .trim_matches('-')
-        .to_string()
-}
-
-/// Compute the session file path for an (agent, sender) identity.
-pub fn session_file_path(sessions_dir: &Path, agent: &str, created_by: &str) -> PathBuf {
-    let slug = sender_slug(created_by);
-    sessions_dir.join(format!("{agent}_{slug}.jsonl"))
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
 }

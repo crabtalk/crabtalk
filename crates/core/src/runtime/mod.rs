@@ -137,14 +137,15 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             }
         }
 
-        // 2. Disk lookup.
-        let path = session::session_file_path(&crate::paths::SESSIONS_DIR, agent, created_by);
-        if path.exists()
-            && let Ok((_, messages)) = Session::load_context(&path)
+        // 2. Disk lookup — find latest session file for this identity.
+        if let Some(path) =
+            session::find_latest_session(&crate::paths::SESSIONS_DIR, agent, created_by)
+            && let Ok((meta, messages)) = Session::load_context(&path)
         {
             let id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
             let mut session = Session::new(id, agent, created_by);
             session.history = messages;
+            session.title = meta.title;
             session.file_path = Some(path);
             self.sessions
                 .write()
