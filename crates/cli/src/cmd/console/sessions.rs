@@ -24,7 +24,7 @@ pub(super) fn render_sessions(frame: &mut Frame, state: &ConsoleState, area: Rec
     let mut lines = vec![Line::from(vec![Span::styled(
         format!(
             "  {:<6} {:<16} {:<16} {:<8} {:<8} {:<10}",
-            "ID", "AGENT", "CREATED BY", "MSGS", "STATUS", "ALIVE"
+            "ID", "AGENT", "CREATED BY", "MSGS", "STATUS", "UPTIME"
         ),
         Style::default()
             .fg(Color::White)
