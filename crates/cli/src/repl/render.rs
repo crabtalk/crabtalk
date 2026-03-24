@@ -185,19 +185,12 @@ impl MarkdownRenderer {
         for ch in chunk.chars() {
             if ch == '\n' {
                 if self.first_line {
-                    if self.line_buf.starts_with("```") || self.line_buf.starts_with('|') {
-                        // Code block / table — need render_line for state machine.
-                        let _ = write!(self.out, "\r{ERASE_LINE}⏺ ");
-                        self.first_line = false;
-                        let line = std::mem::take(&mut self.line_buf);
-                        self.render_line(&line);
-                    } else {
-                        // Normal text — inline output is the final render.
-                        let _ = writeln!(self.out);
-                        self.first_line = false;
-                        self.last_was_blank = self.line_buf.is_empty();
-                        self.line_buf.clear();
-                    }
+                    // Erase the raw-streamed text and re-render through
+                    // termimad so markdown formatting (bold, etc.) applies.
+                    let _ = write!(self.out, "\r{ERASE_LINE}⏺ ");
+                    self.first_line = false;
+                    let line = std::mem::take(&mut self.line_buf);
+                    self.render_line(&line);
                 } else {
                     let line = std::mem::take(&mut self.line_buf);
                     self.render_line(&line);
@@ -498,17 +491,15 @@ impl MarkdownRenderer {
         }
         self.last_was_blank = false;
 
-        // First line content goes right after the `⏺ ` marker already on stdout.
+        let width = term_width();
+        let text = format!("{}", SKIN.text(line, Some(width)));
+        // SKIN adds a 2-char left margin. On the first line, `⏺ ` is
+        // already on stdout, so strip the margin to avoid double-indent.
         if self.first_line {
             self.first_line = false;
-            // For the first line, render inline (no termimad block rendering)
-            // since `⏺ ` is already printed.
-            let _ = writeln!(self.out, "{line}");
+            let _ = write!(self.out, "{}", text.trim_start());
             return;
         }
-
-        let width = term_width();
-        let text = SKIN.text(line, Some(width));
         let _ = write!(self.out, "{text}");
     }
 
