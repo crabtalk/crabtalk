@@ -8,8 +8,8 @@
 //! `run()` collects its events and returns the final response.
 
 use crate::model::{
-    Choice, CompletionMeta, Delta, FunctionCall, Message, MessageBuilder, Model, Request, Response,
-    Role, Tool, ToolCall, Usage,
+    Choice, CompletionMeta, Delta, Message, MessageBuilder, Model, Request, Response, Role, Tool,
+    Usage,
 };
 use anyhow::Result;
 use async_stream::stream;
@@ -237,21 +237,14 @@ impl<M: Model> Agent<M> {
                                 builder.accept(&chunk);
                                 // Emit ToolCallsBegin as soon as tool names appear
                                 // in the builder, so the CLI can show markers while
-                                // args are still streaming.
-                                if !tool_begin_emitted && !builder.tool_call_names().is_empty() {
-                                    tool_begin_emitted = true;
-                                    let calls: Vec<_> = builder
-                                        .tool_call_names()
-                                        .into_iter()
-                                        .map(|name| ToolCall {
-                                            function: FunctionCall {
-                                                name: name.to_owned(),
-                                                arguments: String::new(),
-                                            },
-                                            ..Default::default()
-                                        })
-                                        .collect();
-                                    yield AgentEvent::ToolCallsBegin(calls);
+                                // args are still streaming. Uses current builder
+                                // state, which may already have partial/full args.
+                                if !tool_begin_emitted {
+                                    let calls = builder.peek_tool_calls();
+                                    if !calls.is_empty() {
+                                        tool_begin_emitted = true;
+                                        yield AgentEvent::ToolCallsBegin(calls);
+                                    }
                                 }
                             }
                             Err(e) => {

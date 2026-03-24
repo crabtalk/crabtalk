@@ -213,7 +213,8 @@ impl Hook for DaemonHook {
                 tracing::trace!(%agent, text_len = text.len(), "agent thinking delta");
                 (AgentEventKind::ThinkingDelta, String::new())
             }
-            AgentEvent::ToolCallsBegin(calls) | AgentEvent::ToolCallsStart(calls) => {
+            AgentEvent::ToolCallsBegin(_) => return,
+            AgentEvent::ToolCallsStart(calls) => {
                 tracing::debug!(%agent, count = calls.len(), "agent tool calls");
                 let labels: Vec<String> = calls
                     .iter()

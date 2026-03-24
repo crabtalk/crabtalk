@@ -230,12 +230,15 @@ impl MarkdownRenderer {
     }
 
     pub fn push_tool_start(&mut self, calls: &[(String, String)]) {
-        // If markers already shown (early ToolCallsBegin), just update labels
-        // with full args (the early event had empty args).
+        // If markers already shown (early ToolCallsBegin), update labels
+        // with full args and refresh the spinner message.
         if !self.tool_labels.is_empty() {
             self.tool_labels.clear();
             for (name, args) in calls {
                 self.tool_labels.push(format_tool_label(name, args));
+            }
+            if let Some(ref sp) = self.spinner {
+                sp.set_message(self.tool_labels.join(", "));
             }
             return;
         }

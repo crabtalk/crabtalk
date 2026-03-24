@@ -161,12 +161,13 @@ impl MessageBuilder {
         has_content
     }
 
-    /// Peek at accumulated tool call names (if any have non-empty names).
-    pub fn tool_call_names(&self) -> Vec<&str> {
+    /// Peek at accumulated tool calls with non-empty names.
+    /// Returns clones of the current state (args may be partial).
+    pub fn peek_tool_calls(&self) -> Vec<ToolCall> {
         self.calls
             .values()
             .filter(|c| !c.function.name.is_empty())
-            .map(|c| c.function.name.as_str())
+            .cloned()
             .collect()
     }
 
