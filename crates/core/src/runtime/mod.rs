@@ -207,6 +207,63 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         dest.next_session_id.store(next, Ordering::Relaxed);
     }
 
+    /// Spawn a background task to generate a conversation title from the
+    /// first user+assistant exchange. Non-blocking — the main flow continues.
+    fn spawn_title_generation(&self, _session_id: u64, session_mutex: Arc<Mutex<Session>>) {
+        let model = self.model.clone();
+        tokio::spawn(async move {
+            let (user_msg, assistant_msg) = {
+                let session = session_mutex.lock().await;
+                let user = session
+                    .history
+                    .iter()
+                    .find(|m| m.role == crate::model::Role::User && !m.auto_injected)
+                    .map(|m| m.content.clone());
+                let assistant = session
+                    .history
+                    .iter()
+                    .find(|m| m.role == crate::model::Role::Assistant)
+                    .map(|m| m.content.clone());
+                (user, assistant)
+            };
+
+            let Some(user) = user_msg else { return };
+            let Some(assistant) = assistant_msg else {
+                return;
+            };
+
+            // Truncate to keep the title-generation request small.
+            let user_snippet: String = user.chars().take(200).collect();
+            let assistant_snippet: String = assistant.chars().take(200).collect();
+
+            let prompt = format!(
+                "Summarize this conversation in 3-6 words as a short title. \
+                 Return ONLY the title, nothing else.\n\n\
+                 User: {user_snippet}\nAssistant: {assistant_snippet}"
+            );
+
+            let request = crate::model::Request::new(model.active_model())
+                .with_messages(vec![Message::user(&prompt)]);
+
+            match model.send(&request).await {
+                Ok(response) => {
+                    if let Some(title) = response.content() {
+                        let title = title.trim().trim_matches('"').to_string();
+                        if !title.is_empty() {
+                            let mut session = session_mutex.lock().await;
+                            if session.title.is_empty() {
+                                session.set_title(&title);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!("title generation failed: {e}");
+                }
+            }
+        });
+    }
+
     // --- Execution ---
 
     /// Push the user message, strip old auto-injected messages, and inject
@@ -287,11 +344,9 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             session.append_messages(&session.history[pre_run_len..]);
         }
 
-        // Apply pending title from set_title tool.
-        if session.title.is_empty()
-            && let Some(title) = self.hook.take_pending_title(session_id)
-        {
-            session.set_title(&title);
+        // Generate title in background if this is the first exchange.
+        if session.title.is_empty() && session.history.len() >= 2 {
+            self.spawn_title_generation(session_id, session_mutex.clone());
         }
         Ok(response)
     }
@@ -349,6 +404,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
 
             self.active_sessions.write().await.insert(session_id);
             let mut compact_summary: Option<String> = None;
+            let mut done_event: Option<AgentEvent> = None;
             {
                 let mut event_stream = std::pin::pin!(agent_ref.run_stream(&mut session.history, Some(session_id)));
                 while let Some(event) = event_stream.next().await {
@@ -356,12 +412,16 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                         compact_summary = Some(summary.clone());
                     }
                     self.hook.on_event(&agent_name, session_id, &event);
-                    yield event;
+                    // Hold back Done — yield it after persistence.
+                    if matches!(event, AgentEvent::Done(_)) {
+                        done_event = Some(event);
+                    } else {
+                        yield event;
+                    }
                 }
             }
+            // Borrow on session.history is released. Persist now.
             self.active_sessions.write().await.remove(&session_id);
-
-            // Append-only persistence.
             if let Some(summary) = compact_summary {
                 session.append_compact(&summary);
                 if session.history.len() > 1 {
@@ -370,12 +430,13 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             } else {
                 session.append_messages(&session.history[pre_run_len..]);
             }
-
-            // Apply pending title from set_title tool.
-            if session.title.is_empty()
-                && let Some(title) = self.hook.take_pending_title(session_id)
-            {
-                session.set_title(&title);
+            // Generate title in background if this is the first exchange.
+            if session.title.is_empty() && session.history.len() >= 2 {
+                self.spawn_title_generation(session_id, session_mutex.clone());
+            }
+            // Now yield Done.
+            if let Some(event) = done_event {
+                yield event;
             }
         }
     }

@@ -61,14 +61,6 @@ pub trait Hook: Send + Sync {
     fn on_before_run(&self, _agent: &str, _session_id: u64, _history: &[Message]) -> Vec<Message> {
         Vec::new()
     }
-
-    /// Take a pending title set by the `set_title` tool during a run.
-    ///
-    /// Called by the runtime after each run. Returns `Some(title)` if the
-    /// agent called `set_title`, `None` otherwise.
-    fn take_pending_title(&self, _session_id: u64) -> Option<String> {
-        None
-    }
 }
 
 impl Hook for () {}

@@ -55,13 +55,10 @@ pub struct DaemonHook {
     /// Per-session working directory overrides. Populated by protocol handler,
     /// used by `dispatch_bash` to resolve the caller's cwd.
     pub(crate) session_cwds: Arc<Mutex<HashMap<u64, PathBuf>>>,
-    /// Pending `set_title` calls, keyed by session_id.
-    /// Read and cleared by the runtime after each run.
-    pub(crate) pending_titles: Arc<Mutex<HashMap<u64, String>>>,
 }
 
 /// Base tools always included in every agent's whitelist.
-const BASE_TOOLS: &[&str] = &["bash", "ask_user", "set_title"];
+const BASE_TOOLS: &[&str] = &["bash", "ask_user"];
 
 /// Skill discovery/loading tools.
 const SKILL_TOOLS: &[&str] = &["skill"];
@@ -139,12 +136,6 @@ impl Hook for DaemonHook {
             ));
         }
 
-        // Title instruction.
-        config.system_prompt.push_str(
-            "\n\nOn the first message of a new conversation (when the history is empty), \
-             call `set_title` with a concise 3-6 word title summarizing the user's intent.",
-        );
-
         // Apply scoped tool whitelist + prompt for sub-agents.
         self.apply_scope(&mut config);
         config
@@ -201,14 +192,9 @@ impl Hook for DaemonHook {
         tools.insert_all(skill::tool::tools());
         tools.insert_all(system::task::tool::tools());
         tools.insert_all(system::ask_user::tools());
-        tools.insert_all(system::title::tools());
         if self.memory.is_some() {
             tools.insert_all(system::memory::tool::tools());
         }
-    }
-
-    fn take_pending_title(&self, session_id: u64) -> Option<String> {
-        self.pending_titles.try_lock().ok()?.remove(&session_id)
     }
 
     fn on_event(&self, agent: &str, session_id: u64, event: &AgentEvent) {
@@ -291,7 +277,6 @@ impl DaemonHook {
             events_tx,
             pending_asks: Arc::new(Mutex::new(HashMap::new())),
             session_cwds: Arc::new(Mutex::new(HashMap::new())),
-            pending_titles: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -446,7 +431,6 @@ impl DaemonHook {
             "memory" => self.dispatch_memory(args).await,
             "forget" => self.dispatch_forget(args).await,
             "ask_user" => self.dispatch_ask_user(args, session_id).await,
-            "set_title" => self.dispatch_set_title(args, session_id).await,
             name => format!("tool not available: {name}"),
         }
     }

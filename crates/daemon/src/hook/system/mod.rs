@@ -9,7 +9,6 @@ pub mod ask_user;
 pub mod memory;
 pub mod session;
 pub mod task;
-pub mod title;
 
 /// Top-level `[system]` configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

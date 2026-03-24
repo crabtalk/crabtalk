@@ -103,6 +103,19 @@ impl History {
 /// Handles editing, history, slash highlighting, and dropdown completion.
 /// Caller must NOT be in raw mode — this function manages it.
 pub fn read_line(prompt: &str, history: &mut History) -> InputResult {
+    // Ensure the input area isn't squeezed at the very bottom of the
+    // terminal. If the cursor is within 2 rows of the bottom, scroll up.
+    if let Ok((_, rows)) = terminal::size()
+        && let Ok((_, cur_row)) = crossterm::cursor::position()
+        && cur_row + 2 >= rows
+    {
+        let pad = 3u16.min(rows.saturating_sub(1));
+        for _ in 0..pad {
+            println!();
+        }
+        let _ = std::io::stdout().flush();
+    }
+
     if terminal::enable_raw_mode().is_err() {
         return InputResult::Eof;
     }
