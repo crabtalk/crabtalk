@@ -78,11 +78,7 @@ impl ChatRepl {
             println!();
             let conn_info = self.runner.conn_info().clone();
             let stream = self.runner.stream(&self.agent, &content, None);
-            match stream_to_terminal(stream, &conn_info).await {
-                Ok(()) => {}
-                Err(e) if e.to_string() == "cancelled" => break,
-                Err(e) => return Err(e),
-            }
+            stream_to_terminal(stream, &conn_info).await?;
             println!();
         }
 
@@ -179,15 +175,23 @@ pub(crate) async fn stream_to_terminal(
                     Some(Ok(OutputChunk::AskUser { questions, session })) => {
                         renderer.finish();
                         println!();
-                        let reply = ask_user_interactive(&questions).await?;
-                        if let Err(e) = send_reply(conn_info, session, reply).await {
-                            eprintln!("failed to send reply: {e}");
+                        match ask_user_interactive(&questions).await {
+                            Ok(reply) => {
+                                if let Err(e) = send_reply(conn_info, session, reply).await {
+                                    eprintln!("failed to send reply: {e}");
+                                }
+                                // Reset renderer — the ask TUI took over the terminal,
+                                // so cursor tracking in the old renderer is invalid.
+                                renderer = MarkdownRenderer::new();
+                                // Skip the ask_user tool result echo.
+                                skip_tool_result += 1;
+                            }
+                            Err(_) => {
+                                // User cancelled (Ctrl+C / Esc) — abort this
+                                // response but keep the session alive.
+                                break;
+                            }
                         }
-                        // Reset renderer — the ask TUI took over the terminal,
-                        // so cursor tracking in the old renderer is invalid.
-                        renderer = MarkdownRenderer::new();
-                        // Skip the ask_user tool result echo.
-                        skip_tool_result += 1;
                     }
                     Some(Err(e)) => {
                         renderer.finish();

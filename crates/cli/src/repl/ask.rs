@@ -37,10 +37,10 @@ pub fn run_ask_inline(questions: &[AskQuestion]) -> Result<HashMap<String, Strin
 
     let result = event_loop(&mut terminal, &mut state);
 
-    // The inline viewport's last draw leaves the cursor at the bottom
-    // of the rendered area. Just move one line past it for clean spacing.
+    // Drop the terminal first so ratatui restores the cursor past
+    // the inline viewport, then add spacing for the next output.
+    drop(terminal);
     disable_raw_mode()?;
-    println!();
     println!();
 
     result
