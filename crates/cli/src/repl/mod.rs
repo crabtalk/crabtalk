@@ -144,6 +144,9 @@ pub(crate) async fn stream_to_terminal(
     let mut stream = pin!(stream);
     let mut renderer = MarkdownRenderer::new();
     renderer.start_waiting();
+    // After an AskUser interaction, skip the echoed ToolResult + ToolDone
+    // for the ask_user tool — the user already saw their own answer.
+    let mut skip_tool_result: u32 = 0;
 
     loop {
         tokio::select! {
@@ -159,7 +162,11 @@ pub(crate) async fn stream_to_terminal(
                         renderer.push_tool_start(&calls);
                     }
                     Some(Ok(OutputChunk::ToolResult(_id, output))) => {
-                        renderer.push_tool_result(&output);
+                        if skip_tool_result > 0 {
+                            skip_tool_result -= 1;
+                        } else {
+                            renderer.push_tool_result(&output);
+                        }
                     }
                     Some(Ok(OutputChunk::ToolDone(success))) => {
                         renderer.push_tool_done(success);
@@ -171,6 +178,11 @@ pub(crate) async fn stream_to_terminal(
                         if let Err(e) = send_reply(conn_info, session, reply).await {
                             eprintln!("failed to send reply: {e}");
                         }
+                        // Reset renderer — the ask TUI took over the terminal,
+                        // so cursor tracking in the old renderer is invalid.
+                        renderer = MarkdownRenderer::new();
+                        // Skip the ask_user tool result echo.
+                        skip_tool_result += 1;
                     }
                     Some(Err(e)) => {
                         renderer.finish();

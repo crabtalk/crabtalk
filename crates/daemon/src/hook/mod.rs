@@ -219,13 +219,12 @@ impl Hook for DaemonHook {
                 let labels: Vec<String> = calls
                     .iter()
                     .map(|c| {
-                        if c.function.name == "bash" {
-                            if let Ok(v) =
+                        if c.function.name == "bash"
+                            && let Ok(v) =
                                 serde_json::from_str::<serde_json::Value>(&c.function.arguments)
-                                && let Some(cmd) = v.get("command").and_then(|c| c.as_str())
-                            {
-                                return format!("bash({})", cmd.lines().next().unwrap_or(""));
-                            }
+                            && let Some(cmd) = v.get("command").and_then(|c| c.as_str())
+                        {
+                            return format!("bash({})", cmd.lines().next().unwrap_or(""));
                         }
                         c.function.name.clone()
                     })

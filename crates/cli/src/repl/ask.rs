@@ -1,14 +1,12 @@
 //! Inline ratatui TUI for batch ask-user questions.
 //!
 //! All questions share a single block. Headers appear as tabs at the top;
-//! Tab/Shift+Tab switches between them. The content area shows the focused
-//! question's options.
+//! Tab/Shift+Tab switches between them. A final "Submit" tab confirms.
 
 use crate::tui;
 use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode, KeyModifiers},
-    execute,
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
@@ -39,8 +37,10 @@ pub fn run_ask_inline(questions: &[AskQuestion]) -> Result<HashMap<String, Strin
 
     let result = event_loop(&mut terminal, &mut state);
 
+    // The inline viewport's last draw leaves the cursor at the bottom
+    // of the rendered area. Just move one line past it for clean spacing.
     disable_raw_mode()?;
-    execute!(std::io::stdout(), crossterm::cursor::MoveDown(1))?;
+    println!();
     println!();
 
     result
@@ -50,6 +50,8 @@ pub fn run_ask_inline(questions: &[AskQuestion]) -> Result<HashMap<String, Strin
 
 struct AskState {
     questions: Vec<QuestionState>,
+    /// Index into tabs: 0..questions.len() = question tabs,
+    /// questions.len() = Submit tab.
     focused: usize,
     mode: InputMode,
     input_buf: String,
@@ -81,7 +83,7 @@ impl AskState {
     }
 
     /// Height for the inline viewport: tab bar(1) + border(2) + question(1)
-    /// + gap(1) + max options across all questions + other(1) + input(1) + status(1).
+    /// + gap(1) + max options across all questions + other(1) + status(1).
     fn viewport_height(&self) -> usize {
         let max_opts = self
             .questions
@@ -92,6 +94,15 @@ impl AskState {
         // tab_bar(1) + top_border(1) + question_text(1) + gap(1) + options
         // + other(1) + bottom_border(1) + status(1)
         1 + 1 + 1 + 1 + max_opts + 1 + 1 + 1
+    }
+
+    /// Total tab count including the Submit tab.
+    fn tab_count(&self) -> usize {
+        self.questions.len() + 1
+    }
+
+    fn on_submit_tab(&self) -> bool {
+        self.focused == self.questions.len()
     }
 
     fn focused_q(&self) -> &QuestionState {
@@ -117,6 +128,12 @@ impl AskState {
         self.input_cursor = 0;
         self.focused_q_mut().other_text = Some(text);
         self.mode = InputMode::Normal;
+    }
+
+    /// Advance to the next tab.
+    fn advance(&mut self) {
+        let count = self.tab_count();
+        self.focused = (self.focused + 1).min(count - 1);
     }
 
     /// For single-select questions, cursor position is the selection.
@@ -202,14 +219,12 @@ fn event_loop(
             anyhow::bail!("cancelled");
         }
 
+        // Text input mode — typing into the "Other" field.
         if state.mode == InputMode::TextInput {
             match key.code {
-                KeyCode::Enter => {
+                KeyCode::Enter | KeyCode::Tab => {
                     state.commit_input();
-                    // For single-select, submit immediately.
-                    if !state.focused_q().question.multi_select {
-                        return Ok(state.answers());
-                    }
+                    state.advance();
                 }
                 KeyCode::Esc => {
                     state.input_buf.clear();
@@ -236,9 +251,28 @@ fn event_loop(
             continue;
         }
 
+        // Submit tab: Enter submits, everything else navigates away.
+        if state.on_submit_tab() {
+            match key.code {
+                KeyCode::Esc => anyhow::bail!("cancelled"),
+                KeyCode::Enter => return Ok(state.answers()),
+                KeyCode::Tab => {
+                    state.focused = 0;
+                }
+                KeyCode::BackTab => {
+                    state.focused = state.questions.len().saturating_sub(1);
+                }
+                _ => {}
+            }
+            continue;
+        }
+
+        // Normal mode on a question tab.
         match key.code {
             KeyCode::Esc => anyhow::bail!("cancelled"),
-            KeyCode::Enter => return Ok(state.answers()),
+            KeyCode::Enter | KeyCode::Tab => {
+                state.advance();
+            }
             KeyCode::Up => {
                 let q = state.focused_q_mut();
                 q.cursor = q.cursor.saturating_sub(1);
@@ -250,13 +284,9 @@ fn event_loop(
                 q.cursor = (q.cursor + 1).min(max);
                 state.auto_select();
             }
-            KeyCode::Tab => {
-                let len = state.questions.len();
-                state.focused = (state.focused + 1) % len;
-            }
             KeyCode::BackTab => {
-                let len = state.questions.len();
-                state.focused = (state.focused + len - 1) % len;
+                let count = state.tab_count();
+                state.focused = (state.focused + count - 1) % count;
             }
             KeyCode::Char(' ') => {
                 let other = state.other_idx();
@@ -295,12 +325,13 @@ fn draw(frame: &mut ratatui::Frame, state: &AskState) {
         ])
         .split(area);
 
-    // Tab bar from question headers.
-    let titles: Vec<Line> = state
+    // Tab bar: question headers + "Submit".
+    let mut titles: Vec<Line> = state
         .questions
         .iter()
         .map(|q| Line::from(q.question.header.clone()))
         .collect();
+    titles.push(Line::from("Submit"));
     let tabs = Tabs::new(titles)
         .select(state.focused)
         .highlight_style(
@@ -312,11 +343,64 @@ fn draw(frame: &mut ratatui::Frame, state: &AskState) {
         .divider(" | ");
     frame.render_widget(tabs, chunks[0]);
 
-    // Content block with the focused question.
-    draw_content(frame, state, chunks[1]);
+    // Content block.
+    if state.on_submit_tab() {
+        draw_submit(frame, state, chunks[1]);
+    } else {
+        draw_content(frame, state, chunks[1]);
+    }
 
     // Status bar.
     draw_status(frame, state, chunks[2]);
+}
+
+fn draw_submit(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::layout::Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Rgb(136, 136, 136)));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.height == 0 {
+        return;
+    }
+
+    // Show a summary of answers.
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "Review your answers:",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    for qs in &state.questions {
+        let answer = if let Some(ref text) = qs.other_text
+            && (qs.question.multi_select || qs.selected.is_empty())
+        {
+            format!("\"{}\"", text)
+        } else if qs.selected.is_empty() {
+            "(no selection)".to_string()
+        } else {
+            qs.selected
+                .iter()
+                .filter_map(|&i| qs.question.options.get(i).map(|o| o.label.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {} ", qs.question.header),
+                Style::default().fg(Color::Rgb(215, 119, 87)),
+            ),
+            Span::styled(answer, Style::default().fg(Color::Cyan)),
+        ]));
+    }
+
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn draw_content(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::layout::Rect) {
@@ -419,7 +503,16 @@ fn draw_status(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::layo
         vec![
             Span::styled(" Type your answer ", Style::default().fg(Color::White)),
             Span::styled("Enter ", key),
-            Span::raw("Confirm  "),
+            Span::raw("Next  "),
+            Span::styled("Esc ", key),
+            Span::raw("Cancel"),
+        ]
+    } else if state.on_submit_tab() {
+        vec![
+            Span::styled(" Enter ", key),
+            Span::raw("Submit  "),
+            Span::styled("Tab ", key),
+            Span::raw("Back  "),
             Span::styled("Esc ", key),
             Span::raw("Cancel"),
         ]
@@ -427,12 +520,12 @@ fn draw_status(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::layo
         vec![
             Span::styled(" ↑↓ ", key),
             Span::raw("Select  "),
+            Span::styled("Enter ", key),
+            Span::raw("Next  "),
             Span::styled("Tab ", key),
-            Span::raw("Switch  "),
+            Span::raw("Next  "),
             Span::styled("Space ", key),
             Span::raw("Toggle  "),
-            Span::styled("Enter ", key),
-            Span::raw("Submit  "),
             Span::styled("Esc ", key),
             Span::raw("Cancel"),
         ]
