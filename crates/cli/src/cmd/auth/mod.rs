@@ -18,7 +18,7 @@ use providers::{handle_providers_key, render_providers};
 
 mod gateways;
 mod mcps;
-mod oauth;
+pub(crate) mod oauth;
 mod providers;
 
 /// Configure providers, models, and gateway tokens interactively.
