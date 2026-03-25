@@ -56,6 +56,16 @@ impl ChatRepl {
                 InputResult::Line(line) => line,
                 InputResult::Interrupt => continue,
                 InputResult::Eof => break,
+                InputResult::ClearScreen => {
+                    let _ = crossterm::execute!(
+                        std::io::stdout(),
+                        crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+                        crossterm::cursor::MoveTo(0, 0),
+                    );
+                    println!("{}", render::welcome_banner(None));
+                    println!();
+                    continue;
+                }
             };
             if line.is_empty() {
                 continue;
@@ -83,6 +93,8 @@ impl ChatRepl {
                     continue;
                 }
             };
+            // Echo user input with gray background.
+            println!("\x1b[48;5;236m {} \x1b[0m", content);
             println!();
             let conn_info = self.runner.conn_info().clone();
             let stream = self.runner.stream(&self.agent, &content, None, new_chat);
