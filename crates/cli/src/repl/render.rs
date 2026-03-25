@@ -111,9 +111,18 @@ impl MarkdownRenderer {
         self.width = width;
     }
 
-    /// Signal that we're waiting for content (UI renders a spinner).
+    /// Signal that we're waiting for a new response.
+    ///
+    /// Resets streaming state so the first text of the new response gets a
+    /// fresh `⏺` marker.  Without this, `started`/`first_line` from the
+    /// previous response would bleed through and suppress the marker.
     pub fn start_waiting(&mut self) {
         self.waiting = true;
+        self.started = false;
+        self.first_line = false;
+        self.after_tool = false;
+        self.tool_labels.clear();
+        self.tool_failed = false;
     }
 
     /// The partially-streamed current line (displayed at the bottom of chat).
@@ -300,9 +309,14 @@ impl MarkdownRenderer {
                 self.flush_code_block_raw(&line);
             }
             _ => {
-                // Trailing text — render as plain padded line.
+                // Use ⏺ marker on the first line, PAD otherwise.
+                let prefix = if self.first_line {
+                    Span::styled("⏺ ", Style::new().fg(Color::Indexed(173)))
+                } else {
+                    Span::raw(PAD.to_string())
+                };
                 self.buffer.push(ChatEntry::Text(vec![Line::from(vec![
-                    Span::raw(PAD.to_string()),
+                    prefix,
                     Span::raw(line),
                 ])]));
             }

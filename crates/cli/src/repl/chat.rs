@@ -95,21 +95,40 @@ impl ChatBuffer {
     }
 
     /// Flatten all entries into display lines for the chat widget.
-    pub fn lines(&self) -> Vec<Line<'static>> {
+    ///
+    /// `frame` drives the animation for running tool markers (pass the
+    /// current frame counter from the event loop).
+    pub fn lines(&self, frame: u64) -> Vec<Line<'static>> {
         let mut out = Vec::new();
         for entry in &self.entries {
             match entry {
                 ChatEntry::Text(lines) => out.extend(lines.iter().cloned()),
                 ChatEntry::ToolMarker { labels, status } => {
-                    let marker_style = match status {
-                        ToolStatus::Running => Style::new().fg(BRAND).add_modifier(Modifier::DIM),
-                        ToolStatus::Success => Style::new().fg(GREEN),
-                        ToolStatus::Failure => Style::new().fg(RED),
+                    let (marker, label_style) = match status {
+                        ToolStatus::Running => {
+                            const BRAILLE: &[&str] =
+                                &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+                            let ch = BRAILLE[(frame as usize / 2) % BRAILLE.len()];
+                            (
+                                Span::styled(
+                                    format!("{ch} "),
+                                    Style::new().add_modifier(Modifier::DIM),
+                                ),
+                                Style::new().add_modifier(Modifier::BOLD | Modifier::DIM),
+                            )
+                        }
+                        ToolStatus::Success => (
+                            Span::styled("⏺ ", Style::new().fg(GREEN)),
+                            Style::new().add_modifier(Modifier::BOLD | Modifier::DIM),
+                        ),
+                        ToolStatus::Failure => (
+                            Span::styled("⏺ ", Style::new().fg(RED)),
+                            Style::new().add_modifier(Modifier::BOLD | Modifier::DIM),
+                        ),
                     };
-                    let label_style = Style::new().add_modifier(Modifier::BOLD | Modifier::DIM);
                     for label in labels {
                         out.push(Line::from(vec![
-                            Span::styled("⏺ ", marker_style),
+                            marker.clone(),
                             Span::styled(label.clone(), label_style),
                         ]));
                     }

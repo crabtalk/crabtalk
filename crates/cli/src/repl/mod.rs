@@ -261,7 +261,7 @@ async fn run_event_loop(
 
                         // Scroll keys.
                         if key.code == KeyCode::PageUp {
-                            let chat_lines = app.renderer.buffer.lines().len();
+                            let chat_lines = app.renderer.buffer.lines(app.frame_count).len();
                             app.scroll = app.scroll.saturating_add(10).min(chat_lines.saturating_sub(1));
                             app.dirty = true;
                             continue;
@@ -364,7 +364,7 @@ async fn run_event_loop(
             // Branch 3: render tick (animation).
             _ = tick.tick() => {
                 app.frame_count += 1;
-                if app.renderer.waiting {
+                if app.renderer.waiting || app.streaming {
                     app.dirty = true;
                 }
             }
@@ -488,7 +488,7 @@ fn draw(frame: &mut ratatui::Frame, app: &App) {
 }
 
 fn draw_chat(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &App) {
-    let mut lines = app.renderer.buffer.lines();
+    let mut lines = app.renderer.buffer.lines(app.frame_count);
 
     // Append the partially-streamed current line.
     if let Some(current) = app.renderer.current_line() {
@@ -550,7 +550,7 @@ pub(crate) async fn stream_to_terminal(
     renderer.finish();
 
     // Dump buffer to stdout for legacy callers.
-    let lines = renderer.buffer.lines();
+    let lines = renderer.buffer.lines(0);
     let mut stdout = std::io::stdout().lock();
     for line in &lines {
         for span in &line.spans {
