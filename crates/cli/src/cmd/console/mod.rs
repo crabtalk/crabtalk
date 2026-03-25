@@ -29,7 +29,8 @@ use events::render_events;
 pub struct Console;
 
 impl Console {
-    pub async fn run(self, mut runner: Runner) -> Result<()> {
+    /// Run the console. Returns a file path if the user selected a conversation to resume.
+    pub async fn run(self, mut runner: Runner) -> Result<Option<std::path::PathBuf>> {
         // Spawn background event subscription task.
         let (event_tx, event_rx) = mpsc::unbounded_channel::<AgentEventMsg>();
         let socket_path = wcore::paths::SOCKET_PATH.to_path_buf();
@@ -98,7 +99,7 @@ impl Console {
         };
 
         tui::teardown(&mut terminal)?;
-        result
+        Ok(result)
     }
 }
 
@@ -123,16 +124,17 @@ pub(crate) struct ConsoleState {
 
 // ── Key handling ────────────────────────────────────────────────────
 
+/// Returns `Some(None)` to quit, `Some(Some(path))` to resume a conversation.
 async fn handle_key(
     key: crossterm::event::KeyEvent,
     state: &mut ConsoleState,
-) -> Result<Option<Result<()>>> {
+) -> Result<Option<Option<std::path::PathBuf>>> {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-        return Ok(Some(Ok(())));
+        return Ok(Some(None));
     }
 
     match key.code {
-        KeyCode::Char('q') => return Ok(Some(Ok(()))),
+        KeyCode::Char('q') => return Ok(Some(None)),
         KeyCode::Tab => {
             state.tab = match state.tab {
                 Tab::Sessions => Tab::Events,
@@ -140,14 +142,21 @@ async fn handle_key(
             };
         }
         _ => match state.tab {
-            Tab::Sessions => handle_sessions_key(key.code, state).await,
+            Tab::Sessions => {
+                if let Some(path) = handle_sessions_key(key.code, state).await {
+                    return Ok(Some(Some(path)));
+                }
+            }
             Tab::Events => handle_events_key(key.code, state),
         },
     }
     Ok(None)
 }
 
-async fn handle_sessions_key(code: KeyCode, state: &mut ConsoleState) {
+async fn handle_sessions_key(
+    code: KeyCode,
+    state: &mut ConsoleState,
+) -> Option<std::path::PathBuf> {
     match code {
         KeyCode::Up | KeyCode::Char('k') => {
             state.session_view.move_up();
@@ -156,7 +165,11 @@ async fn handle_sessions_key(code: KeyCode, state: &mut ConsoleState) {
             state.session_view.move_down();
         }
         KeyCode::Enter => {
-            // Refresh daemon data and drill down.
+            // In conversation view: select and return the file path to resume.
+            if let Some(path) = state.session_view.selected_file() {
+                return Some(path);
+            }
+            // In identity view: drill down.
             let timeout = std::time::Duration::from_millis(500);
             if let Ok(Ok(sessions)) =
                 tokio::time::timeout(timeout, state.runner.list_sessions()).await
@@ -182,6 +195,7 @@ async fn handle_sessions_key(code: KeyCode, state: &mut ConsoleState) {
         }
         _ => {}
     }
+    None
 }
 
 fn handle_events_key(code: KeyCode, state: &mut ConsoleState) {

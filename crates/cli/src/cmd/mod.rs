@@ -53,7 +53,7 @@ impl Cli {
             }
             Command::Console(cmd) => {
                 let runner = connect_uds(&socket_path).await?;
-                cmd.run(runner).await
+                cmd.run(runner).await.map(|_| ())
             }
             Command::Hub(cmd) => {
                 let mut runner = connect_uds(&socket_path).await?;

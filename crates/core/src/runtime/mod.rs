@@ -174,6 +174,25 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         Ok(id)
     }
 
+    /// Load a specific session from a file path. Returns the session ID.
+    pub async fn load_specific_session(&self, file_path: &std::path::Path) -> Result<u64> {
+        let (meta, messages) = Session::load_context(file_path)?;
+        if !self.agents.contains_key(&meta.agent) {
+            bail!("agent '{}' not registered", meta.agent);
+        }
+        let id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
+        let mut session = Session::new(id, &meta.agent, &meta.created_by);
+        session.history = messages;
+        session.title = meta.title;
+        session.uptime_secs = meta.uptime_secs;
+        session.file_path = Some(file_path.to_path_buf());
+        self.sessions
+            .write()
+            .await
+            .insert(id, Arc::new(Mutex::new(session)));
+        Ok(id)
+    }
+
     /// Close (remove) a session by ID. Returns true if it existed.
     pub async fn close_session(&self, id: u64) -> bool {
         self.sessions.write().await.remove(&id).is_some()

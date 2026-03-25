@@ -51,6 +51,7 @@ impl ChatRepl {
 
         let prompt = styled_prompt(&self.agent);
         let mut new_chat = false;
+        let mut resume_file: Option<String> = None;
         loop {
             let line = match input::read_line(&prompt, &mut self.history) {
                 InputResult::Line(line) => line,
@@ -84,8 +85,15 @@ impl ChatRepl {
                     // Run the session console inline.
                     let console = crate::cmd::console::Console;
                     let socket_path = wcore::paths::SOCKET_PATH.to_path_buf();
-                    if let Ok(runner) = runner::Runner::connect(&socket_path).await {
-                        let _ = console.run(runner).await;
+                    if let Ok(runner) = runner::Runner::connect(&socket_path).await
+                        && let Ok(Some(path)) = console.run(runner).await
+                    {
+                        resume_file = Some(path.to_string_lossy().into_owned());
+                        println!(
+                            "Resumed: {}",
+                            console::style(path.file_name().unwrap_or_default().to_string_lossy())
+                                .dim()
+                        );
                     }
                     continue;
                 }
@@ -106,7 +114,9 @@ impl ChatRepl {
             println!("\x1b[48;5;236m {} \x1b[0m", content);
             println!();
             let conn_info = self.runner.conn_info().clone();
-            let stream = self.runner.stream(&self.agent, &content, None, new_chat);
+            let stream =
+                self.runner
+                    .stream(&self.agent, &content, None, new_chat, resume_file.take());
             stream_to_terminal(stream, &conn_info).await?;
             new_chat = false;
             println!();

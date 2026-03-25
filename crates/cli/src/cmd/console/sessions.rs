@@ -176,6 +176,18 @@ impl SessionView {
         }
     }
 
+    /// Get the file path of the currently selected conversation (if in conversation view).
+    pub fn selected_file(&self) -> Option<std::path::PathBuf> {
+        if let Self::Conversations {
+            entries, selected, ..
+        } = self
+        {
+            entries.get(*selected).map(|e| e.file_path.clone())
+        } else {
+            None
+        }
+    }
+
     /// Go back to identity list.
     pub fn back(&mut self, daemon_sessions: &[wcore::protocol::message::SessionInfo]) {
         if matches!(self, Self::Conversations { .. }) {

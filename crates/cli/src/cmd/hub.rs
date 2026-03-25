@@ -116,6 +116,7 @@ impl Hub {
                     &prompt_text,
                     result.repo_dir.as_deref(),
                     false,
+                    None,
                 );
                 repl::stream_to_terminal(stream, &conn_info).await?;
                 println!();

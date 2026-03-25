@@ -23,7 +23,9 @@ impl Server for Daemon {
         let session_id = match req.session {
             Some(id) => id,
             None => {
-                let id = if req.new_chat {
+                let id = if let Some(ref file) = req.resume_file {
+                    rt.load_specific_session(std::path::Path::new(file)).await?
+                } else if req.new_chat {
                     rt.create_session(&req.agent, created_by).await?
                 } else {
                     rt.get_or_create_session(&req.agent, created_by).await?
@@ -53,13 +55,16 @@ impl Server for Daemon {
         let sender = req.sender.unwrap_or_default();
         let cwd = req.cwd.map(std::path::PathBuf::from);
         let new_chat = req.new_chat;
+        let resume_file = req.resume_file;
         async_stream::try_stream! {
             let rt: Arc<_> = runtime.read().await.clone();
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
             let session_id = match req_session {
                 Some(id) => id,
                 None => {
-                    let id = if new_chat {
+                    let id = if let Some(ref file) = resume_file {
+                        rt.load_specific_session(std::path::Path::new(file)).await?
+                    } else if new_chat {
                         rt.create_session(&agent, created_by.as_str()).await?
                     } else {
                         rt.get_or_create_session(&agent, created_by.as_str()).await?
