@@ -140,14 +140,17 @@ impl Server for Daemon {
                         // Compact events are handled by on_event in the hook layer.
                     }
                     AgentEvent::Done(resp) => {
-                        if let wcore::AgentStopReason::Error(e) = &resp.stop_reason {
-                            Err(anyhow::anyhow!("{e}"))?;
-                        }
-                        break;
+                        let error = if let wcore::AgentStopReason::Error(e) = resp.stop_reason {
+                            e
+                        } else {
+                            String::new()
+                        };
+                        yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd { agent: agent.clone(), error })) };
+                        return;
                     }
                 }
             }
-            yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd { agent: agent.clone() })) };
+            yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd { agent: agent.clone(), error: String::new() })) };
         }
     }
 

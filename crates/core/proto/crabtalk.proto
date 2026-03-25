@@ -122,6 +122,7 @@ message ToolsCompleteEvent {}
 
 message StreamEnd {
   string agent = 1;
+  string error = 2;
 }
 
 message AskUserEvent {

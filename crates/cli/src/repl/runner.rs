@@ -146,7 +146,7 @@ impl Runner {
                     r,
                     Ok(ServerMessage {
                         msg: Some(server_message::Msg::Stream(e))
-                    }) if matches!(e.event, Some(stream_event::Event::End(_)))
+                    }) if matches!(&e.event, Some(stream_event::Event::End(end)) if end.error.is_empty())
                 ))
             })
             .scan(0u64, |session_id, result| {
@@ -182,6 +182,9 @@ impl Runner {
                             questions: ask.questions.clone(),
                             session: *session_id,
                         })),
+                        Some(stream_event::Event::End(end)) if !end.error.is_empty() => {
+                            Some(Err(anyhow::anyhow!("{}", end.error)))
+                        }
                         Some(stream_event::Event::End(_)) => None,
                         None => None,
                     },

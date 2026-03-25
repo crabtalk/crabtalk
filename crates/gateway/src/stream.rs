@@ -59,7 +59,10 @@ impl StreamAccumulator {
             Some(stream_event::Event::ToolsComplete(_)) => {
                 self.tool_line = None;
             }
-            Some(stream_event::Event::End(_)) => {
+            Some(stream_event::Event::End(end)) => {
+                if !end.error.is_empty() {
+                    self.set_error(end.error.clone());
+                }
                 self.done = true;
             }
             Some(stream_event::Event::AskUser(ask)) => {
