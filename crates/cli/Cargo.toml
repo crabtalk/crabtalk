@@ -33,7 +33,6 @@ dialoguer.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
 heck.workspace = true
-indicatif.workspace = true
 ratatui.workspace = true
 serde_json.workspace = true
 syntect.workspace = true

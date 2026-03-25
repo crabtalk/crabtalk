@@ -1,6 +1,7 @@
 //! Full-screen interactive chat REPL with concurrent input and streaming.
 
 use crate::repl::{
+    ask::{AskAction, AskState},
     chat::ChatEntry,
     command::{SlashResult, handle_slash},
     input::{History, InputAction, InputState},
@@ -81,6 +82,8 @@ impl ChatRepl {
             conn_info,
             os_user,
             model_name: model,
+            ask_state: None,
+            ask_session: None,
         };
 
         // Push welcome banner as first chat entry.
@@ -161,6 +164,10 @@ struct App {
     conn_info: ConnectionInfo,
     os_user: String,
     model_name: Option<String>,
+    /// Active ask-user modal (if any).
+    ask_state: Option<AskState>,
+    /// Session ID for the pending ask reply.
+    ask_session: Option<u64>,
 }
 
 // ── Event loop ───────────────────────────────────────────────────
@@ -227,6 +234,31 @@ async fn run_event_loop(
             event = events.next() => {
                 match event {
                     Some(Ok(Event::Key(key))) => {
+                        // Ask modal intercepts all keys when active.
+                        if app.ask_state.is_some() {
+                            let action = app.ask_state.as_mut().unwrap().handle_key(key);
+                            match action {
+                                AskAction::Noop => {}
+                                AskAction::Cancelled => {
+                                    app.ask_state = None;
+                                    app.ask_session = None;
+                                }
+                                AskAction::Submitted(answers) => {
+                                    let reply = serde_json::to_string(&answers).unwrap_or_default();
+                                    if let Some(session) = app.ask_session.take() {
+                                        let conn_info = app.conn_info.clone();
+                                        tokio::spawn(async move {
+                                            let _ = send_reply(&conn_info, session, reply).await;
+                                        });
+                                    }
+                                    app.ask_state = None;
+                                    app.skip_tool_result += 1;
+                                }
+                            }
+                            app.dirty = true;
+                            continue;
+                        }
+
                         // Scroll keys.
                         if key.code == KeyCode::PageUp {
                             let chat_lines = app.renderer.buffer.lines().len();
@@ -425,41 +457,9 @@ fn handle_chunk(chunk: OutputChunk, app: &mut App) {
             app.renderer.push_tool_done(success);
         }
         OutputChunk::AskUser { questions, session } => {
-            // For now, show questions in chat and note them.
-            // Full modal overlay will be added in Phase 3.
             app.renderer.finish();
-            let mut lines = vec![Line::from(Span::styled(
-                "  Agent is asking a question:",
-                Style::new().fg(Color::Yellow),
-            ))];
-            for q in &questions {
-                lines.push(Line::from(format!("  {}", q.question)));
-                for opt in &q.options {
-                    lines.push(Line::from(Span::styled(
-                        format!("    - {}", opt.label),
-                        Style::new().add_modifier(Modifier::DIM),
-                    )));
-                }
-            }
-            app.renderer.buffer.push(ChatEntry::Text(lines));
-            // Send default answer for now (first option of each question).
-            let answers: std::collections::HashMap<String, String> = questions
-                .iter()
-                .map(|q| {
-                    let answer = q
-                        .options
-                        .first()
-                        .map(|o| o.label.clone())
-                        .unwrap_or_default();
-                    (q.question.clone(), answer)
-                })
-                .collect();
-            let reply = serde_json::to_string(&answers).unwrap_or_default();
-            let conn_info = app.conn_info.clone();
-            tokio::spawn(async move {
-                let _ = send_reply(&conn_info, session, reply).await;
-            });
-            app.skip_tool_result += 1;
+            app.ask_state = Some(AskState::new(&questions));
+            app.ask_session = Some(session);
         }
     }
     // Auto-scroll to bottom on new content.
@@ -480,6 +480,11 @@ fn draw(frame: &mut ratatui::Frame, app: &App) {
     // ── Input box ──
     app.input
         .render(frame, chunks[1], &app.agent, &app.chat_title);
+
+    // ── Ask modal overlay ──
+    if let Some(ref ask) = app.ask_state {
+        ask.draw(frame);
+    }
 }
 
 fn draw_chat(frame: &mut ratatui::Frame, area: ratatui::layout::Rect, app: &App) {

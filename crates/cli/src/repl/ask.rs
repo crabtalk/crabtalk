@@ -1,57 +1,34 @@
-//! Inline ratatui TUI for batch ask-user questions.
+//! Ask-user modal overlay for the full-screen REPL.
 //!
 //! All questions share a single block. Headers appear as tabs at the top;
 //! Tab/Shift+Tab switches between them. A final "Submit" tab confirms.
 
 use crate::tui;
-use anyhow::Result;
-use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
-    terminal::{disable_raw_mode, enable_raw_mode},
-};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
-    Terminal, TerminalOptions, Viewport,
-    backend::CrosstermBackend,
-    layout::{Constraint, Layout},
+    layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Tabs},
+    widgets::{Block, Borders, Clear, Paragraph, Tabs},
 };
 use std::collections::{BTreeSet, HashMap};
 use wcore::protocol::message::AskQuestion;
 
-/// Run an inline TUI that presents questions in a tabbed block.
-///
-/// Returns a map of question text → selected label(s).
-pub fn run_ask_inline(questions: &[AskQuestion]) -> Result<HashMap<String, String>> {
-    let mut state = AskState::new(questions);
-    let height = state.viewport_height();
+// ── Action returned by handle_key ────────────────────────────────
 
-    enable_raw_mode()?;
-    let mut terminal = Terminal::with_options(
-        CrosstermBackend::new(std::io::stdout()),
-        TerminalOptions {
-            viewport: Viewport::Inline(height as u16),
-        },
-    )?;
-
-    let result = event_loop(&mut terminal, &mut state);
-
-    // Drop the terminal first so ratatui restores the cursor past
-    // the inline viewport, then add spacing for the next output.
-    drop(terminal);
-    disable_raw_mode()?;
-    println!();
-
-    result
+pub enum AskAction {
+    /// Key consumed, nothing to do.
+    Noop,
+    /// User cancelled (Esc / Ctrl+C).
+    Cancelled,
+    /// User submitted answers.
+    Submitted(HashMap<String, String>),
 }
 
-// ── State ────────────────────────────────────────────────────────────
+// ── State ────────────────────────────────────────────────────────
 
-struct AskState {
+pub struct AskState {
     questions: Vec<QuestionState>,
-    /// Index into tabs: 0..questions.len() = question tabs,
-    /// questions.len() = Submit tab.
     focused: usize,
     mode: InputMode,
     input_buf: String,
@@ -72,7 +49,7 @@ enum InputMode {
 }
 
 impl AskState {
-    fn new(questions: &[AskQuestion]) -> Self {
+    pub fn new(questions: &[AskQuestion]) -> Self {
         Self {
             questions: questions.iter().map(QuestionState::new).collect(),
             focused: 0,
@@ -82,21 +59,6 @@ impl AskState {
         }
     }
 
-    /// Height for the inline viewport: tab bar(1) + border(2) + question(1)
-    /// + gap(1) + max options across all questions + other(1) + status(1).
-    fn viewport_height(&self) -> usize {
-        let max_opts = self
-            .questions
-            .iter()
-            .map(|q| q.question.options.len())
-            .max()
-            .unwrap_or(0);
-        // tab_bar(1) + top_border(1) + question_text(1) + gap(1) + options
-        // + other(1) + bottom_border(1) + status(1)
-        1 + 1 + 1 + 1 + max_opts + 1 + 1 + 1
-    }
-
-    /// Total tab count including the Submit tab.
     fn tab_count(&self) -> usize {
         self.questions.len() + 1
     }
@@ -113,7 +75,6 @@ impl AskState {
         &mut self.questions[self.focused]
     }
 
-    /// Number of items including the "Other" entry.
     fn item_count(&self) -> usize {
         self.focused_q().question.options.len() + 1
     }
@@ -122,7 +83,6 @@ impl AskState {
         self.focused_q().question.options.len()
     }
 
-    /// Save current input buffer to the focused question's other_text.
     fn commit_input(&mut self) {
         let text = std::mem::take(&mut self.input_buf);
         self.input_cursor = 0;
@@ -130,14 +90,11 @@ impl AskState {
         self.mode = InputMode::Normal;
     }
 
-    /// Advance to the next tab.
     fn advance(&mut self) {
         let count = self.tab_count();
         self.focused = (self.focused + 1).min(count - 1);
     }
 
-    /// For single-select questions, cursor position is the selection.
-    /// When cursor lands on "Other", enter text input mode directly.
     fn auto_select(&mut self) {
         let qs = &mut self.questions[self.focused];
         if qs.question.multi_select {
@@ -150,7 +107,6 @@ impl AskState {
             qs.selected.insert(cursor);
             self.mode = InputMode::Normal;
         } else {
-            // Cursor on "Other": open text input directly.
             let existing = qs.other_text.clone().unwrap_or_default();
             self.input_buf = existing;
             self.input_cursor = self.input_buf.chars().count();
@@ -158,7 +114,6 @@ impl AskState {
         }
     }
 
-    /// Build the answer map from current selections.
     fn answers(&self) -> HashMap<String, String> {
         let mut map = HashMap::new();
         for qs in &self.questions {
@@ -182,11 +137,166 @@ impl AskState {
         }
         map
     }
+
+    /// Process a key event. Returns an action for the REPL to handle.
+    pub fn handle_key(&mut self, key: KeyEvent) -> AskAction {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            return AskAction::Cancelled;
+        }
+
+        // Text input mode.
+        if self.mode == InputMode::TextInput {
+            match key.code {
+                KeyCode::Enter | KeyCode::Tab => {
+                    self.commit_input();
+                    self.advance();
+                }
+                KeyCode::Esc => {
+                    self.input_buf.clear();
+                    self.input_cursor = 0;
+                    self.mode = InputMode::Normal;
+                }
+                KeyCode::Up => {
+                    self.commit_input();
+                    let q = self.focused_q_mut();
+                    q.cursor = q.cursor.saturating_sub(1);
+                    self.auto_select();
+                }
+                KeyCode::Down => {
+                    self.commit_input();
+                    let max = self.item_count().saturating_sub(1);
+                    let q = self.focused_q_mut();
+                    q.cursor = (q.cursor + 1).min(max);
+                    self.auto_select();
+                }
+                code => {
+                    tui::handle_text_input(code, &mut self.input_buf, &mut self.input_cursor);
+                }
+            }
+            return AskAction::Noop;
+        }
+
+        // Submit tab.
+        if self.on_submit_tab() {
+            match key.code {
+                KeyCode::Esc => return AskAction::Cancelled,
+                KeyCode::Enter => return AskAction::Submitted(self.answers()),
+                KeyCode::Tab => self.focused = 0,
+                KeyCode::BackTab => {
+                    self.focused = self.questions.len().saturating_sub(1);
+                }
+                _ => {}
+            }
+            return AskAction::Noop;
+        }
+
+        // Normal mode on a question tab.
+        match key.code {
+            KeyCode::Esc => return AskAction::Cancelled,
+            KeyCode::Enter | KeyCode::Tab => self.advance(),
+            KeyCode::Up => {
+                let q = self.focused_q_mut();
+                q.cursor = q.cursor.saturating_sub(1);
+                self.auto_select();
+            }
+            KeyCode::Down => {
+                let max = self.item_count().saturating_sub(1);
+                let q = self.focused_q_mut();
+                q.cursor = (q.cursor + 1).min(max);
+                self.auto_select();
+            }
+            KeyCode::BackTab => {
+                let count = self.tab_count();
+                self.focused = (self.focused + count - 1) % count;
+            }
+            KeyCode::Char(' ') => {
+                let other = self.other_idx();
+                let cursor = self.focused_q().cursor;
+                if cursor == other {
+                    let existing = self.focused_q().other_text.clone().unwrap_or_default();
+                    self.input_buf = existing;
+                    self.input_cursor = self.input_buf.chars().count();
+                    self.mode = InputMode::TextInput;
+                } else if self.focused_q().question.multi_select {
+                    let q = self.focused_q_mut();
+                    q.other_text = None;
+                    if q.selected.contains(&cursor) {
+                        q.selected.remove(&cursor);
+                    } else {
+                        q.selected.insert(cursor);
+                    }
+                }
+            }
+            _ => {}
+        }
+        AskAction::Noop
+    }
+
+    /// Render the ask modal as a centered overlay.
+    pub fn draw(&self, frame: &mut ratatui::Frame) {
+        let area = frame.area();
+
+        // Size the modal: 70% width, height based on content.
+        let max_opts = self
+            .questions
+            .iter()
+            .map(|q| q.question.options.len())
+            .max()
+            .unwrap_or(0);
+        let content_height = (1 + 1 + 1 + 1 + max_opts + 1 + 1 + 1) as u16;
+        let modal_height = content_height.min(area.height.saturating_sub(4));
+        let modal_width = (area.width * 7 / 10)
+            .max(40)
+            .min(area.width.saturating_sub(4));
+
+        let x = (area.width.saturating_sub(modal_width)) / 2;
+        let y = (area.height.saturating_sub(modal_height)) / 2;
+        let modal_area = Rect::new(x, y, modal_width, modal_height);
+
+        // Clear the area behind the modal.
+        frame.render_widget(Clear, modal_area);
+
+        // Layout: tab bar + content + status.
+        let chunks = Layout::default()
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(0),
+                Constraint::Length(1),
+            ])
+            .split(modal_area);
+
+        // Tab bar.
+        let mut titles: Vec<Line> = self
+            .questions
+            .iter()
+            .map(|q| Line::from(q.question.header.clone()))
+            .collect();
+        titles.push(Line::from("Submit"));
+        let tabs = Tabs::new(titles)
+            .select(self.focused)
+            .highlight_style(
+                Style::default()
+                    .fg(Color::Rgb(215, 119, 87))
+                    .add_modifier(Modifier::BOLD),
+            )
+            .style(Style::default().fg(Color::DarkGray))
+            .divider(" | ");
+        frame.render_widget(tabs, chunks[0]);
+
+        // Content.
+        if self.on_submit_tab() {
+            draw_submit(frame, self, chunks[1]);
+        } else {
+            draw_content(frame, self, chunks[1]);
+        }
+
+        // Status bar.
+        draw_status(frame, self, chunks[2]);
+    }
 }
 
 impl QuestionState {
     fn new(q: &AskQuestion) -> Self {
-        // Filter out any "Other" option — the TUI provides its own.
         let mut question = q.clone();
         question
             .options
@@ -200,161 +310,9 @@ impl QuestionState {
     }
 }
 
-// ── Event loop ───────────────────────────────────────────────────────
+// ── Rendering helpers ────────────────────────────────────────────
 
-fn event_loop(
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    state: &mut AskState,
-) -> Result<HashMap<String, String>> {
-    loop {
-        terminal.draw(|frame| draw(frame, state))?;
-        if !event::poll(std::time::Duration::from_millis(250))? {
-            continue;
-        }
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            anyhow::bail!("cancelled");
-        }
-
-        // Text input mode — typing into the "Other" field.
-        if state.mode == InputMode::TextInput {
-            match key.code {
-                KeyCode::Enter | KeyCode::Tab => {
-                    state.commit_input();
-                    state.advance();
-                }
-                KeyCode::Esc => {
-                    state.input_buf.clear();
-                    state.input_cursor = 0;
-                    state.mode = InputMode::Normal;
-                }
-                KeyCode::Up => {
-                    state.commit_input();
-                    let q = state.focused_q_mut();
-                    q.cursor = q.cursor.saturating_sub(1);
-                    state.auto_select();
-                }
-                KeyCode::Down => {
-                    state.commit_input();
-                    let max = state.item_count().saturating_sub(1);
-                    let q = state.focused_q_mut();
-                    q.cursor = (q.cursor + 1).min(max);
-                    state.auto_select();
-                }
-                code => {
-                    tui::handle_text_input(code, &mut state.input_buf, &mut state.input_cursor);
-                }
-            }
-            continue;
-        }
-
-        // Submit tab: Enter submits, everything else navigates away.
-        if state.on_submit_tab() {
-            match key.code {
-                KeyCode::Esc => anyhow::bail!("cancelled"),
-                KeyCode::Enter => return Ok(state.answers()),
-                KeyCode::Tab => {
-                    state.focused = 0;
-                }
-                KeyCode::BackTab => {
-                    state.focused = state.questions.len().saturating_sub(1);
-                }
-                _ => {}
-            }
-            continue;
-        }
-
-        // Normal mode on a question tab.
-        match key.code {
-            KeyCode::Esc => anyhow::bail!("cancelled"),
-            KeyCode::Enter | KeyCode::Tab => {
-                state.advance();
-            }
-            KeyCode::Up => {
-                let q = state.focused_q_mut();
-                q.cursor = q.cursor.saturating_sub(1);
-                state.auto_select();
-            }
-            KeyCode::Down => {
-                let max = state.item_count().saturating_sub(1);
-                let q = state.focused_q_mut();
-                q.cursor = (q.cursor + 1).min(max);
-                state.auto_select();
-            }
-            KeyCode::BackTab => {
-                let count = state.tab_count();
-                state.focused = (state.focused + count - 1) % count;
-            }
-            KeyCode::Char(' ') => {
-                let other = state.other_idx();
-                let cursor = state.focused_q().cursor;
-                if cursor == other {
-                    let existing = state.focused_q().other_text.clone().unwrap_or_default();
-                    state.input_buf = existing;
-                    state.input_cursor = state.input_buf.chars().count();
-                    state.mode = InputMode::TextInput;
-                } else if state.focused_q().question.multi_select {
-                    let q = state.focused_q_mut();
-                    q.other_text = None;
-                    if q.selected.contains(&cursor) {
-                        q.selected.remove(&cursor);
-                    } else {
-                        q.selected.insert(cursor);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-// ── Rendering ────────────────────────────────────────────────────────
-
-fn draw(frame: &mut ratatui::Frame, state: &AskState) {
-    let area = frame.area();
-
-    // Layout: tab bar + content block + status bar.
-    let chunks = Layout::default()
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
-        .split(area);
-
-    // Tab bar: question headers + "Submit".
-    let mut titles: Vec<Line> = state
-        .questions
-        .iter()
-        .map(|q| Line::from(q.question.header.clone()))
-        .collect();
-    titles.push(Line::from("Submit"));
-    let tabs = Tabs::new(titles)
-        .select(state.focused)
-        .highlight_style(
-            Style::default()
-                .fg(Color::Rgb(215, 119, 87))
-                .add_modifier(Modifier::BOLD),
-        )
-        .style(Style::default().fg(Color::DarkGray))
-        .divider(" | ");
-    frame.render_widget(tabs, chunks[0]);
-
-    // Content block.
-    if state.on_submit_tab() {
-        draw_submit(frame, state, chunks[1]);
-    } else {
-        draw_content(frame, state, chunks[1]);
-    }
-
-    // Status bar.
-    draw_status(frame, state, chunks[2]);
-}
-
-fn draw_submit(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::layout::Rect) {
+fn draw_submit(frame: &mut ratatui::Frame, state: &AskState, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Rgb(136, 136, 136)));
@@ -365,7 +323,6 @@ fn draw_submit(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::layo
         return;
     }
 
-    // Show a summary of answers.
     let mut lines = vec![
         Line::from(Span::styled(
             "Review your answers:",
@@ -403,7 +360,7 @@ fn draw_submit(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::layo
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-fn draw_content(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::layout::Rect) {
+fn draw_content(frame: &mut ratatui::Frame, state: &AskState, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Rgb(136, 136, 136)));
@@ -417,7 +374,6 @@ fn draw_content(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::lay
     let qs = state.focused_q();
     let multi = qs.question.multi_select;
 
-    // Question text + gap line.
     let mut lines = vec![
         Line::from(Span::styled(
             &qs.question.question,
@@ -428,7 +384,6 @@ fn draw_content(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::lay
         Line::from(""),
     ];
 
-    // Options.
     for (i, opt) in qs.question.options.iter().enumerate() {
         let is_cursor = qs.cursor == i;
         let is_selected = qs.selected.contains(&i);
@@ -457,10 +412,8 @@ fn draw_content(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::lay
     // "Other" option.
     let other_idx = qs.question.options.len();
     let is_cursor = qs.cursor == other_idx;
-    // In single-select, Other is only "selected" when no regular option is.
     let has_other = qs.other_text.is_some() && (multi || qs.selected.is_empty());
     let prefix = option_prefix(multi, is_cursor, has_other);
-    // Show live input inline on the "Other:" line.
     let other_text = if state.mode == InputMode::TextInput && is_cursor {
         &state.input_buf
     } else {
@@ -497,7 +450,7 @@ fn option_prefix(multi: bool, is_cursor: bool, is_selected: bool) -> &'static st
     }
 }
 
-fn draw_status(frame: &mut ratatui::Frame, state: &AskState, area: ratatui::layout::Rect) {
+fn draw_status(frame: &mut ratatui::Frame, state: &AskState, area: Rect) {
     let key = Style::default().fg(Color::Rgb(177, 185, 249));
     let spans = if state.mode == InputMode::TextInput {
         vec![
