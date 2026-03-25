@@ -13,6 +13,7 @@ use std::{path::PathBuf, pin::pin};
 use wcore::protocol::message::AskQuestion;
 
 mod ask;
+pub mod chat;
 pub mod command;
 mod input;
 pub mod render;
