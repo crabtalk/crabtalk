@@ -100,11 +100,13 @@ struct CallbackParams {
     state: String,
 }
 
+type ResultSender = tokio::sync::oneshot::Sender<Result<(), String>>;
+
 /// Shared state passed to the axum callback handler.
 #[derive(Clone)]
 struct CallbackState {
     session: Arc<AuthorizationSession>,
-    tx: Arc<tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<Result<(), String>>>>>,
+    tx: Arc<tokio::sync::Mutex<Option<ResultSender>>>,
 }
 
 /// Axum handler for the OAuth callback.
