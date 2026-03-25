@@ -24,6 +24,8 @@ pub struct SessionMeta {
     pub created_at: String,
     #[serde(default)]
     pub title: String,
+    #[serde(default)]
+    pub uptime_secs: u64,
 }
 
 /// A JSONL line that is either a message or a compact marker.
@@ -47,6 +49,8 @@ pub struct Session {
     pub created_by: String,
     /// Conversation title (set by the `set_title` tool).
     pub title: String,
+    /// Accumulated active time in seconds (persisted to meta).
+    pub uptime_secs: u64,
     /// When this session was loaded/created in this process.
     pub created_at: Instant,
     /// Path to the JSONL persistence file.
@@ -62,6 +66,7 @@ impl Session {
             history: Vec::new(),
             created_by: created_by.into(),
             title: String::new(),
+            uptime_secs: 0,
             created_at: Instant::now(),
             file_path: None,
         }
@@ -85,6 +90,7 @@ impl Session {
             created_by: self.created_by.clone(),
             created_at: chrono::Utc::now().to_rfc3339(),
             title: String::new(),
+            uptime_secs: self.uptime_secs,
         };
 
         match OpenOptions::new()
@@ -128,7 +134,7 @@ impl Session {
     }
 
     /// Rewrite the meta line (first line) of the JSONL file.
-    fn rewrite_meta(&self) {
+    pub fn rewrite_meta(&self) {
         let Some(ref path) = self.file_path else {
             return;
         };
@@ -140,6 +146,7 @@ impl Session {
             created_by: self.created_by.clone(),
             created_at: chrono::Utc::now().to_rfc3339(),
             title: self.title.clone(),
+            uptime_secs: self.uptime_secs,
         };
         let Ok(meta_json) = serde_json::to_string(&meta) else {
             return;

@@ -80,6 +80,15 @@ impl ChatRepl {
                     cmd
                 }
                 SlashResult::Exit => break,
+                SlashResult::Resume => {
+                    // Run the session console inline.
+                    let console = crate::cmd::console::Console;
+                    let socket_path = wcore::paths::SOCKET_PATH.to_path_buf();
+                    if let Ok(runner) = runner::Runner::connect(&socket_path).await {
+                        let _ = console.run(runner).await;
+                    }
+                    continue;
+                }
                 SlashResult::Clear => {
                     new_chat = true;
                     // Clear the screen and move cursor to top.

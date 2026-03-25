@@ -162,7 +162,7 @@ impl Server for Daemon {
                 agent: s.agent.to_string(),
                 created_by: s.created_by.to_string(),
                 message_count: s.history.len() as u64,
-                alive_secs: s.created_at.elapsed().as_secs(),
+                alive_secs: s.uptime_secs,
                 active,
                 title: s.title.clone(),
             });

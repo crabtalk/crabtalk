@@ -304,14 +304,8 @@ pub fn read_line(prompt: &str, history: &mut History) -> InputResult {
             }
             event::KeyCode::Tab => {
                 if buf.first_line().starts_with('/')
-                    && let Some(completed) = run_dropdown(
-                        &mut stdout,
-                        prompt,
-                        buf.first_line(),
-                        buf.cursor.1,
-                        prompt_width,
-                        box_row,
-                    )
+                    && let Some(completed) =
+                        run_dropdown(&mut stdout, prompt, &buf, prompt_width, box_row)
                 {
                     erase_box(&mut stdout, old_line_count, box_row);
                     buf = InputBuffer::from_str(&format!("{completed} "));
@@ -322,14 +316,9 @@ pub fn read_line(prompt: &str, history: &mut History) -> InputResult {
             event::KeyCode::Char('/') if buf.is_empty() => {
                 buf.handle_key(event::KeyCode::Char('/'));
                 render_box(&mut stdout, prompt, &buf, prompt_width, box_row);
-                if let Some(completed) = run_dropdown(
-                    &mut stdout,
-                    prompt,
-                    buf.first_line(),
-                    buf.cursor.1,
-                    prompt_width,
-                    box_row,
-                ) {
+                if let Some(completed) =
+                    run_dropdown(&mut stdout, prompt, &buf, prompt_width, box_row)
+                {
                     erase_box(&mut stdout, buf.lines.len() as u16, box_row);
                     buf = InputBuffer::from_str(&format!("{completed} "));
                     pre_scroll(&mut stdout, 3);
@@ -416,14 +405,18 @@ fn render_box(
             );
         }
 
-        // Print line content with slash highlighting.
+        // Print line content with slash highlighting (command word only).
         if i == 0 && line.starts_with('/') {
+            let (cmd, rest) = line.split_once(' ').unwrap_or((line, ""));
             let _ = crossterm::execute!(
                 stdout,
                 SetForegroundColor(Color::AnsiValue(240)),
-                style::Print(line),
+                style::Print(cmd),
                 style::ResetColor,
             );
+            if !rest.is_empty() {
+                let _ = crossterm::execute!(stdout, style::Print(format!(" {rest}")));
+            }
         } else {
             let _ = crossterm::execute!(stdout, style::Print(line));
         }
@@ -495,17 +488,24 @@ fn get_box_row(height: u16) -> u16 {
 
 fn run_dropdown(
     stdout: &mut std::io::Stdout,
-    _prompt: &str,
-    buf: &str,
-    _cursor_pos: usize,
-    _prompt_width: usize,
+    prompt: &str,
+    input_buf: &InputBuffer,
+    prompt_width: usize,
     box_row: u16,
 ) -> Option<String> {
+    let buf = input_buf.first_line();
     let candidates = collect_candidates(buf, buf.len());
     match candidates.len() {
         0 => None,
         1 => Some(candidates.into_iter().next().unwrap()),
-        _ => show_dropdown(stdout, &candidates, box_row),
+        _ => show_dropdown(
+            stdout,
+            &candidates,
+            box_row,
+            prompt,
+            input_buf,
+            prompt_width,
+        ),
     }
 }
 
@@ -513,7 +513,10 @@ fn run_dropdown(
 fn show_dropdown(
     stdout: &mut std::io::Stdout,
     candidates: &[String],
-    box_row: u16,
+    orig_box_row: u16,
+    prompt: &str,
+    input_buf: &InputBuffer,
+    prompt_width: usize,
 ) -> Option<String> {
     let max_visible = MAX_DROPDOWN_ROWS.min(candidates.len());
     let mut selected: usize = 0;
@@ -522,18 +525,26 @@ fn show_dropdown(
     let mut filtered: Vec<&str> = candidates.iter().map(|s| s.as_str()).collect();
     let mut max_drawn: u16 = 0;
 
-    // Dropdown starts below the bottom border of the box.
-    // For a single-line box: box_row + 3 (top + 1 line + bottom).
-    let dropdown_start = box_row + 3;
+    // Erase old box, pre-scroll for box + dropdown, recalculate.
+    let box_lines = input_buf.lines.len() as u16;
+    erase_box(stdout, box_lines, orig_box_row);
 
-    // Pre-scroll for dropdown.
-    let total_rows = max_visible as u16 + 1;
-    for _ in 0..total_rows {
-        let _ = crossterm::execute!(stdout, style::Print("\n"));
-    }
+    let box_height = box_lines + 2;
+    let dropdown_rows = max_visible as u16 + 1;
+    pre_scroll(stdout, box_height + dropdown_rows);
+    let box_row = get_box_row(box_height + dropdown_rows);
+    let dropdown_start = box_row + box_height;
+
+    // Mutable copy for filter display.
+    let mut line_buf = input_buf.first_line().to_string();
+    let mut line_cursor = input_buf.cursor.1;
 
     loop {
-        // Clear old dropdown.
+        // Redraw box with current input.
+        let display_buf = InputBuffer::from_str(&line_buf);
+        render_box(stdout, prompt, &display_buf, prompt_width, box_row);
+
+        // Clear old dropdown lines.
         for i in 0..max_drawn {
             let _ = crossterm::execute!(
                 stdout,
@@ -542,12 +553,12 @@ fn show_dropdown(
             );
         }
 
-        let mut drawn: u16 = 0;
         if filtered.is_empty() {
-            erase_dropdown(stdout, max_drawn, dropdown_start);
+            // No matches — clean up and exit.
             return None;
         }
 
+        let mut drawn: u16 = 0;
         if selected >= filtered.len() {
             selected = filtered.len() - 1;
         }
@@ -597,18 +608,32 @@ fn show_dropdown(
             max_drawn = drawn;
         }
 
-        // Park cursor back in the box.
-        let _ = crossterm::execute!(stdout, cursor::MoveTo(4, box_row + 1));
+        // Park cursor in the input line.
+        let cursor_col = 4 + line_buf
+            .chars()
+            .take(line_cursor)
+            .map(unicode_width)
+            .sum::<usize>();
+        let _ = crossterm::execute!(stdout, cursor::MoveTo(cursor_col as u16, box_row + 1));
         let _ = stdout.flush();
 
         let Ok(event::Event::Key(key)) = event::read() else {
             continue;
         };
 
-        match key.code {
-            event::KeyCode::Up => {
-                selected = selected.saturating_sub(1);
+        // Helper: clean up dropdown lines.
+        let cleanup = |stdout: &mut std::io::Stdout| {
+            for i in 0..drawn.max(max_drawn) {
+                let _ = crossterm::execute!(
+                    stdout,
+                    cursor::MoveTo(0, dropdown_start + i),
+                    Clear(ClearType::CurrentLine),
+                );
             }
+        };
+
+        match key.code {
+            event::KeyCode::Up => selected = selected.saturating_sub(1),
             event::KeyCode::Down => {
                 if !filtered.is_empty() {
                     selected = (selected + 1).min(filtered.len() - 1);
@@ -616,24 +641,28 @@ fn show_dropdown(
             }
             event::KeyCode::Enter | event::KeyCode::Tab => {
                 let result = filtered.get(selected).map(|s| s.to_string());
-                erase_dropdown(stdout, max_drawn, dropdown_start);
+                cleanup(stdout);
                 return result;
             }
-            event::KeyCode::Esc | event::KeyCode::Char(' ') => {
-                erase_dropdown(stdout, max_drawn, dropdown_start);
-                return if key.code == event::KeyCode::Char(' ') {
-                    // Return current filter as typed text.
-                    Some(format!("/{filter}"))
-                } else {
-                    None
-                };
+            event::KeyCode::Esc => {
+                cleanup(stdout);
+                return None;
+            }
+            event::KeyCode::Char(' ') => {
+                cleanup(stdout);
+                return Some(line_buf);
             }
             event::KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                erase_dropdown(stdout, max_drawn, dropdown_start);
+                cleanup(stdout);
                 return None;
             }
             event::KeyCode::Backspace => {
-                if filter.pop().is_some() {
+                if filter.pop().is_some() && line_cursor > 1 {
+                    tui::handle_text_input(
+                        event::KeyCode::Backspace,
+                        &mut line_buf,
+                        &mut line_cursor,
+                    );
                     filtered = candidates
                         .iter()
                         .filter(|c| c.contains(filter.as_str()))
@@ -642,9 +671,15 @@ fn show_dropdown(
                     selected = 0;
                     scroll = 0;
                 }
+                // If the entire input (including the initial `/`) is gone, exit.
+                if line_buf.is_empty() || line_buf == "/" && filter.is_empty() {
+                    cleanup(stdout);
+                    return None;
+                }
             }
             event::KeyCode::Char(ch) => {
                 filter.push(ch);
+                tui::handle_text_input(event::KeyCode::Char(ch), &mut line_buf, &mut line_cursor);
                 filtered = candidates
                     .iter()
                     .filter(|c| c.contains(filter.as_str()))
@@ -655,16 +690,6 @@ fn show_dropdown(
             }
             _ => {}
         }
-    }
-}
-
-fn erase_dropdown(stdout: &mut std::io::Stdout, max_drawn: u16, start_row: u16) {
-    for i in 0..max_drawn {
-        let _ = crossterm::execute!(
-            stdout,
-            cursor::MoveTo(0, start_row + i),
-            Clear(ClearType::CurrentLine),
-        );
     }
 }
 

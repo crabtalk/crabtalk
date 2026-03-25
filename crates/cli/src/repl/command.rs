@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-pub const SLASH_COMMANDS: &[&str] = &["/clear", "/exit", "/help"];
+pub const SLASH_COMMANDS: &[&str] = &["/clear", "/exit", "/help", "/resume"];
 
 /// Collect matching `/command` and `/skill` names for the typed prefix.
 pub fn collect_candidates(line: &str, pos: usize) -> Vec<String> {
@@ -42,6 +42,8 @@ pub enum SlashResult {
     Exit,
     /// Clear context and start a new conversation.
     Clear,
+    /// Open the session console.
+    Resume,
 }
 
 /// Dispatch a slash command.
@@ -62,8 +64,10 @@ pub async fn handle_slash(line: &str) -> Result<SlashResult> {
             println!("  /clear   — start a new conversation");
             println!("  /exit    — exit the REPL");
             println!("  /help    — show this help");
+            println!("  /resume  — open session console");
             println!("  /<skill> — run a skill");
         }
+        "resume" => return Ok(SlashResult::Resume),
         _ => {
             // Forward to daemon for skill resolution.
             return Ok(SlashResult::Forward(line.to_owned()));

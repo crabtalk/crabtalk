@@ -52,8 +52,12 @@ pub(super) struct ConversationEntry {
     #[allow(dead_code)]
     pub seq: u32,
     pub title: String,
-    /// Live stats from daemon (if this conversation is loaded in memory).
+    /// File path for this conversation (used for resume).
+    #[allow(dead_code)]
+    pub file_path: std::path::PathBuf,
+    /// Message count (from disk line count or daemon).
     pub message_count: Option<u64>,
+    /// Uptime in seconds (from disk meta or daemon).
     pub alive_secs: Option<u64>,
 }
 
@@ -364,8 +368,9 @@ fn mtime_to_label(mtime: std::time::SystemTime, today: chrono::NaiveDate) -> Str
 
 /// Scan flat sessions directory and return unique identities with stats.
 fn scan_identities(sessions_dir: &Path) -> Vec<IdentityEntry> {
-    // Track: (agent, sender) → (count, latest_mtime)
-    let mut data: BTreeMap<(String, String), (usize, std::time::SystemTime)> = BTreeMap::new();
+    // Track: (agent, sender) → (count, latest_mtime, total_uptime, total_msgs)
+    let mut data: BTreeMap<(String, String), (usize, std::time::SystemTime, u64, u64)> =
+        BTreeMap::new();
 
     let Ok(entries) = fs::read_dir(sessions_dir) else {
         return Vec::new();
@@ -386,30 +391,40 @@ fn scan_identities(sessions_dir: &Path) -> Vec<IdentityEntry> {
                 .metadata()
                 .and_then(|m| m.modified())
                 .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-            let entry = data
-                .entry((agent, sender))
-                .or_insert((0, std::time::SystemTime::UNIX_EPOCH));
+            let (uptime, msgs) = read_file_stats(&path);
+            let entry =
+                data.entry((agent, sender))
+                    .or_insert((0, std::time::SystemTime::UNIX_EPOCH, 0, 0));
             entry.0 += 1;
             if mtime > entry.1 {
                 entry.1 = mtime;
             }
+            entry.2 += uptime;
+            entry.3 += msgs;
         }
     }
 
     let today = chrono::Local::now().date_naive();
-    data.into_iter()
-        .map(|((agent, sender), (count, mtime))| {
+    let mut entries: Vec<_> = data
+        .into_iter()
+        .map(|((agent, sender), (count, mtime, uptime, msgs))| {
             let last_active = mtime_to_label(mtime, today);
-            IdentityEntry {
-                agent,
-                sender,
-                count,
-                message_count: 0,
-                last_active,
-                alive_secs: 0,
-            }
+            (
+                mtime,
+                IdentityEntry {
+                    agent,
+                    sender,
+                    count,
+                    message_count: msgs,
+                    last_active,
+                    alive_secs: uptime,
+                },
+            )
         })
-        .collect()
+        .collect();
+    // Sort by mtime descending (most recently active first).
+    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.into_iter().map(|(_, e)| e).collect()
 }
 
 /// Scan conversations for a specific identity, sorted by mtime (newest first).
@@ -422,7 +437,14 @@ fn scan_conversations(sessions_dir: &Path, agent: &str, sender: &str) -> Vec<Con
         return Vec::new();
     };
 
-    let mut raw: Vec<(std::time::SystemTime, u32, String)> = Vec::new();
+    let mut raw: Vec<(
+        std::time::SystemTime,
+        u32,
+        String,
+        std::path::PathBuf,
+        u64,
+        u64,
+    )> = Vec::new();
     for file in files.flatten() {
         let path = file.path();
         if path.is_dir() {
@@ -446,21 +468,57 @@ fn scan_conversations(sessions_dir: &Path, agent: &str, sender: &str) -> Vec<Con
             .metadata()
             .and_then(|m| m.modified())
             .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        raw.push((mtime, seq, title));
+
+        // Read stats from the file: meta line for uptime, line count for messages.
+        let (uptime, msg_count) = read_file_stats(&path);
+        raw.push((mtime, seq, title, path, uptime, msg_count));
     }
 
     // Sort by mtime descending (newest first).
     raw.sort_by(|a, b| b.0.cmp(&a.0));
 
     raw.into_iter()
-        .map(|(mtime, seq, title)| ConversationEntry {
-            date: mtime_to_label(mtime, today),
-            seq,
-            title,
-            message_count: None,
-            alive_secs: None,
-        })
+        .map(
+            |(mtime, seq, title, file_path, uptime, msg_count)| ConversationEntry {
+                date: mtime_to_label(mtime, today),
+                seq,
+                title,
+                file_path,
+                message_count: Some(msg_count),
+                alive_secs: Some(uptime),
+            },
+        )
         .collect()
+}
+
+/// Read uptime_secs from meta line and count message lines from a session file.
+/// Returns (uptime_secs, message_count).
+fn read_file_stats(path: &Path) -> (u64, u64) {
+    use std::io::{BufRead, BufReader};
+
+    let Ok(file) = fs::File::open(path) else {
+        return (0, 0);
+    };
+    let reader = BufReader::new(file);
+    let mut lines = reader.lines();
+
+    // First line is meta — extract uptime_secs.
+    let uptime = lines
+        .next()
+        .and_then(|l| l.ok())
+        .and_then(|l| {
+            let v: serde_json::Value = serde_json::from_str(&l).ok()?;
+            v.get("uptime_secs")?.as_u64()
+        })
+        .unwrap_or(0);
+
+    // Count remaining non-empty, non-compact lines as messages.
+    let msg_count = lines
+        .map_while(|l| l.ok())
+        .filter(|l| !l.trim().is_empty() && !l.contains("\"compact\""))
+        .count() as u64;
+
+    (uptime, msg_count)
 }
 
 /// Parse agent and sender from a session filename.

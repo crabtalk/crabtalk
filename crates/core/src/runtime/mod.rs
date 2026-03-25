@@ -146,6 +146,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             let mut session = Session::new(id, agent, created_by);
             session.history = messages;
             session.title = meta.title;
+            session.uptime_secs = meta.uptime_secs;
             session.file_path = Some(path);
             self.sessions
                 .write()
@@ -318,9 +319,11 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", session.agent))?;
 
         let (tx, mut rx) = mpsc::unbounded_channel();
+        let run_start = std::time::Instant::now();
         self.active_sessions.write().await.insert(session_id);
         let response = agent_ref.run(&mut session.history, tx, None).await;
         self.active_sessions.write().await.remove(&session_id);
+        session.uptime_secs += run_start.elapsed().as_secs();
 
         // Drain events, stash compact summary if one occurred.
         let mut compact_summary: Option<String> = None;
@@ -343,6 +346,9 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             // No compaction: append new messages since pre_run.
             session.append_messages(&session.history[pre_run_len..]);
         }
+
+        // Persist updated uptime to meta line.
+        session.rewrite_meta();
 
         // Generate title in background if this is the first exchange.
         if session.title.is_empty() && session.history.len() >= 2 {
@@ -402,6 +408,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                 }
             };
 
+            let run_start = std::time::Instant::now();
             self.active_sessions.write().await.insert(session_id);
             let mut compact_summary: Option<String> = None;
             let mut done_event: Option<AgentEvent> = None;
@@ -422,6 +429,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             }
             // Borrow on session.history is released. Persist now.
             self.active_sessions.write().await.remove(&session_id);
+            session.uptime_secs += run_start.elapsed().as_secs();
             if let Some(summary) = compact_summary {
                 session.append_compact(&summary);
                 if session.history.len() > 1 {
@@ -430,6 +438,9 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             } else {
                 session.append_messages(&session.history[pre_run_len..]);
             }
+            // Persist updated uptime to meta line.
+            session.rewrite_meta();
+
             // Generate title in background if this is the first exchange.
             if session.title.is_empty() && session.history.len() >= 2 {
                 self.spawn_title_generation(session_id, session_mutex.clone());
