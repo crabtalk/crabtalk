@@ -245,13 +245,33 @@ fn input_loop(
         );
 
         let Ok(ev) = event::read() else { continue };
+
+        // On terminal resize, clear entire screen and redraw fresh.
+        if matches!(ev, event::Event::Resize(..)) {
+            let _ = crossterm::execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0),);
+            box_start_row.take();
+            last_height = 0;
+            continue;
+        }
+
         let event::Event::Key(key) = ev else { continue };
+
+        // Helper: erase the box before exiting.
+        let erase = |stdout: &mut std::io::Stdout, start: Option<u16>| {
+            if let Some(row) = start {
+                let _ = crossterm::execute!(
+                    stdout,
+                    cursor::MoveTo(0, row),
+                    Clear(ClearType::FromCursorDown),
+                );
+            }
+        };
 
         // Ctrl+C
         if key.modifiers.contains(event::KeyModifiers::CONTROL)
             && key.code == event::KeyCode::Char('c')
         {
-            println!();
+            erase(&mut stdout, box_start_row);
             return InputResult::Interrupt;
         }
         // Ctrl+D on empty
@@ -259,13 +279,14 @@ fn input_loop(
             && key.code == event::KeyCode::Char('d')
             && buf.is_empty()
         {
-            println!();
+            erase(&mut stdout, box_start_row);
             return InputResult::Eof;
         }
         // Ctrl+L
         if key.modifiers.contains(event::KeyModifiers::CONTROL)
             && key.code == event::KeyCode::Char('l')
         {
+            erase(&mut stdout, box_start_row);
             return InputResult::ClearScreen;
         }
 
@@ -275,7 +296,7 @@ fn input_loop(
                     buf.insert_newline();
                 } else {
                     let content = buf.content();
-                    println!();
+                    erase(&mut stdout, box_start_row);
                     return InputResult::Line(content);
                 }
             }
@@ -294,10 +315,29 @@ fn input_loop(
                 }
             }
             event::KeyCode::Tab => {
-                if buf.first_line().starts_with('/')
-                    && let Some(completed) = run_dropdown(buf)
-                {
-                    *buf = InputBuffer::from_str(&format!("{completed} "));
+                if buf.first_line().starts_with('/') {
+                    let result = run_dropdown(
+                        buf,
+                        box_start_row.unwrap_or(0),
+                        last_height,
+                        &mut stdout,
+                        agent,
+                        title,
+                    );
+                    if let Some(completed) = result {
+                        *buf = InputBuffer::from_str(&format!("{completed} "));
+                    }
+                    // Clear from the OLD box position down to remove both the
+                    // old box and any dropdown remnants.
+                    if let Some(row) = box_start_row {
+                        let _ = crossterm::execute!(
+                            stdout,
+                            cursor::MoveTo(0, row),
+                            Clear(ClearType::FromCursorDown),
+                        );
+                    }
+                    box_start_row.take();
+                    last_height = 0;
                 }
             }
             event::KeyCode::Char('/') if buf.is_empty() => {
@@ -310,9 +350,27 @@ fn input_loop(
                     &mut box_start_row,
                     &mut last_height,
                 );
-                if let Some(completed) = run_dropdown(buf) {
+                let saved_row = box_start_row;
+                let result = run_dropdown(
+                    buf,
+                    box_start_row.unwrap_or(0),
+                    last_height,
+                    &mut stdout,
+                    agent,
+                    title,
+                );
+                if let Some(completed) = result {
                     *buf = InputBuffer::from_str(&format!("{completed} "));
                 }
+                if let Some(row) = saved_row {
+                    let _ = crossterm::execute!(
+                        stdout,
+                        cursor::MoveTo(0, row),
+                        Clear(ClearType::FromCursorDown),
+                    );
+                }
+                box_start_row.take();
+                last_height = 0;
             }
             code => {
                 let old_len = buf.content().len();
@@ -340,16 +398,13 @@ fn draw_input_box(
     let (cols, _) = terminal::size().unwrap_or((80, 24));
     let height = buf.lines.len() as u16 + 2; // lines + borders
 
-    // Erase previous box using absolute positioning.
+    // Erase previous box: move to its start and clear everything below.
     if let Some(start_row) = *box_start_row {
-        for i in 0..*last_height {
-            let _ = crossterm::execute!(
-                stdout,
-                cursor::MoveTo(0, start_row + i),
-                Clear(ClearType::CurrentLine),
-            );
-        }
-        let _ = crossterm::execute!(stdout, cursor::MoveTo(0, start_row));
+        let _ = crossterm::execute!(
+            stdout,
+            cursor::MoveTo(0, start_row),
+            Clear(ClearType::FromCursorDown),
+        );
     }
 
     // Build the block.
@@ -363,12 +418,15 @@ fn draw_input_box(
 
     if !title.is_empty() {
         block = block.title_top(
-            Line::from(vec![Span::styled(
-                format!(" {title} "),
-                RStyle::default()
-                    .fg(RColor::White)
-                    .bg(RColor::Rgb(60, 60, 60)),
-            )])
+            Line::from(vec![
+                Span::styled(
+                    format!(" {title} "),
+                    RStyle::default()
+                        .fg(RColor::White)
+                        .bg(RColor::Rgb(60, 60, 60)),
+                ),
+                Span::styled("─", RStyle::default().fg(RColor::Rgb(136, 136, 136))),
+            ])
             .alignment(Alignment::Right),
         );
     }
@@ -420,29 +478,40 @@ fn draw_input_box(
     let (_, start_row) = crossterm::cursor::position().unwrap_or((0, 0));
     *box_start_row = Some(start_row);
 
+    // Render the buffer to a string with ANSI codes, one row at a time.
+    // This is MUCH faster than per-cell execute! calls.
     for y in 0..height {
         if y > 0 {
-            let _ = crossterm::execute!(stdout, style::Print("\r\n"));
+            write!(stdout, "\r\n").ok();
         }
+        let mut last_fg = RColor::Reset;
+        let mut last_bg = RColor::Reset;
         for x in 0..cols {
             let cell = &render_buf[(x, y)];
-            // Apply cell styling.
-            let fg = cell.fg;
-            let bg = cell.bg;
-            if fg != RColor::Reset {
-                let _ = crossterm::execute!(stdout, SetForegroundColor(to_crossterm_color(fg)));
+            if cell.fg != last_fg {
+                if cell.fg == RColor::Reset {
+                    write!(stdout, "\x1b[39m").ok(); // default fg
+                } else {
+                    let _ =
+                        crossterm::queue!(stdout, SetForegroundColor(to_crossterm_color(cell.fg)));
+                }
+                last_fg = cell.fg;
             }
-            if bg != RColor::Reset {
-                let _ = crossterm::execute!(
-                    stdout,
-                    crossterm::style::SetBackgroundColor(to_crossterm_color(bg))
-                );
+            if cell.bg != last_bg {
+                if cell.bg == RColor::Reset {
+                    write!(stdout, "\x1b[49m").ok(); // default bg
+                } else {
+                    let _ = crossterm::queue!(
+                        stdout,
+                        crossterm::style::SetBackgroundColor(to_crossterm_color(cell.bg))
+                    );
+                }
+                last_bg = cell.bg;
             }
-            let _ = crossterm::execute!(stdout, style::Print(cell.symbol()));
-            if fg != RColor::Reset || bg != RColor::Reset {
-                let _ = crossterm::execute!(stdout, style::ResetColor);
-            }
+            write!(stdout, "{}", cell.symbol()).ok();
         }
+        // Reset at end of each row.
+        write!(stdout, "\x1b[0m").ok();
     }
 
     *last_height = height;
@@ -451,12 +520,11 @@ fn draw_input_box(
     let (cur_line, cur_col) = buf.cursor;
     let prefix_w: u16 = if cur_line == 0 { 2 } else { 3 };
     let col = 1 + prefix_w + cur_col as u16;
-    // Move cursor up from current position (bottom of box) to the right row.
     let rows_up = height - 1 - (1 + cur_line as u16);
     if rows_up > 0 {
-        let _ = crossterm::execute!(stdout, cursor::MoveUp(rows_up));
+        let _ = crossterm::queue!(stdout, cursor::MoveUp(rows_up));
     }
-    let _ = crossterm::execute!(stdout, cursor::MoveToColumn(col));
+    let _ = crossterm::queue!(stdout, cursor::MoveToColumn(col));
     let _ = stdout.flush();
 }
 
@@ -472,36 +540,62 @@ fn to_crossterm_color(c: RColor) -> Color {
 
 // ── Dropdown ──────────────────────────────────────────────────────
 
-fn run_dropdown(buf: &InputBuffer) -> Option<String> {
-    let line = buf.first_line();
-    let candidates = collect_candidates(line, line.len());
+fn run_dropdown(
+    buf: &mut InputBuffer,
+    box_start_row: u16,
+    box_height: u16,
+    stdout: &mut std::io::Stdout,
+    agent: &str,
+    title: &str,
+) -> Option<String> {
+    let line = buf.first_line().to_string();
+    let candidates = collect_candidates(&line, line.len());
     match candidates.len() {
         0 => None,
         1 => Some(candidates.into_iter().next().unwrap()),
-        _ => show_dropdown(&candidates, buf),
+        _ => show_dropdown(
+            &candidates,
+            buf,
+            box_start_row,
+            box_height,
+            stdout,
+            agent,
+            title,
+        ),
     }
 }
 
-fn show_dropdown(candidates: &[String], input_buf: &InputBuffer) -> Option<String> {
+fn show_dropdown(
+    candidates: &[String],
+    input_buf: &mut InputBuffer,
+    box_start_row: u16,
+    box_height: u16,
+    stdout: &mut std::io::Stdout,
+    agent: &str,
+    title: &str,
+) -> Option<String> {
     let max_visible = MAX_DROPDOWN_ROWS.min(candidates.len());
     let mut selected: usize = 0;
     let mut scroll: usize = 0;
     let mut filter = String::new();
     let mut filtered: Vec<&str> = candidates.iter().map(|s| s.as_str()).collect();
     let mut max_drawn: u16 = 0;
-    let mut stdout = std::io::stdout();
 
-    // Pre-scroll for dropdown below the input box.
+    // Dropdown starts right below the input box's bottom border.
+    let dropdown_start = box_start_row + box_height;
+
+    // Pre-scroll to ensure room for dropdown.
     let dropdown_rows = max_visible as u16 + 1;
-    for _ in 0..dropdown_rows {
-        let _ = crossterm::execute!(stdout, style::Print("\n"));
+    let (_, term_rows) = terminal::size().unwrap_or((80, 24));
+    let needed_bottom = dropdown_start + dropdown_rows;
+    if needed_bottom > term_rows {
+        let scroll_by = needed_bottom - term_rows;
+        for _ in 0..scroll_by {
+            let _ = crossterm::execute!(stdout, style::Print("\n"));
+        }
+        // Box moved up by scroll_by — but we don't need to track that
+        // since the dropdown position is relative to the scrolled position.
     }
-    let (_, bottom) = crossterm::cursor::position().unwrap_or((0, dropdown_rows));
-    let dropdown_start = bottom.saturating_sub(dropdown_rows);
-
-    // Track a mutable copy for filter display.
-    let mut line_buf = input_buf.first_line().to_string();
-    let mut line_cursor = input_buf.cursor.1;
 
     loop {
         // Clear old dropdown lines.
@@ -575,15 +669,18 @@ fn show_dropdown(candidates: &[String], input_buf: &InputBuffer) -> Option<Strin
             continue;
         };
 
-        let cleanup = |stdout: &mut std::io::Stdout| {
-            for i in 0..drawn.max(max_drawn) {
-                let _ = crossterm::execute!(
-                    stdout,
-                    cursor::MoveTo(0, dropdown_start + i),
-                    Clear(ClearType::CurrentLine),
-                );
-            }
-        };
+        // Inline cleanup helper — clears dropdown lines.
+        macro_rules! cleanup {
+            () => {
+                for i in 0..drawn.max(max_drawn) {
+                    let _ = crossterm::execute!(
+                        stdout,
+                        cursor::MoveTo(0, dropdown_start + i),
+                        Clear(ClearType::CurrentLine),
+                    );
+                }
+            };
+        }
 
         match key.code {
             event::KeyCode::Up => selected = selected.saturating_sub(1),
@@ -594,31 +691,26 @@ fn show_dropdown(candidates: &[String], input_buf: &InputBuffer) -> Option<Strin
             }
             event::KeyCode::Enter | event::KeyCode::Tab => {
                 let result = filtered.get(selected).map(|s| s.to_string());
-                cleanup(&mut stdout);
+                cleanup!();
                 return result;
             }
             event::KeyCode::Esc => {
-                cleanup(&mut stdout);
+                cleanup!();
                 return None;
             }
             event::KeyCode::Char(' ') => {
-                cleanup(&mut stdout);
-                return Some(line_buf);
+                cleanup!();
+                return Some(format!("/{filter}"));
             }
             event::KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                cleanup(&mut stdout);
+                cleanup!();
                 return None;
             }
             event::KeyCode::Backspace => {
-                if filter.pop().is_some() && line_cursor > 1 {
-                    tui::handle_text_input(
-                        event::KeyCode::Backspace,
-                        &mut line_buf,
-                        &mut line_cursor,
-                    );
-                }
-                if line_buf.is_empty() || (line_buf == "/" && filter.is_empty()) {
-                    cleanup(&mut stdout);
+                filter.pop();
+                input_buf.handle_key(event::KeyCode::Backspace);
+                if filter.is_empty() {
+                    cleanup!();
                     return None;
                 }
                 filtered = candidates
@@ -628,10 +720,14 @@ fn show_dropdown(candidates: &[String], input_buf: &InputBuffer) -> Option<Strin
                     .collect();
                 selected = 0;
                 scroll = 0;
+                // Redraw the input box to show current text.
+                let mut bsr = Some(box_start_row);
+                let mut bh = box_height;
+                draw_input_box(stdout, agent, title, input_buf, &mut bsr, &mut bh);
             }
             event::KeyCode::Char(ch) => {
                 filter.push(ch);
-                tui::handle_text_input(event::KeyCode::Char(ch), &mut line_buf, &mut line_cursor);
+                input_buf.handle_key(event::KeyCode::Char(ch));
                 filtered = candidates
                     .iter()
                     .filter(|c| c.contains(filter.as_str()))
@@ -639,6 +735,10 @@ fn show_dropdown(candidates: &[String], input_buf: &InputBuffer) -> Option<Strin
                     .collect();
                 selected = 0;
                 scroll = 0;
+                // Redraw the input box to show current text.
+                let mut bsr = Some(box_start_row);
+                let mut bh = box_height;
+                draw_input_box(stdout, agent, title, input_buf, &mut bsr, &mut bh);
             }
             _ => {}
         }
