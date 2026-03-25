@@ -97,7 +97,7 @@ impl Hub {
                 tracing::warn!("{w}");
             }
 
-            // Offer OAuth login for HTTP MCPs that don't have tokens yet.
+            // Offer OAuth login for MCPs that declare auth = true.
             let installed = crabhub::package::read_manifest_from(
                 self.path.as_deref().unwrap_or(&config_dir.join("hub")),
                 &pkg.split('/').next().unwrap_or(&pkg),
@@ -105,13 +105,13 @@ impl Hub {
             );
             if let Ok(installed) = installed {
                 for (name, mcp) in &installed.mcps {
-                    if mcp.url.is_some()
+                    if mcp.auth
                         && !wcore::paths::TOKENS_DIR
                             .join(format!("{name}.json"))
                             .exists()
                     {
                         println!();
-                        println!("MCP '{name}' may require authentication.");
+                        println!("MCP '{name}' requires authentication.");
                         let confirm = dialoguer::Confirm::new()
                             .with_prompt("Authenticate now?")
                             .default(true)
