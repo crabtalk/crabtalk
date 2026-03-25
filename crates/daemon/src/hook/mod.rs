@@ -411,7 +411,7 @@ impl DaemonHook {
         name: &str,
         args: &str,
         agent: &str,
-        _sender: &str,
+        sender: &str,
         session_id: Option<u64>,
     ) -> String {
         // Dispatch enforcement: reject tools not in the agent's whitelist.
@@ -424,6 +424,9 @@ impl DaemonHook {
         match name {
             "mcp" => self.dispatch_mcp(args, agent).await,
             "skill" => self.dispatch_skill(args, agent).await,
+            "bash" if sender.contains(':') => {
+                "bash is only available in the command line interface".to_owned()
+            }
             "bash" => self.dispatch_bash(args, session_id).await,
             "delegate" => self.dispatch_delegate(args, agent).await,
             "recall" => self.dispatch_recall(args).await,
