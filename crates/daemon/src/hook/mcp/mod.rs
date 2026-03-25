@@ -9,6 +9,7 @@
 use wcore::agent::AsTool;
 pub use {bridge::McpBridge, config::McpServerConfig, handler::McpHandler};
 
+pub mod auth;
 mod bridge;
 pub mod config;
 mod handler;

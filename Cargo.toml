@@ -62,14 +62,18 @@ reqwest = { version = "0.13", default-features = false, features = [
     "rustls",
 ] }
 rmcp = { version = "0.16", features = [
+    "auth",
     "client",
     "transport-child-process",
     "server",
     "macros",
     "transport-streamable-http-server",
 ] }
+open = "5"
+async-trait = "0.1"
 axum = { version = "0.8", default-features = false, features = [
     "http1",
+    "query",
     "tokio",
 ] }
 schemars = "1.1.0"

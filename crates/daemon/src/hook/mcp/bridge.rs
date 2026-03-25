@@ -1,15 +1,19 @@
 //! Crabtalk MCP bridge — connects to MCP servers and dispatches tool calls.
 
+use crate::hook::mcp::auth::FileCredentialStore;
 use anyhow::Result;
 use rmcp::{
     ServiceExt,
     model::{CallToolRequestParams, RawContent},
     service::{RoleClient, RunningService},
-    transport::{StreamableHttpClientTransport, TokioChildProcess},
+    transport::{
+        AuthClient, AuthorizationManager, StreamableHttpClientTransport, TokioChildProcess,
+        streamable_http_client::StreamableHttpClientTransportConfig,
+    },
 };
 use std::collections::BTreeMap;
 use tokio::sync::Mutex;
-use wcore::model::Tool;
+use wcore::{model::Tool, paths::TOKENS_DIR};
 
 /// A connected MCP server peer with its tool names.
 struct ConnectedPeer {
@@ -96,10 +100,24 @@ impl McpBridge {
 
     /// Connect to a named MCP server via streamable HTTP transport.
     ///
-    /// Returns the list of tool names registered by this server.
+    /// If a token file exists at `~/.crabtalk/tokens/{name}.json`, the
+    /// connection is authenticated via OAuth (auto-refreshing Bearer tokens).
+    /// Otherwise, connects without auth.
     pub async fn connect_http_named(&self, name: String, url: &str) -> Result<Vec<String>> {
-        let transport = StreamableHttpClientTransport::from_uri(url);
-        let peer: RunningService<RoleClient, ()> = ().serve(transport).await?;
+        let token_path = TOKENS_DIR.join(format!("{name}.json"));
+        let peer: RunningService<RoleClient, ()> = if token_path.exists() {
+            tracing::info!(server = %name, "using stored OAuth token");
+            let mut manager = AuthorizationManager::new(url).await?;
+            manager.set_credential_store(FileCredentialStore::for_server(&name));
+            manager.initialize_from_store().await?;
+            let auth_client = AuthClient::new(reqwest::Client::default(), manager);
+            let config = StreamableHttpClientTransportConfig::with_uri(url);
+            let transport = StreamableHttpClientTransport::with_client(auth_client, config);
+            ().serve(transport).await?
+        } else {
+            let transport = StreamableHttpClientTransport::from_uri(url);
+            ().serve(transport).await?
+        };
 
         let mcp_tools = peer.list_all_tools().await?;
         let mut tool_names = Vec::with_capacity(mcp_tools.len());

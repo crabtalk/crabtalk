@@ -16,7 +16,9 @@ transport.workspace = true
 wcore.workspace = true
 
 # crates.io
+async-trait.workspace = true
 anyhow.workspace = true
+reqwest.workspace = true
 async-stream.workspace = true
 chrono.workspace = true
 futures-core.workspace = true

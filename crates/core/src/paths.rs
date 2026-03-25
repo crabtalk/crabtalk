@@ -38,5 +38,8 @@ pub const SKILLS_DIR: &str = "local/skills";
 /// Persisted session history directory (`~/.crabtalk/sessions/`).
 pub static SESSIONS_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("sessions"));
 
+/// OAuth token storage directory (`~/.crabtalk/tokens/`).
+pub static TOKENS_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("tokens"));
+
 /// Default agent name used when no custom agents are configured.
 pub const DEFAULT_AGENT: &str = "crab";
