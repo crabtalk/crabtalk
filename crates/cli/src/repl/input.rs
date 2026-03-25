@@ -1,7 +1,7 @@
 //! Bordered multi-line input box with dropdown completion.
 //!
-//! Renders a box with top/bottom borders around the input area.
-//! Supports multi-line input (Shift+Enter), history, and slash completion.
+//! Uses ratatui `Viewport::Inline` for the input box — correct width
+//! calculations, Unicode handling, and border rendering out of the box.
 
 use crate::repl::command::collect_candidates;
 use crate::tui;
@@ -10,15 +10,15 @@ use crossterm::{
     style::{self, Attribute, Color, SetAttribute, SetForegroundColor},
     terminal::{self, Clear, ClearType},
 };
+use ratatui::{
+    layout::Alignment,
+    style::{Color as RColor, Style as RStyle},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
+};
 use std::io::Write;
 
 const MAX_DROPDOWN_ROWS: usize = 5;
-const BORDER_COLOR: Color = Color::Rgb {
-    r: 136,
-    g: 136,
-    b: 136,
-};
-const PROMPT_COLOR: Color = Color::AnsiValue(173);
 
 /// Result of reading input.
 pub enum InputResult {
@@ -103,7 +103,6 @@ impl History {
 
 struct InputBuffer {
     lines: Vec<String>,
-    /// (line_index, char_position_in_line)
     cursor: (usize, usize),
 }
 
@@ -145,7 +144,6 @@ impl InputBuffer {
         &self.lines[0]
     }
 
-    /// Insert a newline at the cursor position (Shift+Enter).
     fn insert_newline(&mut self) {
         let (row, col) = self.cursor;
         let byte_pos = tui::char_to_byte(&self.lines[row], col);
@@ -155,7 +153,6 @@ impl InputBuffer {
         self.cursor = (row + 1, 0);
     }
 
-    /// Handle a text editing key on the current line.
     fn handle_key(&mut self, code: event::KeyCode) {
         let (row, col) = self.cursor;
         match code {
@@ -163,7 +160,6 @@ impl InputBuffer {
                 if col > 0 {
                     tui::handle_text_input(code, &mut self.lines[row], &mut self.cursor.1);
                 } else if row > 0 {
-                    // Join with previous line.
                     let current = self.lines.remove(row);
                     self.cursor.0 = row - 1;
                     self.cursor.1 = self.lines[row - 1].chars().count();
@@ -187,12 +183,8 @@ impl InputBuffer {
                     self.cursor.1 = 0;
                 }
             }
-            event::KeyCode::Home => {
-                self.cursor.1 = 0;
-            }
-            event::KeyCode::End => {
-                self.cursor.1 = self.lines[row].chars().count();
-            }
+            event::KeyCode::Home => self.cursor.1 = 0,
+            event::KeyCode::End => self.cursor.1 = self.lines[row].chars().count(),
             _ => {
                 tui::handle_text_input(code, &mut self.lines[row], &mut self.cursor.1);
             }
@@ -218,22 +210,40 @@ impl InputBuffer {
 
 // ── Main read function ────────────────────────────────────────────
 
-/// Read multi-line input with bordered box.
-pub fn read_line(prompt: &str, history: &mut History) -> InputResult {
+/// Read multi-line input with a ratatui-rendered bordered box.
+pub fn read_line(agent: &str, history: &mut History, title: &str) -> InputResult {
     if terminal::enable_raw_mode().is_err() {
         return InputResult::Eof;
     }
 
-    let prompt_width = console::measure_text_width(prompt);
     let mut buf = InputBuffer::new();
+    let result = input_loop(agent, title, &mut buf, history);
+
+    let _ = terminal::disable_raw_mode();
+    result
+}
+
+fn input_loop(
+    agent: &str,
+    title: &str,
+    buf: &mut InputBuffer,
+    history: &mut History,
+) -> InputResult {
     let mut stdout = std::io::stdout();
-    // Pre-scroll to ensure room for the box (top border + 1 line + bottom border = 3 rows).
-    pre_scroll(&mut stdout, 3);
-    let mut box_row = get_box_row(3);
+    // Track the row where the box starts for absolute erase.
+    let mut box_start_row: Option<u16> = None;
+    let mut last_height: u16 = 0;
 
-    render_box(&mut stdout, prompt, &buf, prompt_width, box_row);
+    loop {
+        draw_input_box(
+            &mut stdout,
+            agent,
+            title,
+            buf,
+            &mut box_start_row,
+            &mut last_height,
+        );
 
-    let result = loop {
         let Ok(ev) = event::read() else { continue };
         let event::Event::Key(key) = ev else { continue };
 
@@ -241,88 +251,67 @@ pub fn read_line(prompt: &str, history: &mut History) -> InputResult {
         if key.modifiers.contains(event::KeyModifiers::CONTROL)
             && key.code == event::KeyCode::Char('c')
         {
-            erase_box(&mut stdout, buf.lines.len() as u16, box_row);
-            break InputResult::Interrupt;
+            println!();
+            return InputResult::Interrupt;
         }
         // Ctrl+D on empty
         if key.modifiers.contains(event::KeyModifiers::CONTROL)
             && key.code == event::KeyCode::Char('d')
             && buf.is_empty()
         {
-            erase_box(&mut stdout, buf.lines.len() as u16, box_row);
-            break InputResult::Eof;
+            println!();
+            return InputResult::Eof;
         }
         // Ctrl+L
         if key.modifiers.contains(event::KeyModifiers::CONTROL)
             && key.code == event::KeyCode::Char('l')
         {
-            erase_box(&mut stdout, buf.lines.len() as u16, box_row);
-            break InputResult::ClearScreen;
+            return InputResult::ClearScreen;
         }
-
-        let old_line_count = buf.lines.len() as u16;
 
         match key.code {
             event::KeyCode::Enter => {
                 if key.modifiers.contains(event::KeyModifiers::SHIFT) {
-                    // Shift+Enter: new line.
                     buf.insert_newline();
-                    // Re-scroll if needed for the extra line.
-                    let new_height = buf.lines.len() as u16 + 2; // lines + borders
-                    erase_box(&mut stdout, old_line_count, box_row);
-                    pre_scroll(&mut stdout, new_height);
-                    box_row = get_box_row(new_height);
                 } else {
-                    // Submit.
                     let content = buf.content();
-                    erase_box(&mut stdout, old_line_count, box_row);
-                    let _ = stdout.flush();
-                    break InputResult::Line(content);
+                    println!();
+                    return InputResult::Line(content);
                 }
             }
             event::KeyCode::Up => {
                 if buf.is_multiline() && buf.cursor.0 > 0 {
                     buf.move_up();
                 } else if let Some(entry) = history.prev(&buf.content()) {
-                    erase_box(&mut stdout, old_line_count, box_row);
-                    buf = InputBuffer::from_str(entry);
-                    let new_height = buf.lines.len() as u16 + 2;
-                    pre_scroll(&mut stdout, new_height);
-                    box_row = get_box_row(new_height);
+                    *buf = InputBuffer::from_str(entry);
                 }
             }
             event::KeyCode::Down => {
                 if buf.is_multiline() && buf.cursor.0 + 1 < buf.lines.len() {
                     buf.move_down();
                 } else if let Some(entry) = history.next() {
-                    erase_box(&mut stdout, old_line_count, box_row);
-                    buf = InputBuffer::from_str(entry);
-                    let new_height = buf.lines.len() as u16 + 2;
-                    pre_scroll(&mut stdout, new_height);
-                    box_row = get_box_row(new_height);
+                    *buf = InputBuffer::from_str(entry);
                 }
             }
             event::KeyCode::Tab => {
                 if buf.first_line().starts_with('/')
-                    && let Some(completed) =
-                        run_dropdown(&mut stdout, prompt, &buf, prompt_width, box_row)
+                    && let Some(completed) = run_dropdown(buf)
                 {
-                    erase_box(&mut stdout, old_line_count, box_row);
-                    buf = InputBuffer::from_str(&format!("{completed} "));
-                    pre_scroll(&mut stdout, 3);
-                    box_row = get_box_row(3);
+                    *buf = InputBuffer::from_str(&format!("{completed} "));
                 }
             }
             event::KeyCode::Char('/') if buf.is_empty() => {
                 buf.handle_key(event::KeyCode::Char('/'));
-                render_box(&mut stdout, prompt, &buf, prompt_width, box_row);
-                if let Some(completed) =
-                    run_dropdown(&mut stdout, prompt, &buf, prompt_width, box_row)
-                {
-                    erase_box(&mut stdout, buf.lines.len() as u16, box_row);
-                    buf = InputBuffer::from_str(&format!("{completed} "));
-                    pre_scroll(&mut stdout, 3);
-                    box_row = get_box_row(3);
+                draw_input_box(
+                    &mut stdout,
+                    agent,
+                    title,
+                    buf,
+                    &mut box_start_row,
+                    &mut last_height,
+                );
+                if let Some(completed) = run_dropdown(buf) {
+                    *buf = InputBuffer::from_str(&format!("{completed} "));
                 }
             }
             code => {
@@ -333,217 +322,188 @@ pub fn read_line(prompt: &str, history: &mut History) -> InputResult {
                 }
             }
         }
-
-        render_box(&mut stdout, prompt, &buf, prompt_width, box_row);
-    };
-
-    let _ = terminal::disable_raw_mode();
-    result
+    }
 }
 
-// ── Box rendering ─────────────────────────────────────────────────
+// ── Ratatui rendering ─────────────────────────────────────────────
 
-fn render_box(
+fn draw_input_box(
     stdout: &mut std::io::Stdout,
-    prompt: &str,
+    agent: &str,
+    title: &str,
     buf: &InputBuffer,
-    _prompt_width: usize,
-    box_row: u16,
+    box_start_row: &mut Option<u16>,
+    last_height: &mut u16,
 ) {
-    let width = terminal::size().map(|(w, _)| w as usize).unwrap_or(80);
+    use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
-    // Top border: ┌─ prompt ──────────┐
-    let _ = crossterm::execute!(
-        stdout,
-        cursor::MoveTo(0, box_row),
-        Clear(ClearType::CurrentLine)
-    );
-    let prompt_label = prompt.trim();
-    let border_fill = width.saturating_sub(4 + console::measure_text_width(prompt_label));
-    let _ = crossterm::execute!(
-        stdout,
-        SetForegroundColor(BORDER_COLOR),
-        style::Print("┌─ "),
-        SetForegroundColor(PROMPT_COLOR),
-        style::Print(prompt_label),
-        SetForegroundColor(BORDER_COLOR),
-        style::Print(format!(" {}", "─".repeat(border_fill))),
-        style::ResetColor,
-    );
+    let (cols, _) = terminal::size().unwrap_or((80, 24));
+    let height = buf.lines.len() as u16 + 2; // lines + borders
 
-    // Content lines.
-    for (i, line) in buf.lines.iter().enumerate() {
-        let row = box_row + 1 + i as u16;
-        let _ = crossterm::execute!(
-            stdout,
-            cursor::MoveTo(0, row),
-            Clear(ClearType::CurrentLine)
-        );
-
-        let prefix_width = if i == 0 { 4 } else { 5 };
-
-        let _ = crossterm::execute!(
-            stdout,
-            SetForegroundColor(BORDER_COLOR),
-            style::Print("│"),
-            style::ResetColor,
-        );
-
-        if i == 0 {
+    // Erase previous box using absolute positioning.
+    if let Some(start_row) = *box_start_row {
+        for i in 0..*last_height {
             let _ = crossterm::execute!(
                 stdout,
-                SetForegroundColor(PROMPT_COLOR),
-                style::Print(" > "),
-                style::ResetColor,
-            );
-        } else {
-            let _ = crossterm::execute!(
-                stdout,
-                SetForegroundColor(Color::DarkGrey),
-                style::Print(" .. "),
-                style::ResetColor,
+                cursor::MoveTo(0, start_row + i),
+                Clear(ClearType::CurrentLine),
             );
         }
+        let _ = crossterm::execute!(stdout, cursor::MoveTo(0, start_row));
+    }
 
-        // Print line content with slash highlighting (command word only).
-        if i == 0 && line.starts_with('/') {
-            let (cmd, rest) = line.split_once(' ').unwrap_or((line, ""));
-            let _ = crossterm::execute!(
-                stdout,
-                SetForegroundColor(Color::AnsiValue(240)),
-                style::Print(cmd),
-                style::ResetColor,
-            );
-            if !rest.is_empty() {
-                let _ = crossterm::execute!(stdout, style::Print(format!(" {rest}")));
+    // Build the block.
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(RStyle::default().fg(RColor::Rgb(136, 136, 136)))
+        .title_top(
+            Line::from(format!(" {agent} > "))
+                .style(RStyle::default().fg(RColor::Rgb(215, 119, 87))),
+        );
+
+    if !title.is_empty() {
+        block = block.title_top(
+            Line::from(vec![Span::styled(
+                format!(" {title} "),
+                RStyle::default()
+                    .fg(RColor::White)
+                    .bg(RColor::Rgb(60, 60, 60)),
+            )])
+            .alignment(Alignment::Right),
+        );
+    }
+
+    // Build input text.
+    let lines: Vec<Line> = buf
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let prefix = if i == 0 { "> " } else { ".. " };
+            let prefix_style = if i == 0 {
+                RStyle::default().fg(RColor::Rgb(215, 119, 87))
+            } else {
+                RStyle::default().fg(RColor::DarkGray)
+            };
+
+            if i == 0 && line.starts_with('/') {
+                let (cmd, rest) = line.split_once(' ').unwrap_or((line, ""));
+                let mut spans = vec![
+                    Span::styled(prefix, prefix_style),
+                    Span::styled(
+                        cmd.to_string(),
+                        RStyle::default().fg(RColor::Rgb(160, 160, 160)),
+                    ),
+                ];
+                if !rest.is_empty() {
+                    spans.push(Span::raw(format!(" {rest}")));
+                }
+                Line::from(spans)
+            } else {
+                Line::from(vec![
+                    Span::styled(prefix, prefix_style),
+                    Span::raw(line.as_str()),
+                ])
             }
-        } else {
-            let _ = crossterm::execute!(stdout, style::Print(line));
+        })
+        .collect();
+
+    let paragraph = Paragraph::new(lines).block(block);
+
+    // Render to a buffer and print line by line.
+    let area = Rect::new(0, 0, cols, height);
+    let mut render_buf = Buffer::empty(area);
+    paragraph.render(area, &mut render_buf);
+
+    let _ = crossterm::execute!(stdout, cursor::MoveToColumn(0));
+    // Record the row where the box starts.
+    let (_, start_row) = crossterm::cursor::position().unwrap_or((0, 0));
+    *box_start_row = Some(start_row);
+
+    for y in 0..height {
+        if y > 0 {
+            let _ = crossterm::execute!(stdout, style::Print("\r\n"));
         }
-
-        // Right border.
-        let content_width: usize = line.chars().map(unicode_width).sum();
-        let padding = width.saturating_sub(prefix_width + content_width + 1);
-        let _ = crossterm::execute!(
-            stdout,
-            style::Print(" ".repeat(padding)),
-            SetForegroundColor(BORDER_COLOR),
-            style::Print("│"),
-            style::ResetColor,
-        );
+        for x in 0..cols {
+            let cell = &render_buf[(x, y)];
+            // Apply cell styling.
+            let fg = cell.fg;
+            let bg = cell.bg;
+            if fg != RColor::Reset {
+                let _ = crossterm::execute!(stdout, SetForegroundColor(to_crossterm_color(fg)));
+            }
+            if bg != RColor::Reset {
+                let _ = crossterm::execute!(
+                    stdout,
+                    crossterm::style::SetBackgroundColor(to_crossterm_color(bg))
+                );
+            }
+            let _ = crossterm::execute!(stdout, style::Print(cell.symbol()));
+            if fg != RColor::Reset || bg != RColor::Reset {
+                let _ = crossterm::execute!(stdout, style::ResetColor);
+            }
+        }
     }
 
-    // Bottom border.
-    let bottom_row = box_row + 1 + buf.lines.len() as u16;
-    let _ = crossterm::execute!(
-        stdout,
-        cursor::MoveTo(0, bottom_row),
-        Clear(ClearType::CurrentLine),
-        SetForegroundColor(BORDER_COLOR),
-        style::Print(format!("└{}┘", "─".repeat(width.saturating_sub(2)))),
-        style::ResetColor,
-    );
+    *last_height = height;
 
-    // Position cursor in the active line.
+    // Position cursor.
     let (cur_line, cur_col) = buf.cursor;
-    let prefix_width: usize = if cur_line == 0 { 4 } else { 5 };
-    let col = prefix_width
-        + buf.lines[cur_line]
-            .chars()
-            .take(cur_col)
-            .map(unicode_width)
-            .sum::<usize>();
-    let _ = crossterm::execute!(
-        stdout,
-        cursor::MoveTo(col as u16, box_row + 1 + cur_line as u16)
-    );
+    let prefix_w: u16 = if cur_line == 0 { 2 } else { 3 };
+    let col = 1 + prefix_w + cur_col as u16;
+    // Move cursor up from current position (bottom of box) to the right row.
+    let rows_up = height - 1 - (1 + cur_line as u16);
+    if rows_up > 0 {
+        let _ = crossterm::execute!(stdout, cursor::MoveUp(rows_up));
+    }
+    let _ = crossterm::execute!(stdout, cursor::MoveToColumn(col));
     let _ = stdout.flush();
 }
 
-fn erase_box(stdout: &mut std::io::Stdout, line_count: u16, box_row: u16) {
-    let total = line_count + 2; // top border + lines + bottom border
-    for i in 0..total {
-        let _ = crossterm::execute!(
-            stdout,
-            cursor::MoveTo(0, box_row + i),
-            Clear(ClearType::CurrentLine),
-        );
-    }
-    let _ = crossterm::execute!(stdout, cursor::MoveTo(0, box_row));
-    let _ = stdout.flush();
-}
-
-fn pre_scroll(stdout: &mut std::io::Stdout, height: u16) {
-    for _ in 0..height {
-        let _ = crossterm::execute!(stdout, style::Print("\n"));
+fn to_crossterm_color(c: RColor) -> Color {
+    match c {
+        RColor::Rgb(r, g, b) => Color::Rgb { r, g, b },
+        RColor::Indexed(i) => Color::AnsiValue(i),
+        RColor::White => Color::White,
+        RColor::DarkGray => Color::DarkGrey,
+        _ => Color::Reset,
     }
 }
 
-fn get_box_row(height: u16) -> u16 {
-    let (_, bottom) = crossterm::cursor::position().unwrap_or((0, height));
-    bottom.saturating_sub(height)
-}
+// ── Dropdown ──────────────────────────────────────────────────────
 
-// ── Dropdown (adapted for box layout) ─────────────────────────────
-
-fn run_dropdown(
-    stdout: &mut std::io::Stdout,
-    prompt: &str,
-    input_buf: &InputBuffer,
-    prompt_width: usize,
-    box_row: u16,
-) -> Option<String> {
-    let buf = input_buf.first_line();
-    let candidates = collect_candidates(buf, buf.len());
+fn run_dropdown(buf: &InputBuffer) -> Option<String> {
+    let line = buf.first_line();
+    let candidates = collect_candidates(line, line.len());
     match candidates.len() {
         0 => None,
         1 => Some(candidates.into_iter().next().unwrap()),
-        _ => show_dropdown(
-            stdout,
-            &candidates,
-            box_row,
-            prompt,
-            input_buf,
-            prompt_width,
-        ),
+        _ => show_dropdown(&candidates, buf),
     }
 }
 
-/// Interactive dropdown below the input box.
-fn show_dropdown(
-    stdout: &mut std::io::Stdout,
-    candidates: &[String],
-    orig_box_row: u16,
-    prompt: &str,
-    input_buf: &InputBuffer,
-    prompt_width: usize,
-) -> Option<String> {
+fn show_dropdown(candidates: &[String], input_buf: &InputBuffer) -> Option<String> {
     let max_visible = MAX_DROPDOWN_ROWS.min(candidates.len());
     let mut selected: usize = 0;
     let mut scroll: usize = 0;
     let mut filter = String::new();
     let mut filtered: Vec<&str> = candidates.iter().map(|s| s.as_str()).collect();
     let mut max_drawn: u16 = 0;
+    let mut stdout = std::io::stdout();
 
-    // Erase old box, pre-scroll for box + dropdown, recalculate.
-    let box_lines = input_buf.lines.len() as u16;
-    erase_box(stdout, box_lines, orig_box_row);
-
-    let box_height = box_lines + 2;
+    // Pre-scroll for dropdown below the input box.
     let dropdown_rows = max_visible as u16 + 1;
-    pre_scroll(stdout, box_height + dropdown_rows);
-    let box_row = get_box_row(box_height + dropdown_rows);
-    let dropdown_start = box_row + box_height;
+    for _ in 0..dropdown_rows {
+        let _ = crossterm::execute!(stdout, style::Print("\n"));
+    }
+    let (_, bottom) = crossterm::cursor::position().unwrap_or((0, dropdown_rows));
+    let dropdown_start = bottom.saturating_sub(dropdown_rows);
 
-    // Mutable copy for filter display.
+    // Track a mutable copy for filter display.
     let mut line_buf = input_buf.first_line().to_string();
     let mut line_cursor = input_buf.cursor.1;
 
     loop {
-        // Redraw box with current input.
-        let display_buf = InputBuffer::from_str(&line_buf);
-        render_box(stdout, prompt, &display_buf, prompt_width, box_row);
-
         // Clear old dropdown lines.
         for i in 0..max_drawn {
             let _ = crossterm::execute!(
@@ -554,7 +514,6 @@ fn show_dropdown(
         }
 
         if filtered.is_empty() {
-            // No matches — clean up and exit.
             return None;
         }
 
@@ -608,20 +567,14 @@ fn show_dropdown(
             max_drawn = drawn;
         }
 
-        // Park cursor in the input line.
-        let cursor_col = 4 + line_buf
-            .chars()
-            .take(line_cursor)
-            .map(unicode_width)
-            .sum::<usize>();
-        let _ = crossterm::execute!(stdout, cursor::MoveTo(cursor_col as u16, box_row + 1));
+        // Park cursor at dropdown area.
+        let _ = crossterm::execute!(stdout, cursor::MoveTo(0, dropdown_start));
         let _ = stdout.flush();
 
         let Ok(event::Event::Key(key)) = event::read() else {
             continue;
         };
 
-        // Helper: clean up dropdown lines.
         let cleanup = |stdout: &mut std::io::Stdout| {
             for i in 0..drawn.max(max_drawn) {
                 let _ = crossterm::execute!(
@@ -641,19 +594,19 @@ fn show_dropdown(
             }
             event::KeyCode::Enter | event::KeyCode::Tab => {
                 let result = filtered.get(selected).map(|s| s.to_string());
-                cleanup(stdout);
+                cleanup(&mut stdout);
                 return result;
             }
             event::KeyCode::Esc => {
-                cleanup(stdout);
+                cleanup(&mut stdout);
                 return None;
             }
             event::KeyCode::Char(' ') => {
-                cleanup(stdout);
+                cleanup(&mut stdout);
                 return Some(line_buf);
             }
             event::KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                cleanup(stdout);
+                cleanup(&mut stdout);
                 return None;
             }
             event::KeyCode::Backspace => {
@@ -663,19 +616,18 @@ fn show_dropdown(
                         &mut line_buf,
                         &mut line_cursor,
                     );
-                    filtered = candidates
-                        .iter()
-                        .filter(|c| c.contains(filter.as_str()))
-                        .map(|s| s.as_str())
-                        .collect();
-                    selected = 0;
-                    scroll = 0;
                 }
-                // If the entire input (including the initial `/`) is gone, exit.
-                if line_buf.is_empty() || line_buf == "/" && filter.is_empty() {
-                    cleanup(stdout);
+                if line_buf.is_empty() || (line_buf == "/" && filter.is_empty()) {
+                    cleanup(&mut stdout);
                     return None;
                 }
+                filtered = candidates
+                    .iter()
+                    .filter(|c| c.contains(filter.as_str()))
+                    .map(|s| s.as_str())
+                    .collect();
+                selected = 0;
+                scroll = 0;
             }
             event::KeyCode::Char(ch) => {
                 filter.push(ch);
@@ -691,9 +643,4 @@ fn show_dropdown(
             _ => {}
         }
     }
-}
-
-/// Approximate display width of a character.
-fn unicode_width(c: char) -> usize {
-    if c.is_ascii() { 1 } else { 2 }
 }

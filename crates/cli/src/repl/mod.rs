@@ -3,7 +3,7 @@
 use crate::repl::{
     command::{SlashResult, handle_slash},
     input::{History, InputResult},
-    render::{MarkdownRenderer, styled_prompt, welcome_banner},
+    render::{MarkdownRenderer, welcome_banner},
     runner::{ConnectionInfo, OutputChunk, Runner, send_reply},
 };
 use anyhow::Result;
@@ -49,11 +49,21 @@ impl ChatRepl {
         println!("{}", welcome_banner(model.as_deref()));
         println!();
 
-        let prompt = styled_prompt(&self.agent);
+        let agent_name = self.agent.clone();
         let mut new_chat = false;
         let mut resume_file: Option<String> = None;
+        let mut chat_title = String::new();
+
+        // Load title from the latest session file if it exists.
+        if let Some(path) =
+            wcore::find_latest_session(&wcore::paths::SESSIONS_DIR, &self.agent, "user")
+            && let Ok((meta, _)) = wcore::Session::load_context(&path)
+        {
+            chat_title = meta.title;
+        }
+
         loop {
-            let line = match input::read_line(&prompt, &mut self.history) {
+            let line = match input::read_line(&agent_name, &mut self.history, &chat_title) {
                 InputResult::Line(line) => line,
                 InputResult::Interrupt => continue,
                 InputResult::Eof => break,

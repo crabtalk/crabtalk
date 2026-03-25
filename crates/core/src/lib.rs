@@ -22,7 +22,9 @@ pub use config::{
     Setup, check_skill_conflicts, load_agents_dir, load_agents_dirs, repo_slug, resolve_manifests,
     scan_skill_names,
 };
-pub use runtime::{Runtime, Session, hook::Hook, session::sender_slug};
+pub use runtime::{
+    Runtime, Session, hook::Hook, session::find_latest_session, session::sender_slug,
+};
 
 pub mod agent;
 pub mod config;
