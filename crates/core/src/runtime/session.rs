@@ -67,20 +67,18 @@ impl Session {
         }
     }
 
-    /// Initialize a new JSONL file in the date-organized directory structure.
+    /// Initialize a new JSONL file in the flat sessions directory.
     ///
-    /// Creates `{sessions_dir}/{today}/{agent}_{sender}_{seq}.jsonl` with
-    /// seq auto-incremented within the day directory.
+    /// Creates `{sessions_dir}/{agent}_{sender}_{seq}.jsonl` with
+    /// seq auto-incremented globally per identity.
     pub fn init_file(&mut self, sessions_dir: &Path) {
-        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        let date_dir = sessions_dir.join(&today);
-        let _ = fs::create_dir_all(&date_dir);
+        let _ = fs::create_dir_all(sessions_dir);
 
         let slug = sender_slug(&self.created_by);
         let prefix = format!("{}_{slug}_", self.agent);
-        let seq = next_seq(&date_dir, &prefix);
+        let seq = next_seq(sessions_dir, &prefix);
         let filename = format!("{prefix}{seq}.jsonl");
-        let path = date_dir.join(filename);
+        let path = sessions_dir.join(filename);
 
         let meta = SessionMeta {
             agent: self.agent.clone(),
@@ -246,50 +244,32 @@ impl Session {
 
 /// Find the latest session file for an (agent, created_by) identity.
 ///
-/// Scans date directories in descending order, then finds the highest seq
-/// file matching the identity prefix.
+/// Scans the flat sessions directory for files matching the identity prefix
+/// and returns the one with the highest seq number.
 pub fn find_latest_session(sessions_dir: &Path, agent: &str, created_by: &str) -> Option<PathBuf> {
     let slug = sender_slug(created_by);
     let prefix = format!("{agent}_{slug}_");
 
-    // List date directories, sorted descending.
-    let mut date_dirs: Vec<PathBuf> = fs::read_dir(sessions_dir)
-        .ok()?
-        .flatten()
-        .filter(|e| e.path().is_dir())
-        .map(|e| e.path())
-        .collect();
-    date_dirs.sort_by(|a, b| b.cmp(a));
+    let mut best: Option<(u32, PathBuf)> = None;
 
-    for dir in date_dirs {
-        // Find all matching files in this date dir.
-        let mut matches: Vec<(u32, PathBuf)> = fs::read_dir(&dir)
-            .ok()?
-            .flatten()
-            .filter_map(|e| {
-                let path = e.path();
-                let name = path.file_name()?.to_str()?;
-                if !name.starts_with(&prefix) || !name.ends_with(".jsonl") {
-                    return None;
-                }
-                // Extract seq from `{prefix}{seq}...jsonl`
-                let after_prefix = &name[prefix.len()..];
-                let seq_str = after_prefix.split(|c: char| !c.is_ascii_digit()).next()?;
-                let seq: u32 = seq_str.parse().ok()?;
-                Some((seq, path))
-            })
-            .collect();
-
-        if matches.is_empty() {
+    for entry in fs::read_dir(sessions_dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
             continue;
         }
-
-        // Return highest seq.
-        matches.sort_by(|a, b| b.0.cmp(&a.0));
-        return Some(matches.into_iter().next()?.1);
+        let name = path.file_name()?.to_str()?;
+        if !name.starts_with(&prefix) || !name.ends_with(".jsonl") {
+            continue;
+        }
+        let after_prefix = &name[prefix.len()..];
+        let seq_str = after_prefix.split(|c: char| !c.is_ascii_digit()).next()?;
+        let seq: u32 = seq_str.parse().ok()?;
+        if best.as_ref().is_none_or(|(best_seq, _)| seq > *best_seq) {
+            best = Some((seq, path));
+        }
     }
 
-    None
+    best.map(|(_, path)| path)
 }
 
 /// Compute the next seq number for a given prefix in a directory.
