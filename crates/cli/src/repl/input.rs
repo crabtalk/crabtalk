@@ -1,13 +1,16 @@
 //! Multi-line input widget for the full-screen REPL.
 
+use crate::repl::command::collect_candidates;
 use crate::tui;
 use crossterm::event;
 use ratatui::{
     layout::Alignment,
-    style::{Color as RColor, Style as RStyle},
+    style::{Color as RColor, Modifier as RModifier, Style as RStyle},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
 };
+
+const MAX_DROPDOWN_VISIBLE: usize = 5;
 
 /// Command history backed by a Vec.
 pub struct History {
@@ -123,6 +126,10 @@ impl InputBuffer {
         self.lines.join("\n")
     }
 
+    fn first_line(&self) -> &str {
+        &self.lines[0]
+    }
+
     fn insert_newline(&mut self) {
         let (row, col) = self.cursor;
         let byte_pos = tui::char_to_byte(&self.lines[row], col);
@@ -187,6 +194,67 @@ impl InputBuffer {
     }
 }
 
+// ── Dropdown ─────────────────────────────────────────────────────
+
+struct DropdownState {
+    candidates: Vec<String>,
+    selected: usize,
+    scroll: usize,
+}
+
+impl DropdownState {
+    fn new(candidates: Vec<String>) -> Self {
+        Self {
+            candidates,
+            selected: 0,
+            scroll: 0,
+        }
+    }
+
+    fn visible_range(&self) -> std::ops::Range<usize> {
+        let vis = MAX_DROPDOWN_VISIBLE.min(self.candidates.len());
+        if self.selected < self.scroll {
+            // shouldn't happen, but be safe
+            self.scroll..self.scroll + vis
+        } else if self.selected >= self.scroll + vis {
+            let new_scroll = self.selected + 1 - vis;
+            new_scroll..new_scroll + vis
+        } else {
+            self.scroll..self.scroll + vis
+        }
+    }
+
+    fn move_up(&mut self) {
+        self.selected = self.selected.saturating_sub(1);
+        if self.selected < self.scroll {
+            self.scroll = self.selected;
+        }
+    }
+
+    fn move_down(&mut self) {
+        if !self.candidates.is_empty() {
+            self.selected = (self.selected + 1).min(self.candidates.len() - 1);
+            let vis = MAX_DROPDOWN_VISIBLE.min(self.candidates.len());
+            if self.selected >= self.scroll + vis {
+                self.scroll = self.selected + 1 - vis;
+            }
+        }
+    }
+
+    fn current(&self) -> Option<&str> {
+        self.candidates.get(self.selected).map(|s| s.as_str())
+    }
+
+    fn visible_height(&self) -> u16 {
+        let h = MAX_DROPDOWN_VISIBLE.min(self.candidates.len());
+        if self.candidates.len() > MAX_DROPDOWN_VISIBLE {
+            h as u16 + 1 // +1 for count indicator
+        } else {
+            h as u16
+        }
+    }
+}
+
 // ── Public API ───────────────────────────────────────────────────
 
 /// Action returned by [`InputState::handle_key`].
@@ -205,6 +273,7 @@ pub enum InputAction {
 pub struct InputState {
     buf: InputBuffer,
     pub history: History,
+    dropdown: Option<DropdownState>,
 }
 
 impl InputState {
@@ -212,6 +281,7 @@ impl InputState {
         Self {
             buf: InputBuffer::new(),
             history,
+            dropdown: None,
         }
     }
 
@@ -224,12 +294,25 @@ impl InputState {
         self.buf.lines.len() as u16 + 2
     }
 
+    fn open_dropdown(&mut self) {
+        let line = self.buf.first_line().to_string();
+        let candidates = collect_candidates(&line, line.len());
+        if !candidates.is_empty() {
+            self.dropdown = Some(DropdownState::new(candidates));
+        }
+    }
+
+    fn close_dropdown(&mut self) {
+        self.dropdown = None;
+    }
+
     /// Process a key event.
     pub fn handle_key(&mut self, key: event::KeyEvent) -> InputAction {
         // Ctrl+C
         if key.modifiers.contains(event::KeyModifiers::CONTROL)
             && key.code == event::KeyCode::Char('c')
         {
+            self.close_dropdown();
             return InputAction::Interrupt;
         }
         // Ctrl+D on empty
@@ -238,6 +321,11 @@ impl InputState {
             && self.buf.is_empty()
         {
             return InputAction::Eof;
+        }
+
+        // Dropdown active — intercept keys.
+        if self.dropdown.is_some() {
+            return self.handle_dropdown_key(key);
         }
 
         match key.code {
@@ -265,6 +353,15 @@ impl InputState {
                     self.buf = InputBuffer::from_str(entry);
                 }
             }
+            event::KeyCode::Tab => {
+                if self.buf.first_line().starts_with('/') {
+                    self.open_dropdown();
+                }
+            }
+            event::KeyCode::Char('/') if self.buf.is_empty() => {
+                self.buf.handle_key(event::KeyCode::Char('/'));
+                self.open_dropdown();
+            }
             code => {
                 let old_len = self.buf.content().len();
                 self.buf.handle_key(code);
@@ -272,6 +369,68 @@ impl InputState {
                     self.history.reset_cursor();
                 }
             }
+        }
+        InputAction::Noop
+    }
+
+    fn handle_dropdown_key(&mut self, key: event::KeyEvent) -> InputAction {
+        match key.code {
+            event::KeyCode::Up => {
+                if let Some(dd) = &mut self.dropdown {
+                    dd.move_up();
+                }
+            }
+            event::KeyCode::Down => {
+                if let Some(dd) = &mut self.dropdown {
+                    dd.move_down();
+                }
+            }
+            event::KeyCode::Enter | event::KeyCode::Tab => {
+                if let Some(dd) = &self.dropdown
+                    && let Some(selected) = dd.current()
+                {
+                    self.buf = InputBuffer::from_str(&format!("{selected} "));
+                }
+                self.close_dropdown();
+            }
+            event::KeyCode::Esc => {
+                self.close_dropdown();
+            }
+            event::KeyCode::Char(' ') => {
+                // Accept current prefix as typed.
+                self.close_dropdown();
+            }
+            event::KeyCode::Backspace => {
+                self.buf.handle_key(event::KeyCode::Backspace);
+                if self.buf.is_empty() || !self.buf.first_line().starts_with('/') {
+                    self.close_dropdown();
+                } else {
+                    // Re-filter candidates.
+                    let line = self.buf.first_line().to_string();
+                    let candidates = collect_candidates(&line, line.len());
+                    if candidates.is_empty() {
+                        self.close_dropdown();
+                    } else if let Some(dd) = &mut self.dropdown {
+                        dd.candidates = candidates;
+                        dd.selected = dd.selected.min(dd.candidates.len().saturating_sub(1));
+                        dd.scroll = dd.scroll.min(dd.candidates.len().saturating_sub(1));
+                    }
+                }
+            }
+            event::KeyCode::Char(ch) => {
+                self.buf.handle_key(event::KeyCode::Char(ch));
+                // Re-filter candidates.
+                let line = self.buf.first_line().to_string();
+                let candidates = collect_candidates(&line, line.len());
+                if candidates.is_empty() {
+                    self.close_dropdown();
+                } else if let Some(dd) = &mut self.dropdown {
+                    dd.candidates = candidates;
+                    dd.selected = dd.selected.min(dd.candidates.len().saturating_sub(1));
+                    dd.scroll = dd.scroll.min(dd.candidates.len().saturating_sub(1));
+                }
+            }
+            _ => {}
         }
         InputAction::Noop
     }
@@ -351,5 +510,48 @@ impl InputState {
         let x = area.x + 1 + prefix_w + cur_col as u16;
         let y = area.y + 1 + cur_line as u16;
         frame.set_cursor_position((x, y));
+
+        // Dropdown overlay (rendered above the input box).
+        if let Some(dd) = &self.dropdown {
+            let dd_height = dd.visible_height();
+            if dd_height > 0 && area.y >= dd_height {
+                let dd_area = ratatui::layout::Rect::new(
+                    area.x + 1,
+                    area.y - dd_height,
+                    area.width.saturating_sub(2).min(40),
+                    dd_height,
+                );
+                frame.render_widget(Clear, dd_area);
+                let range = dd.visible_range();
+                let mut dd_lines = Vec::new();
+                for (i, item) in dd.candidates[range.clone()].iter().enumerate() {
+                    let idx = range.start + i;
+                    if idx == dd.selected {
+                        dd_lines.push(Line::from(Span::styled(
+                            format!("  > {item}"),
+                            RStyle::default()
+                                .fg(RColor::Rgb(215, 119, 87))
+                                .add_modifier(RModifier::BOLD),
+                        )));
+                    } else {
+                        dd_lines.push(Line::from(Span::styled(
+                            format!("    {item}"),
+                            RStyle::default().fg(RColor::DarkGray),
+                        )));
+                    }
+                }
+                if dd.candidates.len() > MAX_DROPDOWN_VISIBLE {
+                    dd_lines.push(Line::from(Span::styled(
+                        format!(
+                            "    ({}/{})",
+                            MAX_DROPDOWN_VISIBLE.min(dd.candidates.len()),
+                            dd.candidates.len()
+                        ),
+                        RStyle::default().fg(RColor::DarkGray),
+                    )));
+                }
+                frame.render_widget(Paragraph::new(dd_lines), dd_area);
+            }
+        }
     }
 }

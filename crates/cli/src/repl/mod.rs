@@ -221,6 +221,16 @@ async fn run_event_loop(
                         chunk_rx = None;
                         app.streaming = false;
                         app.scroll = 0;
+                        // Pick up title once (daemon generates it after first exchange).
+                        if app.chat_title.is_empty()
+                            && let Some(path) = wcore::find_latest_session(
+                                &wcore::paths::SESSIONS_DIR, &app.agent, &app.os_user,
+                            )
+                            && let Ok((meta, _)) = wcore::Session::load_context(&path)
+                            && !meta.title.is_empty()
+                        {
+                            app.chat_title = meta.title;
+                        }
                         // Send queued message if any.
                         if let Some(msg) = app.message_queue.pop_front() {
                             chunk_rx = Some(start_stream(app, &msg));
@@ -320,6 +330,22 @@ async fn run_event_loop(
                                             if let Ok(runner) = Runner::connect(&socket_path).await
                                                 && let Ok(Some(path)) = console.run(runner).await
                                             {
+                                                // Load title from the resumed session.
+                                                if let Ok((meta, _)) = wcore::Session::load_context(&path) {
+                                                    if !meta.title.is_empty() {
+                                                        app.chat_title.clone_from(&meta.title);
+                                                    }
+                                                    app.renderer.buffer.push(ChatEntry::Text(vec![
+                                                        Line::from(Span::styled(
+                                                            format!("  Resumed: {}", if meta.title.is_empty() {
+                                                                path.file_name().unwrap_or_default().to_string_lossy().into_owned()
+                                                            } else {
+                                                                meta.title
+                                                            }),
+                                                            Style::new().add_modifier(Modifier::DIM),
+                                                        )),
+                                                    ]));
+                                                }
                                                 app.resume_file = Some(path.to_string_lossy().into_owned());
                                             }
                                             *terminal = crate::tui::setup()?;
