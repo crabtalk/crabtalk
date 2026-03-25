@@ -59,6 +59,8 @@ pub(super) struct ConversationEntry {
     pub message_count: Option<u64>,
     /// Uptime in seconds (from disk meta or daemon).
     pub alive_secs: Option<u64>,
+    /// Daemon session ID (for correlating with live events).
+    pub session_id: Option<u64>,
 }
 
 impl SessionView {
@@ -112,6 +114,7 @@ impl SessionView {
                     }) {
                         conv.message_count = Some(ds.message_count);
                         conv.alive_secs = Some(ds.alive_secs);
+                        conv.session_id = Some(ds.id);
                     }
                 }
             }
@@ -154,6 +157,7 @@ impl SessionView {
                 for c in entries.iter_mut() {
                     c.message_count = None;
                     c.alive_secs = None;
+                    c.session_id = None;
                 }
                 for ds in daemon_sessions {
                     if ds.agent.as_str() == agent.as_str()
@@ -169,6 +173,7 @@ impl SessionView {
                         }) {
                             conv.message_count = Some(ds.message_count);
                             conv.alive_secs = Some(ds.alive_secs);
+                            conv.session_id = Some(ds.id);
                         }
                     }
                 }
@@ -321,8 +326,8 @@ fn render_conversations(
     // Table header.
     let mut lines = vec![Line::from(vec![Span::styled(
         format!(
-            "  {:<14} {:<26} {:<8} {:<10}",
-            "LAST ACTIVE", "TITLE", "MSGS", "UPTIME"
+            "  {:<14} {:<26} {:<8} {:<8} {:<10}",
+            "LAST ACTIVE", "TITLE", "MSGS", "SID", "UPTIME"
         ),
         Style::default()
             .fg(Color::White)
@@ -341,13 +346,17 @@ fn render_conversations(
             .message_count
             .map(|n| n.to_string())
             .unwrap_or_else(|| "—".to_string());
+        let sid = e
+            .session_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "—".to_string());
         let uptime = e
             .alive_secs
             .map(crate::tui::format_duration)
             .unwrap_or_else(|| "—".to_string());
         let text = format!(
-            "{marker}{:<14} {:<26} {:<8} {:<10}",
-            e.date, title_display, msgs, uptime
+            "{marker}{:<14} {:<26} {:<8} {:<8} {:<10}",
+            e.date, title_display, msgs, sid, uptime
         );
         let style = if is_selected {
             Style::default()
@@ -498,6 +507,7 @@ fn scan_conversations(sessions_dir: &Path, agent: &str, sender: &str) -> Vec<Con
                 file_path,
                 message_count: Some(msg_count),
                 alive_secs: Some(uptime),
+                session_id: None,
             },
         )
         .collect()

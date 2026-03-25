@@ -92,6 +92,11 @@ async fn qr_login() -> anyhow::Result<(String, String)> {
 }
 
 fn main() {
+    // Migrate: remove old gateway-prefixed service if present.
+    if crabtalk_command::is_installed("ai.crabtalk.gateway-wechat") {
+        let _ = crabtalk_command::uninstall("ai.crabtalk.gateway-wechat");
+    }
+
     let cli = CrabtalkCli::parse();
     if matches!(&cli.action, GatewayWechatCommand::Start { .. })
         && let Err(e) = ensure_config()

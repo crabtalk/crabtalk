@@ -92,6 +92,11 @@ fn ensure_config() -> anyhow::Result<()> {
 }
 
 fn main() {
+    // Migrate: remove old gateway-prefixed service if present.
+    if crabtalk_command::is_installed("ai.crabtalk.gateway-telegram") {
+        let _ = crabtalk_command::uninstall("ai.crabtalk.gateway-telegram");
+    }
+
     let cli = CrabtalkCli::parse();
     if matches!(&cli.action, GatewayTelegramCommand::Start { .. })
         && let Err(e) = ensure_config()
