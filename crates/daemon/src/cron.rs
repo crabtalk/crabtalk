@@ -242,7 +242,6 @@ async fn run_cron_timer(
             cwd: None,
             new_chat: false,
             resume_file: None,
-            context_from: None,
         });
         let _ = event_tx.send(DaemonEvent::Message {
             msg,

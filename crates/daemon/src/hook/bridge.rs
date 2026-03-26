@@ -68,7 +68,7 @@ impl RuntimeBridge for DaemonBridge {
         }
     }
 
-    async fn dispatch_delegate(&self, args: &str, _agent: &str, session_id: Option<u64>) -> String {
+    async fn dispatch_delegate(&self, args: &str, _agent: &str) -> String {
         let input: runtime::task::Delegate = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
@@ -76,12 +76,7 @@ impl RuntimeBridge for DaemonBridge {
 
         let mut handles = Vec::with_capacity(input.tasks.len());
         for task in input.tasks {
-            let handle = spawn_agent_task(
-                task.agent.clone(),
-                task.message,
-                self.event_tx.clone(),
-                session_id,
-            );
+            let handle = spawn_agent_task(task.agent.clone(), task.message, self.event_tx.clone());
             handles.push((task.agent, handle));
         }
 
@@ -173,14 +168,10 @@ impl RuntimeBridge for DaemonBridge {
 }
 
 /// Spawn an agent task via the event channel and collect its response.
-///
-/// When `context_from` is set, the daemon's protocol handler will compact
-/// that session's history and prepend it as context for the target agent.
 fn spawn_agent_task(
     agent: String,
     message: String,
     event_tx: DaemonEventSender,
-    context_from: Option<u64>,
 ) -> tokio::task::JoinHandle<(Option<String>, Option<String>)> {
     tokio::spawn(async move {
         let (reply_tx, mut reply_rx) = mpsc::unbounded_channel();
@@ -192,7 +183,6 @@ fn spawn_agent_task(
             cwd: None,
             new_chat: false,
             resume_file: None,
-            context_from,
         });
         if event_tx
             .send(DaemonEvent::Message {

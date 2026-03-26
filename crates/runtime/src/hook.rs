@@ -181,7 +181,7 @@ impl<B: RuntimeBridge> RuntimeHook<B> {
     }
 
     /// Validate member scope and delegate to the bridge.
-    async fn dispatch_delegate(&self, args: &str, agent: &str, session_id: Option<u64>) -> String {
+    async fn dispatch_delegate(&self, args: &str, agent: &str) -> String {
         let input: crate::task::Delegate = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
@@ -199,7 +199,7 @@ impl<B: RuntimeBridge> RuntimeHook<B> {
                 }
             }
         }
-        self.bridge.dispatch_delegate(args, agent, session_id).await
+        self.bridge.dispatch_delegate(args, agent).await
     }
 
     /// Route a tool call by name to the appropriate handler.
@@ -229,7 +229,7 @@ impl<B: RuntimeBridge> RuntimeHook<B> {
             "remember" => self.dispatch_remember(args).await,
             "memory" => self.dispatch_memory(args).await,
             "forget" => self.dispatch_forget(args).await,
-            "delegate" => self.dispatch_delegate(args, agent, session_id).await,
+            "delegate" => self.dispatch_delegate(args, agent).await,
             "ask_user" => self.bridge.dispatch_ask_user(args, session_id).await,
             name => format!("tool not available: {name}"),
         }
