@@ -33,8 +33,6 @@ message SendMsg {
   optional string cwd = 5;
   bool new_chat = 6;
   optional string resume_file = 7;
-  optional uint64 parent_session = 8;
-  optional string parent_agent = 9;
 }
 
 message StreamMsg {
@@ -207,8 +205,6 @@ message AgentEventMsg {
   AgentEventKind kind = 3;
   string content = 4;
   string timestamp = 5;
-  optional uint64 parent_session = 6;
-  optional string parent_agent = 7;
 }
 
 message SessionList {

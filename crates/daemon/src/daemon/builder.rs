@@ -162,7 +162,6 @@ impl Daemon {
             pending_asks: Arc::new(Mutex::new(HashMap::new())),
             session_cwds: Arc::new(Mutex::new(HashMap::new())),
             events_tx,
-            parent_contexts: Arc::new(std::sync::Mutex::new(HashMap::new())),
         };
 
         Ok(RuntimeHook::new(skills, mcp_handler, cwd, memory, bridge))

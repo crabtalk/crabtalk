@@ -12,11 +12,6 @@ use wcore::{
     protocol::message::{AgentEventKind, AgentEventMsg, ClientMessage, SendMsg, server_message},
 };
 
-/// Parent delegation context: maps child session_id → (parent_session_id, parent_agent).
-/// Uses `std::sync::Mutex` because `on_agent_event` is synchronous — `tokio::sync::Mutex`
-/// would require `try_lock` which silently drops data under contention.
-pub type ParentContexts = Arc<std::sync::Mutex<HashMap<u64, (u64, String)>>>;
-
 /// Timeout for waiting on user reply (5 minutes).
 const ASK_USER_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -30,8 +25,6 @@ pub struct DaemonBridge {
     pub session_cwds: Arc<Mutex<HashMap<u64, PathBuf>>>,
     /// Broadcast channel for agent events (console subscription).
     pub events_tx: broadcast::Sender<AgentEventMsg>,
-    /// Delegation context — see [`ParentContexts`].
-    pub parent_contexts: ParentContexts,
 }
 
 impl DaemonBridge {
@@ -75,7 +68,12 @@ impl RuntimeBridge for DaemonBridge {
         }
     }
 
-    async fn dispatch_delegate(&self, args: &str, agent: &str, session_id: Option<u64>) -> String {
+    async fn dispatch_delegate(
+        &self,
+        args: &str,
+        _agent: &str,
+        _session_id: Option<u64>,
+    ) -> String {
         let input: runtime::task::Delegate = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
@@ -83,14 +81,7 @@ impl RuntimeBridge for DaemonBridge {
 
         let mut handles = Vec::with_capacity(input.tasks.len());
         for task in input.tasks {
-            let handle = spawn_agent_task(
-                task.agent.clone(),
-                task.message,
-                self.event_tx.clone(),
-                session_id,
-                Some(agent.to_string()),
-                self.parent_contexts.clone(),
-            );
+            let handle = spawn_agent_task(task.agent.clone(), task.message, self.event_tx.clone());
             handles.push((task.agent, handle));
         }
 
@@ -171,21 +162,12 @@ impl RuntimeBridge for DaemonBridge {
                 (AgentEventKind::Done, String::new())
             }
         };
-        let (ps, pa) = self
-            .parent_contexts
-            .lock()
-            .ok()
-            .and_then(|m| m.get(&session_id).cloned())
-            .map(|(sid, ag)| (Some(sid), Some(ag)))
-            .unwrap_or((None, None));
         let _ = self.events_tx.send(AgentEventMsg {
             agent: agent.to_string(),
             session: session_id,
             kind: kind.into(),
             content,
             timestamp: chrono::Utc::now().to_rfc3339(),
-            parent_session: ps,
-            parent_agent: pa,
         });
     }
 }
@@ -195,9 +177,6 @@ fn spawn_agent_task(
     agent: String,
     message: String,
     event_tx: DaemonEventSender,
-    parent_session: Option<u64>,
-    parent_agent: Option<String>,
-    parent_contexts: ParentContexts,
 ) -> tokio::task::JoinHandle<(Option<String>, Option<String>)> {
     tokio::spawn(async move {
         let (reply_tx, mut reply_rx) = mpsc::unbounded_channel();
@@ -209,8 +188,6 @@ fn spawn_agent_task(
             cwd: None,
             new_chat: false,
             resume_file: None,
-            parent_session,
-            parent_agent,
         });
         if event_tx
             .send(DaemonEvent::Message {
@@ -240,10 +217,6 @@ fn spawn_agent_task(
         }
 
         if let Some(sid) = session_id {
-            // Clean up parent context when session is killed.
-            if let Ok(mut m) = parent_contexts.lock() {
-                m.remove(&sid);
-            }
             let (reply_tx, _) = mpsc::unbounded_channel();
             let _ = event_tx.send(DaemonEvent::Message {
                 msg: ClientMessage {

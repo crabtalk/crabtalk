@@ -21,8 +21,6 @@ impl Server for Daemon {
         let sender = req.sender.as_deref().unwrap_or("");
         let created_by = if sender.is_empty() { "user" } else { sender };
         let cwd = req.cwd.map(std::path::PathBuf::from);
-        let parent_session = req.parent_session;
-        let parent_agent = req.parent_agent.clone();
         let session_id = match req.session {
             Some(id) => id,
             None => {
@@ -44,12 +42,6 @@ impl Server for Daemon {
                 id
             }
         };
-        if let ((Some(ps), Some(pa)), Ok(mut m)) = (
-            (parent_session, parent_agent),
-            rt.hook.bridge.parent_contexts.lock(),
-        ) {
-            m.insert(session_id, (ps, pa));
-        }
         let response = rt.send_to(session_id, &req.content, sender).await?;
         Ok(SendResponse {
             agent: req.agent,
@@ -193,9 +185,6 @@ impl Server for Daemon {
         let rt = self.runtime.read().await.clone();
         rt.hook.bridge.pending_asks.lock().await.remove(&session);
         rt.hook.bridge.session_cwds.lock().await.remove(&session);
-        if let Ok(mut m) = rt.hook.bridge.parent_contexts.lock() {
-            m.remove(&session);
-        }
         Ok(rt.close_session(session).await)
     }
 
