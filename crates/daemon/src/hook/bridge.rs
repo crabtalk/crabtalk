@@ -12,6 +12,11 @@ use wcore::{
     protocol::message::{AgentEventKind, AgentEventMsg, ClientMessage, SendMsg, server_message},
 };
 
+/// Parent delegation context: maps child session_id → (parent_session_id, parent_agent).
+/// Uses `std::sync::Mutex` because `on_agent_event` is synchronous — `tokio::sync::Mutex`
+/// would require `try_lock` which silently drops data under contention.
+pub type ParentContexts = Arc<std::sync::Mutex<HashMap<u64, (u64, String)>>>;
+
 /// Timeout for waiting on user reply (5 minutes).
 const ASK_USER_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -25,8 +30,8 @@ pub struct DaemonBridge {
     pub session_cwds: Arc<Mutex<HashMap<u64, PathBuf>>>,
     /// Broadcast channel for agent events (console subscription).
     pub events_tx: broadcast::Sender<AgentEventMsg>,
-    /// Delegation context: maps child session_id → (parent_session_id, parent_agent).
-    pub parent_contexts: Arc<Mutex<HashMap<u64, (u64, String)>>>,
+    /// Delegation context — see [`ParentContexts`].
+    pub parent_contexts: ParentContexts,
 }
 
 impl DaemonBridge {
@@ -146,10 +151,7 @@ impl RuntimeBridge for DaemonBridge {
                 ..
             } => {
                 tracing::debug!(%agent, %call_id, %duration_ms, "agent tool result");
-                (
-                    AgentEventKind::ToolResult,
-                    format!("{call_id}:{duration_ms}"),
-                )
+                (AgentEventKind::ToolResult, call_id.clone())
             }
             AgentEvent::ToolCallsComplete => {
                 tracing::debug!(%agent, "agent tool calls complete");
@@ -171,7 +173,7 @@ impl RuntimeBridge for DaemonBridge {
         };
         let (ps, pa) = self
             .parent_contexts
-            .try_lock()
+            .lock()
             .ok()
             .and_then(|m| m.get(&session_id).cloned())
             .map(|(sid, ag)| (Some(sid), Some(ag)))
@@ -195,7 +197,7 @@ fn spawn_agent_task(
     event_tx: DaemonEventSender,
     parent_session: Option<u64>,
     parent_agent: Option<String>,
-    parent_contexts: Arc<Mutex<HashMap<u64, (u64, String)>>>,
+    parent_contexts: ParentContexts,
 ) -> tokio::task::JoinHandle<(Option<String>, Option<String>)> {
     tokio::spawn(async move {
         let (reply_tx, mut reply_rx) = mpsc::unbounded_channel();
@@ -239,7 +241,9 @@ fn spawn_agent_task(
 
         if let Some(sid) = session_id {
             // Clean up parent context when session is killed.
-            parent_contexts.lock().await.remove(&sid);
+            if let Ok(mut m) = parent_contexts.lock() {
+                m.remove(&sid);
+            }
             let (reply_tx, _) = mpsc::unbounded_channel();
             let _ = event_tx.send(DaemonEvent::Message {
                 msg: ClientMessage {

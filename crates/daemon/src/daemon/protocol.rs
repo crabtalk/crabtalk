@@ -44,12 +44,9 @@ impl Server for Daemon {
             }
         };
         if let (Some(ps), Some(pa)) = (parent_session, parent_agent) {
-            rt.hook
-                .bridge
-                .parent_contexts
-                .lock()
-                .await
-                .insert(session_id, (ps, pa));
+            if let Ok(mut m) = rt.hook.bridge.parent_contexts.lock() {
+                m.insert(session_id, (ps, pa));
+            }
         }
         let response = rt.send_to(session_id, &req.content, sender).await?;
         Ok(SendResponse {
@@ -194,6 +191,9 @@ impl Server for Daemon {
         let rt = self.runtime.read().await.clone();
         rt.hook.bridge.pending_asks.lock().await.remove(&session);
         rt.hook.bridge.session_cwds.lock().await.remove(&session);
+        if let Ok(mut m) = rt.hook.bridge.parent_contexts.lock() {
+            m.remove(&session);
+        }
         Ok(rt.close_session(session).await)
     }
 

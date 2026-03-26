@@ -75,16 +75,27 @@ impl Daemon {
             let heartbeat_tx = event_tx.clone();
             let mut heartbeat_shutdown = shutdown_tx.subscribe();
             let interval_secs = agent.heartbeat.interval * 60;
-            let quiet_start = agent
-                .heartbeat
-                .quiet_start
-                .as_deref()
-                .and_then(|s| chrono::NaiveTime::parse_from_str(s, "%H:%M").ok());
-            let quiet_end = agent
-                .heartbeat
-                .quiet_end
-                .as_deref()
-                .and_then(|s| chrono::NaiveTime::parse_from_str(s, "%H:%M").ok());
+            let quiet_start = agent.heartbeat.quiet_start.as_deref().map(|s| {
+                chrono::NaiveTime::parse_from_str(s, "%H:%M").unwrap_or_else(|e| {
+                    tracing::warn!("agent '{name}': invalid quiet_start '{s}': {e}, ignoring");
+                    chrono::NaiveTime::MIN
+                })
+            });
+            let quiet_end = agent.heartbeat.quiet_end.as_deref().map(|s| {
+                chrono::NaiveTime::parse_from_str(s, "%H:%M").unwrap_or_else(|e| {
+                    tracing::warn!("agent '{name}': invalid quiet_end '{s}': {e}, ignoring");
+                    chrono::NaiveTime::MIN
+                })
+            });
+            match (&quiet_start, &quiet_end) {
+                (Some(_), None) => {
+                    tracing::warn!("agent '{name}': quiet_start set without quiet_end, ignoring");
+                }
+                (None, Some(_)) => {
+                    tracing::warn!("agent '{name}': quiet_end set without quiet_start, ignoring");
+                }
+                _ => {}
+            }
             tokio::spawn(async move {
                 let mut tick = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
                 tick.tick().await; // skip the immediate first tick
