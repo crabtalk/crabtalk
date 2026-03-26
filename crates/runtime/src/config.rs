@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct SystemConfig {
-    /// The default system agent config (model, heartbeat, thinking).
+    /// The default system agent config (model, thinking, etc.).
     pub crab: wcore::AgentConfig,
     /// Task executor pool configuration (`[system.tasks]`).
     pub tasks: TasksConfig,

@@ -30,8 +30,6 @@ pub enum DaemonEvent {
     },
     /// A tool call from an agent, routed through `DaemonHook::dispatch_tool`.
     ToolCall(ToolRequest),
-    /// Periodic heartbeat tick for a specific agent.
-    Heartbeat { agent: String },
     /// Graceful shutdown request.
     Shutdown,
 }
@@ -51,7 +49,6 @@ impl Daemon {
             match event {
                 DaemonEvent::Message { msg, reply } => self.handle_message(msg, reply),
                 DaemonEvent::ToolCall(req) => self.handle_tool_call(req),
-                DaemonEvent::Heartbeat { .. } => {} // No-op: no queue promotion needed.
                 DaemonEvent::Shutdown => {
                     tracing::info!("event loop shutting down");
                     break;

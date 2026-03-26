@@ -7,8 +7,7 @@ pub use runtime::{McpHandler, SystemConfig, mcp::McpServerConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 pub use wcore::{
-    AgentConfig, HeartbeatConfig, ManifestConfig, ResolvedManifest, load_agents_dir,
-    load_agents_dirs,
+    AgentConfig, ManifestConfig, ResolvedManifest, load_agents_dir, load_agents_dirs,
     paths::{AGENTS_DIR, CONFIG_DIR, CONFIG_FILE, SKILLS_DIR, SOCKET_PATH},
     resolve_manifests,
 };

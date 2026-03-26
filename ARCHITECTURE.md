@@ -40,6 +40,6 @@ Client (CLI/Telegram/etc) → UDS/TCP → Daemon event loop
 - `RuntimeHook<B>`: engine hook — owns SkillHandler, McpHandler, Memory; dispatches tools
 - `RuntimeBridge`: trait for server-specific tools (ask_user, delegate, session CWD)
 - `DaemonHook`: wraps `RuntimeHook<DaemonBridge>`, adds event broadcasting
-- `DaemonEvent`: Message | ToolCall | Heartbeat | Shutdown
+- `DaemonEvent`: Message | ToolCall | Shutdown
 - `ToolRequest`: single tool call with reply channel
 - Protocol: `ClientMessage` / `ServerMessage` (protobuf in `core/proto/crabtalk.proto`)

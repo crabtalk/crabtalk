@@ -13,7 +13,6 @@
 
 pub use agent::{
     Agent, AgentBuilder, AgentConfig,
-    config::HeartbeatConfig,
     event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason},
     tool::{ToolRegistry, ToolRequest, ToolSender},
 };

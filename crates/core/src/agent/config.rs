@@ -15,7 +15,7 @@ const DEFAULT_COMPACT_THRESHOLD: usize = 100_000;
 /// Serializable agent configuration.
 ///
 /// Contains all parameters for an agent: identity, system prompt, model,
-/// iteration limits, heartbeat, and delegation scope. Used both as the
+/// iteration limits, and delegation scope. Used both as the
 /// TOML deserialization target and the runtime agent definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -40,9 +40,6 @@ pub struct AgentConfig {
     /// Whether to enable thinking/reasoning mode.
     #[serde(default)]
     pub thinking: bool,
-    /// Heartbeat configuration. Interval 0 (the default) means no heartbeat.
-    #[serde(default)]
-    pub heartbeat: HeartbeatConfig,
     /// Agents this agent can delegate to via spawn_task. Empty = no delegation.
     #[serde(default)]
     pub members: Vec<String>,
@@ -80,7 +77,6 @@ impl Default for AgentConfig {
             max_iterations: DEFAULT_MAX_ITERATIONS,
             tool_choice: ToolChoice::Auto,
             thinking: false,
-            heartbeat: HeartbeatConfig::default(),
             members: Vec::new(),
             skills: Vec::new(),
             mcps: Vec::new(),
@@ -122,22 +118,4 @@ impl AgentConfig {
         self.thinking = enabled;
         self
     }
-}
-
-/// Heartbeat timer configuration. Interval 0 = disabled.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct HeartbeatConfig {
-    /// Interval in minutes (0 = disabled).
-    #[serde(default)]
-    pub interval: u64,
-    /// System prompt for heartbeat-triggered agent runs.
-    #[serde(default)]
-    pub prompt: String,
-    /// Quiet hours start time ("HH:MM" format, local time). Heartbeats are
-    /// suppressed between `quiet_start` and `quiet_end`.
-    #[serde(default)]
-    pub quiet_start: Option<String>,
-    /// Quiet hours end time ("HH:MM" format, local time).
-    #[serde(default)]
-    pub quiet_end: Option<String>,
 }
