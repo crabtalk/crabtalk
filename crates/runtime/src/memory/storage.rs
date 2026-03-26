@@ -1,7 +1,4 @@
 //! Storage abstraction for memory persistence.
-//!
-//! [`FsStorage`] wraps `std::fs` for production. [`MemStorage`] uses an
-//! in-memory `HashMap` for tests — no disk I/O, fully inspectable state.
 
 use anyhow::Result;
 use std::{

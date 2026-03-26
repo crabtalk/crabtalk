@@ -1,6 +1,6 @@
 //! Integration tests for the memory system using MemStorage (no disk I/O).
 
-use crabtalk_daemon::hook::system::{
+use runtime::{
     MemoryConfig,
     memory::{Memory, storage::MemStorage},
 };
@@ -50,7 +50,6 @@ fn recall_ranks_by_relevance() {
     );
 
     let result = mem.recall("rust crabtalk", 5);
-    // rust-project should appear first since it matches "rust" and "crabtalk"
     assert!(
         result.starts_with("## rust-project"),
         "rust-project should rank first, got: {result}"
@@ -100,7 +99,6 @@ fn write_index_and_build_prompt() {
 fn build_prompt_empty_index() {
     let mem = test_memory();
     let prompt = mem.build_prompt();
-    // Should still include the memory prompt instructions, just no <memory> block content
     assert!(!prompt.contains("<memory>\n\n</memory>"));
 }
 
@@ -157,7 +155,6 @@ fn migration_converts_legacy_files() {
     let storage = MemStorage::new();
     let dir = PathBuf::from("/test/memory");
 
-    // Seed legacy files
     storage
         .write(
             &dir.join("memory.md"),
@@ -176,7 +173,6 @@ fn migration_converts_legacy_files() {
 
     let mem = Memory::open(dir.clone(), MemoryConfig::default(), Box::new(storage));
 
-    // Entries should exist
     let result = mem.recall("golden retriever", 5);
     assert!(result.contains("golden retriever"));
 
@@ -189,7 +185,7 @@ fn migration_converts_legacy_files() {
 
 #[test]
 fn slugify_examples() {
-    use crabtalk_daemon::hook::system::memory::entry::slugify;
+    use runtime::memory::entry::slugify;
 
     assert_eq!(slugify("Luna's Vet Appointment!"), "luna-s-vet-appointment");
     assert_eq!(slugify("hello world"), "hello-world");
@@ -201,7 +197,7 @@ fn slugify_examples() {
 
 #[test]
 fn entry_parse_roundtrip() {
-    use crabtalk_daemon::hook::system::memory::entry::MemoryEntry;
+    use runtime::memory::entry::MemoryEntry;
 
     let entry = MemoryEntry::new(
         "test-entry".to_owned(),
@@ -220,13 +216,12 @@ fn entry_parse_roundtrip() {
 
 #[test]
 fn bm25_tokenize() {
-    use crabtalk_daemon::hook::system::memory::bm25::tokenize;
+    use runtime::memory::bm25::tokenize;
 
     let tokens = tokenize("Hello, World! This is a test.");
     assert!(tokens.contains(&"hello".to_owned()));
     assert!(tokens.contains(&"world".to_owned()));
     assert!(tokens.contains(&"test".to_owned()));
-    // Stopwords filtered
     assert!(!tokens.contains(&"this".to_owned()));
     assert!(!tokens.contains(&"is".to_owned()));
     assert!(!tokens.contains(&"a".to_owned()));
@@ -234,7 +229,7 @@ fn bm25_tokenize() {
 
 #[test]
 fn bm25_score_ranks() {
-    use crabtalk_daemon::hook::system::memory::bm25::score;
+    use runtime::memory::bm25::score;
 
     let docs = vec![
         (0, "the weather is sunny today"),
@@ -244,11 +239,10 @@ fn bm25_score_ranks() {
 
     let results = score(&docs, "rust programming", 5);
     assert!(!results.is_empty());
-    // Doc 1 should rank first (matches both "rust" and "programming")
     assert_eq!(results[0].0, 1);
 }
 
-use crabtalk_daemon::hook::system::memory::storage::Storage;
+use runtime::memory::storage::Storage;
 
 #[test]
 fn soul_defaults_to_compiled_in() {
@@ -277,6 +271,5 @@ fn write_soul_denied_when_disabled() {
     );
     let result = mem.write_soul("hacked identity");
     assert!(result.contains("disabled"));
-    // Soul should still be the default
     assert!(mem.build_soul().contains("You are Crab"));
 }

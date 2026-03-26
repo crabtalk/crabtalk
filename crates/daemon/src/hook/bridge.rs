@@ -1,40 +1,63 @@
-//! Tool schema and dispatch for the delegate tool.
+//! DaemonBridge — server-specific RuntimeBridge implementation.
+//!
+//! Provides `ask_user` and `delegate` dispatch using daemon event channels,
+//! and per-session CWD resolution.
 
 use crate::daemon::event::{DaemonEvent, DaemonEventSender};
-use crate::hook::DaemonHook;
-use serde::Deserialize;
-use tokio::sync::mpsc;
-use wcore::{
-    agent::{AsTool, ToolDescription},
-    model::Tool,
-    protocol::message::{ClientMessage, SendMsg, server_message},
-};
+use runtime::bridge::RuntimeBridge;
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use tokio::sync::{Mutex, mpsc, oneshot};
+use wcore::protocol::message::{ClientMessage, SendMsg, server_message};
 
-pub(crate) fn tools() -> Vec<Tool> {
-    vec![Delegate::as_tool()]
+/// Timeout for waiting on user reply (5 minutes).
+const ASK_USER_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Server-specific bridge for the daemon. Owns event channels and session state.
+pub struct DaemonBridge {
+    /// Event channel for task delegation.
+    pub event_tx: DaemonEventSender,
+    /// Pending `ask_user` oneshots, keyed by session_id.
+    pub pending_asks: Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>,
+    /// Per-session working directory overrides.
+    pub session_cwds: Arc<Mutex<HashMap<u64, PathBuf>>>,
 }
 
-#[derive(Deserialize, schemars::JsonSchema)]
-pub(crate) struct Delegate {
-    /// List of tasks to run in parallel. Each task has an agent name and a message.
-    pub tasks: Vec<DelegateTask>,
-}
+impl RuntimeBridge for DaemonBridge {
+    async fn dispatch_ask_user(&self, args: &str, session_id: Option<u64>) -> String {
+        let input: runtime::ask_user::AskUser = match serde_json::from_str(args) {
+            Ok(v) => v,
+            Err(e) => return format!("invalid arguments: {e}"),
+        };
 
-#[derive(Deserialize, schemars::JsonSchema)]
-pub(crate) struct DelegateTask {
-    /// Target agent name.
-    pub agent: String,
-    /// Message/instruction for the target agent.
-    pub message: String,
-}
+        let session_id = match session_id {
+            Some(id) => id,
+            None => return "ask_user is only available in streaming mode".to_owned(),
+        };
 
-impl ToolDescription for Delegate {
-    const DESCRIPTION: &'static str = "Delegate tasks to other agents. Runs all tasks in parallel, blocks until all complete, and returns their results.";
-}
+        let (tx, rx) = oneshot::channel();
+        self.pending_asks.lock().await.insert(session_id, tx);
 
-impl DaemonHook {
-    pub(crate) async fn dispatch_delegate(&self, args: &str, agent: &str) -> String {
-        let input: Delegate = match serde_json::from_str(args) {
+        match tokio::time::timeout(ASK_USER_TIMEOUT, rx).await {
+            Ok(Ok(reply)) => reply,
+            Ok(Err(_)) => {
+                self.pending_asks.lock().await.remove(&session_id);
+                "ask_user cancelled: reply channel closed".to_owned()
+            }
+            Err(_) => {
+                self.pending_asks.lock().await.remove(&session_id);
+                let headers: Vec<&str> =
+                    input.questions.iter().map(|q| q.header.as_str()).collect();
+                format!(
+                    "ask_user timed out after {}s: no reply received for: {}",
+                    ASK_USER_TIMEOUT.as_secs(),
+                    headers.join("; "),
+                )
+            }
+        }
+    }
+
+    async fn dispatch_delegate(&self, args: &str, _agent: &str) -> String {
+        let input: runtime::task::Delegate = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
@@ -42,25 +65,15 @@ impl DaemonHook {
             return "no tasks provided".to_owned();
         }
 
-        // Enforce members scope for all target agents.
-        if let Some(scope) = self.scopes.get(agent)
-            && !scope.members.is_empty()
-        {
-            for task in &input.tasks {
-                if !scope.members.iter().any(|m| m == &task.agent) {
-                    return format!("agent '{}' is not in your members list", task.agent);
-                }
-            }
-        }
+        // Note: member scope enforcement is handled by RuntimeHook::dispatch_tool
+        // before delegating to the bridge. The bridge doesn't need access to scopes.
 
-        // Spawn all tasks in parallel.
         let mut handles = Vec::with_capacity(input.tasks.len());
         for task in input.tasks {
             let handle = spawn_agent_task(task.agent.clone(), task.message, self.event_tx.clone());
             handles.push((task.agent, handle));
         }
 
-        // Wait for all and collect results.
         let mut results = Vec::with_capacity(handles.len());
         for (agent_name, handle) in handles {
             let (result, error) = match handle.await {
@@ -75,6 +88,13 @@ impl DaemonHook {
         }
 
         serde_json::to_string(&results).unwrap_or_else(|e| format!("serialization error: {e}"))
+    }
+
+    fn session_cwd(&self, session_id: u64) -> Option<PathBuf> {
+        self.session_cwds
+            .try_lock()
+            .ok()
+            .and_then(|m| m.get(&session_id).cloned())
     }
 }
 

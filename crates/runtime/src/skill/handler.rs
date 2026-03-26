@@ -1,15 +1,11 @@
 //! Crabtalk skill handler — initial load from disk.
 
-use crate::hook::skill::{SkillRegistry, loader};
+use crate::skill::{SkillRegistry, loader};
 use anyhow::Result;
 use std::path::PathBuf;
 use tokio::sync::Mutex;
 
 /// Skill registry owner.
-///
-/// Implements [`Hook`] — `on_build_agent` enriches the system prompt with
-/// matching skills based on agent tags. Tools and dispatch are no-ops
-/// (skills inject behavior via prompt, not via tools).
 pub struct SkillHandler {
     /// The skill registry (Mutex for interior-mutability from `dispatch_load_skill`).
     pub registry: Mutex<SkillRegistry>,

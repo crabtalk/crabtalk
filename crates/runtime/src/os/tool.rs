@@ -1,5 +1,6 @@
 //! Tool schemas and input types for OS tools.
 
+use crate::{RuntimeHook, bridge::RuntimeBridge};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -9,7 +10,7 @@ use wcore::{
 };
 
 #[derive(Deserialize, JsonSchema)]
-pub(crate) struct Bash {
+pub struct Bash {
     /// Shell command to run (e.g. `"ls -la"`, `"cat foo.txt | grep bar"`).
     pub command: String,
     /// Environment variables to set for the process.
@@ -21,21 +22,19 @@ impl ToolDescription for Bash {
     const DESCRIPTION: &'static str = "Run a shell command.";
 }
 
-pub(crate) fn tools() -> Vec<Tool> {
+pub fn tools() -> Vec<Tool> {
     vec![Bash::as_tool()]
 }
 
-impl crate::hook::DaemonHook {
+impl<B: RuntimeBridge> RuntimeHook<B> {
     /// Dispatch a `bash` tool call — run a command directly.
-    ///
-    /// Returns structured JSON: `{"stdout":"...","stderr":"...","exit_code":N}`.
-    pub(crate) async fn dispatch_bash(&self, args: &str, session_id: Option<u64>) -> String {
+    pub async fn dispatch_bash(&self, args: &str, session_id: Option<u64>) -> String {
         let input: Bash = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
         let session_cwd = if let Some(id) = session_id {
-            self.session_cwds.lock().await.get(&id).cloned()
+            self.bridge.session_cwd(id)
         } else {
             None
         };

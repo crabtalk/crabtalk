@@ -1,8 +1,8 @@
 //! OAuth login/logout for MCP servers.
 
 use anyhow::{Context, Result};
-use daemon::hook::mcp::auth::FileCredentialStore;
 use rmcp::transport::{AuthorizationManager, AuthorizationSession};
+use runtime::mcp::auth::FileCredentialStore;
 use std::sync::Arc;
 
 /// Callback port for the local OAuth redirect server.

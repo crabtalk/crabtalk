@@ -1,11 +1,6 @@
 //! Built-in memory — file-per-entry storage at `{config_dir}/memory/`.
-//!
-//! [`Memory`] manages individual entry files under `entries/`, a curated
-//! `MEMORY.md` overview, and session summaries under `sessions/`. Entry
-//! recall uses BM25 ranking. All I/O goes through the [`Storage`] trait
-//! for testability.
 
-use crate::hook::system::MemoryConfig;
+use crate::config::MemoryConfig;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -16,14 +11,14 @@ use wcore::model::{Message, Role};
 pub mod bm25;
 pub mod entry;
 pub mod storage;
-pub(crate) mod tool;
+pub mod tool;
 
 use entry::MemoryEntry;
 use storage::Storage;
 
-const MEMORY_PROMPT: &str = include_str!("../../../../prompts/memory.md");
+const MEMORY_PROMPT: &str = include_str!("../../prompts/memory.md");
 
-const DEFAULT_SOUL: &str = include_str!("../../../../prompts/crab.md");
+pub const DEFAULT_SOUL: &str = include_str!("../../prompts/crab.md");
 
 pub struct Memory {
     storage: Box<dyn Storage>,
@@ -38,20 +33,15 @@ pub struct Memory {
 
 impl Memory {
     /// Open (or create) memory storage at the given directory.
-    ///
-    /// `config_dir` is the parent config directory where `Crab.md` lives.
-    /// `dir` is the memory-specific subdirectory (`{config_dir}/memory/`).
     pub fn open(dir: PathBuf, config: MemoryConfig, storage: Box<dyn Storage>) -> Self {
         let entries_dir = dir.join("entries");
         let index_path = dir.join("MEMORY.md");
-        // Crab.md lives in the parent config dir, not inside memory/
         let soul_path = dir
             .parent()
             .map(|p| p.join("Crab.md"))
             .unwrap_or_else(|| dir.join("Crab.md"));
 
         storage.create_dir_all(&entries_dir).ok();
-        // Seed Crab.md if it doesn't exist
         if !storage.exists(&soul_path) {
             storage.write(&soul_path, DEFAULT_SOUL).ok();
         }
@@ -77,7 +67,6 @@ impl Memory {
         mem
     }
 
-    /// Load all entry files from the entries directory.
     fn load_entries(&self) {
         let paths = match self.storage.list(&self.entries_dir) {
             Ok(p) => p,
@@ -104,7 +93,6 @@ impl Memory {
         }
     }
 
-    /// Load MEMORY.md index content.
     fn load_index(&self) {
         if let Ok(content) = self.storage.read(&self.index_path) {
             *self.index.write().unwrap() = content;
@@ -118,8 +106,6 @@ impl Memory {
             return "no memories found".to_owned();
         }
 
-        // Single vector for both scoring and result lookup — avoids HashMap
-        // iteration order aliasing between separate `.values()` calls.
         let entry_vec: Vec<&MemoryEntry> = entries.values().collect();
         let docs: Vec<(usize, String)> = entry_vec
             .iter()
@@ -238,9 +224,7 @@ impl Memory {
         }]
     }
 
-    /// Migrate legacy files (memory.md, user.md, facts.toml) to entry format.
     fn migrate_legacy(&self, dir: &Path) {
-        // Only migrate if entries dir is empty.
         let existing = self.storage.list(&self.entries_dir).unwrap_or_default();
         if !existing.is_empty() {
             return;
@@ -258,7 +242,6 @@ impl Memory {
             return;
         }
 
-        // memory.md → split by double-newline into entries + seed MEMORY.md
         if let Ok(content) = self.storage.read(&memory_path)
             && !content.trim().is_empty()
         {
@@ -283,7 +266,6 @@ impl Memory {
                 .ok();
         }
 
-        // user.md → single entry
         if let Ok(content) = self.storage.read(&user_path)
             && !content.trim().is_empty()
         {
@@ -299,7 +281,6 @@ impl Memory {
                 .ok();
         }
 
-        // facts.toml → single entry
         if let Ok(content) = self.storage.read(&facts_path)
             && !content.trim().is_empty()
         {

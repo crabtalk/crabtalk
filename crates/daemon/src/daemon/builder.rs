@@ -1,31 +1,23 @@
 //! Daemon construction and lifecycle methods.
-//!
-//! This module provides the [`Daemon`] builder and reload logic as private
-//! `impl Daemon` methods. [`Daemon::build`] constructs a fully-configured
-//! daemon from a [`DaemonConfig`]. [`Daemon::reload`] rebuilds the runtime
-//! in-place from disk without restarting transports.
 
 use crate::{
     Daemon, DaemonConfig,
     config::{ResolvedManifest, resolve_manifests},
     daemon::event::{DaemonEvent, DaemonEventSender},
-    hook::{self, DaemonHook, skill::loader, system::memory::Memory},
+    hook::{DaemonHook, bridge::DaemonBridge},
 };
 use anyhow::Result;
 use model::ProviderRegistry;
+use runtime::{RuntimeHook, SkillHandler, mcp::McpHandler, memory::Memory};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use wcore::{AgentConfig, Runtime, ToolRequest};
 
 /// Resolve qualified package references in an agent's skill list.
-///
-/// Entries containing `/` (e.g. `"crabtalk/gstack"`) are treated as package
-/// references. Each is expanded to the individual skill names found in that
-/// package's skill directory. Plain skill names are left as-is.
 fn resolve_package_skills(
     skills: &mut Vec<String>,
     package_skill_dirs: &BTreeMap<String, PathBuf>,
@@ -34,7 +26,7 @@ fn resolve_package_skills(
     for entry in skills.drain(..) {
         if entry.contains('/') {
             if let Some(dir) = package_skill_dirs.get(&entry) {
-                match loader::load_skills_dir(dir) {
+                match runtime::skill::loader::load_skills_dir(dir) {
                     Ok(registry) => {
                         for skill in registry.skills() {
                             resolved.push(skill.name.clone());
@@ -54,7 +46,7 @@ fn resolve_package_skills(
     *skills = resolved;
 }
 
-const SYSTEM_AGENT: &str = include_str!("../../prompts/crab.md");
+const SYSTEM_AGENT: &str = runtime::memory::DEFAULT_SOUL;
 
 impl Daemon {
     /// Build a fully-configured [`Daemon`] from the given config, config
@@ -73,17 +65,11 @@ impl Daemon {
     }
 
     /// Rebuild the runtime from disk and swap it in atomically.
-    ///
-    /// In-flight requests that already hold a reference to the old runtime
-    /// complete normally. New requests after the swap see the new runtime.
-    /// Active sessions are preserved across the reload.
     pub async fn reload(&self) -> Result<()> {
         let config = DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
         let mut new_runtime =
             Self::build_runtime(&config, &self.config_dir, &self.event_tx).await?;
 
-        // Carry sessions from old runtime into the new one so gateways
-        // (wechat, telegram, etc.) don't lose conversation state.
         {
             let old_runtime = self.runtime.read().await;
             (**old_runtime).transfer_sessions(&mut new_runtime).await;
@@ -94,7 +80,7 @@ impl Daemon {
         Ok(())
     }
 
-    /// Construct a fresh [`Runtime`] from config. Used by both [`build`] and [`reload`].
+    /// Construct a fresh [`Runtime`] from config.
     async fn build_runtime(
         config: &DaemonConfig,
         config_dir: &Path,
@@ -110,8 +96,6 @@ impl Daemon {
     }
 
     /// Construct the provider registry from config.
-    ///
-    /// Builds remote providers from config and sets the active model.
     fn build_providers(config: &DaemonConfig) -> Result<ProviderRegistry> {
         let active_model = config
             .system
@@ -135,11 +119,10 @@ impl Daemon {
         manifest: &ResolvedManifest,
         event_tx: &DaemonEventSender,
     ) -> Result<DaemonHook> {
-        let skills =
-            hook::skill::SkillHandler::load(manifest.skill_dirs.clone()).unwrap_or_else(|e| {
-                tracing::warn!("failed to load skills: {e}");
-                hook::skill::SkillHandler::default()
-            });
+        let skills = SkillHandler::load(manifest.skill_dirs.clone()).unwrap_or_else(|e| {
+            tracing::warn!("failed to load skills: {e}");
+            SkillHandler::default()
+        });
 
         // Inject [env] from config.toml into each MCP's env map.
         let mcp_servers: Vec<_> = manifest
@@ -153,30 +136,28 @@ impl Daemon {
                 mcp
             })
             .collect();
-        let mcp_handler = hook::mcp::McpHandler::load(&mcp_servers).await;
+        let mcp_handler = McpHandler::load(&mcp_servers).await;
 
         let memory = Some(Memory::open(
             config_dir.join("memory"),
             config.system.memory.clone(),
-            Box::new(crate::hook::system::memory::storage::FsStorage),
+            Box::new(runtime::memory::storage::FsStorage),
         ));
 
         let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
 
-        Ok(DaemonHook::new(
-            skills,
-            mcp_handler,
-            cwd,
-            memory,
-            event_tx.clone(),
-        ))
+        let bridge = DaemonBridge {
+            event_tx: event_tx.clone(),
+            pending_asks: Arc::new(Mutex::new(HashMap::new())),
+            session_cwds: Arc::new(Mutex::new(HashMap::new())),
+        };
+
+        let runtime_hook = RuntimeHook::new(skills, mcp_handler, cwd, memory, bridge);
+        Ok(DaemonHook::new(runtime_hook))
     }
 
     /// Build a [`ToolSender`] that forwards [`ToolRequest`]s into the daemon
     /// event loop as [`DaemonEvent::ToolCall`] variants.
-    ///
-    /// Spawns a lightweight bridge task relaying from the tool channel into
-    /// the main daemon event channel.
     fn build_tool_sender(event_tx: &DaemonEventSender) -> wcore::ToolSender {
         let (tool_tx, mut tool_rx) = tokio::sync::mpsc::unbounded_channel::<ToolRequest>();
         let event_tx = event_tx.clone();
@@ -191,31 +172,25 @@ impl Daemon {
     }
 
     /// Load agents and add them to the runtime.
-    ///
-    /// The built-in crab agent is always registered first. Sub-agents are
-    /// loaded from manifest agent configs matched to `.md` prompt files
-    /// from the agent directories.
     fn load_agents(
         runtime: &mut Runtime<ProviderRegistry, DaemonHook>,
         config: &DaemonConfig,
         manifest: &ResolvedManifest,
     ) -> Result<()> {
-        // Load prompt files from all agent directories.
         let prompts = crate::config::load_agents_dirs(&manifest.agent_dirs)?;
-        let prompt_map: std::collections::BTreeMap<String, String> = prompts.into_iter().collect();
+        let prompt_map: BTreeMap<String, String> = prompts.into_iter().collect();
 
-        // Built-in crab agent. Read soul from memory (Crab.md), fall back to compiled-in.
+        // Built-in crab agent.
         let mut crab_config = config.system.crab.clone();
         crab_config.name = wcore::paths::DEFAULT_AGENT.to_owned();
         crab_config.system_prompt = runtime
             .hook
-            .memory
-            .as_ref()
+            .memory()
             .map(|m| m.build_soul())
             .unwrap_or_else(|| SYSTEM_AGENT.to_owned());
         runtime.add_agent(crab_config);
 
-        // Sub-agents from manifests — each must have a matching .md file.
+        // Sub-agents from manifests.
         for (name, agent_config) in &manifest.agents {
             if name == wcore::paths::DEFAULT_AGENT {
                 tracing::warn!(
@@ -236,7 +211,7 @@ impl Daemon {
             runtime.add_agent(agent);
         }
 
-        // Also register agents that have .md files but no manifest entry (defaults).
+        // Also register agents that have .md files but no manifest entry.
         let default_think = config.system.crab.thinking;
         for (stem, prompt) in &prompt_map {
             if stem == wcore::paths::DEFAULT_AGENT {
@@ -255,7 +230,7 @@ impl Daemon {
             runtime.add_agent(agent);
         }
 
-        // Populate per-agent scope maps for dispatch enforcement.
+        // Populate per-agent scope maps.
         for agent_config in runtime.agents() {
             runtime
                 .hook

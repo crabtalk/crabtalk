@@ -31,7 +31,7 @@ impl Server for Daemon {
                     rt.get_or_create_session(&req.agent, created_by).await?
                 };
                 if let Some(ref cwd) = cwd {
-                    rt.hook.session_cwds.lock().await.insert(id, cwd.clone());
+                    rt.hook.session_cwds().lock().await.insert(id, cwd.clone());
                 }
                 id
             }
@@ -70,7 +70,7 @@ impl Server for Daemon {
                         rt.get_or_create_session(&agent, created_by.as_str()).await?
                     };
                     if let Some(ref cwd) = cwd {
-                        rt.hook.session_cwds.lock().await.insert(id, cwd.clone());
+                        rt.hook.session_cwds().lock().await.insert(id, cwd.clone());
                     }
                     id
                 }
@@ -89,8 +89,6 @@ impl Server for Daemon {
                         yield StreamEvent { event: Some(stream_event::Event::Thinking(StreamThinking { content: text })) };
                     }
                     AgentEvent::ToolCallsBegin(calls) => {
-                        // Early notification — tool names known, args still streaming.
-                        // Send ToolStart for CLI markers, skip AskUser extraction.
                         yield StreamEvent { event: Some(stream_event::Event::ToolStart(ToolStartEvent {
                             calls: calls.into_iter().map(|c| ToolCallInfo {
                                 name: c.function.name.to_string(),
@@ -104,7 +102,7 @@ impl Server for Daemon {
                             .iter()
                             .filter(|c| c.function.name == "ask_user")
                             .filter_map(|c| {
-                                serde_json::from_str::<crate::hook::system::ask_user::AskUser>(&c.function.arguments)
+                                serde_json::from_str::<runtime::ask_user::AskUser>(&c.function.arguments)
                                     .ok()
                             })
                             .flat_map(|a| a.questions)
@@ -137,7 +135,6 @@ impl Server for Daemon {
                         yield StreamEvent { event: Some(stream_event::Event::ToolsComplete(ToolsCompleteEvent {})) };
                     }
                     AgentEvent::Compact { .. } => {
-                        // Compact events are handled by on_event in the hook layer.
                     }
                     AgentEvent::Done(resp) => {
                         let error = if let wcore::AgentStopReason::Error(e) = resp.stop_reason {
@@ -180,9 +177,8 @@ impl Server for Daemon {
 
     async fn kill_session(&self, session: u64) -> Result<bool> {
         let rt = self.runtime.read().await.clone();
-        // Drop any pending ask_user oneshot so dispatch_ask_user unblocks immediately.
-        rt.hook.pending_asks.lock().await.remove(&session);
-        rt.hook.session_cwds.lock().await.remove(&session);
+        rt.hook.pending_asks().lock().await.remove(&session);
+        rt.hook.session_cwds().lock().await.remove(&session);
         Ok(rt.close_session(session).await)
     }
 
@@ -223,14 +219,12 @@ impl Server for Daemon {
 
     async fn reply_to_ask(&self, session: u64, content: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
-        // Try to find and deliver the reply. Retry once after a brief delay
-        // in case the ask_user dispatch hasn't inserted the oneshot yet.
-        if let Some(tx) = rt.hook.pending_asks.lock().await.remove(&session) {
+        if let Some(tx) = rt.hook.pending_asks().lock().await.remove(&session) {
             let _ = tx.send(content);
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        if let Some(tx) = rt.hook.pending_asks.lock().await.remove(&session) {
+        if let Some(tx) = rt.hook.pending_asks().lock().await.remove(&session) {
             let _ = tx.send(content);
             return Ok(());
         }

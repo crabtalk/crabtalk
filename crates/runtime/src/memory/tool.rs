@@ -1,8 +1,6 @@
 //! Tool schemas and dispatch for built-in memory tools.
-//!
-//! Four tools: recall, remember, forget, memory (MEMORY.md).
 
-use crate::hook::DaemonHook;
+use crate::{RuntimeHook, bridge::RuntimeBridge};
 use serde::Deserialize;
 use wcore::{
     agent::{AsTool, ToolDescription},
@@ -10,7 +8,7 @@ use wcore::{
 };
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub(crate) struct Recall {
+pub struct Recall {
     /// Keyword or phrase to search your memory entries for.
     pub query: String,
     /// Maximum number of results to return. Defaults to 5.
@@ -23,7 +21,7 @@ impl ToolDescription for Recall {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub(crate) struct Remember {
+pub struct Remember {
     /// Short name for this memory entry (used as identifier).
     pub name: String,
     /// One-line description — determines search relevance.
@@ -37,7 +35,7 @@ impl ToolDescription for Remember {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub(crate) struct Forget {
+pub struct Forget {
     /// Name of the memory entry to delete.
     pub name: String,
 }
@@ -47,26 +45,26 @@ impl ToolDescription for Forget {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub(crate) struct Memory {
+pub struct MemoryTool {
     /// The full content to write to MEMORY.md — your curated overview.
     pub content: String,
 }
 
-impl ToolDescription for Memory {
+impl ToolDescription for MemoryTool {
     const DESCRIPTION: &'static str = "Overwrite MEMORY.md — your curated overview injected every session. Read it before overwriting.";
 }
 
-pub(crate) fn tools() -> Vec<Tool> {
+pub fn tools() -> Vec<Tool> {
     vec![
         Recall::as_tool(),
         Remember::as_tool(),
         Forget::as_tool(),
-        Memory::as_tool(),
+        MemoryTool::as_tool(),
     ]
 }
 
-impl DaemonHook {
-    pub(crate) async fn dispatch_recall(&self, args: &str) -> String {
+impl<B: RuntimeBridge> RuntimeHook<B> {
+    pub async fn dispatch_recall(&self, args: &str) -> String {
         let input: Recall = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
@@ -77,7 +75,7 @@ impl DaemonHook {
         }
     }
 
-    pub(crate) async fn dispatch_remember(&self, args: &str) -> String {
+    pub async fn dispatch_remember(&self, args: &str) -> String {
         let input: Remember = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
@@ -88,7 +86,7 @@ impl DaemonHook {
         }
     }
 
-    pub(crate) async fn dispatch_forget(&self, args: &str) -> String {
+    pub async fn dispatch_forget(&self, args: &str) -> String {
         let input: Forget = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
@@ -99,8 +97,8 @@ impl DaemonHook {
         }
     }
 
-    pub(crate) async fn dispatch_memory(&self, args: &str) -> String {
-        let input: Memory = match serde_json::from_str(args) {
+    pub async fn dispatch_memory(&self, args: &str) -> String {
+        let input: MemoryTool = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };

@@ -11,8 +11,6 @@ pub struct FileCredentialStore {
 
 impl FileCredentialStore {
     /// Build a store for the given MCP server name.
-    ///
-    /// Tokens are persisted at `~/.crabtalk/tokens/{name}.json`.
     pub fn for_server(name: &str) -> Self {
         Self {
             path: TOKENS_DIR.join(format!("{name}.json")),

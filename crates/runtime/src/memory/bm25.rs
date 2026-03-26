@@ -1,7 +1,4 @@
 //! Stateless BM25 scorer for memory recall.
-//!
-//! Zero dependencies. Tokenizes text, computes IDF + TF scores, returns
-//! top-k results sorted by relevance. Parameters: k1=1.2, b=0.75.
 
 use std::collections::HashMap;
 
@@ -18,9 +15,7 @@ pub fn tokenize(text: &str) -> Vec<String> {
 }
 
 /// BM25-rank documents against a query. Returns top-`limit` (index, score)
-/// pairs sorted by descending score. Only entries with score > 0 returned.
-///
-/// `docs` is a slice of `(index, text)` pairs.
+/// pairs sorted by descending score.
 pub fn score(docs: &[(usize, &str)], query: &str, limit: usize) -> Vec<(usize, f64)> {
     if docs.is_empty() {
         return Vec::new();
@@ -33,14 +28,10 @@ pub fn score(docs: &[(usize, &str)], query: &str, limit: usize) -> Vec<(usize, f
         return Vec::new();
     }
 
-    // Tokenize all documents.
     let doc_tokens: Vec<Vec<String>> = docs.iter().map(|(_, text)| tokenize(text)).collect();
-
-    // Average document length.
     let total_len: usize = doc_tokens.iter().map(|t| t.len()).sum();
     let avgdl = total_len as f64 / docs.len() as f64;
 
-    // Document frequency for each query term.
     let n = docs.len() as f64;
     let mut df: HashMap<&str, usize> = HashMap::new();
     for qt in &query_tokens {
@@ -54,7 +45,6 @@ pub fn score(docs: &[(usize, &str)], query: &str, limit: usize) -> Vec<(usize, f
         df.insert(qt.as_str(), count);
     }
 
-    // Score each document.
     let mut scores: Vec<(usize, f64)> = docs
         .iter()
         .zip(doc_tokens.iter())
@@ -62,7 +52,6 @@ pub fn score(docs: &[(usize, &str)], query: &str, limit: usize) -> Vec<(usize, f
             let dl = tokens.len() as f64;
             let mut doc_score = 0.0;
 
-            // Term frequency map for this document.
             let mut tf_map: HashMap<&str, usize> = HashMap::new();
             for t in tokens {
                 *tf_map.entry(t.as_str()).or_insert(0) += 1;
@@ -74,9 +63,7 @@ pub fn score(docs: &[(usize, &str)], query: &str, limit: usize) -> Vec<(usize, f
                     continue;
                 }
 
-                // IDF: log((N - df + 0.5) / (df + 0.5) + 1)
                 let idf = ((n - doc_freq as f64 + 0.5) / (doc_freq as f64 + 0.5) + 1.0).ln();
-
                 let tf = *tf_map.get(qt.as_str()).unwrap_or(&0) as f64;
                 let tf_norm = (tf * (K1 + 1.0)) / (tf + K1 * (1.0 - B + B * dl / avgdl));
 

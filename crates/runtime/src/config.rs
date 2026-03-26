@@ -1,14 +1,6 @@
 //! System subsystem — task executor and memory configuration.
-//!
-//! Groups `[system.tasks]` and `[system.memory]` config under a single
-//! `SystemConfig` struct. Task registry and tool dispatch live in `task/`.
 
 use serde::{Deserialize, Serialize};
-
-pub mod ask_user;
-pub mod memory;
-pub mod session;
-pub mod task;
 
 /// Top-level `[system]` configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

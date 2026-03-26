@@ -1,14 +1,10 @@
 //! Crabtalk MCP handler — initial load and read access.
 
-use crate::hook::mcp::{McpBridge, config::McpServerConfig};
+use crate::mcp::{McpBridge, config::McpServerConfig};
 use std::sync::{Arc, RwLock as StdRwLock};
 use tokio::sync::RwLock;
 
 /// MCP bridge owner.
-///
-/// MCP bridge owner — `register_tools` registers MCP server tools on the
-/// Runtime tool registry. Maintains a sync-accessible cache of server→tools
-/// populated at load time so `apply_scope` never needs async bridging.
 pub struct McpHandler {
     bridge: RwLock<Arc<McpBridge>>,
     /// Sync cache of server names → tool names, populated at load/reload.
@@ -118,8 +114,6 @@ impl McpHandler {
 }
 
 /// Scan `~/.crabtalk/run/*.port` for service port files.
-///
-/// Returns `(name, url)` pairs. Skips the daemon's own `crabtalk.port`.
 fn scan_port_files() -> Vec<(String, String)> {
     let run_dir = &*wcore::paths::RUN_DIR;
     let entries = match std::fs::read_dir(run_dir) {

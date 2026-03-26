@@ -1,9 +1,9 @@
 //! Daemon configuration loaded from TOML.
 
-pub use crate::hook::{mcp::McpServerConfig, system::SystemConfig};
 pub use ::model::{ProviderDef, ProviderRegistry, validate_providers};
 use anyhow::Result;
 pub use loader::{DEFAULT_CONFIG, scaffold_config_dir};
+pub use runtime::{McpHandler, SystemConfig, mcp::McpServerConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 pub use wcore::{

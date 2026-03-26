@@ -47,23 +47,13 @@ impl SkillRegistry {
 }
 
 /// A named unit of agent behavior (agentskills.io format).
-///
-/// Pure data struct — parsing logic lives in the [`loader`] module.
-/// Fields mirror the agentskills.io specification.
 #[derive(Debug, Clone)]
 pub struct Skill {
-    /// Skill identifier (lowercase, hyphens, 1-64 chars).
     pub name: String,
-    /// Human-readable description (1-1024 chars).
     pub description: String,
-    /// License name or reference to a bundled license file.
     pub license: Option<String>,
-    /// Compatibility constraints (e.g. "Requires git, docker").
     pub compatibility: Option<String>,
-    /// Arbitrary key-value metadata map.
     pub metadata: BTreeMap<String, String>,
-    /// Tool names this skill is pre-approved to use (experimental).
     pub allowed_tools: Vec<String>,
-    /// Skill body (Markdown instructions).
     pub body: String,
 }

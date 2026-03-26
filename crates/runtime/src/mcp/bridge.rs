@@ -1,6 +1,6 @@
 //! Crabtalk MCP bridge — connects to MCP servers and dispatches tool calls.
 
-use crate::hook::mcp::auth::FileCredentialStore;
+use crate::mcp::auth::FileCredentialStore;
 use anyhow::Result;
 use rmcp::{
     ServiceExt,
@@ -23,9 +23,6 @@ struct ConnectedPeer {
 }
 
 /// Bridge to one or more MCP servers via the rmcp SDK.
-///
-/// Converts MCP tool definitions to crabtalk-core [`Tool`] schemas and
-/// dispatches tool calls through the protocol.
 pub struct McpBridge {
     peers: Mutex<Vec<ConnectedPeer>>,
     /// Cache of converted tools keyed by name.
@@ -59,8 +56,6 @@ impl McpBridge {
     }
 
     /// Connect to a named MCP server by spawning a child process.
-    ///
-    /// Returns the list of tool names registered by this server.
     pub async fn connect_stdio_named(
         &self,
         name: String,
@@ -99,10 +94,6 @@ impl McpBridge {
     }
 
     /// Connect to a named MCP server via streamable HTTP transport.
-    ///
-    /// If a token file exists at `~/.crabtalk/tokens/{name}.json`, the
-    /// connection is authenticated via OAuth (auto-refreshing Bearer tokens).
-    /// Otherwise, connects without auth.
     pub async fn connect_http_named(&self, name: String, url: &str) -> Result<Vec<String>> {
         let token_path = TOKENS_DIR.join(format!("{name}.json"));
         let peer: RunningService<RoleClient, ()> = if token_path.exists() {

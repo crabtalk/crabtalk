@@ -17,6 +17,7 @@ crabtalk-wechat = { path = "apps/wechat", version = "0.0.14" }
 gateway = { path = "crates/gateway", package = "crabtalk-gateway", version = "0.0.14" }
 cli = { path = "crates/cli", package = "crabtalk", version = "0.0.14" }
 daemon = { path = "crates/daemon", package = "crabtalk-daemon", version = "0.0.14" }
+runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.0.14" }
 model = { path = "crates/model", package = "crabtalk-model", version = "0.0.14" }
 transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.14" }
 wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.14" }

@@ -18,6 +18,7 @@ path = "src/bin/main.rs"
 crabhub.workspace = true
 crabtalk-command.workspace = true
 daemon.workspace = true
+runtime.workspace = true
 transport.workspace = true
 wcore.workspace = true
 

@@ -571,6 +571,7 @@ dependencies = [
  "crabtalk-command",
  "crabtalk-core",
  "crabtalk-daemon",
+ "crabtalk-runtime",
  "crabtalk-transport",
  "crossterm 0.28.1",
  "dialoguer",
@@ -648,19 +649,14 @@ version = "0.0.14"
 dependencies = [
  "anyhow",
  "async-stream",
- "async-trait",
- "chrono",
  "crabtalk-core",
  "crabtalk-model",
+ "crabtalk-runtime",
  "crabtalk-transport",
  "futures-core",
  "futures-util",
- "reqwest 0.13.2",
- "rmcp",
- "schemars 1.2.1",
  "serde",
  "serde_json",
- "serde_yml",
  "tokio",
  "toml",
  "toml_edit",
@@ -724,6 +720,25 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "crabtalk-runtime"
+version = "0.0.14"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "crabtalk-core",
+ "crabtalk-model",
+ "reqwest 0.13.2",
+ "rmcp",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "serde_yml",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

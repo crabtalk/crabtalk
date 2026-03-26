@@ -1,7 +1,4 @@
 //! Session history persistence — reading JSONL files from `~/.crabtalk/sessions/`.
-//!
-//! Write logic lives in `wcore::runtime::session`. This module provides
-//! listing and loading for CLI/daemon use.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};

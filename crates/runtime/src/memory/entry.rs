@@ -1,10 +1,6 @@
 //! Memory entry — frontmatter-based file format for individual memories.
-//!
-//! Each entry is a markdown file with `name` and `description` in YAML-style
-//! frontmatter, content after the closing `---`. Stored at
-//! `{entries_dir}/{slug}.md`.
 
-use crate::hook::system::memory::storage::Storage;
+use crate::memory::storage::Storage;
 use anyhow::{Result, bail};
 use std::path::{Path, PathBuf};
 
@@ -31,7 +27,6 @@ impl MemoryEntry {
 
     /// Parse an entry from its file content and path.
     pub fn parse(path: PathBuf, raw: &str) -> Result<Self> {
-        // Normalize line endings.
         let raw = raw.replace("\r\n", "\n");
         let raw = raw.trim();
         if !raw.starts_with("---") {
@@ -100,12 +95,9 @@ impl MemoryEntry {
 }
 
 /// Convert a name to a filesystem-safe slug.
-///
-/// Lowercase, non-alphanumeric characters replaced with `-`, consecutive
-/// dashes collapsed, leading/trailing dashes trimmed.
 pub fn slugify(name: &str) -> String {
     let mut slug = String::with_capacity(name.len());
-    let mut prev_dash = true; // suppress leading dash
+    let mut prev_dash = true;
 
     for ch in name.chars() {
         if ch.is_alphanumeric() {
@@ -119,7 +111,6 @@ pub fn slugify(name: &str) -> String {
         }
     }
 
-    // Trim trailing dash.
     if slug.ends_with('-') {
         slug.pop();
     }

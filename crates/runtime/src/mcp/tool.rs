@@ -1,12 +1,12 @@
 //! Tool dispatch and schema registration for the MCP tool.
 
-use crate::hook::DaemonHook;
+use crate::{RuntimeHook, bridge::RuntimeBridge};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use wcore::agent::ToolDescription;
 
 #[derive(Deserialize, JsonSchema)]
-pub(crate) struct Mcp {
+pub struct Mcp {
     /// Tool name to call. If no exact match, returns fuzzy matches.
     /// Leave empty to list all available MCP tools.
     pub name: String,
@@ -20,8 +20,8 @@ impl ToolDescription for Mcp {
         "Call an MCP tool by name, or list available tools if no exact match.";
 }
 
-impl DaemonHook {
-    pub(crate) async fn dispatch_mcp(&self, args: &str, agent: &str) -> String {
+impl<B: RuntimeBridge> RuntimeHook<B> {
+    pub async fn dispatch_mcp(&self, args: &str, agent: &str) -> String {
         let input: Mcp = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),

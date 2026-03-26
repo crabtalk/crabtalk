@@ -1,6 +1,6 @@
 //! Tool dispatch and schema registration for the skill tool.
 
-use crate::hook::{DaemonHook, skill::loader};
+use crate::{RuntimeHook, bridge::RuntimeBridge, skill::loader};
 use serde::Deserialize;
 use wcore::{
     agent::{AsTool, ToolDescription},
@@ -8,7 +8,7 @@ use wcore::{
 };
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub(crate) struct Skill {
+pub struct Skill {
     /// Skill name to load. If no exact match, returns fuzzy matches.
     /// Leave empty to list all available skills.
     pub name: String,
@@ -18,12 +18,12 @@ impl ToolDescription for Skill {
     const DESCRIPTION: &'static str = "Load a skill by name. Returns its instructions on exact match, or lists matching skills otherwise.";
 }
 
-pub(crate) fn tools() -> Vec<Tool> {
+pub fn tools() -> Vec<Tool> {
     vec![Skill::as_tool()]
 }
 
-impl DaemonHook {
-    pub(crate) async fn dispatch_skill(&self, args: &str, agent: &str) -> String {
+impl<B: RuntimeBridge> RuntimeHook<B> {
+    pub async fn dispatch_skill(&self, args: &str, agent: &str) -> String {
         let input: Skill = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
