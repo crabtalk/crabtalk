@@ -1,13 +1,16 @@
 //! DaemonBridge — server-specific RuntimeBridge implementation.
 //!
 //! Provides `ask_user` and `delegate` dispatch using daemon event channels,
-//! and per-session CWD resolution.
+//! per-session CWD resolution, and agent event broadcasting.
 
 use crate::daemon::event::{DaemonEvent, DaemonEventSender};
 use runtime::bridge::RuntimeBridge;
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
-use tokio::sync::{Mutex, mpsc, oneshot};
-use wcore::protocol::message::{ClientMessage, SendMsg, server_message};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
+use wcore::{
+    AgentEvent,
+    protocol::message::{AgentEventKind, AgentEventMsg, ClientMessage, SendMsg, server_message},
+};
 
 /// Timeout for waiting on user reply (5 minutes).
 const ASK_USER_TIMEOUT: Duration = Duration::from_secs(300);
@@ -20,6 +23,15 @@ pub struct DaemonBridge {
     pub pending_asks: Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>,
     /// Per-session working directory overrides.
     pub session_cwds: Arc<Mutex<HashMap<u64, PathBuf>>>,
+    /// Broadcast channel for agent events (console subscription).
+    pub events_tx: broadcast::Sender<AgentEventMsg>,
+}
+
+impl DaemonBridge {
+    /// Subscribe to agent events (for console event streaming).
+    pub fn subscribe_events(&self) -> broadcast::Receiver<AgentEventMsg> {
+        self.events_tx.subscribe()
+    }
 }
 
 impl RuntimeBridge for DaemonBridge {
@@ -61,12 +73,6 @@ impl RuntimeBridge for DaemonBridge {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
-        if input.tasks.is_empty() {
-            return "no tasks provided".to_owned();
-        }
-
-        // Note: member scope enforcement is handled by RuntimeHook::dispatch_tool
-        // before delegating to the bridge. The bridge doesn't need access to scopes.
 
         let mut handles = Vec::with_capacity(input.tasks.len());
         for task in input.tasks {
@@ -95,6 +101,64 @@ impl RuntimeBridge for DaemonBridge {
             .try_lock()
             .ok()
             .and_then(|m| m.get(&session_id).cloned())
+    }
+
+    fn on_agent_event(&self, agent: &str, session_id: u64, event: &AgentEvent) {
+        let (kind, content) = match event {
+            AgentEvent::TextDelta(text) => {
+                tracing::trace!(%agent, text_len = text.len(), "agent text delta");
+                (AgentEventKind::TextDelta, String::new())
+            }
+            AgentEvent::ThinkingDelta(text) => {
+                tracing::trace!(%agent, text_len = text.len(), "agent thinking delta");
+                (AgentEventKind::ThinkingDelta, String::new())
+            }
+            AgentEvent::ToolCallsBegin(_) => return,
+            AgentEvent::ToolCallsStart(calls) => {
+                tracing::debug!(%agent, count = calls.len(), "agent tool calls");
+                let labels: Vec<String> = calls
+                    .iter()
+                    .map(|c| {
+                        if c.function.name == "bash"
+                            && let Ok(v) =
+                                serde_json::from_str::<serde_json::Value>(&c.function.arguments)
+                            && let Some(cmd) = v.get("command").and_then(|c| c.as_str())
+                        {
+                            return format!("bash({})", cmd.lines().next().unwrap_or(""));
+                        }
+                        c.function.name.clone()
+                    })
+                    .collect();
+                (AgentEventKind::ToolStart, labels.join(", "))
+            }
+            AgentEvent::ToolResult { call_id, .. } => {
+                tracing::debug!(%agent, %call_id, "agent tool result");
+                (AgentEventKind::ToolResult, call_id.clone())
+            }
+            AgentEvent::ToolCallsComplete => {
+                tracing::debug!(%agent, "agent tool calls complete");
+                (AgentEventKind::ToolsComplete, String::new())
+            }
+            AgentEvent::Compact { summary } => {
+                tracing::info!(%agent, summary_len = summary.len(), "context compacted");
+                return;
+            }
+            AgentEvent::Done(response) => {
+                tracing::info!(
+                    %agent,
+                    iterations = response.iterations,
+                    stop_reason = ?response.stop_reason,
+                    "agent run complete"
+                );
+                (AgentEventKind::Done, String::new())
+            }
+        };
+        let _ = self.events_tx.send(AgentEventMsg {
+            agent: agent.to_string(),
+            session: session_id,
+            kind: kind.into(),
+            content,
+        });
     }
 }
 
@@ -142,7 +206,6 @@ fn spawn_agent_task(
             }
         }
 
-        // Close the agent's session.
         if let Some(sid) = session_id {
             let (reply_tx, _) = mpsc::unbounded_channel();
             let _ = event_tx.send(DaemonEvent::Message {

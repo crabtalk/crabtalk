@@ -14,10 +14,10 @@ use wcore::{AgentConfig, AgentEvent, Hook, ToolRegistry, model::Message};
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
 #[derive(Default)]
 pub struct AgentScope {
-    pub tools: Vec<String>,
-    pub members: Vec<String>,
-    pub skills: Vec<String>,
-    pub mcps: Vec<String>,
+    pub(crate) tools: Vec<String>,
+    pub(crate) members: Vec<String>,
+    pub(crate) skills: Vec<String>,
+    pub(crate) mcps: Vec<String>,
 }
 
 /// Base tools always included in every agent's whitelist.
@@ -36,16 +36,12 @@ const MEMORY_TOOLS: &[&str] = &["recall", "remember", "memory", "forget"];
 const TASK_TOOLS: &[&str] = &["delegate"];
 
 pub struct RuntimeHook<B: RuntimeBridge = crate::NoBridge> {
-    pub skills: SkillHandler,
-    pub mcp: McpHandler,
-    /// Working directory for agent commands (caller's cwd at startup).
-    pub cwd: PathBuf,
-    /// Built-in memory.
-    pub memory: Option<Memory>,
-    /// Per-agent scope maps, populated during load_agents.
-    pub scopes: BTreeMap<String, AgentScope>,
-    /// Sub-agent descriptions for catalog injection into the crab agent.
-    pub agent_descriptions: BTreeMap<String, String>,
+    pub(crate) skills: SkillHandler,
+    pub(crate) mcp: McpHandler,
+    pub(crate) cwd: PathBuf,
+    pub(crate) memory: Option<Memory>,
+    pub(crate) scopes: BTreeMap<String, AgentScope>,
+    pub(crate) agent_descriptions: BTreeMap<String, String>,
     /// Bridge to server-specific functionality.
     pub bridge: B,
 }
@@ -68,6 +64,11 @@ impl<B: RuntimeBridge> RuntimeHook<B> {
             agent_descriptions: BTreeMap::new(),
             bridge,
         }
+    }
+
+    /// Access memory.
+    pub fn memory(&self) -> Option<&Memory> {
+        self.memory.as_ref()
     }
 
     /// Register an agent's scope for dispatch enforcement.
@@ -179,6 +180,28 @@ impl<B: RuntimeBridge> RuntimeHook<B> {
         content.to_owned()
     }
 
+    /// Validate member scope and delegate to the bridge.
+    async fn dispatch_delegate(&self, args: &str, agent: &str) -> String {
+        let input: crate::task::Delegate = match serde_json::from_str(args) {
+            Ok(v) => v,
+            Err(e) => return format!("invalid arguments: {e}"),
+        };
+        if input.tasks.is_empty() {
+            return "no tasks provided".to_owned();
+        }
+        // Enforce members scope for all target agents.
+        if let Some(scope) = self.scopes.get(agent)
+            && !scope.members.is_empty()
+        {
+            for task in &input.tasks {
+                if !scope.members.iter().any(|m| m == &task.agent) {
+                    return format!("agent '{}' is not in your members list", task.agent);
+                }
+            }
+        }
+        self.bridge.dispatch_delegate(args, agent).await
+    }
+
     /// Route a tool call by name to the appropriate handler.
     pub async fn dispatch_tool(
         &self,
@@ -206,8 +229,7 @@ impl<B: RuntimeBridge> RuntimeHook<B> {
             "remember" => self.dispatch_remember(args).await,
             "memory" => self.dispatch_memory(args).await,
             "forget" => self.dispatch_forget(args).await,
-            // Server-specific tools — delegate to bridge.
-            "delegate" => self.bridge.dispatch_delegate(args, agent).await,
+            "delegate" => self.dispatch_delegate(args, agent).await,
             "ask_user" => self.bridge.dispatch_ask_user(args, session_id).await,
             name => format!("tool not available: {name}"),
         }
@@ -298,7 +320,6 @@ impl<B: RuntimeBridge + 'static> Hook for RuntimeHook<B> {
         if let Some(ref mem) = self.memory {
             messages.extend(mem.before_run(history));
         }
-        // Inject per-session working directory.
         let cwd = self
             .bridge
             .session_cwd(session_id)
@@ -323,8 +344,7 @@ impl<B: RuntimeBridge + 'static> Hook for RuntimeHook<B> {
         }
     }
 
-    fn on_event(&self, _agent: &str, _session_id: u64, _event: &AgentEvent) {
-        // No-op in the runtime. The daemon overrides this to broadcast
-        // AgentEventMsg protobuf messages.
+    fn on_event(&self, agent: &str, session_id: u64, event: &AgentEvent) {
+        self.bridge.on_agent_event(agent, session_id, event);
     }
 }

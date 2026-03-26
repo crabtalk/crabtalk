@@ -33,6 +33,10 @@ pub trait RuntimeBridge: Send + Sync {
     fn session_cwd(&self, _session_id: u64) -> Option<PathBuf> {
         None
     }
+
+    /// Called when an agent event occurs. The daemon uses this to broadcast
+    /// protobuf events to console subscribers. Default: no-op.
+    fn on_agent_event(&self, _agent: &str, _session_id: u64, _event: &wcore::AgentEvent) {}
 }
 
 /// No-op bridge for embedded use.

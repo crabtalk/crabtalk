@@ -1,7 +1,6 @@
 pub mod ask_user;
 pub mod bridge;
 pub mod config;
-pub mod dispatch;
 pub mod hook;
 pub mod mcp;
 pub mod memory;

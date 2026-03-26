@@ -1,10 +1,11 @@
 //! Daemon construction and lifecycle methods.
 
+use crate::hook::DaemonHook;
 use crate::{
     Daemon, DaemonConfig,
     config::{ResolvedManifest, resolve_manifests},
     daemon::event::{DaemonEvent, DaemonEventSender},
-    hook::{DaemonHook, bridge::DaemonBridge},
+    hook::bridge::DaemonBridge,
 };
 use anyhow::Result;
 use model::ProviderRegistry;
@@ -146,14 +147,15 @@ impl Daemon {
 
         let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
 
+        let (events_tx, _) = tokio::sync::broadcast::channel(256);
         let bridge = DaemonBridge {
             event_tx: event_tx.clone(),
             pending_asks: Arc::new(Mutex::new(HashMap::new())),
             session_cwds: Arc::new(Mutex::new(HashMap::new())),
+            events_tx,
         };
 
-        let runtime_hook = RuntimeHook::new(skills, mcp_handler, cwd, memory, bridge);
-        Ok(DaemonHook::new(runtime_hook))
+        Ok(RuntimeHook::new(skills, mcp_handler, cwd, memory, bridge))
     }
 
     /// Build a [`ToolSender`] that forwards [`ToolRequest`]s into the daemon

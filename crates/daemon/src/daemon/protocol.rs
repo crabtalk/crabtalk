@@ -31,7 +31,12 @@ impl Server for Daemon {
                     rt.get_or_create_session(&req.agent, created_by).await?
                 };
                 if let Some(ref cwd) = cwd {
-                    rt.hook.session_cwds().lock().await.insert(id, cwd.clone());
+                    rt.hook
+                        .bridge
+                        .session_cwds
+                        .lock()
+                        .await
+                        .insert(id, cwd.clone());
                 }
                 id
             }
@@ -70,7 +75,7 @@ impl Server for Daemon {
                         rt.get_or_create_session(&agent, created_by.as_str()).await?
                     };
                     if let Some(ref cwd) = cwd {
-                        rt.hook.session_cwds().lock().await.insert(id, cwd.clone());
+                        rt.hook.bridge.session_cwds.lock().await.insert(id, cwd.clone());
                     }
                     id
                 }
@@ -177,8 +182,8 @@ impl Server for Daemon {
 
     async fn kill_session(&self, session: u64) -> Result<bool> {
         let rt = self.runtime.read().await.clone();
-        rt.hook.pending_asks().lock().await.remove(&session);
-        rt.hook.session_cwds().lock().await.remove(&session);
+        rt.hook.bridge.pending_asks.lock().await.remove(&session);
+        rt.hook.bridge.session_cwds.lock().await.remove(&session);
         Ok(rt.close_session(session).await)
     }
 
@@ -186,7 +191,7 @@ impl Server for Daemon {
         let runtime = self.runtime.clone();
         async_stream::try_stream! {
             let rt = runtime.read().await.clone();
-            let mut rx = rt.hook.subscribe_events();
+            let mut rx = rt.hook.bridge.subscribe_events();
             loop {
                 match rx.recv().await {
                     Ok(event) => yield event,
@@ -219,12 +224,12 @@ impl Server for Daemon {
 
     async fn reply_to_ask(&self, session: u64, content: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
-        if let Some(tx) = rt.hook.pending_asks().lock().await.remove(&session) {
+        if let Some(tx) = rt.hook.bridge.pending_asks.lock().await.remove(&session) {
             let _ = tx.send(content);
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        if let Some(tx) = rt.hook.pending_asks().lock().await.remove(&session) {
+        if let Some(tx) = rt.hook.bridge.pending_asks.lock().await.remove(&session) {
             let _ = tx.send(content);
             return Ok(());
         }
