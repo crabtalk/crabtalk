@@ -1,4 +1,4 @@
-# Architecture
+# Contributing
 
 Crabtalk is a workspace of crates and apps. The daemon is the product — everything
 else either powers it or connects to it.
@@ -93,21 +93,5 @@ Client (CLI/Telegram/etc) → UDS/TCP → Daemon event loop
 
 ## Features
 
-What the system can do today. Each feature is documented (or will be) as an
-[RFC](rfcs/README.md).
-
-| Feature | Use case | Crate | RFC |
-|---------|----------|-------|-----|
-| Compact session | Clients implement custom @-mention logic with context handoff | core | [0001](rfcs/0001-compact-session.md) |
-| Agent scoping | Restrict tools, skills, MCPs, and members per agent | runtime | — |
-| Skill system | Slash-command extensibility, discoverable at runtime | runtime | — |
-| MCP handler | External tool server integration (Model Context Protocol) | runtime | — |
-| Memory | Persistent recall/remember across sessions | runtime | — |
-| Agent delegation | Multi-agent task dispatch with scope enforcement | runtime | — |
-| RuntimeBridge | Embed runtime as a library without daemon infrastructure | runtime | — |
-| Hot reload | Rebuild runtime from config without dropping sessions | daemon | — |
-| Cron scheduling | Recurring skill invocation with quiet hours, persistence | daemon | — |
-| Event broadcasting | Stream agent events to subscribers (console, adapters) | daemon | — |
-| Protobuf protocol | Typed client-server messages over UDS/TCP | core + transport | — |
-| Gateway client | Platform adapters connect to daemon via DaemonClient | gateway | — |
-| Hub | Package management: install/uninstall skills and agents | apps/hub | — |
+Features and their design rationale are documented as RFCs in the
+[development book](docs/).
