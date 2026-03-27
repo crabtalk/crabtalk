@@ -4,8 +4,9 @@ use anyhow::Result;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::path::Path;
 #[cfg(unix)]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use transport::tcp::TcpConnection;
 #[cfg(unix)]
 use transport::uds::{ClientConfig, Connection, CrabtalkClient};
