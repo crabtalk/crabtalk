@@ -27,7 +27,7 @@
   <Actions Context="Author">
     <Exec>
       <Command>{binary}</Command>
-      <Arguments>run -v</Arguments>
+      <Arguments>daemon run -v</Arguments>
       <WorkingDirectory>{config_dir}</WorkingDirectory>
     </Exec>
   </Actions>

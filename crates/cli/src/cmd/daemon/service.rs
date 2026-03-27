@@ -8,6 +8,8 @@ use wcore::paths::{CONFIG_DIR, LOGS_DIR};
 const LAUNCHD_TEMPLATE: &str = include_str!("launchd.plist");
 #[cfg(target_os = "linux")]
 const SYSTEMD_TEMPLATE: &str = include_str!("systemd.service");
+#[cfg(target_os = "windows")]
+const SCHTASKS_TEMPLATE: &str = include_str!("schtasks.xml");
 
 const LABEL: &str = "ai.crabtalk.crabtalk";
 
@@ -71,12 +73,28 @@ pub fn uninstall() -> Result<()> {
     crabtalk_command::uninstall(LABEL)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub fn install(_verbose: u8, _force: bool) -> Result<()> {
-    anyhow::bail!("daemon start is only supported on macOS and Linux")
+#[cfg(target_os = "windows")]
+pub fn install(verbose: u8, force: bool) -> Result<()> {
+    if !force && crabtalk_command::is_installed(LABEL) {
+        println!("daemon is already running");
+        return Ok(());
+    }
+    ensure_providers()?;
+    let rendered = render_daemon_template(SCHTASKS_TEMPLATE, verbose)?;
+    crabtalk_command::install(&rendered, LABEL)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(target_os = "windows")]
 pub fn uninstall() -> Result<()> {
-    anyhow::bail!("daemon stop is only supported on macOS and Linux")
+    crabtalk_command::uninstall(LABEL)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+pub fn install(_verbose: u8, _force: bool) -> Result<()> {
+    anyhow::bail!("daemon start is not supported on this platform")
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+pub fn uninstall() -> Result<()> {
+    anyhow::bail!("daemon stop is not supported on this platform")
 }
