@@ -14,3 +14,4 @@
 - [0075 - Hook](rfcs/0075-hook.md)
 - [0078 - Compact Session](rfcs/0078-compact-session.md)
 - [0080 - Cron](rfcs/0080-cron.md)
+- [0082 - Scoping](rfcs/0082-scoping.md)
