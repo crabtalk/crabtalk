@@ -7,10 +7,10 @@ use wcore::paths::{CONFIG_DIR, LOGS_DIR, RUN_DIR};
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
-#[cfg(target_os = "windows")]
-mod windows;
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 mod unknown;
+#[cfg(target_os = "windows")]
+mod windows;
 
 // ── Low-level install/uninstall ─────────────────────────────────────
 
