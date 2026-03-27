@@ -173,16 +173,23 @@ determine_install_dir() {
         INSTALL_DIR="$CRABTALK_INSTALL_DIR"
         return
     fi
-    if [ -w "/usr/local/bin" ]; then
-        INSTALL_DIR="/usr/local/bin"
-    else
-        INSTALL_DIR="${HOME}/.local/bin"
-    fi
+    case "$OS" in
+        windows)
+            INSTALL_DIR="${LOCALAPPDATA:-$HOME/AppData/Local}/crabtalk/bin"
+            ;;
+        *)
+            if [ -w "/usr/local/bin" ]; then
+                INSTALL_DIR="/usr/local/bin"
+            else
+                INSTALL_DIR="${HOME}/.local/bin"
+            fi
+            ;;
+    esac
 }
 
 has_prebuilt() {
     case "${OS}-${ARCH}" in
-        macos-arm64 | macos-amd64 | linux-amd64 | linux-arm64) return 0 ;;
+        macos-arm64 | macos-amd64 | linux-amd64 | linux-arm64 | windows-amd64) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -449,6 +456,12 @@ setup_shell_profile() {
 install_binary() {
     TMPDIR_PATH="$(mktemp -d)"
 
+    # Windows binaries have .exe extension.
+    _ext=""
+    if [ "$OS" = "windows" ]; then
+        _ext=".exe"
+    fi
+
     _tarball="${BINARY_NAME}-${VERSION}-${OS}-${ARCH}.tar.gz"
     _url="https://github.com/${REPO}/releases/download/${VERSION}/${_tarball}"
 
@@ -458,24 +471,29 @@ install_binary() {
     info "extracting..."
     tar -xzf "${TMPDIR_PATH}/${_tarball}" -C "${TMPDIR_PATH}"
 
-    if [ ! -f "${TMPDIR_PATH}/${BINARY_NAME}" ]; then
-        err "expected binary '${BINARY_NAME}' not found in tarball"
+    if [ ! -f "${TMPDIR_PATH}/${BINARY_NAME}${_ext}" ]; then
+        err "expected binary '${BINARY_NAME}${_ext}' not found in tarball"
     fi
 
     mkdir -p "$INSTALL_DIR"
-    cp "${TMPDIR_PATH}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-    chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+    cp "${TMPDIR_PATH}/${BINARY_NAME}${_ext}" "${INSTALL_DIR}/${BINARY_NAME}${_ext}"
+    chmod +x "${INSTALL_DIR}/${BINARY_NAME}${_ext}" 2>/dev/null || true
 
-    info "installed ${BINARY_NAME} to ${INSTALL_DIR}/${BINARY_NAME}"
+    info "installed ${BINARY_NAME} to ${INSTALL_DIR}/${BINARY_NAME}${_ext}"
     rm -rf "$TMPDIR_PATH"
     TMPDIR_PATH=""
 }
 
 post_install() {
     # Find the installed binary.
+    _ext=""
+    if [ "$OS" = "windows" ]; then
+        _ext=".exe"
+    fi
+
     BIN_PATH=""
-    if [ -n "${INSTALL_DIR:-}" ] && [ -x "${INSTALL_DIR}/${BINARY_NAME}" ]; then
-        BIN_PATH="${INSTALL_DIR}/${BINARY_NAME}"
+    if [ -n "${INSTALL_DIR:-}" ] && [ -x "${INSTALL_DIR}/${BINARY_NAME}${_ext}" ]; then
+        BIN_PATH="${INSTALL_DIR}/${BINARY_NAME}${_ext}"
     elif check_cmd "$BINARY_NAME"; then
         BIN_PATH="$(command -v "$BINARY_NAME")"
     fi
