@@ -22,8 +22,8 @@ jobs:
       - uses: taiki-e/install-action@sccache
       - uses: taiki-e/install-action@nextest
 
-      # - name: Run Tests
-      #   run: cargo nextest run --workspace --no-fail-fast --release
+      - name: Run Tests
+        run: cargo nextest run --workspace --no-fail-fast
 
   check:
     name: Check

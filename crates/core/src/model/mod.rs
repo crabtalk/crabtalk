@@ -21,6 +21,9 @@ mod response;
 mod stream;
 mod tool;
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_model;
+
 /// Unified LLM provider trait.
 ///
 /// Abstracts any LLM provider — single-backend (Claude, GPT) or

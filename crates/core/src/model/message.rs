@@ -12,19 +12,19 @@ pub struct Message {
     pub role: Role,
 
     /// The content of the message
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub content: String,
 
     /// The reasoning content
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub reasoning_content: String,
 
     /// The tool call id
-    #[serde(skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub tool_call_id: String,
 
     /// The tool calls
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_calls: Vec<ToolCall>,
 
     /// The sender identity (runtime-only, never serialized to providers).
