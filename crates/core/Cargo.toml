@@ -33,6 +33,7 @@ toml.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+crabtalk-core = { path = ".", features = ["test-utils"] }
 serde_json.workspace = true
 tempfile = "3"
 
