@@ -5,7 +5,7 @@ use crate::{
     attachment_summary, parse_command,
 };
 use gateway::config::TelegramConfig;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use teloxide::prelude::*;
 use teloxide::types::{ChatAction, InlineKeyboardButton, InlineKeyboardMarkup};
 use tokio::sync::mpsc;
@@ -14,8 +14,8 @@ use wcore::protocol::message::{
 };
 
 /// Run the Telegram gateway service.
-pub async fn run(daemon_socket: &str, config: &TelegramConfig) -> anyhow::Result<()> {
-    let client = Arc::new(DaemonClient::new(Path::new(daemon_socket)));
+pub async fn run(daemon_client: DaemonClient, config: &TelegramConfig) -> anyhow::Result<()> {
+    let client = Arc::new(daemon_client);
 
     let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
     let default_agent = crate::resolve_default_agent(&agents_dir);

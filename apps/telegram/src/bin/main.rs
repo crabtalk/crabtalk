@@ -14,10 +14,10 @@ struct GatewayTelegram;
 
 impl GatewayTelegram {
     async fn run(&self) -> anyhow::Result<()> {
-        let socket = wcore::paths::SOCKET_PATH.clone();
+        let client = gateway::DaemonClient::platform_default()?;
         let config_path = config_path();
         let config = TelegramConfig::load(&config_path)?;
-        crabtalk_telegram::serve::run(&socket.to_string_lossy(), &config).await
+        crabtalk_telegram::serve::run(client, &config).await
     }
 }
 

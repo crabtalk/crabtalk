@@ -338,8 +338,7 @@ async fn run_event_loop(
                                             // Temporarily leave fullscreen for console.
                                             crate::tui::teardown(terminal)?;
                                             let console = crate::cmd::console::Console;
-                                            let socket_path = wcore::paths::SOCKET_PATH.to_path_buf();
-                                            if let Ok(runner) = Runner::connect(&socket_path).await
+                                            if let Ok(runner) = crate::cmd::connect_default().await
                                                 && let Ok(Some(path)) = console.run(runner).await
                                             {
                                                 // Load title from the resumed session.

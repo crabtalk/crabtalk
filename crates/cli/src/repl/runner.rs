@@ -4,8 +4,10 @@ use anyhow::Result;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use std::net::{Ipv4Addr, SocketAddr};
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 use transport::tcp::TcpConnection;
+#[cfg(unix)]
 use transport::uds::{ClientConfig, Connection, CrabtalkClient};
 use wcore::protocol::{
     api::Client,
@@ -37,6 +39,7 @@ pub enum OutputChunk {
 
 /// Transport-agnostic connection to the crabtalk daemon.
 enum Transport {
+    #[cfg(unix)]
     Uds(Connection),
     Tcp(TcpConnection),
 }
@@ -45,6 +48,7 @@ enum Transport {
 macro_rules! dispatch {
     ($self:expr, |$c:ident| $body:expr) => {
         match $self {
+            #[cfg(unix)]
             Transport::Uds($c) => $body,
             Transport::Tcp($c) => $body,
         }
@@ -75,6 +79,7 @@ impl Transport {
 /// How to reconnect to the daemon (for sending ReplyToAsk on a separate connection).
 #[derive(Clone)]
 pub enum ConnectionInfo {
+    #[cfg(unix)]
     Uds(PathBuf),
     Tcp(u16),
 }
@@ -87,6 +92,7 @@ pub struct Runner {
 
 impl Runner {
     /// Connect to crabtalk daemon via Unix domain socket.
+    #[cfg(unix)]
     pub async fn connect(socket_path: &Path) -> Result<Self> {
         let config = ClientConfig {
             socket_path: socket_path.to_path_buf(),
@@ -112,6 +118,7 @@ impl Runner {
     /// Create a new connection from existing connection info.
     pub async fn connect_from(info: &ConnectionInfo) -> Result<Self> {
         match info {
+            #[cfg(unix)]
             ConnectionInfo::Uds(path) => Self::connect(path).await,
             ConnectionInfo::Tcp(port) => Self::connect_tcp(*port).await,
         }
@@ -316,6 +323,7 @@ impl Runner {
 pub async fn send_reply(conn_info: &ConnectionInfo, session: u64, content: String) -> Result<()> {
     let msg = ClientMessage::from(ReplyToAsk { session, content });
     match conn_info {
+        #[cfg(unix)]
         ConnectionInfo::Uds(path) => {
             let client = CrabtalkClient::new(ClientConfig {
                 socket_path: path.clone(),

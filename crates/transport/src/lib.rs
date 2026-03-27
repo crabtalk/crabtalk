@@ -4,4 +4,5 @@
 //! This crate provides UDS and TCP transport layers.
 
 pub mod tcp;
+#[cfg(unix)]
 pub mod uds;

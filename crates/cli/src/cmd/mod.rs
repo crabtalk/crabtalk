@@ -4,7 +4,6 @@ use crate::repl::runner::Runner;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::ffi::OsString;
-use wcore::paths::TCP_PORT_FILE;
 
 pub mod attach;
 pub mod auth;
@@ -44,18 +43,17 @@ impl Cli {
 
     /// Parse and dispatch the CLI command.
     pub async fn run(self) -> Result<()> {
-        let socket_path = wcore::paths::SOCKET_PATH.clone();
         match self.command {
             Command::Auth(cmd) => cmd.run().await,
             Command::Attach(cmd) => {
-                let runner = connect(cmd.tcp, &socket_path).await?;
+                let runner = connect_default_or_tcp(cmd.tcp).await?;
                 cmd.run(runner).await
             }
             Command::Console(cmd) => {
-                let runner = connect_uds(&socket_path).await?;
+                let runner = connect_default().await?;
                 let selected = cmd.run(runner).await?;
                 if let Some(path) = selected {
-                    let runner = connect_uds(&socket_path).await?;
+                    let runner = connect_default().await?;
                     let mut repl = crate::repl::ChatRepl::new(runner, "crab".into())?;
                     repl.resume(path).await
                 } else {
@@ -63,10 +61,13 @@ impl Cli {
                 }
             }
             Command::Hub(cmd) => {
-                let mut runner = connect_uds(&socket_path).await?;
+                let mut runner = connect_default().await?;
                 cmd.run(&mut runner).await
             }
-            Command::Daemon(cmd) => cmd.run(&socket_path).await,
+            #[cfg(unix)]
+            Command::Daemon(cmd) => cmd.run(&wcore::paths::SOCKET_PATH).await,
+            #[cfg(not(unix))]
+            Command::Daemon(cmd) => cmd.run().await,
             Command::Ls => {
                 let run_dir = &*wcore::paths::RUN_DIR;
                 let mut found = false;
@@ -122,38 +123,47 @@ pub enum Command {
     External(Vec<OsString>),
 }
 
-/// Connect to crabtalk daemon via TCP or UDS.
-async fn connect(use_tcp: bool, socket_path: &std::path::Path) -> Result<Runner> {
+/// Connect with the platform default transport, or TCP if explicitly requested.
+async fn connect_default_or_tcp(use_tcp: bool) -> Result<Runner> {
     if use_tcp {
         connect_tcp().await
     } else {
-        connect_uds(socket_path).await
+        connect_default().await
+    }
+}
+
+/// Connect using the platform default transport: UDS on Unix, TCP on Windows.
+pub(crate) async fn connect_default() -> Result<Runner> {
+    #[cfg(unix)]
+    {
+        let socket_path = &*wcore::paths::SOCKET_PATH;
+        Runner::connect(socket_path).await.with_context(|| {
+            format!(
+                "failed to connect to crabtalk daemon at {}. Is crabtalk daemon running?",
+                socket_path.display()
+            )
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        connect_tcp().await
     }
 }
 
 /// Connect to crabtalk daemon via TCP, reading the port from the port file.
-async fn connect_tcp() -> Result<Runner> {
-    let port_str = std::fs::read_to_string(&*TCP_PORT_FILE).with_context(|| {
+pub(crate) async fn connect_tcp() -> Result<Runner> {
+    let tcp_port_file = &*wcore::paths::TCP_PORT_FILE;
+    let port_str = std::fs::read_to_string(tcp_port_file).with_context(|| {
         format!(
             "failed to read TCP port file at {}. Is crabtalk daemon running?",
-            TCP_PORT_FILE.display()
+            tcp_port_file.display()
         )
     })?;
     let port: u16 = port_str
         .trim()
         .parse()
-        .with_context(|| format!("invalid port in {}", TCP_PORT_FILE.display()))?;
+        .with_context(|| format!("invalid port in {}", tcp_port_file.display()))?;
     Runner::connect_tcp(port).await.with_context(|| {
         format!("failed to connect to crabtalk daemon via TCP on port {port}. Is crabtalk daemon running?")
-    })
-}
-
-/// Connect to crabtalk daemon via Unix domain socket.
-async fn connect_uds(socket_path: &std::path::Path) -> Result<Runner> {
-    Runner::connect(socket_path).await.with_context(|| {
-        format!(
-            "failed to connect to crabtalk daemon at {}. Is crabtalk daemon running?",
-            socket_path.display()
-        )
     })
 }

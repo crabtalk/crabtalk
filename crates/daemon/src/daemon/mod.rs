@@ -10,7 +10,6 @@ use crate::{
     daemon::event::{DaemonEvent, DaemonEventSender},
     hook::DaemonHook,
 };
-use ::transport::uds::accept_loop;
 use anyhow::Result;
 use model::ProviderRegistry;
 use std::{
@@ -99,8 +98,9 @@ pub struct DaemonHandle {
     /// Broadcast shutdown — call `.subscribe()` for transport shutdown,
     /// or use [`DaemonHandle::shutdown`] to trigger.
     pub shutdown_tx: broadcast::Sender<()>,
-    #[allow(unused)]
-    daemon: Daemon,
+    /// The shared daemon state — exposed for backend/product servers that
+    /// layer additional APIs on top.
+    pub daemon: Daemon,
     event_loop_join: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -127,6 +127,7 @@ impl DaemonHandle {
 // ── Transport setup helpers ──────────────────────────────────────────
 
 /// Bind the Unix domain socket and spawn the accept loop.
+#[cfg(unix)]
 pub fn setup_socket(
     shutdown_tx: &broadcast::Sender<()>,
     event_tx: &DaemonEventSender,
@@ -144,7 +145,7 @@ pub fn setup_socket(
 
     let socket_shutdown = bridge_shutdown(shutdown_tx.subscribe());
     let socket_tx = event_tx.clone();
-    let join = tokio::spawn(accept_loop(
+    let join = tokio::spawn(transport::uds::accept_loop(
         listener,
         move |msg, reply| {
             let _ = socket_tx.send(DaemonEvent::Message { msg, reply });

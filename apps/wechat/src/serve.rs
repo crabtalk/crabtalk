@@ -4,15 +4,15 @@ use crate::{
     ContextTokens, DaemonClient, GatewayMessage, StreamAccumulator, StreamResult, UserIdMap,
 };
 use gateway::config::WechatConfig;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
 use wcore::protocol::message::{
     ClientMessage, ReplyToAsk, ServerMessage, StreamMsg, server_message,
 };
 
 /// Run the WeChat gateway service.
-pub async fn run(daemon_socket: &str, config: &WechatConfig) -> anyhow::Result<()> {
-    let client = Arc::new(DaemonClient::new(Path::new(daemon_socket)));
+pub async fn run(daemon_client: DaemonClient, config: &WechatConfig) -> anyhow::Result<()> {
+    let client = Arc::new(daemon_client);
 
     let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
     let default_agent = crate::resolve_default_agent(&agents_dir);

@@ -17,6 +17,7 @@ pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 pub static RUN_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("run"));
 
 /// Pinned socket path (`~/.crabtalk/run/crabtalk.sock`).
+#[cfg(unix)]
 pub static SOCKET_PATH: LazyLock<PathBuf> = LazyLock::new(|| RUN_DIR.join("crabtalk.sock"));
 
 /// TCP port file (`~/.crabtalk/run/crabtalk.port`). Contains the port number as text.

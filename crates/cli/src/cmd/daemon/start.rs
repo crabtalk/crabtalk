@@ -15,8 +15,10 @@ pub async fn start() -> Result<()> {
 
     let handle = daemon::Daemon::start(&CONFIG_DIR).await?;
 
-    // UDS transport.
+    // UDS transport (Unix only).
+    #[cfg(unix)]
     let (socket_path, socket_join) = daemon::setup_socket(&handle.shutdown_tx, &handle.event_tx)?;
+    #[cfg(unix)]
     tracing::info!("crabtalk daemon listening on {}", socket_path.display());
 
     // TCP transport.
@@ -31,6 +33,7 @@ pub async fn start() -> Result<()> {
 
     let grace = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         handle.shutdown().await?;
+        #[cfg(unix)]
         socket_join.await?;
         tcp_join.await?;
         anyhow::Ok(())
@@ -38,6 +41,7 @@ pub async fn start() -> Result<()> {
     if grace.await.is_err() {
         tracing::warn!("graceful shutdown timed out, forcing exit");
     }
+    #[cfg(unix)]
     let _ = std::fs::remove_file(socket_path);
     let _ = std::fs::remove_file(&*TCP_PORT_FILE);
     tracing::info!("crabtalk daemon shut down");
