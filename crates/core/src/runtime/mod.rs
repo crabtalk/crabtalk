@@ -218,6 +218,22 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         self.active_sessions.read().await.len()
     }
 
+    /// Compact a session's history into a concise summary.
+    ///
+    /// Clones history to release the lock before the LLM call.
+    /// Returns `None` if session/agent not found, history empty, or LLM fails.
+    pub async fn compact_session(&self, session_id: u64) -> Option<String> {
+        let (agent_name, history) = {
+            let session_mutex = self.sessions.read().await.get(&session_id)?.clone();
+            let session = session_mutex.lock().await;
+            if session.history.is_empty() {
+                return None;
+            }
+            (session.agent.clone(), session.history.clone())
+        };
+        self.agents.get(&agent_name)?.compact(&history).await
+    }
+
     /// Move all sessions from this runtime into `dest`.
     ///
     /// Used during daemon reload to preserve gateway sessions. The `dest`

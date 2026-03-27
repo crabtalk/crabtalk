@@ -10,7 +10,7 @@ impl<M: Model> super::Agent<M> {
     /// Builds the base compact prompt, lets the `compact_hook` (if any) enrich
     /// it, then sends the history with the enriched prompt as system message.
     /// Returns the summary text, or `None` if the model produces no content.
-    pub(crate) async fn compact(&self, history: &[Message]) -> Option<String> {
+    pub async fn compact(&self, history: &[Message]) -> Option<String> {
         let model_name = self
             .config
             .model

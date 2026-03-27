@@ -22,6 +22,7 @@ message ClientMessage {
     CreateCronMsg create_cron = 12;
     DeleteCronMsg delete_cron = 13;
     ListCronsMsg list_crons = 14;
+    CompactMsg compact = 15;
   }
 }
 
@@ -76,6 +77,10 @@ message DeleteCronMsg {
 
 message ListCronsMsg {}
 
+message CompactMsg {
+  uint64 session = 1;
+}
+
 // ── Server Messages ──────────────────────────────────────────────
 
 message ServerMessage {
@@ -90,6 +95,7 @@ message ServerMessage {
     DaemonStats stats = 8;
     CronInfo cron_info = 9;
     CronList cron_list = 10;
+    CompactResponse compact = 11;
   }
 }
 
@@ -100,6 +106,10 @@ message DaemonStats {
 }
 
 message Pong {}
+
+message CompactResponse {
+  string summary = 1;
+}
 
 message SendResponse {
   string agent = 1;

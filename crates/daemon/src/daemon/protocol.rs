@@ -157,6 +157,13 @@ impl Server for Daemon {
         }
     }
 
+    async fn compact_session(&self, session: u64) -> Result<String> {
+        let rt = self.runtime.read().await.clone();
+        rt.compact_session(session)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("compact failed for session {session}"))
+    }
+
     async fn ping(&self) -> Result<()> {
         Ok(())
     }

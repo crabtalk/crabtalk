@@ -1,9 +1,9 @@
 //! Server trait — one async method per protocol operation.
 
 use crate::protocol::message::{
-    AgentEventMsg, ClientMessage, ConfigMsg, CreateCronMsg, CronInfo, CronList, DaemonStats,
-    ErrorMsg, Pong, SendMsg, SendResponse, ServerMessage, SessionInfo, SessionList, StreamEvent,
-    StreamMsg, client_message, server_message,
+    AgentEventMsg, ClientMessage, CompactResponse, ConfigMsg, CreateCronMsg, CronInfo, CronList,
+    DaemonStats, ErrorMsg, Pong, SendMsg, SendResponse, ServerMessage, SessionInfo, SessionList,
+    StreamEvent, StreamMsg, client_message, server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -82,6 +82,12 @@ pub trait Server: Sync {
 
     /// Handle `ListCrons` — return all cron entries.
     fn list_crons(&self) -> impl std::future::Future<Output = Result<CronList>> + Send;
+
+    /// Handle `Compact` — compact a session's history into a summary.
+    fn compact_session(
+        &self,
+        session: u64,
+    ) -> impl std::future::Future<Output = Result<String>> + Send;
 
     /// Handle `ReplyToAsk` — deliver a user reply to a pending `ask_user` tool call.
     fn reply_to_ask(
@@ -196,6 +202,14 @@ pub trait Server: Sync {
                     yield match self.list_crons().await {
                         Ok(list) => ServerMessage {
                             msg: Some(server_message::Msg::CronList(list)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::Compact(req) => {
+                    yield match self.compact_session(req.session).await {
+                        Ok(summary) => ServerMessage {
+                            msg: Some(server_message::Msg::Compact(CompactResponse { summary })),
                         },
                         Err(e) => server_error(500, e.to_string()),
                     };
