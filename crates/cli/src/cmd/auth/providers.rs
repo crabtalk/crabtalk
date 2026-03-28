@@ -276,6 +276,8 @@ fn handle_preset(key: crossterm::event::KeyEvent, state: &mut AuthState) {
                 state.edit_buf.clear();
                 state.cursor = 0;
                 state.focus = Focus::NamingProvider;
+            } else if state.providers.iter().any(|p| p.name == preset.name) {
+                state.status = format!("Provider '{}' already exists", preset.name);
             } else {
                 state.add_preset(preset, None);
                 state.status = format!("Added provider: {}", preset.name);
