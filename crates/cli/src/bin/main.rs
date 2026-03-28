@@ -6,6 +6,10 @@ use crabtalk::Cli;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("failed to install rustls crypto provider");
+
     let cli = Cli::parse();
 
     let level = match cli.log_filter() {
