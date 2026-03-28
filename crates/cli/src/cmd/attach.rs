@@ -67,22 +67,25 @@ pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
         None
     };
 
-    // 3. Base URL — fixed (shown read-only), prompted, or silent default.
+    // 3. Base URL — fixed (read-only) or editable (with default if available).
     let base_url = if !preset.fixed_base_url.is_empty() {
         println!("  Base URL: {} (fixed)", preset.fixed_base_url);
         preset.base_url.to_string()
-    } else if preset.base_url.is_empty() {
-        // No default — must prompt (azure, custom).
-        let url: String = Input::with_theme(&theme)
-            .with_prompt("Base URL")
-            .interact_text()?;
+    } else {
+        let url: String = if !preset.base_url.is_empty() {
+            Input::with_theme(&theme)
+                .with_prompt("Base URL")
+                .default(preset.base_url.to_string())
+                .interact_text()?
+        } else {
+            Input::with_theme(&theme)
+                .with_prompt("Base URL")
+                .interact_text()?
+        };
         if url.trim().is_empty() {
             anyhow::bail!("base URL is required for {}", provider_name);
         }
         url
-    } else {
-        // Has a sensible default (openai, ollama) — use it silently.
-        preset.base_url.to_string()
     };
 
     let model: String = if let Some(default) = default_model_for(preset.name) {
