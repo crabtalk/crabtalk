@@ -4,9 +4,6 @@ authors = ["clearloop"]
 language = "en"
 src = "src"
 
-[build]
-build-dir = "../target/book"
-
 [output.html]
 git-repository-url = "https://github.com/crabtalk/crabtalk"
 edit-url-template = "https://github.com/crabtalk/crabtalk/edit/main/docs/src/{path}"
