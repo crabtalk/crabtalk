@@ -216,13 +216,8 @@ impl OutlookServer {
 #[tool_handler]
 impl ServerHandler for OutlookServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            instructions: Some(
-                "Outlook MCP server for email and calendar automation via Microsoft Graph API"
-                    .into(),
-            ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
+            "Outlook MCP server for email and calendar automation via Microsoft Graph API",
+        )
     }
 }

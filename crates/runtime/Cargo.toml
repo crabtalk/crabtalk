@@ -15,16 +15,14 @@ model.workspace = true
 wcore.workspace = true
 
 # crates.io
-async-trait.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
 chrono.workspace = true
-rmcp = { workspace = true, features = ["transport-streamable-http-client-reqwest"] }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yml.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["process"] }
 tracing.workspace = true
 
 [dev-dependencies]

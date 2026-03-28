@@ -16,53 +16,16 @@ use mcps::{handle_mcps_key, render_mcps};
 use providers::{handle_providers_key, render_providers};
 
 mod mcps;
-pub(crate) mod oauth;
 mod providers;
 
 /// Configure providers and MCP servers interactively.
 #[derive(clap::Args, Debug)]
-pub struct Auth {
-    /// Auth subcommand. Opens TUI when omitted.
-    #[command(subcommand)]
-    pub command: Option<AuthCommand>,
-}
-
-/// Auth subcommands (OAuth flows for MCP servers).
-#[derive(clap::Subcommand, Debug)]
-pub enum AuthCommand {
-    /// Authenticate with an MCP server via OAuth.
-    Login(AuthLogin),
-    /// Remove stored OAuth tokens for an MCP server.
-    Logout(AuthLogout),
-}
-
-/// Login arguments.
-#[derive(clap::Args, Debug)]
-pub struct AuthLogin {
-    /// MCP server name (as defined in manifest).
-    pub name: String,
-}
-
-/// Logout arguments.
-#[derive(clap::Args, Debug)]
-pub struct AuthLogout {
-    /// MCP server name.
-    pub name: String,
-}
+pub struct Auth {}
 
 impl Auth {
     pub async fn run(self) -> Result<()> {
-        match self.command {
-            None => {
-                let state = tui::run_app_with_state(AuthState::load, render, handle_key)?;
-                if let Some(name) = state.pending_login {
-                    oauth::login(&name).await?;
-                }
-                Ok(())
-            }
-            Some(AuthCommand::Login(cmd)) => oauth::login(&cmd.name).await,
-            Some(AuthCommand::Logout(cmd)) => oauth::logout(&cmd.name),
-        }
+        tui::run_app(AuthState::load, render, handle_key)?;
+        Ok(())
     }
 }
 
@@ -237,8 +200,6 @@ pub(crate) struct AuthState {
     pub(crate) mcp_env_selected: usize,
     pub(crate) mcp_add_step: usize, // 0=name, 1=transport, 2=command/url, 3=args
     pub(crate) mcp_add_http: bool,  // true when adding an HTTP MCP
-    // OAuth.
-    pub(crate) pending_login: Option<String>,
     // Shared.
     pub(crate) status: String,
 }
@@ -420,7 +381,6 @@ impl AuthState {
             mcp_env_selected: 0,
             mcp_add_step: 0,
             mcp_add_http: false,
-            pending_login: None,
             status: String::from("Ready"),
         })
     }
@@ -766,8 +726,6 @@ fn render_status(frame: &mut Frame, state: &AuthState, area: Rect) {
             Span::raw("New  "),
             Span::styled("Enter ", Style::default().fg(Color::Cyan)),
             Span::raw("Edit  "),
-            Span::styled("o ", Style::default().fg(Color::Cyan)),
-            Span::raw("Login  "),
             Span::styled("d ", Style::default().fg(Color::Cyan)),
             Span::raw("Delete  "),
             Span::styled("Ctrl+S ", Style::default().fg(Color::Cyan)),

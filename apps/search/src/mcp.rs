@@ -71,12 +71,7 @@ impl SearchServer {
 #[tool_handler]
 impl ServerHandler for SearchServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            instructions: Some(
-                "Meta search engine with aggregated results from multiple backends".into(),
-            ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_instructions("Meta search engine with aggregated results from multiple backends")
     }
 }

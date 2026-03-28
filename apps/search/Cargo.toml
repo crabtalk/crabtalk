@@ -39,5 +39,9 @@ percent-encoding.workspace = true
 anyhow = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
 crabtalk-command = { workspace = true, features = ["mcp"], optional = true }
-rmcp = { workspace = true, optional = true }
+rmcp = { workspace = true, optional = true, features = [
+    "server",
+    "macros",
+    "transport-streamable-http-server",
+] }
 schemars = { workspace = true, optional = true }

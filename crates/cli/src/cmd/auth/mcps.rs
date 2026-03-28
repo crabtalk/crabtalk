@@ -67,16 +67,6 @@ pub(crate) fn handle_mcps_key(
                     state.cursor = 0;
                     state.focus = Focus::AddMcp;
                 }
-                KeyCode::Char('o') => {
-                    if let Some(mcp) = state.mcps.get(state.mcp_selected)
-                        && mcp.url.is_some()
-                    {
-                        state.pending_login = Some(mcp.name.clone());
-                        return Ok(Some(Ok(())));
-                    } else {
-                        state.status = String::from("OAuth only applies to HTTP MCPs");
-                    }
-                }
                 KeyCode::Char('d') | KeyCode::Delete => {
                     if selected_is_hub(state) {
                         state.status = String::from("Use `hub uninstall` to remove");
@@ -463,7 +453,7 @@ fn render_mcp_detail(frame: &mut Frame, state: &AuthState, area: Rect) {
         let (auth_text, auth_color) = if has_token(&mcp.name) {
             ("\u{2713} logged in", Color::Green)
         } else if mcp.auth {
-            ("! not authenticated (press o)", Color::Red)
+            ("! not authenticated", Color::Red)
         } else {
             ("none", Color::DarkGray)
         };

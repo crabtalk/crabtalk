@@ -1,28 +1,19 @@
 //! Crabtalk MCP bridge — connects to MCP servers and dispatches tool calls.
 
-use crate::mcp::auth::FileCredentialStore;
+use crate::mcp::client::{self, McpPeer};
 use anyhow::Result;
-use rmcp::{
-    ServiceExt,
-    model::{CallToolRequestParams, RawContent},
-    service::{RoleClient, RunningService},
-    transport::{
-        AuthClient, AuthorizationManager, StreamableHttpClientTransport, TokioChildProcess,
-        streamable_http_client::StreamableHttpClientTransportConfig,
-    },
-};
 use std::collections::BTreeMap;
 use tokio::sync::Mutex;
-use wcore::{model::Tool, paths::TOKENS_DIR};
+use wcore::model::Tool;
 
 /// A connected MCP server peer with its tool names.
 struct ConnectedPeer {
     name: String,
-    peer: RunningService<RoleClient, ()>,
+    peer: McpPeer,
     tools: Vec<String>,
 }
 
-/// Bridge to one or more MCP servers via the rmcp SDK.
+/// Bridge to one or more MCP servers.
 pub struct McpBridge {
     peers: Mutex<Vec<ConnectedPeer>>,
     /// Cache of converted tools keyed by name.
@@ -61,62 +52,24 @@ impl McpBridge {
         name: String,
         command: tokio::process::Command,
     ) -> Result<Vec<String>> {
-        let transport = TokioChildProcess::new(command)?;
-        let peer: RunningService<RoleClient, ()> = ().serve(transport).await?;
-
-        let mcp_tools = peer.list_all_tools().await?;
-        let mut tool_names = Vec::with_capacity(mcp_tools.len());
-
-        {
-            let mut cache = self.tool_cache.lock().await;
-            for mcp_tool in &mcp_tools {
-                let ct_tool = self::convert_tool(mcp_tool);
-                if cache.contains_key(&ct_tool.name) {
-                    tracing::warn!(
-                        "MCP tool '{}' from server '{}' conflicts with already-registered tool, skipping",
-                        ct_tool.name,
-                        name
-                    );
-                } else {
-                    tool_names.push(ct_tool.name.to_string());
-                    cache.insert(ct_tool.name.to_string(), ct_tool);
-                }
-            }
-        }
-
-        self.peers.lock().await.push(ConnectedPeer {
-            name,
-            peer,
-            tools: tool_names.clone(),
-        });
-
-        Ok(tool_names)
+        self.register_peer(name, McpPeer::stdio(command)?).await
     }
 
-    /// Connect to a named MCP server via streamable HTTP transport.
+    /// Connect to a named MCP server via HTTP transport.
     pub async fn connect_http_named(&self, name: String, url: &str) -> Result<Vec<String>> {
-        let token_path = TOKENS_DIR.join(format!("{name}.json"));
-        let peer: RunningService<RoleClient, ()> = if token_path.exists() {
-            tracing::info!(server = %name, "using stored OAuth token");
-            let mut manager = AuthorizationManager::new(url).await?;
-            manager.set_credential_store(FileCredentialStore::for_server(&name));
-            manager.initialize_from_store().await?;
-            let auth_client = AuthClient::new(reqwest::Client::default(), manager);
-            let config = StreamableHttpClientTransportConfig::with_uri(url);
-            let transport = StreamableHttpClientTransport::with_client(auth_client, config);
-            ().serve(transport).await?
-        } else {
-            let transport = StreamableHttpClientTransport::from_uri(url);
-            ().serve(transport).await?
-        };
+        self.register_peer(name, McpPeer::http(url)).await
+    }
 
+    /// Initialize a peer, register its tools, and store it.
+    async fn register_peer(&self, name: String, mut peer: McpPeer) -> Result<Vec<String>> {
+        peer.initialize().await?;
         let mcp_tools = peer.list_all_tools().await?;
-        let mut tool_names = Vec::with_capacity(mcp_tools.len());
 
+        let mut tool_names = Vec::with_capacity(mcp_tools.len());
         {
             let mut cache = self.tool_cache.lock().await;
             for mcp_tool in &mcp_tools {
-                let ct_tool = self::convert_tool(mcp_tool);
+                let ct_tool = convert_tool(mcp_tool);
                 if cache.contains_key(&ct_tool.name) {
                     tracing::warn!(
                         "MCP tool '{}' from server '{}' conflicts with already-registered tool, skipping",
@@ -192,9 +145,9 @@ impl McpBridge {
 
     /// Call a tool by name, routing to the correct peer.
     pub async fn call(&self, name: &str, arguments: &str) -> String {
-        let peers = self.peers.lock().await;
+        let mut peers = self.peers.lock().await;
         let connected = peers
-            .iter()
+            .iter_mut()
             .find(|p| p.tools.iter().any(|t| t.as_str() == name));
 
         let Some(connected) = connected else {
@@ -210,19 +163,12 @@ impl McpBridge {
             }
         };
 
-        let params = CallToolRequestParams {
-            meta: None,
-            name: name.to_string().into(),
-            arguments: args,
-            task: None,
-        };
-
-        match connected.peer.call_tool(params).await {
+        match connected.peer.call_tool(name, args).await {
             Ok(result) => {
                 if result.is_error == Some(true) {
-                    format!("mcp tool error: {}", self::extract_text(&result.content))
+                    format!("mcp tool error: {}", extract_text(&result.content))
                 } else {
-                    self::extract_text(&result.content)
+                    extract_text(&result.content)
                 }
             }
             Err(e) => format!("mcp call failed: {e}"),
@@ -230,33 +176,29 @@ impl McpBridge {
     }
 }
 
-/// Convert an rmcp Tool to a crabtalk-core Tool.
-fn convert_tool(mcp_tool: &rmcp::model::Tool) -> Tool {
-    let schema_value =
-        serde_json::to_value(mcp_tool.input_schema.as_ref()).unwrap_or(serde_json::json!({}));
+/// Convert an MCP tool to a crabtalk-core Tool.
+fn convert_tool(mcp_tool: &client::McpTool) -> Tool {
+    let schema_value = mcp_tool
+        .input_schema
+        .clone()
+        .unwrap_or(serde_json::json!({}));
     let parameters: schemars::Schema =
         serde_json::from_value(schema_value).unwrap_or_else(|_| schemars::schema_for!(String));
 
     Tool {
-        name: mcp_tool.name.as_ref().to_owned(),
-        description: mcp_tool
-            .description
-            .as_ref()
-            .map(|d| d.to_string())
-            .unwrap_or_default(),
+        name: mcp_tool.name.clone(),
+        description: mcp_tool.description.clone().unwrap_or_default(),
         parameters,
         strict: false,
     }
 }
 
 /// Extract text content from MCP Content items.
-fn extract_text(content: &[rmcp::model::Content]) -> String {
+fn extract_text(content: &[client::ContentItem]) -> String {
     content
         .iter()
-        .filter_map(|c| match &c.raw {
-            RawContent::Text(t) => Some(t.text.as_str()),
-            _ => None,
-        })
+        .filter(|c| c.content_type == "text")
+        .filter_map(|c| c.text.as_deref())
         .collect::<Vec<_>>()
         .join("\n")
 }
