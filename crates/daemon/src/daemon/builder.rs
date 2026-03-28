@@ -195,11 +195,7 @@ impl Daemon {
         // Built-in crab agent.
         let mut crab_config = config.system.crab.clone();
         crab_config.name = wcore::paths::DEFAULT_AGENT.to_owned();
-        crab_config.system_prompt = runtime
-            .hook
-            .memory()
-            .map(|m| m.build_soul())
-            .unwrap_or_else(|| SYSTEM_AGENT.to_owned());
+        crab_config.system_prompt = SYSTEM_AGENT.to_owned();
         runtime.add_agent(crab_config);
 
         // Sub-agents from manifests.

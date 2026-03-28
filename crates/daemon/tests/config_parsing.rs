@@ -24,7 +24,6 @@ fn system_defaults() {
     assert_eq!(config.system.tasks.viewable_window, 16);
     assert_eq!(config.system.tasks.task_timeout, 300);
     assert_eq!(config.system.memory.recall_limit, 5);
-    assert!(config.system.memory.soul_editable);
 }
 
 #[test]
@@ -36,13 +35,11 @@ task_timeout = 600
 
 [system.memory]
 recall_limit = 10
-soul_editable = false
 "#;
     let config = DaemonConfig::from_toml(toml).unwrap();
     assert_eq!(config.system.tasks.max_concurrent, 8);
     assert_eq!(config.system.tasks.task_timeout, 600);
     assert_eq!(config.system.memory.recall_limit, 10);
-    assert!(!config.system.memory.soul_editable);
 }
 
 #[test]

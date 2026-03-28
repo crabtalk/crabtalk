@@ -24,9 +24,7 @@ pub struct Memory {
     storage: Box<dyn Storage>,
     entries: RwLock<HashMap<String, MemoryEntry>>,
     index: RwLock<String>,
-    soul: RwLock<String>,
     index_path: PathBuf,
-    soul_path: PathBuf,
     entries_dir: PathBuf,
     config: MemoryConfig,
 }
@@ -36,27 +34,14 @@ impl Memory {
     pub fn open(dir: PathBuf, config: MemoryConfig, storage: Box<dyn Storage>) -> Self {
         let entries_dir = dir.join("entries");
         let index_path = dir.join("MEMORY.md");
-        let soul_path = dir
-            .parent()
-            .map(|p| p.join("Crab.md"))
-            .unwrap_or_else(|| dir.join("Crab.md"));
 
         storage.create_dir_all(&entries_dir).ok();
-        if !storage.exists(&soul_path) {
-            storage.write(&soul_path, DEFAULT_SOUL).ok();
-        }
-
-        let soul_content = storage
-            .read(&soul_path)
-            .unwrap_or_else(|_| DEFAULT_SOUL.to_owned());
 
         let mem = Self {
             storage,
             entries: RwLock::new(HashMap::new()),
             index: RwLock::new(String::new()),
-            soul: RwLock::new(soul_content),
             index_path,
-            soul_path,
             entries_dir,
             config,
         };
@@ -160,23 +145,6 @@ impl Memory {
         }
         *self.index.write().unwrap() = content.to_owned();
         "MEMORY.md updated".to_owned()
-    }
-
-    /// Overwrite Crab.md (the soul/identity file). Gated by `soul_editable`.
-    pub fn write_soul(&self, content: &str) -> String {
-        if !self.config.soul_editable {
-            return "soul editing is disabled in config".to_owned();
-        }
-        if let Err(e) = self.storage.write(&self.soul_path, content) {
-            return format!("failed to write Crab.md: {e}");
-        }
-        *self.soul.write().unwrap() = content.to_owned();
-        "Crab.md updated".to_owned()
-    }
-
-    /// Return the soul content for system prompt injection.
-    pub fn build_soul(&self) -> String {
-        self.soul.read().unwrap().clone()
     }
 
     /// Build system prompt block from MEMORY.md content.

@@ -42,15 +42,10 @@ impl Default for TasksConfig {
 pub struct MemoryConfig {
     /// Maximum entries returned by auto-recall (default 5).
     pub recall_limit: usize,
-    /// Whether the agent can edit Crab.md via the soul tool (default true).
-    pub soul_editable: bool,
 }
 
 impl Default for MemoryConfig {
     fn default() -> Self {
-        Self {
-            recall_limit: 5,
-            soul_editable: true,
-        }
+        Self { recall_limit: 5 }
     }
 }
