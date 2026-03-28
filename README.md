@@ -4,8 +4,8 @@
 [![Docs][docs-badge]][docs]
 [![Discord][discord-badge]][discord]
 
-**The composable agent runtime.** Compact daemon core. Memory, channels,
-tools — all hooks. Use what you need, skip what you don't.
+**Agent daemon.** Runs agents, dispatches tools, connects to MCP servers.
+Start it, talk to it, extend it with components on PATH.
 
 ```bash
 curl -fsSL https://crabtalk.ai/install.sh | sh
@@ -27,13 +27,12 @@ Full config reference: [`crates/daemon/config.toml`](crates/daemon/config.toml).
 
 ## How It Works
 
-Crabtalk is a daemon that runs agents and dispatches tools. The daemon
-ships with built-in tools (shell, task delegation, memory), MCP server
-integration, and skills (Markdown prompt files).
+The daemon ships with built-in tools (shell, task delegation, memory),
+MCP server integration, and skills (Markdown prompt files).
 
-Heavier capabilities live outside the daemon as components — independent
-binaries that install as system services and connect via auto-discovery
-(`crabtalk <name>` finds `crabtalk-<name>` on PATH):
+Heavier capabilities live outside the daemon as independent binaries.
+They connect via auto-discovery (`crabtalk <name>` finds
+`crabtalk-<name>` on PATH):
 
 | Component    | What it does                          |
 | ------------ | ------------------------------------- |
@@ -42,8 +41,6 @@ binaries that install as system services and connect via auto-discovery
 | WeChat       | WeChat gateway                        |
 | Outlook      | Outlook MCP server (email + calendar) |
 | Hub          | Package management                    |
-
-The daemon stays small. Components run independently.
 
 ## Learn More
 
