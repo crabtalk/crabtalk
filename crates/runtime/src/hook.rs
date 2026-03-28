@@ -8,7 +8,10 @@
 use crate::{
     bridge::RuntimeBridge, mcp::McpHandler, memory::Memory, os, skill, skill::SkillHandler,
 };
-use std::{collections::BTreeMap, path::{Path, PathBuf}};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 use wcore::{AgentConfig, AgentEvent, Hook, ToolRegistry, model::Message};
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
