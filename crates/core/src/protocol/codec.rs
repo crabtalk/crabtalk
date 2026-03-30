@@ -9,7 +9,7 @@ use std::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Maximum frame size: 16 MiB.
-const MAX_FRAME_SIZE: u32 = 16 * 1024 * 1024;
+pub const MAX_FRAME_SIZE: u32 = 16 * 1024 * 1024;
 
 /// Errors that can occur during frame read/write.
 #[derive(Debug)]

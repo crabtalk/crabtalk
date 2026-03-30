@@ -44,3 +44,13 @@ pub static TOKENS_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("tok
 
 /// Default agent name used when no custom agents are configured.
 pub const DEFAULT_AGENT: &str = "crab";
+
+/// Port file for a named service: `~/.crabtalk/run/{name}.port`
+pub fn service_port_file(name: &str) -> PathBuf {
+    RUN_DIR.join(format!("{name}.port"))
+}
+
+/// Log file for a named service: `~/.crabtalk/logs/{name}.log`
+pub fn service_log_path(name: &str) -> PathBuf {
+    LOGS_DIR.join(format!("{name}.log"))
+}

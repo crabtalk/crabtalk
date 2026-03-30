@@ -1,7 +1,7 @@
 //! Shared system service management (launchd/systemd).
 
 use std::path::Path;
-use wcore::paths::{CONFIG_DIR, LOGS_DIR, RUN_DIR};
+use wcore::paths::{CONFIG_DIR, LOGS_DIR, RUN_DIR, service_log_path, service_port_file};
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -56,8 +56,7 @@ pub trait Service {
     /// Stop and uninstall the service.
     fn stop(&self) -> anyhow::Result<()> {
         uninstall(self.label())?;
-        let port_file = RUN_DIR.join(format!("{}.port", self.name()));
-        let _ = std::fs::remove_file(&port_file);
+        let _ = std::fs::remove_file(service_port_file(self.name()));
         Ok(())
     }
 
@@ -103,7 +102,7 @@ fn render_service_template(_svc: &(impl Service + ?Sized), _binary: &Path) -> St
 /// Defaults to showing the last 50 lines if no extra args are given.
 #[cfg(unix)]
 pub fn view_logs(log_name: &str, tail_args: &[String]) -> anyhow::Result<()> {
-    let path = LOGS_DIR.join(format!("{log_name}.log"));
+    let path = service_log_path(log_name);
     if !path.exists() {
         println!("no logs yet: {}", path.display());
         return Ok(());
@@ -130,7 +129,7 @@ pub fn view_logs(log_name: &str, tail_args: &[String]) -> anyhow::Result<()> {
 pub fn view_logs(log_name: &str, tail_args: &[String]) -> anyhow::Result<()> {
     use std::io::{BufRead, BufReader};
 
-    let path = LOGS_DIR.join(format!("{log_name}.log"));
+    let path = service_log_path(log_name);
     if !path.exists() {
         println!("no logs yet: {}", path.display());
         return Ok(());
@@ -172,10 +171,7 @@ pub async fn run_mcp(svc: &(impl McpService + Sync)) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
     std::fs::create_dir_all(&*RUN_DIR)?;
-    std::fs::write(
-        RUN_DIR.join(format!("{}.port", svc.name())),
-        addr.port().to_string(),
-    )?;
+    std::fs::write(service_port_file(svc.name()), addr.port().to_string())?;
     eprintln!("MCP server listening on {addr}");
     axum::serve(listener, router).await?;
     Ok(())
