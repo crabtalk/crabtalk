@@ -14,7 +14,11 @@ serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 futures-util.workspace = true
+anyhow.workspace = true
 axum = { workspace = true, features = ["json"] }
+reqwest = { workspace = true, features = ["json"] }
+gateway.workspace = true
+transport.workspace = true
 tracing.workspace = true
 
 [[bin]]
@@ -35,4 +39,8 @@ harness = false
 
 [[bench]]
 name = "agent"
+harness = false
+
+[[bench]]
+name = "framework"
 harness = false

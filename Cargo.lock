@@ -552,12 +552,16 @@ dependencies = [
 name = "crabtalk-bench"
 version = "0.0.16"
 dependencies = [
+ "anyhow",
  "axum",
  "crabtalk-core",
+ "crabtalk-gateway",
  "crabtalk-runtime",
+ "crabtalk-transport",
  "criterion",
  "futures-util",
  "prost",
+ "reqwest 0.13.2",
  "serde",
  "serde_json",
  "tempfile",

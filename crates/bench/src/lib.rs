@@ -1,5 +1,6 @@
 //! Shared helpers for crabtalk benchmarks.
 
+pub mod gateway;
 pub mod mock_mcp;
 pub mod task;
 
