@@ -1,15 +1,15 @@
 //! Daemon construction and lifecycle methods.
 
-use crate::hook::DaemonHook;
+use crate::hook::DaemonEnv;
 use crate::{
     Daemon, DaemonConfig,
     config::{ResolvedManifest, resolve_manifests},
     daemon::event::{DaemonEvent, DaemonEventSender},
-    hook::bridge::DaemonBridge,
+    hook::backend::DaemonBackend,
 };
 use anyhow::Result;
 use model::ProviderRegistry;
-use runtime::{RuntimeHook, SkillHandler, mcp::McpHandler, memory::Memory};
+use runtime::{Env, SkillHandler, mcp::McpHandler, memory::Memory};
 use std::{
     collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
@@ -96,7 +96,7 @@ impl Daemon {
         config: &DaemonConfig,
         config_dir: &Path,
         event_tx: &DaemonEventSender,
-    ) -> Result<Runtime<ProviderRegistry, DaemonHook>> {
+    ) -> Result<Runtime<ProviderRegistry, DaemonEnv>> {
         let manager = Self::build_providers(config)?;
         let (manifest, _warnings) = resolve_manifests(config_dir);
         let hook = Self::build_hook(config, config_dir, &manifest, event_tx).await?;
@@ -129,7 +129,7 @@ impl Daemon {
         config_dir: &Path,
         manifest: &ResolvedManifest,
         event_tx: &DaemonEventSender,
-    ) -> Result<DaemonHook> {
+    ) -> Result<DaemonEnv> {
         let skills = SkillHandler::load(manifest.skill_dirs.clone()).unwrap_or_else(|e| {
             tracing::warn!("failed to load skills: {e}");
             SkillHandler::default()
@@ -158,14 +158,14 @@ impl Daemon {
         let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
 
         let (events_tx, _) = tokio::sync::broadcast::channel(256);
-        let bridge = DaemonBridge {
+        let bridge = DaemonBackend {
             event_tx: event_tx.clone(),
             pending_asks: Arc::new(Mutex::new(HashMap::new())),
             session_cwds: Arc::new(Mutex::new(HashMap::new())),
             events_tx,
         };
 
-        Ok(RuntimeHook::new(skills, mcp_handler, cwd, memory, bridge))
+        Ok(Env::new(skills, mcp_handler, cwd, memory, bridge))
     }
 
     /// Build a [`ToolSender`] that forwards [`ToolRequest`]s into the daemon
@@ -185,7 +185,7 @@ impl Daemon {
 
     /// Load agents and add them to the runtime.
     fn load_agents(
-        runtime: &mut Runtime<ProviderRegistry, DaemonHook>,
+        runtime: &mut Runtime<ProviderRegistry, DaemonEnv>,
         config: &DaemonConfig,
         manifest: &ResolvedManifest,
     ) -> Result<()> {

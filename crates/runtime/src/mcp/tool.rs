@@ -1,6 +1,6 @@
 //! Tool dispatch and schema registration for the MCP tool.
 
-use crate::{RuntimeHook, bridge::RuntimeBridge};
+use crate::{Env, backend::Backend};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use wcore::agent::ToolDescription;
@@ -20,7 +20,7 @@ impl ToolDescription for Mcp {
         "Call an MCP tool by name, or list available tools if no exact match.";
 }
 
-impl<B: RuntimeBridge> RuntimeHook<B> {
+impl<B: Backend> Env<B> {
     pub async fn dispatch_mcp(&self, args: &str, agent: &str) -> String {
         let input: Mcp = match serde_json::from_str(args) {
             Ok(v) => v,

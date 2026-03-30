@@ -1,6 +1,6 @@
 //! Tool schemas and dispatch for built-in memory tools.
 
-use crate::{RuntimeHook, bridge::RuntimeBridge};
+use crate::{Env, backend::Backend};
 use serde::Deserialize;
 use wcore::{
     agent::{AsTool, ToolDescription},
@@ -63,7 +63,7 @@ pub fn tools() -> Vec<Tool> {
     ]
 }
 
-impl<B: RuntimeBridge> RuntimeHook<B> {
+impl<B: Backend> Env<B> {
     pub async fn dispatch_recall(&self, args: &str) -> String {
         let input: Recall = match serde_json::from_str(args) {
             Ok(v) => v,

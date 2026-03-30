@@ -15,7 +15,7 @@ Layer 1 ─ Backends (independent of each other)
   └─ command              Service management (systemd), proc macro codegen
 
 Layer 2 ─ Engine
-  └─ runtime              RuntimeHook, tool dispatch, MCP, skills, memory
+  └─ runtime              Env, tool dispatch, MCP, skills, memory
 
 Layer 3 ─ Server
   └─ daemon               Event loop, transport setup, cron, config, hot reload
@@ -44,7 +44,7 @@ Layer 4 ─ Adapters
 ### Daemon — Runtime
 
 The daemon constructs the runtime and feeds it messages. Tool calls come back
-through the event channel. `RuntimeBridge` is the seam between embedded and
+through the event channel. `Backend` is the seam between embedded and
 daemon modes.
 
 **Runtime never initiates I/O** — it only responds. If your feature needs to
@@ -75,7 +75,7 @@ or daemon dependencies, the abstraction is wrong.
 ```
 Client (CLI/Telegram/etc) → UDS/TCP → Daemon event loop
   → Agent.step(): config + history + tools → Model.send()/stream()
-  → Tool calls dispatched via ToolSender → RuntimeHook.dispatch_tool()
+  → Tool calls dispatched via ToolSender → Env.dispatch_tool()
   → Results back to agent via oneshot channel
 ```
 
@@ -84,9 +84,9 @@ Client (CLI/Telegram/etc) → UDS/TCP → Daemon event loop
 - `Agent<M: Model>` — immutable definition + execution (step/run/run_stream)
 - `Session` — conversation history container
 - `Runtime<M, H>` — agents + sessions + tool dispatch
-- `RuntimeHook<B>` — engine hook: skills, MCP, memory, tool routing
-- `RuntimeBridge` — trait for server-specific tools (ask_user, delegate, session CWD)
-- `DaemonHook` — wraps `RuntimeHook<DaemonBridge>`, adds event broadcasting
+- `Env<B>` — engine environment: skills, MCP, memory, tool routing
+- `Backend` — trait for server-specific tools (ask_user, delegate, session CWD)
+- `DaemonEnv` — type alias: `Env<DaemonBackend>`, adds event broadcasting
 - `DaemonEvent` — Message | ToolCall | Shutdown
 - `ToolRequest` — single tool call with reply channel
 - Protocol — `ClientMessage` / `ServerMessage` (protobuf)

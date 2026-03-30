@@ -2,7 +2,7 @@
 //! and tool schema registration.
 //!
 //! All hook crates implement this trait. [`Runtime`](crate) calls these
-//! methods at the appropriate lifecycle points. `DaemonHook` composes
+//! methods at the appropriate lifecycle points. `DaemonEnv` composes
 //! multiple Hook implementations by delegating to each.
 
 use crate::{AgentConfig, AgentEvent, agent::tool::ToolRegistry, model::Message};

@@ -14,4 +14,4 @@ pub use daemon::{
     event::{DaemonEvent, DaemonEventSender},
     setup_tcp,
 };
-pub use hook::DaemonHook;
+pub use hook::DaemonEnv;

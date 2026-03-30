@@ -1,10 +1,10 @@
-//! DaemonBridge — server-specific RuntimeBridge implementation.
+//! DaemonBackend — server-specific Backend implementation.
 //!
 //! Provides `ask_user` and `delegate` dispatch using daemon event channels,
 //! per-session CWD resolution, and agent event broadcasting.
 
 use crate::daemon::event::{DaemonEvent, DaemonEventSender};
-use runtime::bridge::RuntimeBridge;
+use runtime::backend::Backend;
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use wcore::{
@@ -15,8 +15,8 @@ use wcore::{
 /// Timeout for waiting on user reply (5 minutes).
 const ASK_USER_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// Server-specific bridge for the daemon. Owns event channels and session state.
-pub struct DaemonBridge {
+/// Server-specific backend for the daemon. Owns event channels and session state.
+pub struct DaemonBackend {
     /// Event channel for task delegation.
     pub event_tx: DaemonEventSender,
     /// Pending `ask_user` oneshots, keyed by session_id.
@@ -27,14 +27,14 @@ pub struct DaemonBridge {
     pub events_tx: broadcast::Sender<AgentEventMsg>,
 }
 
-impl DaemonBridge {
+impl DaemonBackend {
     /// Subscribe to agent events (for console event streaming).
     pub fn subscribe_events(&self) -> broadcast::Receiver<AgentEventMsg> {
         self.events_tx.subscribe()
     }
 }
 
-impl RuntimeBridge for DaemonBridge {
+impl Backend for DaemonBackend {
     async fn dispatch_ask_user(&self, args: &str, session_id: Option<u64>) -> String {
         let input: runtime::ask_user::AskUser = match serde_json::from_str(args) {
             Ok(v) => v,

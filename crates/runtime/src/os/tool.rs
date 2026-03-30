@@ -1,6 +1,6 @@
 //! Tool schemas and input types for OS tools.
 
-use crate::{RuntimeHook, bridge::RuntimeBridge};
+use crate::{Env, backend::Backend};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -26,7 +26,7 @@ pub fn tools() -> Vec<Tool> {
     vec![Bash::as_tool()]
 }
 
-impl<B: RuntimeBridge> RuntimeHook<B> {
+impl<B: Backend> Env<B> {
     /// Dispatch a `bash` tool call — run a command directly.
     pub async fn dispatch_bash(&self, args: &str, session_id: Option<u64>) -> String {
         let input: Bash = match serde_json::from_str(args) {

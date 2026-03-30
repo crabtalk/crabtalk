@@ -566,6 +566,8 @@ dependencies = [
  "anyhow",
  "async-stream",
  "chrono",
+ "crabhub",
+ "crabtalk-command",
  "crabtalk-core",
  "crabtalk-model",
  "crabtalk-runtime",

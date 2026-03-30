@@ -1,13 +1,11 @@
-//! RuntimeHook — the embeddable engine hook.
+//! Env — the embeddable engine environment.
 //!
-//! [`RuntimeHook`] composes skill, MCP, OS, and memory sub-hooks. It implements
+//! [`Env`] composes skill, MCP, OS, and memory sub-hooks. It implements
 //! `wcore::Hook` and provides the central `dispatch_tool` entry point. Server-
 //! specific tools (`ask_user`, `delegate`) are routed through the
-//! [`RuntimeBridge`](crate::bridge::RuntimeBridge).
+//! [`Backend`](crate::backend::Backend).
 
-use crate::{
-    bridge::RuntimeBridge, mcp::McpHandler, memory::Memory, os, skill, skill::SkillHandler,
-};
+use crate::{backend::Backend, mcp::McpHandler, memory::Memory, os, skill, skill::SkillHandler};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -38,7 +36,7 @@ const MEMORY_TOOLS: &[&str] = &["recall", "remember", "memory", "forget"];
 /// Task delegation tools.
 const TASK_TOOLS: &[&str] = &["delegate"];
 
-pub struct RuntimeHook<B: RuntimeBridge = crate::NoBridge> {
+pub struct Env<B: Backend = crate::NoBackend> {
     pub(crate) skills: SkillHandler,
     pub(crate) mcp: McpHandler,
     pub(crate) cwd: PathBuf,
@@ -49,8 +47,8 @@ pub struct RuntimeHook<B: RuntimeBridge = crate::NoBridge> {
     pub bridge: B,
 }
 
-impl<B: RuntimeBridge> RuntimeHook<B> {
-    /// Create a new RuntimeHook with the given backends.
+impl<B: Backend> Env<B> {
+    /// Create a new Env with the given backends.
     pub fn new(
         skills: SkillHandler,
         mcp: McpHandler,
@@ -239,7 +237,7 @@ impl<B: RuntimeBridge> RuntimeHook<B> {
     }
 }
 
-impl<B: RuntimeBridge + 'static> Hook for RuntimeHook<B> {
+impl<B: Backend + 'static> Hook for Env<B> {
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
         config.system_prompt.push_str(&os::environment_block());
 

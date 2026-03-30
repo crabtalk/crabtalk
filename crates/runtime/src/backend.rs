@@ -1,13 +1,13 @@
-//! RuntimeBridge — trait for server-specific tool dispatch.
+//! Backend — trait for server-specific tool dispatch.
 //!
 //! The runtime crate defines this trait. The daemon implements it to provide
 //! `ask_user`, `delegate`, and per-session CWD resolution. Embedded users
-//! get [`NoBridge`] with no-op defaults.
+//! get [`NoBackend`] with no-op defaults.
 
 use std::path::PathBuf;
 
 /// Trait for server-specific tool dispatch that the runtime cannot handle locally.
-pub trait RuntimeBridge: Send + Sync {
+pub trait Backend: Send + Sync {
     /// Handle `ask_user` — block until user replies.
     fn dispatch_ask_user(
         &self,
@@ -39,7 +39,7 @@ pub trait RuntimeBridge: Send + Sync {
     fn on_agent_event(&self, _agent: &str, _session_id: u64, _event: &wcore::AgentEvent) {}
 }
 
-/// No-op bridge for embedded use.
-pub struct NoBridge;
+/// No-op backend for embedded use.
+pub struct NoBackend;
 
-impl RuntimeBridge for NoBridge {}
+impl Backend for NoBackend {}

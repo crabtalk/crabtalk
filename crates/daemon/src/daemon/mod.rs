@@ -8,7 +8,7 @@ use crate::{
     DaemonConfig,
     cron::CronStore,
     daemon::event::{DaemonEvent, DaemonEventSender},
-    hook::DaemonHook,
+    hook::DaemonEnv,
 };
 use anyhow::Result;
 use model::ProviderRegistry;
@@ -31,7 +31,7 @@ mod protocol;
 #[derive(Clone)]
 pub struct Daemon {
     /// The crabtalk runtime, swappable via [`Daemon::reload`].
-    pub runtime: Arc<RwLock<Arc<Runtime<ProviderRegistry, DaemonHook>>>>,
+    pub runtime: Arc<RwLock<Arc<Runtime<ProviderRegistry, DaemonEnv>>>>,
     /// Config directory — stored so [`Daemon::reload`] can re-read config from disk.
     pub(crate) config_dir: PathBuf,
     /// Sender for the daemon event loop — cloned into `Runtime` as `ToolSender`
