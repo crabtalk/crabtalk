@@ -7,10 +7,11 @@ use std::sync::Arc;
 use wcore::protocol::{
     api::Server,
     message::{
-        AgentEventMsg, AskOption, AskQuestion, AskUserEvent, CreateCronMsg, CronInfo, CronList,
-        DaemonStats, SendMsg, SendResponse, SessionInfo, StreamChunk, StreamEnd, StreamEvent,
-        StreamMsg, StreamStart, StreamThinking, TokenUsage, ToolCallInfo, ToolResultEvent,
-        ToolStartEvent, ToolsCompleteEvent, stream_event,
+        AgentEventMsg, AgentInfo, AskOption, AskQuestion, AskUserEvent, CreateAgentMsg,
+        CreateCronMsg, CronInfo, CronList, DaemonStats, SendMsg, SendResponse, SessionInfo,
+        StreamChunk, StreamEnd, StreamEvent, StreamMsg, StreamStart, StreamThinking, TokenUsage,
+        ToolCallInfo, ToolResultEvent, ToolStartEvent, ToolsCompleteEvent, UpdateAgentMsg,
+        stream_event,
     },
 };
 use wcore::{AgentEvent, AgentStep};
@@ -314,12 +315,128 @@ impl Server for Daemon {
         }
         anyhow::bail!("no pending ask_user for session {session}")
     }
+
+    async fn list_agents(&self) -> Result<Vec<AgentInfo>> {
+        let rt = self.runtime.read().await.clone();
+        let agents = rt.agents();
+        agents
+            .into_iter()
+            .map(|config| {
+                let json =
+                    serde_json::to_string(&config).context("failed to serialize agent config")?;
+                Ok(AgentInfo {
+                    name: config.name,
+                    description: config.description,
+                    config: json,
+                })
+            })
+            .collect()
+    }
+
+    async fn get_agent(&self, name: String) -> Result<AgentInfo> {
+        let rt = self.runtime.read().await.clone();
+        let config = rt
+            .agent(&name)
+            .ok_or_else(|| anyhow::anyhow!("agent '{name}' not found"))?;
+        let json = serde_json::to_string(&config).context("failed to serialize agent config")?;
+        Ok(AgentInfo {
+            name: config.name,
+            description: config.description,
+            config: json,
+        })
+    }
+
+    async fn create_agent(&self, req: CreateAgentMsg) -> Result<AgentInfo> {
+        self.upsert_agent_in_manifest(&req.name, &req.config)
+            .await?;
+        self.reload().await?;
+        self.get_agent(req.name).await
+    }
+
+    async fn update_agent(&self, req: UpdateAgentMsg) -> Result<AgentInfo> {
+        self.upsert_agent_in_manifest(&req.name, &req.config)
+            .await?;
+        self.reload().await?;
+        self.get_agent(req.name).await
+    }
+
+    async fn delete_agent(&self, name: String) -> Result<bool> {
+        use toml_edit::DocumentMut;
+
+        let manifest_path = self
+            .config_dir
+            .join(wcore::paths::LOCAL_DIR)
+            .join("CrabTalk.toml");
+        if !manifest_path.exists() {
+            return Ok(false);
+        }
+        let content =
+            std::fs::read_to_string(&manifest_path).context("failed to read local manifest")?;
+        let mut doc: DocumentMut = content.parse().context("failed to parse local manifest")?;
+
+        let removed = doc
+            .get_mut("agents")
+            .and_then(|v| v.as_table_like_mut())
+            .and_then(|t| t.remove(&name))
+            .is_some();
+        if removed {
+            std::fs::write(&manifest_path, doc.to_string())
+                .context("failed to write local manifest")?;
+            self.reload().await?;
+        }
+        Ok(removed)
+    }
 }
 
 impl Daemon {
     /// Load the current `DaemonConfig` from disk.
     fn load_config(&self) -> Result<crate::DaemonConfig> {
         crate::DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))
+    }
+
+    /// Write an agent config into the local manifest `[agents.<name>]`.
+    async fn upsert_agent_in_manifest(&self, name: &str, config_json: &str) -> Result<()> {
+        use toml_edit::DocumentMut;
+
+        // Parse incoming JSON to validate it and convert to TOML value.
+        let config: wcore::AgentConfig =
+            serde_json::from_str(config_json).context("invalid AgentConfig JSON")?;
+        let toml_value = toml::to_string(&config).context("failed to serialize agent to TOML")?;
+        let agent_doc: DocumentMut = toml_value.parse().context("failed to parse agent TOML")?;
+
+        let manifest_path = self
+            .config_dir
+            .join(wcore::paths::LOCAL_DIR)
+            .join("CrabTalk.toml");
+        let mut doc: DocumentMut = if manifest_path.exists() {
+            std::fs::read_to_string(&manifest_path)
+                .context("failed to read local manifest")?
+                .parse()
+                .context("failed to parse local manifest")?
+        } else {
+            DocumentMut::default()
+        };
+
+        // Ensure [agents] table exists.
+        if doc.get("agents").is_none() {
+            doc.insert("agents", toml_edit::Item::Table(toml_edit::Table::new()));
+        }
+        let agents = doc["agents"]
+            .as_table_mut()
+            .context("[agents] is not a table")?;
+
+        // Insert the agent as a sub-table.
+        let mut agent_table = toml_edit::Table::new();
+        for (key, value) in agent_doc.as_table().iter() {
+            agent_table.insert(key, value.clone());
+        }
+        agents.insert(name, toml_edit::Item::Table(agent_table));
+
+        std::fs::create_dir_all(manifest_path.parent().context("no parent dir")?)
+            .context("failed to create local dir")?;
+        std::fs::write(&manifest_path, doc.to_string())
+            .context("failed to write local manifest")?;
+        Ok(())
     }
 }
 

@@ -1,8 +1,10 @@
 //! Client trait — transport primitives plus typed provided methods.
 
 use crate::protocol::message::{
-    ClientMessage, ConfigMsg, ErrorMsg, GetConfig, Ping, SendMsg, SendResponse, ServerMessage,
-    SetConfigMsg, StreamEvent, StreamMsg, client_message, server_message, stream_event,
+    AgentInfo, AgentList, ClientMessage, ConfigMsg, CreateAgentMsg, DeleteAgentMsg, ErrorMsg,
+    GetAgentMsg, GetConfig, ListAgentsMsg, Ping, SendMsg, SendResponse, ServerMessage,
+    SetConfigMsg, StreamEvent, StreamMsg, UpdateAgentMsg, client_message, server_message,
+    stream_event,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -112,6 +114,136 @@ pub trait Client: Send {
             match self
                 .request(ClientMessage {
                     msg: Some(client_message::Msg::SetConfig(SetConfigMsg { config })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// List all registered agents.
+    fn list_agents(&mut self) -> impl std::future::Future<Output = Result<Vec<AgentInfo>>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::ListAgents(ListAgentsMsg {})),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::AgentList(AgentList { agents })),
+                } => Ok(agents),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Get a single agent by name.
+    fn get_agent(
+        &mut self,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::GetAgent(GetAgentMsg { name })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::AgentInfo(info)),
+                } => Ok(info),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Create an agent from JSON config.
+    fn create_agent(
+        &mut self,
+        name: String,
+        config: String,
+    ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::CreateAgent(CreateAgentMsg {
+                        name,
+                        config,
+                    })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::AgentInfo(info)),
+                } => Ok(info),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Update an agent from JSON config.
+    fn update_agent(
+        &mut self,
+        name: String,
+        config: String,
+    ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::UpdateAgent(UpdateAgentMsg {
+                        name,
+                        config,
+                    })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::AgentInfo(info)),
+                } => Ok(info),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Delete an agent by name.
+    fn delete_agent(
+        &mut self,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::DeleteAgent(DeleteAgentMsg { name })),
                 })
                 .await?
             {

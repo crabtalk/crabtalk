@@ -4,10 +4,11 @@ mod convert;
 
 pub use crate::protocol::proto::{AgentEventKind, client_message, server_message, stream_event};
 pub use crate::protocol::proto::{
-    AgentEventMsg, AskOption, AskQuestion, AskUserEvent, ClientMessage, CompactMsg,
-    CompactResponse, ConfigMsg, CreateCronMsg, CronInfo, CronList, DaemonStats, DeleteCronMsg,
-    ErrorMsg, GetConfig, GetStats, KillMsg, ListCronsMsg, Ping, Pong, ReplyToAsk, SendMsg,
-    SendResponse, ServerMessage, SessionInfo, SessionList, SetConfigMsg, StreamChunk, StreamEnd,
-    StreamEvent, StreamMsg, StreamStart, StreamThinking, SubscribeEvents, TokenUsage, ToolCallInfo,
-    ToolResultEvent, ToolStartEvent, ToolsCompleteEvent,
+    AgentEventMsg, AgentInfo, AgentList, AskOption, AskQuestion, AskUserEvent, ClientMessage,
+    CompactMsg, CompactResponse, ConfigMsg, CreateAgentMsg, CreateCronMsg, CronInfo, CronList,
+    DaemonStats, DeleteAgentMsg, DeleteCronMsg, ErrorMsg, GetAgentMsg, GetConfig, GetStats,
+    KillMsg, ListAgentsMsg, ListCronsMsg, Ping, Pong, ReplyToAsk, SendMsg, SendResponse,
+    ServerMessage, SessionInfo, SessionList, SetConfigMsg, StreamChunk, StreamEnd, StreamEvent,
+    StreamMsg, StreamStart, StreamThinking, SubscribeEvents, TokenUsage, ToolCallInfo,
+    ToolResultEvent, ToolStartEvent, ToolsCompleteEvent, UpdateAgentMsg,
 };

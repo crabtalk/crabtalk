@@ -6,4 +6,4 @@ pub mod message;
 pub mod proto;
 
 /// Current protocol version.
-pub const PROTOCOL_VERSION: &str = "0.2";
+pub const PROTOCOL_VERSION: &str = "0.3";

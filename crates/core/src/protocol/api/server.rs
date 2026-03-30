@@ -1,9 +1,10 @@
 //! Server trait — one async method per protocol operation.
 
 use crate::protocol::message::{
-    AgentEventMsg, ClientMessage, CompactResponse, ConfigMsg, CreateCronMsg, CronInfo, CronList,
-    DaemonStats, ErrorMsg, Pong, SendMsg, SendResponse, ServerMessage, SessionInfo, SessionList,
-    StreamEvent, StreamMsg, client_message, server_message,
+    AgentEventMsg, AgentInfo, AgentList, ClientMessage, CompactResponse, ConfigMsg, CreateAgentMsg,
+    CreateCronMsg, CronInfo, CronList, DaemonStats, ErrorMsg, Pong, SendMsg, SendResponse,
+    ServerMessage, SessionInfo, SessionList, StreamEvent, StreamMsg, UpdateAgentMsg,
+    client_message, server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -95,6 +96,30 @@ pub trait Server: Sync {
         session: u64,
         content: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `ListAgents` — return all registered agents.
+    fn list_agents(&self) -> impl std::future::Future<Output = Result<Vec<AgentInfo>>> + Send;
+
+    /// Handle `GetAgent` — return a single agent by name.
+    fn get_agent(
+        &self,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send;
+
+    /// Handle `CreateAgent` — create a new agent from JSON config.
+    fn create_agent(
+        &self,
+        req: CreateAgentMsg,
+    ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send;
+
+    /// Handle `UpdateAgent` — update an existing agent from JSON config.
+    fn update_agent(
+        &self,
+        req: UpdateAgentMsg,
+    ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send;
+
+    /// Handle `DeleteAgent` — remove an agent by name.
+    fn delete_agent(&self, name: String) -> impl std::future::Future<Output = Result<bool>> + Send;
 
     /// Dispatch a `ClientMessage` to the appropriate handler method.
     ///
@@ -211,6 +236,48 @@ pub trait Server: Sync {
                         Ok(summary) => ServerMessage {
                             msg: Some(server_message::Msg::Compact(CompactResponse { summary })),
                         },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ListAgents(_) => {
+                    yield match self.list_agents().await {
+                        Ok(agents) => ServerMessage {
+                            msg: Some(server_message::Msg::AgentList(AgentList { agents })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::GetAgent(req) => {
+                    yield match self.get_agent(req.name).await {
+                        Ok(info) => ServerMessage {
+                            msg: Some(server_message::Msg::AgentInfo(info)),
+                        },
+                        Err(e) => server_error(404, e.to_string()),
+                    };
+                }
+                client_message::Msg::CreateAgent(req) => {
+                    yield match self.create_agent(req).await {
+                        Ok(info) => ServerMessage {
+                            msg: Some(server_message::Msg::AgentInfo(info)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::UpdateAgent(req) => {
+                    yield match self.update_agent(req).await {
+                        Ok(info) => ServerMessage {
+                            msg: Some(server_message::Msg::AgentInfo(info)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::DeleteAgent(req) => {
+                    yield match self.delete_agent(req.name.clone()).await {
+                        Ok(true) => server_pong(),
+                        Ok(false) => server_error(
+                            404,
+                            format!("agent '{}' not found in local manifest", req.name),
+                        ),
                         Err(e) => server_error(500, e.to_string()),
                     };
                 }

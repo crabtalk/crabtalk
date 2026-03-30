@@ -23,6 +23,11 @@ message ClientMessage {
     DeleteCronMsg delete_cron = 13;
     ListCronsMsg list_crons = 14;
     CompactMsg compact = 15;
+    ListAgentsMsg list_agents = 16;
+    GetAgentMsg get_agent = 17;
+    CreateAgentMsg create_agent = 18;
+    UpdateAgentMsg update_agent = 19;
+    DeleteAgentMsg delete_agent = 20;
   }
 }
 
@@ -81,6 +86,26 @@ message CompactMsg {
   uint64 session = 1;
 }
 
+message ListAgentsMsg {}
+
+message GetAgentMsg {
+  string name = 1;
+}
+
+message CreateAgentMsg {
+  string name = 1;
+  string config = 2;
+}
+
+message UpdateAgentMsg {
+  string name = 1;
+  string config = 2;
+}
+
+message DeleteAgentMsg {
+  string name = 1;
+}
+
 // ── Server Messages ──────────────────────────────────────────────
 
 message ServerMessage {
@@ -96,6 +121,8 @@ message ServerMessage {
     CronInfo cron_info = 9;
     CronList cron_list = 10;
     CompactResponse compact = 11;
+    AgentInfo agent_info = 12;
+    AgentList agent_list = 13;
   }
 }
 
@@ -253,4 +280,14 @@ message CronInfo {
 
 message CronList {
   repeated CronInfo crons = 1;
+}
+
+message AgentInfo {
+  string name = 1;
+  string description = 2;
+  string config = 3;
+}
+
+message AgentList {
+  repeated AgentInfo agents = 1;
 }
