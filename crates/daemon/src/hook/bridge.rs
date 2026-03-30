@@ -154,7 +154,8 @@ impl RuntimeBridge for DaemonBridge {
                     stop_reason = %response.stop_reason,
                     "agent run complete"
                 );
-                (AgentEventKind::Done, String::new())
+                let content = format_usage(response);
+                (AgentEventKind::Done, content)
             }
         };
         let _ = self.events_tx.send(AgentEventMsg {
@@ -225,4 +226,46 @@ fn spawn_agent_task(
 
         (result_content, error_msg)
     })
+}
+
+fn format_usage(response: &wcore::AgentResponse) -> String {
+    if response.steps.is_empty() {
+        return String::new();
+    }
+    let mut prompt = 0u32;
+    let mut completion = 0u32;
+    let mut cache_hit = 0u32;
+    for step in &response.steps {
+        let u = &step.response.usage;
+        prompt += u.prompt_tokens;
+        completion += u.completion_tokens;
+        if let Some(v) = u.prompt_cache_hit_tokens {
+            cache_hit += v;
+        }
+    }
+    let model = &response.model;
+    if cache_hit > 0 {
+        format!(
+            "{model} {} in ({} cached) / {} out",
+            human_tokens(prompt),
+            human_tokens(cache_hit),
+            human_tokens(completion),
+        )
+    } else {
+        format!(
+            "{model} {} in / {} out",
+            human_tokens(prompt),
+            human_tokens(completion),
+        )
+    }
+}
+
+fn human_tokens(n: u32) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}k", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
 }

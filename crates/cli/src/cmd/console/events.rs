@@ -68,7 +68,7 @@ pub(super) fn render_events(
             let (kind_str, kind_color) = match AgentEventKind::try_from(entry.msg.kind) {
                 Ok(AgentEventKind::ToolStart) => ("TOOL_CALL", Color::Rgb(215, 119, 87)),
                 Ok(AgentEventKind::ToolResult) => ("TOOL_DONE", Color::Rgb(87, 187, 138)),
-                Ok(AgentEventKind::Done) => ("DONE", Color::DarkGray),
+                Ok(AgentEventKind::Done) => ("DONE", Color::Rgb(87, 187, 138)),
                 _ => ("EVENT", Color::DarkGray),
             };
             let content_part = if entry.msg.content.is_empty() {
