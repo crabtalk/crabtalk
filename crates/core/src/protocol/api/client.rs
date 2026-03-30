@@ -2,8 +2,9 @@
 
 use crate::protocol::message::{
     AgentInfo, AgentList, ClientMessage, ConfigMsg, CreateAgentMsg, DeleteAgentMsg, ErrorMsg,
-    GetAgentMsg, GetConfig, ListAgentsMsg, ListProvidersMsg, Ping, ProviderInfo, ProviderList,
-    SendMsg, SendResponse, ServerMessage, SetConfigMsg, StreamEvent, StreamMsg, UpdateAgentMsg,
+    GetAgentMsg, GetConfig, InstallPackageMsg, ListAgentsMsg, ListPackagesMsg, ListProvidersMsg,
+    PackageInfo, PackageList, Ping, ProviderInfo, ProviderList, SendMsg, SendResponse,
+    ServerMessage, SetConfigMsg, StreamEvent, StreamMsg, UninstallPackageMsg, UpdateAgentMsg,
     client_message, server_message, stream_event,
 };
 use anyhow::Result;
@@ -274,6 +275,90 @@ pub trait Client: Send {
                 ServerMessage {
                     msg: Some(server_message::Msg::ProviderList(ProviderList { providers })),
                 } => Ok(providers),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Install a hub package.
+    fn install_package(
+        &mut self,
+        package: String,
+        branch: String,
+        path: String,
+        force: bool,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::InstallPackage(InstallPackageMsg {
+                        package,
+                        branch,
+                        path,
+                        force,
+                    })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Uninstall a hub package.
+    fn uninstall_package(
+        &mut self,
+        package: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::UninstallPackage(UninstallPackageMsg {
+                        package,
+                    })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// List installed hub packages.
+    fn list_packages(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<Vec<PackageInfo>>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::ListPackages(ListPackagesMsg {})),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::PackageList(PackageList { packages })),
+                } => Ok(packages),
                 ServerMessage {
                     msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
                 } => {

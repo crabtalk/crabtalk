@@ -29,6 +29,9 @@ message ClientMessage {
     UpdateAgentMsg update_agent = 19;
     DeleteAgentMsg delete_agent = 20;
     ListProvidersMsg list_providers = 21;
+    InstallPackageMsg install_package = 22;
+    UninstallPackageMsg uninstall_package = 23;
+    ListPackagesMsg list_packages = 24;
   }
 }
 
@@ -109,6 +112,19 @@ message DeleteAgentMsg {
 
 message ListProvidersMsg {}
 
+message InstallPackageMsg {
+  string package = 1;
+  string branch = 2;
+  string path = 3;
+  bool force = 4;
+}
+
+message UninstallPackageMsg {
+  string package = 1;
+}
+
+message ListPackagesMsg {}
+
 // ── Server Messages ──────────────────────────────────────────────
 
 message ServerMessage {
@@ -127,6 +143,7 @@ message ServerMessage {
     AgentInfo agent_info = 12;
     AgentList agent_list = 13;
     ProviderList provider_list = 14;
+    PackageList package_list = 15;
   }
 }
 
@@ -303,4 +320,13 @@ message ProviderInfo {
 
 message ProviderList {
   repeated ProviderInfo providers = 1;
+}
+
+message PackageInfo {
+  string name = 1;
+  string description = 2;
+}
+
+message PackageList {
+  repeated PackageInfo packages = 1;
 }

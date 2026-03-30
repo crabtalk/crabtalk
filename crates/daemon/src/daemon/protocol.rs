@@ -8,10 +8,10 @@ use wcore::protocol::{
     api::Server,
     message::{
         AgentEventMsg, AgentInfo, AskOption, AskQuestion, AskUserEvent, CreateAgentMsg,
-        CreateCronMsg, CronInfo, CronList, DaemonStats, ProviderInfo, SendMsg, SendResponse,
-        SessionInfo, StreamChunk, StreamEnd, StreamEvent, StreamMsg, StreamStart, StreamThinking,
-        TokenUsage, ToolCallInfo, ToolResultEvent, ToolStartEvent, ToolsCompleteEvent,
-        UpdateAgentMsg, stream_event,
+        CreateCronMsg, CronInfo, CronList, DaemonStats, InstallPackageMsg, PackageInfo,
+        ProviderInfo, SendMsg, SendResponse, SessionInfo, StreamChunk, StreamEnd, StreamEvent,
+        StreamMsg, StreamStart, StreamThinking, TokenUsage, ToolCallInfo, ToolResultEvent,
+        ToolStartEvent, ToolsCompleteEvent, UpdateAgentMsg, stream_event,
     },
 };
 use wcore::{AgentEvent, AgentStep};
@@ -395,6 +395,79 @@ impl Server for Daemon {
                 active: e.active,
             })
             .collect())
+    }
+
+    async fn install_package(&self, req: InstallPackageMsg) -> Result<()> {
+        let branch = if req.branch.is_empty() {
+            None
+        } else {
+            Some(req.branch.as_str())
+        };
+        let path = if req.path.is_empty() {
+            None
+        } else {
+            Some(std::path::Path::new(&req.path))
+        };
+        crabhub::package::install(&req.package, branch, path, req.force, |msg| {
+            tracing::info!("{msg}");
+        })
+        .await?;
+        self.reload().await
+    }
+
+    async fn uninstall_package(&self, package: String) -> Result<()> {
+        crabhub::package::uninstall(&package, |msg| {
+            tracing::info!("{msg}");
+        })
+        .await?;
+        self.reload().await
+    }
+
+    async fn list_packages(&self) -> Result<Vec<PackageInfo>> {
+        let packages_dir = self.config_dir.join(wcore::paths::PACKAGES_DIR);
+        let mut result = Vec::new();
+        let scopes = match std::fs::read_dir(&packages_dir) {
+            Ok(entries) => entries,
+            Err(_) => return Ok(result),
+        };
+        for scope_entry in scopes.flatten() {
+            let scope_path = scope_entry.path();
+            if !scope_path.is_dir() {
+                continue;
+            }
+            let scope = scope_entry.file_name().to_string_lossy().to_string();
+            let manifests = match std::fs::read_dir(&scope_path) {
+                Ok(entries) => entries,
+                Err(_) => continue,
+            };
+            for manifest_entry in manifests.flatten() {
+                let path = manifest_entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+                    continue;
+                }
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default();
+                let full_name = format!("{scope}/{name}");
+                let description = std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|s| toml::from_str::<toml::Value>(&s).ok())
+                    .and_then(|v| {
+                        v.get("package")?
+                            .get("description")?
+                            .as_str()
+                            .map(String::from)
+                    })
+                    .unwrap_or_default();
+                result.push(PackageInfo {
+                    name: full_name,
+                    description,
+                });
+            }
+        }
+        result.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(result)
     }
 }
 

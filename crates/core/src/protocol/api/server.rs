@@ -2,9 +2,10 @@
 
 use crate::protocol::message::{
     AgentEventMsg, AgentInfo, AgentList, ClientMessage, CompactResponse, ConfigMsg, CreateAgentMsg,
-    CreateCronMsg, CronInfo, CronList, DaemonStats, ErrorMsg, Pong, ProviderInfo, ProviderList,
-    SendMsg, SendResponse, ServerMessage, SessionInfo, SessionList, StreamEvent, StreamMsg,
-    UpdateAgentMsg, client_message, server_message,
+    CreateCronMsg, CronInfo, CronList, DaemonStats, ErrorMsg, InstallPackageMsg, PackageInfo,
+    PackageList, Pong, ProviderInfo, ProviderList, SendMsg, SendResponse, ServerMessage,
+    SessionInfo, SessionList, StreamEvent, StreamMsg, UpdateAgentMsg, client_message,
+    server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -124,6 +125,21 @@ pub trait Server: Sync {
     /// Handle `ListProviders` — return all registered LLM providers.
     fn list_providers(&self)
     -> impl std::future::Future<Output = Result<Vec<ProviderInfo>>> + Send;
+
+    /// Handle `InstallPackage` — install a hub package and reload.
+    fn install_package(
+        &self,
+        req: InstallPackageMsg,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `UninstallPackage` — uninstall a hub package and reload.
+    fn uninstall_package(
+        &self,
+        package: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `ListPackages` — return all installed hub packages.
+    fn list_packages(&self) -> impl std::future::Future<Output = Result<Vec<PackageInfo>>> + Send;
 
     /// Dispatch a `ClientMessage` to the appropriate handler method.
     ///
@@ -290,6 +306,28 @@ pub trait Server: Sync {
                         Ok(providers) => ServerMessage {
                             msg: Some(server_message::Msg::ProviderList(ProviderList {
                                 providers,
+                            })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::InstallPackage(req) => {
+                    yield match self.install_package(req).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::UninstallPackage(req) => {
+                    yield match self.uninstall_package(req.package).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ListPackages(_) => {
+                    yield match self.list_packages().await {
+                        Ok(packages) => ServerMessage {
+                            msg: Some(server_message::Msg::PackageList(PackageList {
+                                packages,
                             })),
                         },
                         Err(e) => server_error(500, e.to_string()),
