@@ -213,6 +213,8 @@ fn spawn_agent_task(
         }
 
         if let Some(sid) = session_id {
+            // Capacity 1: receiver is dropped immediately, so the first
+            // send() in handle_message returns Err and the loop exits.
             let (reply_tx, _) = mpsc::channel(1);
             let _ = event_tx.send(DaemonEvent::Message {
                 msg: ClientMessage {

@@ -231,8 +231,9 @@ async fn run_cron_timer(
             entry.session
         );
 
-        // Fire-and-forget: reply channel is dropped, agent runs but
-        // output goes to session history only.
+        // Fire-and-forget: receiver is dropped, so the first send() in
+        // handle_message returns Err and the loop exits. Output goes to
+        // session history only.
         let (reply_tx, _) = tokio::sync::mpsc::channel(1);
         let msg = ClientMessage::from(SendMsg {
             agent: String::new(),
