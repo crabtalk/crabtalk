@@ -5,9 +5,16 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+wcore.workspace = true
 runtime.workspace = true
 criterion.workspace = true
+prost.workspace = true
+tokio.workspace = true
 
 [[bench]]
 name = "bm25"
+harness = false
+
+[[bench]]
+name = "codec"
 harness = false

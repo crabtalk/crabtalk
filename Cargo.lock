@@ -551,8 +551,11 @@ dependencies = [
 name = "crabtalk-bench"
 version = "0.0.16"
 dependencies = [
+ "crabtalk-core",
  "crabtalk-runtime",
  "criterion",
+ "prost",
+ "tokio",
 ]
 
 [[package]]
