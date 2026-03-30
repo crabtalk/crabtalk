@@ -27,8 +27,8 @@ woutlook = { path = "apps/outlook", package = "crabtalk-outlook", version = "0.0
 wsearch = { path = "apps/search", package = "crabtalk-search", version = "0.0.15", default-features = false }
 
 # crabllm
-crabllm-core = "0.0.9"
-crabllm-provider = "0.0.9"
+crabllm-core = "0.0.10"
+crabllm-provider = "0.0.10"
 
 # crates.io
 base64 = "0.22"
