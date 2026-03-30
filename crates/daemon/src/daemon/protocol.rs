@@ -4,16 +4,16 @@ use crate::{cron::CronEntry, daemon::Daemon};
 use anyhow::{Context, Result};
 use futures_util::{StreamExt, pin_mut};
 use std::sync::Arc;
-use wcore::AgentEvent;
 use wcore::protocol::{
     api::Server,
     message::{
         AgentEventMsg, AskOption, AskQuestion, AskUserEvent, CreateCronMsg, CronInfo, CronList,
         DaemonStats, SendMsg, SendResponse, SessionInfo, StreamChunk, StreamEnd, StreamEvent,
-        StreamMsg, StreamStart, StreamThinking, ToolCallInfo, ToolResultEvent, ToolStartEvent,
-        ToolsCompleteEvent, stream_event,
+        StreamMsg, StreamStart, StreamThinking, TokenUsage, ToolCallInfo, ToolResultEvent,
+        ToolStartEvent, ToolsCompleteEvent, stream_event,
     },
 };
+use wcore::{AgentEvent, AgentStep};
 
 impl Server for Daemon {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
@@ -43,10 +43,17 @@ impl Server for Daemon {
             }
         };
         let response = rt.send_to(session_id, &req.content, sender).await?;
+        let provider = rt
+            .model
+            .provider_name_for(&response.model)
+            .unwrap_or_default();
         Ok(SendResponse {
             agent: req.agent,
             content: response.final_response.unwrap_or_default(),
             session: session_id,
+            provider,
+            model: response.model,
+            usage: Some(sum_usage(&response.steps)),
         })
     }
 
@@ -143,17 +150,33 @@ impl Server for Daemon {
                     AgentEvent::Compact { .. } => {
                     }
                     AgentEvent::Done(resp) => {
-                        let error = if let wcore::AgentStopReason::Error(e) = resp.stop_reason {
-                            e
+                        let error = if let wcore::AgentStopReason::Error(ref e) = resp.stop_reason {
+                            e.clone()
                         } else {
                             String::new()
                         };
-                        yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd { agent: agent.clone(), error })) };
+                        let provider = rt
+                            .model
+                            .provider_name_for(&resp.model)
+                            .unwrap_or_default();
+                        yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd {
+                            agent: agent.clone(),
+                            error,
+                            provider,
+                            model: resp.model,
+                            usage: Some(sum_usage(&resp.steps)),
+                        })) };
                         return;
                     }
                 }
             }
-            yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd { agent: agent.clone(), error: String::new() })) };
+            yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd {
+                agent: agent.clone(),
+                error: String::new(),
+                provider: String::new(),
+                model: String::new(),
+                usage: None,
+            })) };
         }
     }
 
@@ -309,5 +332,47 @@ fn cron_entry_to_info(e: &CronEntry) -> CronInfo {
         quiet_start: e.quiet_start.clone().unwrap_or_default(),
         quiet_end: e.quiet_end.clone().unwrap_or_default(),
         once: e.once,
+    }
+}
+
+fn sum_usage(steps: &[AgentStep]) -> TokenUsage {
+    let mut prompt = 0u32;
+    let mut completion = 0u32;
+    let mut total = 0u32;
+    let mut cache_hit = 0u32;
+    let mut cache_miss = 0u32;
+    let mut reasoning = 0u32;
+    let mut has_cache_hit = false;
+    let mut has_cache_miss = false;
+    let mut has_reasoning = false;
+
+    for step in steps {
+        let u = &step.response.usage;
+        prompt += u.prompt_tokens;
+        completion += u.completion_tokens;
+        total += u.total_tokens;
+        if let Some(v) = u.prompt_cache_hit_tokens {
+            cache_hit += v;
+            has_cache_hit = true;
+        }
+        if let Some(v) = u.prompt_cache_miss_tokens {
+            cache_miss += v;
+            has_cache_miss = true;
+        }
+        if let Some(ref d) = u.completion_tokens_details
+            && let Some(v) = d.reasoning_tokens
+        {
+            reasoning += v;
+            has_reasoning = true;
+        }
+    }
+
+    TokenUsage {
+        prompt_tokens: prompt,
+        completion_tokens: completion,
+        total_tokens: total,
+        cache_hit_tokens: has_cache_hit.then_some(cache_hit),
+        cache_miss_tokens: has_cache_miss.then_some(cache_miss),
+        reasoning_tokens: has_reasoning.then_some(reasoning),
     }
 }

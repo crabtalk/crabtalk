@@ -8,6 +8,6 @@ pub use crate::protocol::proto::{
     CompactResponse, ConfigMsg, CreateCronMsg, CronInfo, CronList, DaemonStats, DeleteCronMsg,
     ErrorMsg, GetConfig, GetStats, KillMsg, ListCronsMsg, Ping, Pong, ReplyToAsk, SendMsg,
     SendResponse, ServerMessage, SessionInfo, SessionList, SetConfigMsg, StreamChunk, StreamEnd,
-    StreamEvent, StreamMsg, StreamStart, StreamThinking, SubscribeEvents, ToolCallInfo,
+    StreamEvent, StreamMsg, StreamStart, StreamThinking, SubscribeEvents, TokenUsage, ToolCallInfo,
     ToolResultEvent, ToolStartEvent, ToolsCompleteEvent,
 };

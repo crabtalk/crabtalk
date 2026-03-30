@@ -111,10 +111,22 @@ message CompactResponse {
   string summary = 1;
 }
 
+message TokenUsage {
+  uint32 prompt_tokens = 1;
+  uint32 completion_tokens = 2;
+  uint32 total_tokens = 3;
+  optional uint32 cache_hit_tokens = 4;
+  optional uint32 cache_miss_tokens = 5;
+  optional uint32 reasoning_tokens = 6;
+}
+
 message SendResponse {
   string agent = 1;
   string content = 2;
   uint64 session = 3;
+  string provider = 4;
+  string model = 5;
+  optional TokenUsage usage = 6;
 }
 
 message ToolCallInfo {
@@ -163,6 +175,9 @@ message ToolsCompleteEvent {}
 message StreamEnd {
   string agent = 1;
   string error = 2;
+  string provider = 3;
+  string model = 4;
+  optional TokenUsage usage = 5;
 }
 
 message AskUserEvent {
