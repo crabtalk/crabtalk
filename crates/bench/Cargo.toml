@@ -10,9 +10,16 @@ runtime.workspace = true
 criterion.workspace = true
 prost.workspace = true
 tokio.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 futures-util.workspace = true
+axum = { workspace = true, features = ["json"] }
+tracing.workspace = true
+
+[[bin]]
+name = "mock-mcp"
+path = "src/bin/mock_mcp.rs"
 
 [[bench]]
 name = "bm25"

@@ -178,6 +178,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "serde_core",
+ "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
  "sync_wrapper",
@@ -551,14 +552,17 @@ dependencies = [
 name = "crabtalk-bench"
 version = "0.0.16"
 dependencies = [
+ "axum",
  "crabtalk-core",
  "crabtalk-runtime",
  "criterion",
  "futures-util",
  "prost",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

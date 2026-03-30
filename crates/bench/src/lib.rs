@@ -1,5 +1,8 @@
 //! Shared helpers for crabtalk benchmarks.
 
+pub mod mock_mcp;
+pub mod task;
+
 // ── Corpus generation for BM25 benchmarks ───────────────────────
 
 const VOCABULARY: &[&str] = &[
