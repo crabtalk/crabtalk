@@ -232,7 +232,11 @@ impl<B: Backend> Env<B> {
             "forget" => self.dispatch_forget(args).await,
             "delegate" => self.dispatch_delegate(args, agent).await,
             "ask_user" => self.bridge.dispatch_ask_user(args, session_id).await,
-            name => format!("tool not available: {name}"),
+            name => {
+                self.bridge
+                    .dispatch_custom_tool(name, args, agent, session_id)
+                    .await
+            }
         }
     }
 }

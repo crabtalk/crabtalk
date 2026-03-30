@@ -37,6 +37,18 @@ pub trait Backend: Send + Sync {
     /// Called when an agent event occurs. The daemon uses this to broadcast
     /// protobuf events to console subscribers. Default: no-op.
     fn on_agent_event(&self, _agent: &str, _session_id: u64, _event: &wcore::AgentEvent) {}
+
+    /// Handle a tool call not matched by the built-in dispatch table.
+    /// Downstream backends override this to inject private tools.
+    fn dispatch_custom_tool(
+        &self,
+        name: &str,
+        _args: &str,
+        _agent: &str,
+        _session_id: Option<u64>,
+    ) -> impl std::future::Future<Output = String> + Send {
+        async move { format!("tool not available: {name}") }
+    }
 }
 
 /// No-op backend for embedded use.
