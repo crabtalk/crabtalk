@@ -3,6 +3,7 @@
 use crate::{cron::CronEntry, daemon::Daemon};
 use anyhow::{Context, Result};
 use futures_util::{StreamExt, pin_mut};
+use runtime::backend::Backend;
 use std::sync::Arc;
 use std::{
     collections::VecDeque,
@@ -20,7 +21,7 @@ use wcore::protocol::{
 };
 use wcore::{AgentEvent, AgentStep};
 
-impl Server for Daemon {
+impl<B: Backend + 'static> Server for Daemon<B> {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
@@ -37,12 +38,7 @@ impl Server for Daemon {
                     rt.get_or_create_session(&req.agent, created_by).await?
                 };
                 if let Some(ref cwd) = cwd {
-                    rt.hook
-                        .bridge
-                        .session_cwds
-                        .lock()
-                        .await
-                        .insert(id, cwd.clone());
+                    rt.hook.bridge.set_session_cwd(id, cwd.clone()).await;
                 }
                 id
             }
@@ -88,7 +84,7 @@ impl Server for Daemon {
                         rt.get_or_create_session(&agent, created_by.as_str()).await?
                     };
                     if let Some(ref cwd) = cwd {
-                        rt.hook.bridge.session_cwds.lock().await.insert(id, cwd.clone());
+                        rt.hook.bridge.set_session_cwd(id, cwd.clone()).await;
                     }
                     id
                 }
@@ -218,8 +214,7 @@ impl Server for Daemon {
 
     async fn kill_session(&self, session: u64) -> Result<bool> {
         let rt = self.runtime.read().await.clone();
-        rt.hook.bridge.pending_asks.lock().await.remove(&session);
-        rt.hook.bridge.session_cwds.lock().await.remove(&session);
+        rt.hook.bridge.clear_session_state(session).await;
         Ok(rt.close_session(session).await)
     }
 
@@ -227,7 +222,9 @@ impl Server for Daemon {
         let runtime = self.runtime.clone();
         async_stream::try_stream! {
             let rt = runtime.read().await.clone();
-            let mut rx = rt.hook.bridge.subscribe_events();
+            let Some(mut rx) = rt.hook.bridge.subscribe_events() else {
+                return;
+            };
             loop {
                 match rx.recv().await {
                     Ok(event) => yield event,
@@ -308,13 +305,7 @@ impl Server for Daemon {
 
     async fn reply_to_ask(&self, session: u64, content: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
-        if let Some(tx) = rt.hook.bridge.pending_asks.lock().await.remove(&session) {
-            let _ = tx.send(content);
-            return Ok(());
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        if let Some(tx) = rt.hook.bridge.pending_asks.lock().await.remove(&session) {
-            let _ = tx.send(content);
+        if rt.hook.bridge.reply_to_ask(session, content).await? {
             return Ok(());
         }
         anyhow::bail!("no pending ask_user for session {session}")
@@ -568,7 +559,7 @@ fn find_binary(name: &str) -> Result<std::path::PathBuf> {
     anyhow::bail!("binary '{name}' not found in PATH or ~/.cargo/bin")
 }
 
-impl Daemon {
+impl<B: Backend + 'static> Daemon<B> {
     /// Load the current `DaemonConfig` from disk.
     fn load_config(&self) -> Result<crate::DaemonConfig> {
         crate::DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))

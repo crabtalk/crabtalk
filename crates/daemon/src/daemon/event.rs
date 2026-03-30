@@ -9,6 +9,7 @@
 
 use crate::daemon::Daemon;
 use futures_util::{StreamExt, pin_mut};
+use runtime::backend::Backend;
 use tokio::sync::mpsc;
 use wcore::{
     ToolRequest,
@@ -39,7 +40,7 @@ pub type DaemonEventSender = mpsc::UnboundedSender<DaemonEvent>;
 
 // ── Event dispatch ───────────────────────────────────────────────────
 
-impl Daemon {
+impl<B: Backend + 'static> Daemon<B> {
     /// Process events until [`DaemonEvent::Shutdown`] is received.
     ///
     /// Spawns a task for each event to avoid blocking on LLM calls.
@@ -72,7 +73,7 @@ impl Daemon {
         });
     }
 
-    /// Route a tool call through `DaemonEnv::dispatch_tool`.
+    /// Route a tool call through `Env::dispatch_tool`.
     fn handle_tool_call(&self, req: ToolRequest) {
         let runtime = self.runtime.clone();
         tokio::spawn(async move {
