@@ -1,7 +1,7 @@
 //! Shared system service management (launchd/systemd).
 
 use std::path::Path;
-use wcore::paths::{CONFIG_DIR, LOGS_DIR, RUN_DIR, service_log_path, service_port_file};
+use wcore::paths::{CONFIG_DIR, LOGS_DIR, service_log_path, service_port_file};
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -167,6 +167,7 @@ fn parse_tail_n(args: &[String]) -> Option<usize> {
 /// and serve the router.
 #[cfg(feature = "mcp")]
 pub async fn run_mcp(svc: &(impl McpService + Sync)) -> anyhow::Result<()> {
+    use wcore::paths::RUN_DIR;
     let router = svc.router();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
