@@ -61,6 +61,8 @@ pub struct AgentResponse {
     pub iterations: usize,
     /// Why the agent stopped.
     pub stop_reason: AgentStopReason,
+    /// The requested model name (from config, not the API-echoed value).
+    pub model: String,
 }
 
 /// Why the agent stopped executing.

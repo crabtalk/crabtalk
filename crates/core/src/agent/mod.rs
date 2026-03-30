@@ -56,13 +56,17 @@ pub struct Agent<M: Model> {
 }
 
 impl<M: Model> Agent<M> {
-    /// Build a request from config state (system prompt + history + tool schemas).
-    fn build_request(&self, history: &[Message]) -> Request {
-        let model_name = self
-            .config
+    /// Resolve the model name: explicit config override, or the active model.
+    fn model_name(&self) -> String {
+        self.config
             .model
             .clone()
-            .unwrap_or_else(|| self.model.active_model());
+            .unwrap_or_else(|| self.model.active_model())
+    }
+
+    /// Build a request from config state (system prompt + history + tool schemas).
+    fn build_request(&self, history: &[Message]) -> Request {
+        let model_name = self.model_name();
 
         let mut messages = Vec::with_capacity(1 + history.len());
         if !self.config.system_prompt.is_empty() {
@@ -188,6 +192,7 @@ impl<M: Model> Agent<M> {
             iterations: 0,
             stop_reason: AgentStopReason::Error("stream ended without Done".into()),
             steps: vec![],
+            model: self.model_name(),
         })
     }
 
@@ -204,6 +209,7 @@ impl<M: Model> Agent<M> {
         stream! {
             let mut steps = Vec::new();
             let max = self.config.max_iterations;
+            let model_name = self.model_name();
 
             for _ in 0..max {
                 let request = self.build_request(history);
@@ -260,6 +266,7 @@ impl<M: Model> Agent<M> {
                         iterations: steps.len(),
                         stop_reason: AgentStopReason::Error(e),
                         steps,
+                        model: model_name.clone(),
                     });
                     return;
                 }
@@ -360,6 +367,7 @@ impl<M: Model> Agent<M> {
                         iterations: steps.len(),
                         stop_reason,
                         steps,
+                        model: model_name.clone(),
                     });
                     return;
                 }
@@ -373,6 +381,7 @@ impl<M: Model> Agent<M> {
                 iterations: steps.len(),
                 stop_reason: AgentStopReason::MaxIterations,
                 steps,
+                model: model_name,
             });
         }
     }

@@ -423,6 +423,8 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                             format!("session {session_id} not found"),
                         ),
                         steps: vec![],
+                        // No model involved in pre-run errors.
+                        model: String::new(),
                     };
                     yield AgentEvent::Done(resp);
                     return;
@@ -442,6 +444,8 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                             format!("agent '{}' not registered", session.agent),
                         ),
                         steps: vec![],
+                        // No model involved in pre-run errors.
+                        model: String::new(),
                     };
                     yield AgentEvent::Done(resp);
                     return;
