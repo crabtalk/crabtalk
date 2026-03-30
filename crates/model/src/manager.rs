@@ -22,6 +22,8 @@ pub struct ProviderRegistry {
 struct Inner {
     /// Provider instances keyed by model name.
     providers: BTreeMap<String, Provider>,
+    /// Model name → provider config key (e.g. "openai", "anthropic").
+    provider_names: BTreeMap<String, String>,
     /// Model name of the currently active provider.
     active: String,
     /// Shared HTTP client for constructing new providers.
@@ -45,6 +47,7 @@ impl ProviderRegistry {
         Self {
             inner: Arc::new(RwLock::new(Inner {
                 providers: BTreeMap::new(),
+                provider_names: BTreeMap::new(),
                 active: active.into(),
                 client: reqwest::Client::new(),
             })),
@@ -60,8 +63,8 @@ impl ProviderRegistry {
         providers: &BTreeMap<String, ProviderDef>,
     ) -> Result<Self> {
         let registry = Self::new(active);
-        for def in providers.values() {
-            registry.add_def(def)?;
+        for (name, def) in providers {
+            registry.add_def(name, def)?;
         }
         Ok(registry)
     }
@@ -77,7 +80,7 @@ impl ProviderRegistry {
     }
 
     /// Add all models from a provider definition. Builds a `Provider` per model.
-    pub fn add_def(&self, def: &ProviderDef) -> Result<()> {
+    pub fn add_def(&self, provider_name: &str, def: &ProviderDef) -> Result<()> {
         let client = {
             let inner = self
                 .inner
@@ -92,8 +95,19 @@ impl ProviderRegistry {
                 .write()
                 .map_err(|_| anyhow!("provider lock poisoned"))?;
             inner.providers.insert(model_name.to_string(), provider);
+            inner
+                .provider_names
+                .insert(model_name.to_string(), provider_name.to_string());
         }
         Ok(())
+    }
+
+    /// Look up the provider config key for a model name.
+    pub fn provider_name_for(&self, model: &str) -> Option<String> {
+        self.inner
+            .read()
+            .ok()
+            .and_then(|inner| inner.provider_names.get(model).cloned())
     }
 
     /// Get a clone of the active provider.
