@@ -4,8 +4,9 @@ use crate::protocol::message::{
     AgentInfo, AgentList, ClientMessage, ConfigMsg, CreateAgentMsg, DeleteAgentMsg, ErrorMsg,
     GetAgentMsg, GetConfig, InstallPackageMsg, ListAgentsMsg, ListPackagesMsg, ListProvidersMsg,
     PackageInfo, PackageList, Ping, ProviderInfo, ProviderList, SendMsg, SendResponse,
-    ServerMessage, SetConfigMsg, StreamEvent, StreamMsg, UninstallPackageMsg, UpdateAgentMsg,
-    client_message, server_message, stream_event,
+    ServerMessage, ServiceLogOutput, ServiceLogsMsg, SetConfigMsg, StartServiceMsg, StopServiceMsg,
+    StreamEvent, StreamMsg, UninstallPackageMsg, UpdateAgentMsg, client_message, server_message,
+    stream_event,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -359,6 +360,89 @@ pub trait Client: Send {
                 ServerMessage {
                     msg: Some(server_message::Msg::PackageList(PackageList { packages })),
                 } => Ok(packages),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Start a command service.
+    fn start_service(
+        &mut self,
+        name: String,
+        force: bool,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::StartService(StartServiceMsg {
+                        name,
+                        force,
+                    })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Stop a command service.
+    fn stop_service(
+        &mut self,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::StopService(StopServiceMsg { name })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Get recent log lines for a service.
+    fn service_logs(
+        &mut self,
+        name: String,
+        lines: u32,
+    ) -> impl std::future::Future<Output = Result<String>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::ServiceLogs(ServiceLogsMsg {
+                        name,
+                        lines,
+                    })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::ServiceLogOutput(ServiceLogOutput { content })),
+                } => Ok(content),
                 ServerMessage {
                     msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
                 } => {

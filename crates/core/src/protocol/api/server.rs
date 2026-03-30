@@ -4,8 +4,8 @@ use crate::protocol::message::{
     AgentEventMsg, AgentInfo, AgentList, ClientMessage, CompactResponse, ConfigMsg, CreateAgentMsg,
     CreateCronMsg, CronInfo, CronList, DaemonStats, ErrorMsg, InstallPackageMsg, PackageInfo,
     PackageList, Pong, ProviderInfo, ProviderList, SendMsg, SendResponse, ServerMessage,
-    SessionInfo, SessionList, StreamEvent, StreamMsg, UpdateAgentMsg, client_message,
-    server_message,
+    ServiceLogOutput, SessionInfo, SessionList, StreamEvent, StreamMsg, UpdateAgentMsg,
+    client_message, server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -140,6 +140,23 @@ pub trait Server: Sync {
 
     /// Handle `ListPackages` — return all installed hub packages.
     fn list_packages(&self) -> impl std::future::Future<Output = Result<Vec<PackageInfo>>> + Send;
+
+    /// Handle `StartService` — install and start a command service.
+    fn start_service(
+        &self,
+        name: String,
+        force: bool,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `StopService` — stop and uninstall a command service.
+    fn stop_service(&self, name: String) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `ServiceLogs` — return recent log lines for a service.
+    fn service_logs(
+        &self,
+        name: String,
+        lines: u32,
+    ) -> impl std::future::Future<Output = Result<String>> + Send;
 
     /// Dispatch a `ClientMessage` to the appropriate handler method.
     ///
@@ -329,6 +346,28 @@ pub trait Server: Sync {
                             msg: Some(server_message::Msg::PackageList(PackageList {
                                 packages,
                             })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::StartService(req) => {
+                    yield match self.start_service(req.name, req.force).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::StopService(req) => {
+                    yield match self.stop_service(req.name).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ServiceLogs(req) => {
+                    yield match self.service_logs(req.name, req.lines).await {
+                        Ok(content) => ServerMessage {
+                            msg: Some(server_message::Msg::ServiceLogOutput(
+                                ServiceLogOutput { content },
+                            )),
                         },
                         Err(e) => server_error(500, e.to_string()),
                     };

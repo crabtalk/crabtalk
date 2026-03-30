@@ -12,6 +12,7 @@ keywords.workspace = true
 
 [dependencies]
 crabhub.workspace = true
+crabtalk-command.workspace = true
 model.workspace = true
 runtime.workspace = true
 transport.workspace = true

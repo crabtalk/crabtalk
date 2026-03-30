@@ -4,6 +4,10 @@ use crate::{cron::CronEntry, daemon::Daemon};
 use anyhow::{Context, Result};
 use futures_util::{StreamExt, pin_mut};
 use std::sync::Arc;
+use std::{
+    collections::VecDeque,
+    io::{BufRead, BufReader},
+};
 use wcore::protocol::{
     api::Server,
     message::{
@@ -424,57 +428,160 @@ impl Server for Daemon {
     }
 
     async fn list_packages(&self) -> Result<Vec<PackageInfo>> {
-        let packages_dir = self.config_dir.join(wcore::paths::PACKAGES_DIR);
-        let mut result = Vec::new();
-        let scopes = match std::fs::read_dir(&packages_dir) {
-            Ok(entries) => entries,
-            Err(_) => return Ok(result),
-        };
-        for scope_entry in scopes.flatten() {
-            let scope_path = scope_entry.path();
-            if !scope_path.is_dir() {
-                continue;
-            }
-            let scope = scope_entry.file_name().to_string_lossy().to_string();
-            let manifests = match std::fs::read_dir(&scope_path) {
-                Ok(entries) => entries,
-                Err(_) => continue,
-            };
-            for manifest_entry in manifests.flatten() {
-                let path = manifest_entry.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("toml") {
-                    continue;
-                }
-                let name = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or_default();
-                let full_name = format!("{scope}/{name}");
-                let description = std::fs::read_to_string(&path)
-                    .ok()
-                    .and_then(|s| toml::from_str::<toml::Value>(&s).ok())
-                    .and_then(|v| {
-                        v.get("package")?
-                            .get("description")?
-                            .as_str()
-                            .map(String::from)
-                    })
-                    .unwrap_or_default();
-                result.push(PackageInfo {
-                    name: full_name,
-                    description,
-                });
-            }
-        }
+        let mut result: Vec<PackageInfo> = scan_package_manifests(&self.config_dir)
+            .into_iter()
+            .map(|(name, manifest)| PackageInfo {
+                name,
+                description: manifest.package.description,
+            })
+            .collect();
         result.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(result)
     }
+
+    async fn start_service(&self, name: String, force: bool) -> Result<()> {
+        let cmd = self.find_command_service(&name)?;
+        let label = format!("ai.crabtalk.{name}");
+        if !force && crabtalk_command::service::is_installed(&label) {
+            anyhow::bail!("service '{name}' is already running, use force to restart");
+        }
+        let binary = find_binary(&cmd.krate)?;
+        let rendered = crabtalk_command::service::render_service_template(
+            &CommandService {
+                name: name.clone(),
+                description: cmd.description.clone(),
+                label: label.clone(),
+            },
+            &binary,
+        );
+        crabtalk_command::service::install(&rendered, &label)
+    }
+
+    async fn stop_service(&self, name: String) -> Result<()> {
+        let label = format!("ai.crabtalk.{name}");
+        crabtalk_command::service::uninstall(&label)?;
+        let _ = std::fs::remove_file(wcore::paths::service_port_file(&name));
+        Ok(())
+    }
+
+    async fn service_logs(&self, name: String, lines: u32) -> Result<String> {
+        let path = wcore::paths::service_log_path(&name);
+        if !path.exists() {
+            return Ok(format!("no logs yet: {}", path.display()));
+        }
+        let file =
+            std::fs::File::open(&path).context(format!("failed to open {}", path.display()))?;
+        let n = if lines == 0 { 50 } else { lines as usize };
+        let mut tail: VecDeque<String> = VecDeque::with_capacity(n);
+        for line in BufReader::new(file).lines() {
+            let line = line?;
+            if tail.len() == n {
+                tail.pop_front();
+            }
+            tail.push_back(line);
+        }
+        Ok(tail.into_iter().collect::<Vec<_>>().join("\n"))
+    }
+}
+
+/// Service metadata for render_service_template.
+struct CommandService {
+    name: String,
+    description: String,
+    label: String,
+}
+
+impl crabtalk_command::service::Service for CommandService {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn description(&self) -> &str {
+        &self.description
+    }
+    fn label(&self) -> &str {
+        &self.label
+    }
+}
+
+/// Scan `packages/` for installed hub manifests, returning `(scope/name, Manifest)` pairs.
+fn scan_package_manifests(
+    config_dir: &std::path::Path,
+) -> Vec<(String, crabhub::manifest::Manifest)> {
+    let packages_dir = config_dir.join(wcore::paths::PACKAGES_DIR);
+    let mut result = Vec::new();
+    let scopes = match std::fs::read_dir(&packages_dir) {
+        Ok(entries) => entries,
+        Err(_) => return result,
+    };
+    for scope_entry in scopes.flatten() {
+        let scope_path = scope_entry.path();
+        if !scope_path.is_dir() {
+            continue;
+        }
+        let scope = scope_entry.file_name().to_string_lossy().to_string();
+        let manifests = match std::fs::read_dir(&scope_path) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for manifest_entry in manifests.flatten() {
+            let path = manifest_entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+                continue;
+            }
+            let name = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default();
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            match toml::from_str::<crabhub::manifest::Manifest>(&content) {
+                Ok(manifest) => result.push((format!("{scope}/{name}"), manifest)),
+                Err(e) => {
+                    tracing::warn!("failed to parse manifest {}: {e}", path.display());
+                }
+            }
+        }
+    }
+    result
+}
+
+/// Find a binary on PATH or in ~/.cargo/bin.
+fn find_binary(name: &str) -> Result<std::path::PathBuf> {
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            let candidate = dir.join(name);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+    let cargo_bin = wcore::paths::CONFIG_DIR
+        .parent()
+        .unwrap_or(std::path::Path::new("/"))
+        .join(".cargo/bin")
+        .join(name);
+    if cargo_bin.exists() {
+        return Ok(cargo_bin);
+    }
+    anyhow::bail!("binary '{name}' not found in PATH or ~/.cargo/bin")
 }
 
 impl Daemon {
     /// Load the current `DaemonConfig` from disk.
     fn load_config(&self) -> Result<crate::DaemonConfig> {
         crate::DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))
+    }
+
+    /// Look up a command service by name from installed package manifests.
+    fn find_command_service(&self, name: &str) -> Result<crabhub::manifest::CommandConfig> {
+        for (_, manifest) in scan_package_manifests(&self.config_dir) {
+            if let Some(cmd) = manifest.commands.get(name) {
+                return Ok(cmd.clone());
+            }
+        }
+        anyhow::bail!("command service '{name}' not found in installed packages")
     }
 
     /// Write an agent config into the local manifest `[agents.<name>]`.

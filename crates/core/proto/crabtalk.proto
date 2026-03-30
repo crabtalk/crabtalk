@@ -32,6 +32,9 @@ message ClientMessage {
     InstallPackageMsg install_package = 22;
     UninstallPackageMsg uninstall_package = 23;
     ListPackagesMsg list_packages = 24;
+    StartServiceMsg start_service = 25;
+    StopServiceMsg stop_service = 26;
+    ServiceLogsMsg service_logs = 27;
   }
 }
 
@@ -125,6 +128,20 @@ message UninstallPackageMsg {
 
 message ListPackagesMsg {}
 
+message StartServiceMsg {
+  string name = 1;
+  bool force = 2;
+}
+
+message StopServiceMsg {
+  string name = 1;
+}
+
+message ServiceLogsMsg {
+  string name = 1;
+  uint32 lines = 2;
+}
+
 // ── Server Messages ──────────────────────────────────────────────
 
 message ServerMessage {
@@ -144,6 +161,7 @@ message ServerMessage {
     AgentList agent_list = 13;
     ProviderList provider_list = 14;
     PackageList package_list = 15;
+    ServiceLogOutput service_log_output = 16;
   }
 }
 
@@ -329,4 +347,8 @@ message PackageInfo {
 
 message PackageList {
   repeated PackageInfo packages = 1;
+}
+
+message ServiceLogOutput {
+  string content = 1;
 }

@@ -9,7 +9,8 @@ pub use crate::protocol::proto::{
     DaemonStats, DeleteAgentMsg, DeleteCronMsg, ErrorMsg, GetAgentMsg, GetConfig, GetStats,
     InstallPackageMsg, KillMsg, ListAgentsMsg, ListCronsMsg, ListPackagesMsg, ListProvidersMsg,
     PackageInfo, PackageList, Ping, Pong, ProviderInfo, ProviderList, ReplyToAsk, SendMsg,
-    SendResponse, ServerMessage, SessionInfo, SessionList, SetConfigMsg, StreamChunk, StreamEnd,
-    StreamEvent, StreamMsg, StreamStart, StreamThinking, SubscribeEvents, TokenUsage, ToolCallInfo,
-    ToolResultEvent, ToolStartEvent, ToolsCompleteEvent, UninstallPackageMsg, UpdateAgentMsg,
+    SendResponse, ServerMessage, ServiceLogOutput, ServiceLogsMsg, SessionInfo, SessionList,
+    SetConfigMsg, StartServiceMsg, StopServiceMsg, StreamChunk, StreamEnd, StreamEvent, StreamMsg,
+    StreamStart, StreamThinking, SubscribeEvents, TokenUsage, ToolCallInfo, ToolResultEvent,
+    ToolStartEvent, ToolsCompleteEvent, UninstallPackageMsg, UpdateAgentMsg,
 };
