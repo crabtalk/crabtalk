@@ -556,6 +556,15 @@ impl<H: Host + 'static> Server for Daemon<H> {
         }
     }
 
+    async fn list_skills(&self) -> Result<Vec<String>> {
+        let (manifest, _) = wcore::resolve_manifests(&self.config_dir);
+        let mut names = std::collections::BTreeSet::new();
+        for dir in &manifest.skill_dirs {
+            names.extend(wcore::scan_skill_names(dir));
+        }
+        Ok(names.into_iter().collect())
+    }
+
     async fn list_packages(&self) -> Result<Vec<PackageInfo>> {
         let mut result: Vec<PackageInfo> = scan_package_manifests(&self.config_dir)
             .into_iter()

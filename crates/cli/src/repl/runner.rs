@@ -14,9 +14,9 @@ use wcore::protocol::{
     api::Client,
     message::{
         AgentEventMsg, AskQuestion, ClientMessage, ConfigMsg, GetConfig, HubEvent,
-        InstallPackageMsg, KillMsg, ReplyToAsk, ServerMessage, SessionInfo, StreamMsg,
-        SubscribeEvents, UninstallPackageMsg, client_message, hub_event, server_message,
-        stream_event,
+        InstallPackageMsg, KillMsg, ListSkillsMsg, ReplyToAsk, ServerMessage, SessionInfo,
+        SkillList, StreamMsg, SubscribeEvents, UninstallPackageMsg, client_message, hub_event,
+        server_message, stream_event,
     },
 };
 
@@ -384,6 +384,24 @@ impl Runner {
                     Err(e) => Some(Err(e)),
                 })
             })
+    }
+
+    /// List all available skill names from the daemon.
+    pub async fn list_skills(&mut self) -> Result<Vec<String>> {
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::ListSkills(ListSkillsMsg {})),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::SkillList(SkillList { names })),
+            } => Ok(names),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => {
+                anyhow::bail!("server error ({}): {}", e.code, e.message)
+            }
+            other => anyhow::bail!("unexpected response: {other:?}"),
+        }
     }
 
     /// Get the daemon config as JSON string.

@@ -274,14 +274,17 @@ pub struct InputState {
     buf: InputBuffer,
     pub history: History,
     dropdown: Option<DropdownState>,
+    /// Cached skill names for tab completion (fetched from daemon at REPL init).
+    pub skill_names: Vec<String>,
 }
 
 impl InputState {
-    pub fn new(history: History) -> Self {
+    pub fn new(history: History, skill_names: Vec<String>) -> Self {
         Self {
             buf: InputBuffer::new(),
             history,
             dropdown: None,
+            skill_names,
         }
     }
 
@@ -296,7 +299,7 @@ impl InputState {
 
     fn open_dropdown(&mut self) {
         let line = self.buf.first_line().to_string();
-        let candidates = collect_candidates(&line, line.len());
+        let candidates = collect_candidates(&line, line.len(), &self.skill_names);
         if !candidates.is_empty() {
             self.dropdown = Some(DropdownState::new(candidates));
         }
@@ -407,7 +410,7 @@ impl InputState {
                 } else {
                     // Re-filter candidates.
                     let line = self.buf.first_line().to_string();
-                    let candidates = collect_candidates(&line, line.len());
+                    let candidates = collect_candidates(&line, line.len(), &self.skill_names);
                     if candidates.is_empty() {
                         self.close_dropdown();
                     } else if let Some(dd) = &mut self.dropdown {
@@ -421,7 +424,7 @@ impl InputState {
                 self.buf.handle_key(event::KeyCode::Char(ch));
                 // Re-filter candidates.
                 let line = self.buf.first_line().to_string();
-                let candidates = collect_candidates(&line, line.len());
+                let candidates = collect_candidates(&line, line.len(), &self.skill_names);
                 if candidates.is_empty() {
                     self.close_dropdown();
                 } else if let Some(dd) = &mut self.dropdown {

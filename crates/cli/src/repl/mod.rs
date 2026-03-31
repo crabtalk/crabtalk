@@ -77,10 +77,11 @@ impl ChatRepl {
         let conn_info = self.runner.conn_info().clone();
         let os_user = std::env::var("USER").unwrap_or_else(|_| "user".into());
 
+        let skill_names = self.runner.list_skills().await.unwrap_or_default();
         let history = std::mem::take(&mut self.history);
         let mut app = App {
             renderer: MarkdownRenderer::new(),
-            input: InputState::new(history),
+            input: InputState::new(history, skill_names),
             scroll: 0,
             message_queue: VecDeque::new(),
             agent: self.agent.clone(),

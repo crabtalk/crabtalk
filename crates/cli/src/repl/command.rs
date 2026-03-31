@@ -5,7 +5,7 @@ use anyhow::Result;
 pub const SLASH_COMMANDS: &[&str] = &["/clear", "/exit", "/help", "/resume"];
 
 /// Collect matching `/command` and `/skill` names for the typed prefix.
-pub fn collect_candidates(line: &str, pos: usize) -> Vec<String> {
+pub fn collect_candidates(line: &str, pos: usize, skill_names: &[String]) -> Vec<String> {
     let prefix = &line[..pos];
     let Some(slash) = prefix.find('/') else {
         return Vec::new();
@@ -19,11 +19,9 @@ pub fn collect_candidates(line: &str, pos: usize) -> Vec<String> {
         .collect();
 
     let skill_prefix = &typed[1..];
-    if let Some(skills) = list_skill_names() {
-        for name in skills {
-            if name.starts_with(skill_prefix) {
-                candidates.push(format!("/{name}"));
-            }
+    for name in skill_names {
+        if name.starts_with(skill_prefix) {
+            candidates.push(format!("/{name}"));
         }
     }
 
@@ -74,19 +72,4 @@ pub async fn handle_slash(line: &str) -> Result<SlashResult> {
         }
     }
     Ok(SlashResult::Handled)
-}
-
-/// List skill names for tab completion.
-fn list_skill_names() -> Option<Vec<String>> {
-    let config_dir = &*wcore::paths::CONFIG_DIR;
-    let (resolved, _) = wcore::resolve_manifests(config_dir);
-    let mut all_names = std::collections::BTreeSet::new();
-    for dir in &resolved.skill_dirs {
-        all_names.extend(wcore::scan_skill_names(dir));
-    }
-    if all_names.is_empty() {
-        None
-    } else {
-        Some(all_names.into_iter().collect())
-    }
 }

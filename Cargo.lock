@@ -548,19 +548,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabtalk-backend"
-version = "0.0.16"
-dependencies = [
- "anyhow",
- "crabtalk-core",
- "crabtalk-daemon",
- "rustls",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "crabtalk-bench"
 version = "0.0.16"
 dependencies = [

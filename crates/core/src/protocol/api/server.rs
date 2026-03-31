@@ -4,7 +4,7 @@ use crate::protocol::message::{
     AgentEventMsg, AgentInfo, AgentList, ClientMessage, CompactResponse, ConfigMsg, CreateAgentMsg,
     CreateCronMsg, CronInfo, CronList, DaemonStats, ErrorMsg, HubEvent, InstallPackageMsg,
     PackageInfo, PackageList, Pong, ProviderInfo, ProviderList, SendMsg, SendResponse,
-    ServerMessage, ServiceLogOutput, SessionInfo, SessionList, StreamEvent, StreamMsg,
+    ServerMessage, ServiceLogOutput, SessionInfo, SessionList, SkillList, StreamEvent, StreamMsg,
     UpdateAgentMsg, client_message, server_message,
 };
 use anyhow::Result;
@@ -137,6 +137,9 @@ pub trait Server: Sync {
 
     /// Handle `ListPackages` — return all installed hub packages.
     fn list_packages(&self) -> impl std::future::Future<Output = Result<Vec<PackageInfo>>> + Send;
+
+    /// Handle `ListSkills` — return all available skill names.
+    fn list_skills(&self) -> impl std::future::Future<Output = Result<Vec<String>>> + Send;
 
     /// Handle `StartService` — install and start a command service.
     fn start_service(
@@ -367,6 +370,14 @@ pub trait Server: Sync {
                             msg: Some(server_message::Msg::ServiceLogOutput(
                                 ServiceLogOutput { content },
                             )),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ListSkills(_) => {
+                    yield match self.list_skills().await {
+                        Ok(names) => ServerMessage {
+                            msg: Some(server_message::Msg::SkillList(SkillList { names })),
                         },
                         Err(e) => server_error(500, e.to_string()),
                     };

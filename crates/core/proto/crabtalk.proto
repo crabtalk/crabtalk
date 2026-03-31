@@ -35,6 +35,7 @@ message ClientMessage {
     StartServiceMsg start_service = 25;
     StopServiceMsg stop_service = 26;
     ServiceLogsMsg service_logs = 27;
+    ListSkillsMsg list_skills = 28;
   }
 }
 
@@ -128,6 +129,8 @@ message UninstallPackageMsg {
 
 message ListPackagesMsg {}
 
+message ListSkillsMsg {}
+
 message StartServiceMsg {
   string name = 1;
   bool force = 2;
@@ -163,6 +166,7 @@ message ServerMessage {
     PackageList package_list = 15;
     ServiceLogOutput service_log_output = 16;
     HubEvent hub_event = 17;
+    SkillList skill_list = 18;
   }
 }
 
@@ -352,6 +356,10 @@ message PackageList {
 
 message ServiceLogOutput {
   string content = 1;
+}
+
+message SkillList {
+  repeated string names = 1;
 }
 
 // ── Hub Events ──────────────────────────────────────────────────
