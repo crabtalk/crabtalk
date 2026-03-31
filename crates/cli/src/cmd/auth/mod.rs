@@ -152,17 +152,7 @@ impl ProviderData {
                 Some(self.base_url.clone())
             },
             models: self.models.clone(),
-            weight: None,
-            max_retries: None,
-            api_version: None,
-            timeout: None,
-            region: None,
-            access_key: None,
-            secret_key: None,
-            model_path: None,
-            n_gpu_layers: None,
-            n_ctx: None,
-            n_threads: None,
+            ..Default::default()
         }
     }
 }

@@ -49,7 +49,7 @@ pub fn build_provider(def: &ProviderDef, model: &str, client: reqwest::Client) -
     let mut inner = CtProvider::from(&config);
 
     // Apply crabtalk-specific base_url normalization (strip endpoint suffixes).
-    if let CtProvider::OpenAiCompat {
+    if let CtProvider::Openai {
         ref mut base_url, ..
     } = inner
     {

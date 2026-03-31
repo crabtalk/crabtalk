@@ -33,7 +33,7 @@ pub const PROVIDER_PRESETS: &[ProviderPreset] = &[
     },
     ProviderPreset {
         name: "openai",
-        kind: ApiStandard::OpenaiCompat,
+        kind: ApiStandard::Openai,
         base_url: "https://api.openai.com/v1",
         fixed_base_url: "",
         default_model: "gpt-4o",

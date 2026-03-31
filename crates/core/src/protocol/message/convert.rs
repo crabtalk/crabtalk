@@ -102,7 +102,7 @@ impl TryFrom<ServerMessage> for stream_event::Event {
 impl From<ApiStandard> for ProviderKind {
     fn from(kind: ApiStandard) -> Self {
         match kind {
-            ApiStandard::OpenaiCompat => Self::Openai,
+            ApiStandard::Openai => Self::Openai,
             ApiStandard::Anthropic => Self::Anthropic,
             ApiStandard::Google => Self::Google,
             ApiStandard::Bedrock => Self::Bedrock,
@@ -116,7 +116,7 @@ impl From<ApiStandard> for ProviderKind {
 impl From<ProviderKind> for ApiStandard {
     fn from(kind: ProviderKind) -> Self {
         match kind {
-            ProviderKind::Openai | ProviderKind::Unknown => Self::OpenaiCompat,
+            ProviderKind::Openai | ProviderKind::Unknown => Self::Openai,
             ProviderKind::Anthropic => Self::Anthropic,
             ProviderKind::Google => Self::Google,
             ProviderKind::Bedrock => Self::Bedrock,
