@@ -12,12 +12,12 @@ use std::{
 use wcore::protocol::{
     api::Server,
     message::{
-        AgentEventMsg, AgentInfo, AskOption, AskQuestion, AskUserEvent, CreateAgentMsg,
-        CreateCronMsg, CronInfo, CronList, DaemonStats, HubDone, HubEvent, HubSetupOutput, HubStep,
-        HubWarning, InstallPackageMsg, PackageInfo, ProviderInfo, SendMsg, SendResponse,
-        SessionInfo, StreamChunk, StreamEnd, StreamEvent, StreamMsg, StreamStart, StreamThinking,
-        TokenUsage, ToolCallInfo, ToolResultEvent, ToolStartEvent, ToolsCompleteEvent,
-        UpdateAgentMsg, hub_event, stream_event,
+        AgentEventMsg, AgentInfo, AskOption, AskQuestion, AskUserEvent, ConversationInfo,
+        CreateAgentMsg, CreateCronMsg, CronInfo, CronList, DaemonStats, HubDone, HubEvent,
+        HubSetupOutput, HubStep, HubWarning, InstallPackageMsg, PackageInfo, ProviderInfo, SendMsg,
+        SendResponse, SessionInfo, StreamChunk, StreamEnd, StreamEvent, StreamMsg, StreamStart,
+        StreamThinking, TokenUsage, ToolCallInfo, ToolResultEvent, ToolStartEvent,
+        ToolsCompleteEvent, UpdateAgentMsg, hub_event, stream_event,
     },
 };
 use wcore::{AgentEvent, AgentStep};
@@ -556,6 +556,15 @@ impl<H: Host + 'static> Server for Daemon<H> {
         }
     }
 
+    async fn list_conversations(
+        &self,
+        agent: String,
+        sender: String,
+    ) -> Result<Vec<ConversationInfo>> {
+        let sessions_dir = self.config_dir.join("sessions");
+        Ok(scan_conversations_all(&sessions_dir, &agent, &sender))
+    }
+
     async fn list_skills(&self) -> Result<Vec<String>> {
         let (manifest, _) = wcore::resolve_manifests(&self.config_dir);
         let mut names = std::collections::BTreeSet::new();
@@ -814,6 +823,145 @@ fn hub_done(error: &str) -> HubEvent {
         event: Some(hub_event::Event::Done(HubDone {
             error: error.to_string(),
         })),
+    }
+}
+
+/// Scan session files and return conversation info.
+///
+/// If `agent` and `sender` are both empty, returns all conversations.
+/// Otherwise, filters to the given identity.
+fn scan_conversations_all(
+    sessions_dir: &std::path::Path,
+    agent: &str,
+    sender: &str,
+) -> Vec<ConversationInfo> {
+    let Ok(entries) = std::fs::read_dir(sessions_dir) else {
+        return Vec::new();
+    };
+
+    let filter_prefix = if !agent.is_empty() && !sender.is_empty() {
+        Some(format!("{}_{}_", agent, wcore::sender_slug(sender)))
+    } else {
+        None
+    };
+
+    let today = chrono::Local::now().date_naive();
+    let mut results = Vec::new();
+
+    for file in entries.flatten() {
+        let path = file.path();
+        if path.is_dir() {
+            continue;
+        }
+        let name = file.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !name.ends_with(".jsonl") {
+            continue;
+        }
+
+        if let Some(ref prefix) = filter_prefix
+            && !name.starts_with(prefix)
+        {
+            continue;
+        }
+
+        let Some((file_agent, file_sender, seq, title)) = parse_session_filename(name) else {
+            continue;
+        };
+
+        if filter_prefix.is_none() && !agent.is_empty() && file_agent != agent {
+            continue;
+        }
+
+        let mtime = file
+            .metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        let (alive_secs, message_count) = read_session_file_stats(&path);
+        let date = mtime_to_label(mtime, today);
+
+        results.push((
+            mtime,
+            ConversationInfo {
+                agent: file_agent,
+                sender: file_sender,
+                seq,
+                title,
+                file_path: path.to_string_lossy().into_owned(),
+                message_count,
+                alive_secs,
+                date,
+            },
+        ));
+    }
+
+    // Sort by mtime descending (most recently active first).
+    results.sort_by(|a, b| b.0.cmp(&a.0));
+    results.into_iter().map(|(_, info)| info).collect()
+}
+
+/// Parse a session filename into (agent, sender, seq, title).
+///
+/// Format: `{agent}_{sender}_{seq}[_{title}].jsonl`
+fn parse_session_filename(name: &str) -> Option<(String, String, u32, String)> {
+    let stem = name.strip_suffix(".jsonl")?;
+    let parts: Vec<&str> = stem.split('_').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    // Find the first numeric part after position 1 (that's the seq).
+    for i in 2..parts.len() {
+        if !parts[i].is_empty() && parts[i].chars().all(|c| c.is_ascii_digit()) {
+            let agent = parts[0].to_string();
+            let sender = parts[1..i].join("_");
+            let seq: u32 = parts[i].parse().ok()?;
+            let title = if i + 1 < parts.len() {
+                parts[i + 1..].join("_")
+            } else {
+                String::new()
+            };
+            return Some((agent, sender, seq, title));
+        }
+    }
+    None
+}
+
+/// Read uptime_secs from meta line and count message lines.
+fn read_session_file_stats(path: &std::path::Path) -> (u64, u64) {
+    use std::io::{BufRead, BufReader};
+
+    let Ok(file) = std::fs::File::open(path) else {
+        return (0, 0);
+    };
+    let reader = BufReader::new(file);
+    let mut lines = reader.lines();
+
+    let uptime = lines
+        .next()
+        .and_then(|l| l.ok())
+        .and_then(|l| {
+            let v: serde_json::Value = serde_json::from_str(&l).ok()?;
+            v.get("uptime_secs")?.as_u64()
+        })
+        .unwrap_or(0);
+
+    let msg_count = lines
+        .map_while(|l| l.ok())
+        .filter(|l| !l.trim().is_empty() && !l.contains("\"compact\""))
+        .count() as u64;
+
+    (uptime, msg_count)
+}
+
+/// Convert a file mtime to a human-readable date label.
+fn mtime_to_label(mtime: std::time::SystemTime, today: chrono::NaiveDate) -> String {
+    let date = chrono::DateTime::<chrono::Local>::from(mtime).date_naive();
+    if date == today {
+        "Today".to_string()
+    } else if date == today - chrono::Duration::days(1) {
+        "Yesterday".to_string()
+    } else {
+        date.format("%Y-%m-%d").to_string()
     }
 }
 

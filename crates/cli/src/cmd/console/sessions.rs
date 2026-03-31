@@ -8,7 +8,8 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
-use std::{collections::BTreeMap, fs, path::Path};
+use std::collections::BTreeMap;
+use wcore::protocol::message::{ConversationInfo, SessionInfo};
 
 /// Which view the Sessions tab is showing.
 #[derive(Clone)]
@@ -49,39 +50,71 @@ pub(super) struct IdentityEntry {
 #[derive(Clone)]
 pub(super) struct ConversationEntry {
     pub date: String,
-    #[allow(dead_code)]
-    pub seq: u32,
     pub title: String,
     /// File path for this conversation (used for resume).
-    #[allow(dead_code)]
-    pub file_path: std::path::PathBuf,
-    /// Message count (from disk line count or daemon).
+    pub file_path: String,
+    /// Message count (from daemon).
     pub message_count: Option<u64>,
-    /// Uptime in seconds (from disk meta or daemon).
+    /// Uptime in seconds (from daemon).
     pub alive_secs: Option<u64>,
     /// Daemon session ID (for correlating with live events).
     pub session_id: Option<u64>,
 }
 
 impl SessionView {
-    /// Refresh identity list from disk, merged with daemon live data.
+    /// Refresh identity list from daemon data.
     pub fn refresh_identities(
         &mut self,
-        daemon_sessions: &[wcore::protocol::message::SessionInfo],
+        conversations: &[ConversationInfo],
+        daemon_sessions: &[SessionInfo],
     ) {
-        let mut entries = scan_identities(&wcore::paths::SESSIONS_DIR);
+        let mut data: BTreeMap<(String, String), (usize, String, u64, u64)> = BTreeMap::new();
 
-        // Merge daemon live data into identity entries.
-        for entry in &mut entries {
-            for ds in daemon_sessions {
-                if ds.agent == entry.agent && ds.created_by == entry.sender {
-                    entry.message_count += ds.message_count;
-                    entry.alive_secs = entry.alive_secs.max(ds.alive_secs);
-                    // Session is loaded in memory — it's active today.
-                    entry.last_active = "Today".to_string();
-                }
+        for c in conversations {
+            let key = (c.agent.clone(), c.sender.clone());
+            let entry = data.entry(key).or_insert((0, String::new(), 0, 0));
+            entry.0 += 1;
+            // Keep the most recent date label.
+            if entry.1.is_empty()
+                || c.date == "Today"
+                || (c.date == "Yesterday" && entry.1 != "Today")
+            {
+                entry.1.clone_from(&c.date);
             }
+            entry.2 += c.alive_secs;
+            entry.3 += c.message_count;
         }
+
+        // Merge live daemon session data.
+        for ds in daemon_sessions {
+            let key = (ds.agent.clone(), ds.created_by.clone());
+            let entry = data.entry(key).or_insert((0, String::new(), 0, 0));
+            entry.1 = "Today".to_string();
+            entry.2 = entry.2.max(ds.alive_secs);
+            entry.3 = entry.3.max(ds.message_count);
+        }
+
+        let mut entries: Vec<_> = data
+            .into_iter()
+            .map(
+                |((agent, sender), (count, last_active, alive_secs, message_count))| {
+                    IdentityEntry {
+                        agent,
+                        sender,
+                        count,
+                        message_count,
+                        last_active,
+                        alive_secs,
+                    }
+                },
+            )
+            .collect();
+        // Sort: active today first, then by name.
+        entries.sort_by(|a, b| {
+            let a_today = a.last_active == "Today";
+            let b_today = b.last_active == "Today";
+            b_today.cmp(&a_today).then(a.agent.cmp(&b.agent))
+        });
 
         let selected = match self {
             Self::Identities { selected, .. } => (*selected).min(entries.len().saturating_sub(1)),
@@ -91,23 +124,29 @@ impl SessionView {
     }
 
     /// Enter the selected identity to show its conversations.
-    /// `daemon_sessions` provides live session info from the daemon.
-    pub fn enter(&mut self, daemon_sessions: &[wcore::protocol::message::SessionInfo]) {
+    pub fn enter(&mut self, conversations: &[ConversationInfo], daemon_sessions: &[SessionInfo]) {
         if let Self::Identities { entries, selected } = self
             && let Some(entry) = entries.get(*selected)
         {
-            let mut conversations =
-                scan_conversations(&wcore::paths::SESSIONS_DIR, &entry.agent, &entry.sender);
+            let mut conv_entries: Vec<ConversationEntry> = conversations
+                .iter()
+                .map(|c| ConversationEntry {
+                    date: c.date.clone(),
+                    title: c.title.clone(),
+                    file_path: c.file_path.clone(),
+                    message_count: Some(c.message_count),
+                    alive_secs: Some(c.alive_secs),
+                    session_id: None,
+                })
+                .collect();
 
-            // Merge live stats from daemon sessions that match this identity.
+            // Merge live stats from daemon sessions.
             for ds in daemon_sessions {
                 if ds.agent == entry.agent && ds.created_by == entry.sender {
-                    // Match by title: the daemon session's title slug should match
-                    // one of the conversation entries' title.
                     let title_slug = wcore::sender_slug(&ds.title);
-                    if let Some(conv) = conversations.iter_mut().find(|c| {
+                    if let Some(conv) = conv_entries.iter_mut().find(|c| {
                         if ds.title.is_empty() && c.title.is_empty() {
-                            true // both untitled — match the latest
+                            true
                         } else {
                             c.title == title_slug
                         }
@@ -122,25 +161,22 @@ impl SessionView {
             *self = Self::Conversations {
                 agent: entry.agent.clone(),
                 sender: entry.sender.clone(),
-                entries: conversations,
+                entries: conv_entries,
                 selected: 0,
             };
         }
     }
 
     /// Update live stats from daemon data without resetting selection.
-    pub fn merge_daemon_data(&mut self, daemon_sessions: &[wcore::protocol::message::SessionInfo]) {
+    /// Only overlays live session info — does not touch base counts from
+    /// the last `refresh_identities` call.
+    pub fn merge_daemon_data(&mut self, daemon_sessions: &[SessionInfo]) {
         match self {
             Self::Identities { entries, .. } => {
-                // Reset live stats, then re-merge.
-                for e in entries.iter_mut() {
-                    e.message_count = 0;
-                    e.alive_secs = 0;
-                }
                 for e in entries.iter_mut() {
                     for ds in daemon_sessions {
                         if ds.agent == e.agent && ds.created_by == e.sender {
-                            e.message_count += ds.message_count;
+                            e.message_count = e.message_count.max(ds.message_count);
                             e.alive_secs = e.alive_secs.max(ds.alive_secs);
                             e.last_active = "Today".to_string();
                         }
@@ -153,7 +189,6 @@ impl SessionView {
                 entries,
                 ..
             } => {
-                // Reset live stats, then re-merge for this identity.
                 for c in entries.iter_mut() {
                     c.message_count = None;
                     c.alive_secs = None;
@@ -187,16 +222,29 @@ impl SessionView {
             entries, selected, ..
         } = self
         {
-            entries.get(*selected).map(|e| e.file_path.clone())
+            entries
+                .get(*selected)
+                .map(|e| std::path::PathBuf::from(&e.file_path))
+        } else {
+            None
+        }
+    }
+
+    /// Get the (agent, sender) of the currently selected identity.
+    pub fn selected_identity(&self) -> Option<(&str, &str)> {
+        if let Self::Identities { entries, selected } = self {
+            entries
+                .get(*selected)
+                .map(|e| (e.agent.as_str(), e.sender.as_str()))
         } else {
             None
         }
     }
 
     /// Go back to identity list.
-    pub fn back(&mut self, daemon_sessions: &[wcore::protocol::message::SessionInfo]) {
+    pub fn back(&mut self, conversations: &[ConversationInfo], daemon_sessions: &[SessionInfo]) {
         if matches!(self, Self::Conversations { .. }) {
-            self.refresh_identities(daemon_sessions);
+            self.refresh_identities(conversations, daemon_sessions);
         }
     }
 
@@ -371,195 +419,4 @@ fn render_conversations(
     }
 
     frame.render_widget(Paragraph::new(lines).block(block), area);
-}
-
-/// Convert a file mtime to a display label relative to today.
-fn mtime_to_label(mtime: std::time::SystemTime, today: chrono::NaiveDate) -> String {
-    let date = chrono::DateTime::<chrono::Local>::from(mtime).date_naive();
-    if date == today {
-        "Today".to_string()
-    } else if date == today - chrono::Duration::days(1) {
-        "Yesterday".to_string()
-    } else {
-        date.format("%Y-%m-%d").to_string()
-    }
-}
-
-// ── Filesystem scanning ─────────────────────────────────────────────
-
-/// Scan flat sessions directory and return unique identities with stats.
-fn scan_identities(sessions_dir: &Path) -> Vec<IdentityEntry> {
-    // Track: (agent, sender) → (count, latest_mtime, total_uptime, total_msgs)
-    let mut data: BTreeMap<(String, String), (usize, std::time::SystemTime, u64, u64)> =
-        BTreeMap::new();
-
-    let Ok(entries) = fs::read_dir(sessions_dir) else {
-        return Vec::new();
-    };
-
-    for file in entries.flatten() {
-        let path = file.path();
-        if path.is_dir() {
-            continue;
-        }
-        let name = file.file_name();
-        let Some(name) = name.to_str() else { continue };
-        if !name.ends_with(".jsonl") {
-            continue;
-        }
-        if let Some((agent, sender)) = parse_identity_from_filename(name) {
-            let mtime = file
-                .metadata()
-                .and_then(|m| m.modified())
-                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-            let (uptime, msgs) = read_file_stats(&path);
-            let entry =
-                data.entry((agent, sender))
-                    .or_insert((0, std::time::SystemTime::UNIX_EPOCH, 0, 0));
-            entry.0 += 1;
-            if mtime > entry.1 {
-                entry.1 = mtime;
-            }
-            entry.2 += uptime;
-            entry.3 += msgs;
-        }
-    }
-
-    let today = chrono::Local::now().date_naive();
-    let mut entries: Vec<_> = data
-        .into_iter()
-        .map(|((agent, sender), (count, mtime, uptime, msgs))| {
-            let last_active = mtime_to_label(mtime, today);
-            (
-                mtime,
-                IdentityEntry {
-                    agent,
-                    sender,
-                    count,
-                    message_count: msgs,
-                    last_active,
-                    alive_secs: uptime,
-                },
-            )
-        })
-        .collect();
-    // Sort by mtime descending (most recently active first).
-    entries.sort_by(|a, b| b.0.cmp(&a.0));
-    entries.into_iter().map(|(_, e)| e).collect()
-}
-
-/// Scan conversations for a specific identity, sorted by mtime (newest first).
-fn scan_conversations(sessions_dir: &Path, agent: &str, sender: &str) -> Vec<ConversationEntry> {
-    let slug = wcore::sender_slug(sender);
-    let prefix = format!("{agent}_{slug}_");
-    let today = chrono::Local::now().date_naive();
-
-    let Ok(files) = fs::read_dir(sessions_dir) else {
-        return Vec::new();
-    };
-
-    let mut raw: Vec<(
-        std::time::SystemTime,
-        u32,
-        String,
-        std::path::PathBuf,
-        u64,
-        u64,
-    )> = Vec::new();
-    for file in files.flatten() {
-        let path = file.path();
-        if path.is_dir() {
-            continue;
-        }
-        let name = file.file_name();
-        let Some(name) = name.to_str() else { continue };
-        if !name.starts_with(&prefix) || !name.ends_with(".jsonl") {
-            continue;
-        }
-        let after_prefix = &name[prefix.len()..name.len() - 6]; // strip .jsonl
-        let (seq, title) = if let Some(underscore) = after_prefix.find('_') {
-            let seq: u32 = after_prefix[..underscore].parse().unwrap_or(0);
-            let title = after_prefix[underscore + 1..].to_string();
-            (seq, title)
-        } else {
-            let seq: u32 = after_prefix.parse().unwrap_or(0);
-            (seq, String::new())
-        };
-        let mtime = file
-            .metadata()
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-
-        // Read stats from the file: meta line for uptime, line count for messages.
-        let (uptime, msg_count) = read_file_stats(&path);
-        raw.push((mtime, seq, title, path, uptime, msg_count));
-    }
-
-    // Sort by mtime descending (newest first).
-    raw.sort_by(|a, b| b.0.cmp(&a.0));
-
-    raw.into_iter()
-        .map(
-            |(mtime, seq, title, file_path, uptime, msg_count)| ConversationEntry {
-                date: mtime_to_label(mtime, today),
-                seq,
-                title,
-                file_path,
-                message_count: Some(msg_count),
-                alive_secs: Some(uptime),
-                session_id: None,
-            },
-        )
-        .collect()
-}
-
-/// Read uptime_secs from meta line and count message lines from a session file.
-/// Returns (uptime_secs, message_count).
-fn read_file_stats(path: &Path) -> (u64, u64) {
-    use std::io::{BufRead, BufReader};
-
-    let Ok(file) = fs::File::open(path) else {
-        return (0, 0);
-    };
-    let reader = BufReader::new(file);
-    let mut lines = reader.lines();
-
-    // First line is meta — extract uptime_secs.
-    let uptime = lines
-        .next()
-        .and_then(|l| l.ok())
-        .and_then(|l| {
-            let v: serde_json::Value = serde_json::from_str(&l).ok()?;
-            v.get("uptime_secs")?.as_u64()
-        })
-        .unwrap_or(0);
-
-    // Count remaining non-empty, non-compact lines as messages.
-    let msg_count = lines
-        .map_while(|l| l.ok())
-        .filter(|l| !l.trim().is_empty() && !l.contains("\"compact\""))
-        .count() as u64;
-
-    (uptime, msg_count)
-}
-
-/// Parse agent and sender from a session filename.
-/// Format: `{agent}_{sender}_{seq}[_{title}].jsonl`
-fn parse_identity_from_filename(name: &str) -> Option<(String, String)> {
-    let stem = name.strip_suffix(".jsonl")?;
-    // Split by '_' and find the first part that looks like a seq number.
-    // Everything before the seq is agent_sender.
-    let parts: Vec<&str> = stem.split('_').collect();
-    if parts.len() < 3 {
-        return None;
-    }
-    // Find the first numeric part (that's the seq).
-    for i in 2..parts.len() {
-        if parts[i].chars().all(|c| c.is_ascii_digit()) && !parts[i].is_empty() {
-            let agent = parts[0].to_string();
-            let sender = parts[1..i].join("_");
-            return Some((agent, sender));
-        }
-    }
-    None
 }

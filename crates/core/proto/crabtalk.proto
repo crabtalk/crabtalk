@@ -36,6 +36,7 @@ message ClientMessage {
     StopServiceMsg stop_service = 26;
     ServiceLogsMsg service_logs = 27;
     ListSkillsMsg list_skills = 28;
+    ListConversationsMsg list_conversations = 29;
   }
 }
 
@@ -131,6 +132,11 @@ message ListPackagesMsg {}
 
 message ListSkillsMsg {}
 
+message ListConversationsMsg {
+  string agent = 1;
+  string sender = 2;
+}
+
 message StartServiceMsg {
   string name = 1;
   bool force = 2;
@@ -167,6 +173,7 @@ message ServerMessage {
     ServiceLogOutput service_log_output = 16;
     HubEvent hub_event = 17;
     SkillList skill_list = 18;
+    ConversationList conversation_list = 19;
   }
 }
 
@@ -360,6 +367,21 @@ message ServiceLogOutput {
 
 message SkillList {
   repeated string names = 1;
+}
+
+message ConversationInfo {
+  string agent = 1;
+  string sender = 2;
+  uint32 seq = 3;
+  string title = 4;
+  string file_path = 5;
+  uint64 message_count = 6;
+  uint64 alive_secs = 7;
+  string date = 8;
+}
+
+message ConversationList {
+  repeated ConversationInfo conversations = 1;
 }
 
 // ── Hub Events ──────────────────────────────────────────────────

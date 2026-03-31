@@ -13,10 +13,10 @@ use transport::uds::{ClientConfig, Connection, CrabtalkClient};
 use wcore::protocol::{
     api::Client,
     message::{
-        AgentEventMsg, AskQuestion, ClientMessage, ConfigMsg, GetConfig, HubEvent,
-        InstallPackageMsg, KillMsg, ListSkillsMsg, ReplyToAsk, ServerMessage, SessionInfo,
-        SkillList, StreamMsg, SubscribeEvents, UninstallPackageMsg, client_message, hub_event,
-        server_message, stream_event,
+        AgentEventMsg, AskQuestion, ClientMessage, ConfigMsg, ConversationInfo, ConversationList,
+        GetConfig, HubEvent, InstallPackageMsg, KillMsg, ListConversationsMsg, ListSkillsMsg,
+        ReplyToAsk, ServerMessage, SessionInfo, SkillList, StreamMsg, SubscribeEvents,
+        UninstallPackageMsg, client_message, hub_event, server_message, stream_event,
     },
 };
 
@@ -384,6 +384,33 @@ impl Runner {
                     Err(e) => Some(Err(e)),
                 })
             })
+    }
+
+    /// List historical conversations from the daemon.
+    pub async fn list_conversations(
+        &mut self,
+        agent: &str,
+        sender: &str,
+    ) -> Result<Vec<ConversationInfo>> {
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::ListConversations(
+                ListConversationsMsg {
+                    agent: agent.to_string(),
+                    sender: sender.to_string(),
+                },
+            )),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::ConversationList(ConversationList { conversations })),
+            } => Ok(conversations),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => {
+                anyhow::bail!("server error ({}): {}", e.code, e.message)
+            }
+            other => anyhow::bail!("unexpected response: {other:?}"),
+        }
     }
 
     /// List all available skill names from the daemon.

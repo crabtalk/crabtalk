@@ -49,10 +49,11 @@ impl Console {
 
         let mut terminal = tui::setup()?;
 
-        // Fetch initial daemon session data.
+        // Fetch initial data from daemon.
         let daemon_sessions = runner.list_sessions().await.unwrap_or_default();
+        let conversations = runner.list_conversations("", "").await.unwrap_or_default();
         let mut session_view = SessionView::default();
-        session_view.refresh_identities(&daemon_sessions);
+        session_view.refresh_identities(&conversations, &daemon_sessions);
 
         let mut state = ConsoleState {
             status: String::from("Ready"),
@@ -175,17 +176,38 @@ async fn handle_sessions_key(
             if let Some(path) = state.session_view.selected_file() {
                 return Some(path);
             }
-            // In identity view: drill down.
-            let timeout = std::time::Duration::from_millis(500);
-            if let Ok(Ok(sessions)) =
-                tokio::time::timeout(timeout, state.runner.list_sessions()).await
-            {
-                state.daemon_sessions = sessions;
+            // In identity view: drill down — fetch conversations for the selected identity.
+            if let Some((agent, sender)) = state.session_view.selected_identity() {
+                let agent = agent.to_string();
+                let sender = sender.to_string();
+                let timeout = std::time::Duration::from_millis(500);
+                if let Ok(Ok(sessions)) =
+                    tokio::time::timeout(timeout, state.runner.list_sessions()).await
+                {
+                    state.daemon_sessions = sessions;
+                }
+                let conversations =
+                    tokio::time::timeout(timeout, state.runner.list_conversations(&agent, &sender))
+                        .await
+                        .ok()
+                        .and_then(|r| r.ok())
+                        .unwrap_or_default();
+                state
+                    .session_view
+                    .enter(&conversations, &state.daemon_sessions);
             }
-            state.session_view.enter(&state.daemon_sessions);
         }
         KeyCode::Esc => {
-            state.session_view.back(&state.daemon_sessions);
+            let timeout = std::time::Duration::from_millis(500);
+            let conversations =
+                tokio::time::timeout(timeout, state.runner.list_conversations("", ""))
+                    .await
+                    .ok()
+                    .and_then(|r| r.ok())
+                    .unwrap_or_default();
+            state
+                .session_view
+                .back(&conversations, &state.daemon_sessions);
         }
         KeyCode::Char('r') => {
             let timeout = std::time::Duration::from_millis(500);
@@ -194,9 +216,15 @@ async fn handle_sessions_key(
             {
                 state.daemon_sessions = sessions;
             }
+            let conversations =
+                tokio::time::timeout(timeout, state.runner.list_conversations("", ""))
+                    .await
+                    .ok()
+                    .and_then(|r| r.ok())
+                    .unwrap_or_default();
             state
                 .session_view
-                .refresh_identities(&state.daemon_sessions);
+                .refresh_identities(&conversations, &state.daemon_sessions);
             state.status = String::from("Refreshed");
         }
         _ => {}

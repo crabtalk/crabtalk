@@ -1,11 +1,12 @@
 //! Server trait — one async method per protocol operation.
 
 use crate::protocol::message::{
-    AgentEventMsg, AgentInfo, AgentList, ClientMessage, CompactResponse, ConfigMsg, CreateAgentMsg,
-    CreateCronMsg, CronInfo, CronList, DaemonStats, ErrorMsg, HubEvent, InstallPackageMsg,
-    PackageInfo, PackageList, Pong, ProviderInfo, ProviderList, SendMsg, SendResponse,
-    ServerMessage, ServiceLogOutput, SessionInfo, SessionList, SkillList, StreamEvent, StreamMsg,
-    UpdateAgentMsg, client_message, server_message,
+    AgentEventMsg, AgentInfo, AgentList, ClientMessage, CompactResponse, ConfigMsg,
+    ConversationInfo, ConversationList, CreateAgentMsg, CreateCronMsg, CronInfo, CronList,
+    DaemonStats, ErrorMsg, HubEvent, InstallPackageMsg, PackageInfo, PackageList, Pong,
+    ProviderInfo, ProviderList, SendMsg, SendResponse, ServerMessage, ServiceLogOutput,
+    SessionInfo, SessionList, SkillList, StreamEvent, StreamMsg, UpdateAgentMsg, client_message,
+    server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -140,6 +141,13 @@ pub trait Server: Sync {
 
     /// Handle `ListSkills` — return all available skill names.
     fn list_skills(&self) -> impl std::future::Future<Output = Result<Vec<String>>> + Send;
+
+    /// Handle `ListConversations` — return historical conversations from disk.
+    fn list_conversations(
+        &self,
+        agent: String,
+        sender: String,
+    ) -> impl std::future::Future<Output = Result<Vec<ConversationInfo>>> + Send;
 
     /// Handle `StartService` — install and start a command service.
     fn start_service(
@@ -378,6 +386,16 @@ pub trait Server: Sync {
                     yield match self.list_skills().await {
                         Ok(names) => ServerMessage {
                             msg: Some(server_message::Msg::SkillList(SkillList { names })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ListConversations(req) => {
+                    yield match self.list_conversations(req.agent, req.sender).await {
+                        Ok(conversations) => ServerMessage {
+                            msg: Some(server_message::Msg::ConversationList(ConversationList {
+                                conversations,
+                            })),
                         },
                         Err(e) => server_error(500, e.to_string()),
                     };

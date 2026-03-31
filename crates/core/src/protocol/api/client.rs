@@ -1,12 +1,13 @@
 //! Client trait — transport primitives plus typed provided methods.
 
 use crate::protocol::message::{
-    AgentInfo, AgentList, ClientMessage, ConfigMsg, CreateAgentMsg, DeleteAgentMsg, ErrorMsg,
-    GetAgentMsg, GetConfig, HubEvent, InstallPackageMsg, ListAgentsMsg, ListPackagesMsg,
-    ListProvidersMsg, ListSkillsMsg, PackageInfo, PackageList, Ping, ProviderInfo, ProviderList,
-    SendMsg, SendResponse, ServerMessage, ServiceLogOutput, ServiceLogsMsg, SetConfigMsg,
-    SkillList, StartServiceMsg, StopServiceMsg, StreamEvent, StreamMsg, UninstallPackageMsg,
-    UpdateAgentMsg, client_message, hub_event, server_message, stream_event,
+    AgentInfo, AgentList, ClientMessage, ConfigMsg, ConversationInfo, ConversationList,
+    CreateAgentMsg, DeleteAgentMsg, ErrorMsg, GetAgentMsg, GetConfig, HubEvent, InstallPackageMsg,
+    ListAgentsMsg, ListConversationsMsg, ListPackagesMsg, ListProvidersMsg, ListSkillsMsg,
+    PackageInfo, PackageList, Ping, ProviderInfo, ProviderList, SendMsg, SendResponse,
+    ServerMessage, ServiceLogOutput, ServiceLogsMsg, SetConfigMsg, SkillList, StartServiceMsg,
+    StopServiceMsg, StreamEvent, StreamMsg, UninstallPackageMsg, UpdateAgentMsg, client_message,
+    hub_event, server_message, stream_event,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -352,6 +353,35 @@ pub trait Client: Send {
                 ServerMessage {
                     msg: Some(server_message::Msg::PackageList(PackageList { packages })),
                 } => Ok(packages),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// List historical conversations from disk.
+    fn list_conversations(
+        &mut self,
+        agent: String,
+        sender: String,
+    ) -> impl std::future::Future<Output = Result<Vec<ConversationInfo>>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::ListConversations(
+                        ListConversationsMsg { agent, sender },
+                    )),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg:
+                        Some(server_message::Msg::ConversationList(ConversationList { conversations })),
+                } => Ok(conversations),
                 ServerMessage {
                     msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
                 } => {
