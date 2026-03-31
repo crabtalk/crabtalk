@@ -8,7 +8,10 @@ pub mod openclaw;
 pub mod opencode;
 
 use crate::task::Task;
-use std::time::Instant;
+use std::{
+    net::{SocketAddr, TcpStream},
+    time::{Duration, Instant},
+};
 
 /// Result of running a task through a framework.
 pub struct TaskResult {
@@ -26,6 +29,12 @@ pub struct TaskResult {
 pub trait Gateway {
     /// Send a task prompt and collect the response. Blocking (for Criterion).
     fn run_task(&self, rt: &tokio::runtime::Runtime, task: &Task) -> TaskResult;
+}
+
+/// Check if a TCP port is reachable (2s timeout).
+pub fn check_reachable(port: u16) -> bool {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_ok()
 }
 
 /// Time a future, measure peak RSS, and wrap the result in a TaskResult.
