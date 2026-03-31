@@ -19,6 +19,11 @@ pub struct Message {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub reasoning_content: String,
 
+    /// The function name (set on tool-result messages for providers that
+    /// require it, e.g. Gemini's `function_response.name`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+
     /// The tool call id
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub tool_call_id: String,
@@ -84,11 +89,16 @@ impl Message {
     }
 
     /// Create a new tool message
-    pub fn tool(content: impl Into<String>, call: impl Into<String>) -> Self {
+    pub fn tool(
+        content: impl Into<String>,
+        call: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Self {
         Self {
             role: Role::Tool,
             content: content.into(),
             tool_call_id: call.into(),
+            name: name.into(),
             ..Default::default()
         }
     }
@@ -186,6 +196,7 @@ impl Default for Message {
             role: Role::User,
             content: String::new(),
             reasoning_content: String::new(),
+            name: String::new(),
             tool_call_id: String::new(),
             tool_calls: Vec::new(),
             sender: String::new(),

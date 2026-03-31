@@ -114,7 +114,7 @@ impl<M: Model> Agent<M> {
                         session_id,
                     )
                     .await;
-                let msg = Message::tool(&result, tc.id.clone());
+                let msg = Message::tool(&result, tc.id.clone(), &tc.function.name);
                 history.push(msg.clone());
                 tool_results.push(msg);
             }
@@ -327,7 +327,7 @@ impl<M: Model> Agent<M> {
                             .dispatch_tool(&tc.function.name, &tc.function.arguments, &sender, session_id)
                             .await;
                         let duration_ms = tool_start.elapsed().as_millis() as u64;
-                        let msg = Message::tool(&result, tc.id.clone());
+                        let msg = Message::tool(&result, tc.id.clone(), &tc.function.name);
                         history.push(msg.clone());
                         tool_results.push(msg);
                         yield AgentEvent::ToolResult {

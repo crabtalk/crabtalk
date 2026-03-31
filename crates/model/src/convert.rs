@@ -74,12 +74,18 @@ fn to_ct_message(msg: &Message) -> CtMessage {
         Some(msg.reasoning_content.clone())
     };
 
+    let name = if msg.name.is_empty() {
+        None
+    } else {
+        Some(msg.name.clone())
+    };
+
     CtMessage {
         role: msg.role.clone(),
         content,
         tool_calls,
         tool_call_id,
-        name: None,
+        name,
         reasoning_content,
         extra: Default::default(),
     }

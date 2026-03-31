@@ -62,7 +62,7 @@ fn assistant_with_tool_calls() {
 
 #[test]
 fn tool_message() {
-    let msg = Message::tool("output", "call_1");
+    let msg = Message::tool("output", "call_1", "bash");
     assert_eq!(msg.role, Role::Tool);
     assert_eq!(msg.content, "output");
     assert_eq!(msg.tool_call_id, "call_1");
@@ -150,7 +150,7 @@ fn message_serde_missing_optional_fields() {
 
 #[test]
 fn message_serde_tool_message() {
-    let msg = Message::tool("result text", "call_42");
+    let msg = Message::tool("result text", "call_42", "bash");
     let json = serde_json::to_string(&msg).unwrap();
     let deser: Message = serde_json::from_str(&json).unwrap();
     assert_eq!(deser.role, Role::Tool);
