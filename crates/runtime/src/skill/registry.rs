@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 /// A registry of loaded skills.
 #[derive(Debug, Clone, Default)]
 pub struct SkillRegistry {
-    skills: Vec<Skill>,
+    pub skills: Vec<Skill>,
 }
 
 impl SkillRegistry {
@@ -23,21 +23,6 @@ impl SkillRegistry {
     pub fn upsert(&mut self, skill: Skill) {
         self.skills.retain(|s| s.name != skill.name);
         self.skills.push(skill);
-    }
-
-    /// Get all loaded skills.
-    pub fn skills(&self) -> Vec<&Skill> {
-        self.skills.iter().collect()
-    }
-
-    /// Number of loaded skills.
-    pub fn len(&self) -> usize {
-        self.skills.len()
-    }
-
-    /// Whether the registry has no skills.
-    pub fn is_empty(&self) -> bool {
-        self.skills.is_empty()
     }
 
     /// Whether a skill with the given name is already registered.

@@ -257,7 +257,7 @@ async fn wx_stream(
                             }
                         }
 
-                        if acc.is_done() {
+                        if acc.done {
                             break;
                         }
                     }
@@ -272,7 +272,7 @@ async fn wx_stream(
             reply = reply_rx.recv() => {
                 if let Some(reply_content) = reply {
                     // Free-text reply for ask_user.
-                    if let Some(session_id) = acc.session() {
+                    if let Some(session_id) = acc.session {
                         let reply_msg = ClientMessage::from(ReplyToAsk {
                             session: session_id,
                             content: reply_content,
@@ -329,7 +329,7 @@ async fn wx_stream(
         tracing::debug!(agent, chat_id, "stream ended with empty response");
     }
 
-    match acc.session() {
+    match acc.session {
         Some(session_id) => {
             tracing::info!(agent, chat_id, session_id, "stream completed");
             StreamResult::Ok { session_id }

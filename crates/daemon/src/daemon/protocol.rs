@@ -15,10 +15,10 @@ use wcore::protocol::{
         AgentEventMsg, AgentInfo, AskOption, AskQuestion, AskUserEvent, ConversationInfo,
         CreateAgentMsg, CreateCronMsg, CronInfo, CronList, DaemonStats, HubDone, HubEvent,
         HubSetupOutput, HubStep, HubWarning, InstallPackageMsg, McpInfo, PackageInfo, ProviderInfo,
-        ProviderPresetInfo, SendMsg, SendResponse, SessionInfo, StreamChunk, StreamEnd,
-        StreamEvent, StreamMsg, StreamStart, StreamThinking, TokenUsage, ToolCallInfo,
-        ToolResultEvent, ToolStartEvent, ToolsCompleteEvent, UpdateAgentMsg, hub_event,
-        stream_event,
+        ProviderPresetInfo, ResourceKind, SendMsg, SendResponse, SessionInfo, SkillInfo,
+        StreamChunk, StreamEnd, StreamEvent, StreamMsg, StreamStart, StreamThinking, TokenUsage,
+        ToolCallInfo, ToolResultEvent, ToolStartEvent, ToolsCompleteEvent, UpdateAgentMsg,
+        hub_event, stream_event,
     },
 };
 use wcore::{AgentEvent, AgentStep};
@@ -237,11 +237,6 @@ impl<H: Host + 'static> Server for Daemon<H> {
         }
     }
 
-    async fn get_config(&self) -> Result<String> {
-        let config = self.load_config()?;
-        serde_json::to_string(&config).context("failed to serialize config")
-    }
-
     async fn reload(&self) -> Result<()> {
         self.reload().await
     }
@@ -251,10 +246,12 @@ impl<H: Host + 'static> Server for Daemon<H> {
         let active = rt.active_session_count().await;
         let agents = rt.agents().len() as u32;
         let uptime = self.started_at.elapsed().as_secs();
+        let active_model = rt.model.active_model_name().unwrap_or_default();
         Ok(DaemonStats {
             uptime_secs: uptime,
             active_sessions: active as u32,
             registered_agents: agents,
+            active_model,
         })
     }
 
@@ -373,20 +370,23 @@ impl<H: Host + 'static> Server for Daemon<H> {
 
     async fn list_providers(&self) -> Result<Vec<ProviderInfo>> {
         let rt = self.runtime.read().await.clone();
-        let entries = rt.model.list()?;
         let config = self.load_config()?;
-        Ok(entries
-            .into_iter()
-            .map(|e| {
-                let cfg_json = config
-                    .provider
-                    .get(&e.name)
-                    .and_then(|def| serde_json::to_string(def).ok())
-                    .unwrap_or_default();
+        let (manifest, _) = wcore::resolve_manifests(&self.config_dir);
+        Ok(config
+            .provider
+            .iter()
+            .map(|(name, def)| {
+                let cfg_json = serde_json::to_string(def).unwrap_or_default();
+                let active = rt
+                    .model
+                    .active_model_name()
+                    .is_ok_and(|m| rt.model.provider_name_for(&m).is_some_and(|p| p == *name));
+                let enabled = !manifest.disabled.providers.contains(name);
                 ProviderInfo {
-                    name: e.name,
-                    active: e.active,
+                    name: name.clone(),
+                    active,
                     config: cfg_json,
+                    enabled,
                 }
             })
             .collect())
@@ -574,32 +574,26 @@ impl<H: Host + 'static> Server for Daemon<H> {
             .config_dir
             .join(wcore::paths::LOCAL_DIR)
             .join("CrabTalk.toml");
-        if let Ok(Some(manifest)) = wcore::ManifestConfig::load(&manifest_path) {
-            for (name, cfg) in &manifest.mcps {
-                mcps.push(mcp_to_info(name, cfg, "local"));
+        let disabled_mcps = match wcore::ManifestConfig::load(&manifest_path) {
+            Ok(Some(local)) => {
+                for (name, cfg) in &local.mcps {
+                    let enabled = !local.disabled.mcps.contains(name);
+                    mcps.push(mcp_to_info(name, cfg, "local", enabled));
+                }
+                local.disabled.mcps
             }
-        }
+            _ => Vec::new(),
+        };
 
         // Hub-installed MCPs from packages.
-        for (pkg_id, manifest) in scan_package_manifests(&self.config_dir) {
-            for (name, mcp_res) in &manifest.mcps {
+        for (pkg_id, pkg_manifest) in scan_package_manifests(&self.config_dir) {
+            for (name, mcp_res) in &pkg_manifest.mcps {
                 if mcps.iter().any(|m| m.name == *name) {
                     continue; // local wins
                 }
-                mcps.push(McpInfo {
-                    name: name.clone(),
-                    command: mcp_res.command.clone(),
-                    args: mcp_res.args.clone(),
-                    env: mcp_res
-                        .env
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                    url: mcp_res.url.clone().unwrap_or_default(),
-                    auth: mcp_res.auth,
-                    source: pkg_id.clone(),
-                    auto_restart: mcp_res.auto_restart,
-                });
+                let enabled = !disabled_mcps.contains(name);
+                let cfg = mcp_res.to_server_config();
+                mcps.push(mcp_to_info(name, &cfg, &pkg_id, enabled));
             }
         }
 
@@ -719,10 +713,13 @@ impl<H: Host + 'static> Server for Daemon<H> {
             .unwrap_or_default();
         let rt = self.runtime.read().await.clone();
         let active = rt.model.provider_name_for(&name).is_some_and(|n| n == name);
+        let (manifest, _) = wcore::resolve_manifests(&self.config_dir);
+        let enabled = !manifest.disabled.providers.contains(&name);
         Ok(ProviderInfo {
             name,
             active,
             config: loaded_json,
+            enabled,
         })
     }
 
@@ -800,13 +797,89 @@ impl<H: Host + 'static> Server for Daemon<H> {
             .collect())
     }
 
-    async fn list_skills(&self) -> Result<Vec<String>> {
+    async fn list_skills(&self) -> Result<Vec<SkillInfo>> {
         let (manifest, _) = wcore::resolve_manifests(&self.config_dir);
         let mut names = std::collections::BTreeSet::new();
         for dir in &manifest.skill_dirs {
             names.extend(wcore::scan_skill_names(dir));
         }
-        Ok(names.into_iter().collect())
+        Ok(names
+            .into_iter()
+            .map(|name| {
+                let enabled = !manifest.disabled.skills.contains(&name);
+                SkillInfo { name, enabled }
+            })
+            .collect())
+    }
+
+    async fn set_enabled(&self, kind: ResourceKind, name: String, enabled: bool) -> Result<()> {
+        use toml_edit::DocumentMut;
+
+        // Refuse to disable the active model's provider.
+        if !enabled && kind == ResourceKind::Provider {
+            let rt = self.runtime.read().await.clone();
+            if let Ok(active) = rt.model.active_model_name()
+                && rt
+                    .model
+                    .provider_name_for(&active)
+                    .is_some_and(|p| p == name)
+            {
+                anyhow::bail!(
+                    "cannot disable provider '{name}' — it serves the active model '{active}'"
+                );
+            }
+        }
+
+        let manifest_path = self
+            .config_dir
+            .join(wcore::paths::LOCAL_DIR)
+            .join("CrabTalk.toml");
+        let local_dir = self.config_dir.join(wcore::paths::LOCAL_DIR);
+        std::fs::create_dir_all(&local_dir)
+            .with_context(|| format!("cannot create {}", local_dir.display()))?;
+
+        let content = if manifest_path.exists() {
+            std::fs::read_to_string(&manifest_path)
+                .with_context(|| format!("cannot read {}", manifest_path.display()))?
+        } else {
+            String::new()
+        };
+        let mut doc: DocumentMut = content
+            .parse()
+            .with_context(|| format!("invalid TOML in {}", manifest_path.display()))?;
+
+        if doc.get("disabled").is_none() {
+            doc.insert("disabled", toml_edit::Item::Table(toml_edit::Table::new()));
+        }
+        let disabled = doc["disabled"]
+            .as_table_mut()
+            .context("[disabled] is not a table")?;
+
+        let key = match kind {
+            ResourceKind::Provider => "providers",
+            ResourceKind::Mcp => "mcps",
+            ResourceKind::Skill => "skills",
+            ResourceKind::Unknown => anyhow::bail!("unknown resource kind"),
+        };
+        if disabled.get(key).is_none() {
+            disabled.insert(key, toml_edit::Item::Value(toml_edit::Array::new().into()));
+        }
+        let arr = disabled[key]
+            .as_array_mut()
+            .context("disabled list is not an array")?;
+
+        if enabled {
+            let idx = arr.iter().position(|v| v.as_str() == Some(&name));
+            if let Some(idx) = idx {
+                arr.remove(idx);
+            }
+        } else if !arr.iter().any(|v| v.as_str() == Some(&name)) {
+            arr.push(&name);
+        }
+
+        std::fs::write(&manifest_path, doc.to_string())
+            .with_context(|| format!("failed to write {}", manifest_path.display()))?;
+        self.reload().await
     }
 
     async fn list_packages(&self) -> Result<Vec<PackageInfo>> {
@@ -1200,7 +1273,7 @@ fn mtime_to_label(mtime: std::time::SystemTime, today: chrono::NaiveDate) -> Str
     }
 }
 
-fn mcp_to_info(name: &str, cfg: &wcore::McpServerConfig, source: &str) -> McpInfo {
+fn mcp_to_info(name: &str, cfg: &wcore::McpServerConfig, source: &str, enabled: bool) -> McpInfo {
     McpInfo {
         name: name.to_string(),
         command: cfg.command.clone(),
@@ -1214,6 +1287,7 @@ fn mcp_to_info(name: &str, cfg: &wcore::McpServerConfig, source: &str) -> McpInf
         auth: cfg.auth,
         source: source.to_string(),
         auto_restart: cfg.auto_restart,
+        enabled,
     }
 }
 

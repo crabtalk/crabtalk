@@ -192,7 +192,7 @@ impl MarkdownRenderer {
                     .push(format_tool_label(name, args, self.width));
             }
             // Update the existing ToolMarker entry in the buffer.
-            for entry in self.buffer.entries_mut().iter_mut().rev() {
+            for entry in self.buffer.entries.iter_mut().rev() {
                 if let ChatEntry::ToolMarker { labels, .. } = entry {
                     labels.clone_from(&self.tool_labels);
                     break;

@@ -67,8 +67,8 @@ impl<H: Host> Env<H> {
         let allowed = self.scopes.get(agent).map(|s| &s.skills);
         let registry = self.skills.registry.lock().await;
         let matches: Vec<String> = registry
-            .skills()
-            .into_iter()
+            .skills
+            .iter()
             .filter(|s| {
                 if let Some(allowed) = allowed
                     && !allowed.is_empty()

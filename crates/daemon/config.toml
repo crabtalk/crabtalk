@@ -7,7 +7,7 @@
 # Providers — LLM provider definitions.
 #
 # Each [provider.<name>] section registers a provider. The `kind` field
-# selects the API format: openai_compat (default), anthropic, google,
+# selects the API format: openai (default), anthropic, google,
 # bedrock, ollama, azure.
 # ---------------------------------------------------------------------------
 

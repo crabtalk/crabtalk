@@ -31,11 +31,6 @@ impl CrabtalkClient {
         Self { config }
     }
 
-    /// Access the client configuration.
-    pub fn config(&self) -> &ClientConfig {
-        &self.config
-    }
-
     /// Set the daemon socket path.
     pub fn socket_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.config.socket_path = path.into();

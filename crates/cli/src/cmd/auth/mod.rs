@@ -11,7 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Tabs},
 };
 pub(crate) use wcore::config::{PROVIDER_PRESETS, ProviderPreset};
-use wcore::protocol::message::McpInfo;
+use wcore::protocol::{api::Client, message::McpInfo};
 
 use mcps::{handle_mcps_key, render_mcps};
 use providers::{handle_providers_key, render_providers};
@@ -31,20 +31,10 @@ impl Auth {
 
         // Load via protocol.
         let provider_infos = runner.list_providers().await?;
-        let config_json = runner.get_config().await?;
+        let stats = runner.get_stats().await?;
         let mcp_infos = runner.list_mcps().await?;
         let initial_names: Vec<String> = provider_infos.iter().map(|p| p.name.clone()).collect();
-
-        let active_model = serde_json::from_str::<serde_json::Value>(&config_json)
-            .ok()
-            .and_then(|v| {
-                v.get("system")?
-                    .get("crab")?
-                    .get("model")?
-                    .as_str()
-                    .map(String::from)
-            })
-            .unwrap_or_default();
+        let active_model = stats.active_model;
 
         let state = tui::run_app_with_state(
             || AuthState::from_protocol(provider_infos, active_model, mcp_infos),
@@ -109,7 +99,7 @@ pub(crate) struct ProviderData {
     pub(crate) name: String,
     pub(crate) api_key: String,
     pub(crate) base_url: String,
-    pub(crate) standard: String,
+    pub(crate) kind: String,
     pub(crate) models: Vec<String>,
 }
 
@@ -137,7 +127,7 @@ impl ProviderData {
     /// Build a ProviderDef for serialization.
     pub(crate) fn to_provider_def(&self) -> wcore::ProviderDef {
         let kind: wcore::ApiStandard =
-            serde_json::from_value(serde_json::Value::String(self.standard.clone()))
+            serde_json::from_value(serde_json::Value::String(self.kind.clone()))
                 .unwrap_or_default();
         wcore::ProviderDef {
             kind,
@@ -157,7 +147,7 @@ impl ProviderData {
     }
 }
 
-pub(crate) const PROVIDER_FIELDS: &[&str] = &["api_key", "base_url", "standard"];
+pub(crate) const PROVIDER_FIELDS: &[&str] = &["api_key", "base_url", "kind"];
 
 pub(crate) struct McpData {
     pub(crate) name: String,
@@ -181,6 +171,7 @@ impl McpData {
             auth: self.auth,
             auto_restart: self.auto_restart,
             source: String::new(), // always local when saving
+            enabled: true,
         }
     }
 }
@@ -245,7 +236,7 @@ impl AuthState {
                 name: p.name,
                 api_key: def.api_key.unwrap_or_default(),
                 base_url: def.base_url.unwrap_or_default(),
-                standard: serde_json::to_value(def.kind)
+                kind: serde_json::to_value(def.kind)
                     .ok()
                     .and_then(|v| v.as_str().map(String::from))
                     .unwrap_or_else(|| "openai".to_string()),
@@ -325,7 +316,7 @@ impl AuthState {
         match field {
             0 => &p.api_key,
             1 => &p.base_url,
-            2 => &p.standard,
+            2 => &p.kind,
             _ => "",
         }
     }
@@ -335,7 +326,7 @@ impl AuthState {
         match field {
             0 => p.api_key = val,
             1 => p.base_url = val,
-            2 => p.standard = val,
+            2 => p.kind = val,
             _ => {}
         }
     }
@@ -349,7 +340,7 @@ impl AuthState {
             name: name.unwrap_or(preset.name).to_string(),
             api_key: String::new(),
             base_url: preset.base_url.to_string(),
-            standard: kind_str,
+            kind: kind_str,
             models: Vec::new(),
         });
         let new_idx = self.tree_len().saturating_sub(1);

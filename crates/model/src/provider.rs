@@ -24,13 +24,6 @@ pub struct Provider {
     timeout: Duration,
 }
 
-impl Provider {
-    /// Get the model name this provider was constructed for.
-    pub fn model_name(&self) -> &String {
-        &self.model
-    }
-}
-
 /// Strip known endpoint suffixes so both bare origins and full paths work.
 fn normalize_base_url(url: &str) -> String {
     let url = url.trim_end_matches('/');

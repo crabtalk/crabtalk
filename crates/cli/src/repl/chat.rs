@@ -51,7 +51,7 @@ pub enum ChatEntry {
 /// Append-only buffer of chat entries.
 #[derive(Debug, Default)]
 pub struct ChatBuffer {
-    entries: Vec<ChatEntry>,
+    pub entries: Vec<ChatEntry>,
 }
 
 impl ChatBuffer {
@@ -65,20 +65,6 @@ impl ChatBuffer {
 
     pub fn clear(&mut self) {
         self.entries.clear();
-    }
-
-    /// Number of entries.
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// Mutable access to entries (for updating tool labels in-place).
-    pub fn entries_mut(&mut self) -> &mut Vec<ChatEntry> {
-        &mut self.entries
     }
 
     /// Find the last `ToolMarker` that is still `Running` and flip its status.

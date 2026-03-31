@@ -1,15 +1,15 @@
 //! Client trait — transport primitives plus typed provided methods.
 
 use crate::protocol::message::{
-    AgentInfo, AgentList, ClientMessage, ConfigMsg, ConversationInfo, ConversationList,
-    CreateAgentMsg, DeleteAgentMsg, DeleteProviderMsg, ErrorMsg, GetAgentMsg, GetConfig, HubEvent,
+    AgentInfo, AgentList, ClientMessage, ConversationInfo, ConversationList, CreateAgentMsg,
+    DaemonStats, DeleteAgentMsg, DeleteProviderMsg, ErrorMsg, GetAgentMsg, GetStats, HubEvent,
     InstallPackageMsg, ListAgentsMsg, ListConversationsMsg, ListMcpsMsg, ListPackagesMsg,
     ListProviderPresetsMsg, ListProvidersMsg, ListSkillsMsg, McpInfo, McpList, PackageInfo,
-    PackageList, Ping, ProviderInfo, ProviderList, ProviderPresetInfo, ProviderPresetList, SendMsg,
-    SendResponse, ServerMessage, ServiceLogOutput, ServiceLogsMsg, SetActiveModelMsg,
-    SetLocalMcpsMsg, SetProviderMsg, SkillList, StartServiceMsg, StopServiceMsg, StreamEvent,
-    StreamMsg, UninstallPackageMsg, UpdateAgentMsg, client_message, hub_event, server_message,
-    stream_event,
+    PackageList, Ping, ProviderInfo, ProviderList, ProviderPresetInfo, ProviderPresetList,
+    ResourceKind, SendMsg, SendResponse, ServerMessage, ServiceLogOutput, ServiceLogsMsg,
+    SetActiveModelMsg, SetEnabledMsg, SetLocalMcpsMsg, SetProviderMsg, SkillInfo, SkillList,
+    StartServiceMsg, StopServiceMsg, StreamEvent, StreamMsg, UninstallPackageMsg, UpdateAgentMsg,
+    client_message, hub_event, server_message, stream_event,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -88,18 +88,18 @@ pub trait Client: Send {
         }
     }
 
-    /// Get the full daemon config as JSON.
-    fn get_config(&mut self) -> impl std::future::Future<Output = Result<String>> + Send {
+    /// Get daemon stats including the active model name.
+    fn get_stats(&mut self) -> impl std::future::Future<Output = Result<DaemonStats>> + Send {
         async move {
             match self
                 .request(ClientMessage {
-                    msg: Some(client_message::Msg::GetConfig(GetConfig {})),
+                    msg: Some(client_message::Msg::GetStats(GetStats {})),
                 })
                 .await?
             {
                 ServerMessage {
-                    msg: Some(server_message::Msg::Config(ConfigMsg { config })),
-                } => Ok(config),
+                    msg: Some(server_message::Msg::Stats(stats)),
+                } => Ok(stats),
                 ServerMessage {
                     msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
                 } => {
@@ -571,8 +571,8 @@ pub trait Client: Send {
         }
     }
 
-    /// List all available skill names.
-    fn list_skills(&mut self) -> impl std::future::Future<Output = Result<Vec<String>>> + Send {
+    /// List all available skills with enabled state.
+    fn list_skills(&mut self) -> impl std::future::Future<Output = Result<Vec<SkillInfo>>> + Send {
         async move {
             match self
                 .request(ClientMessage {
@@ -581,13 +581,42 @@ pub trait Client: Send {
                 .await?
             {
                 ServerMessage {
-                    msg: Some(server_message::Msg::SkillList(SkillList { names })),
-                } => Ok(names),
+                    msg: Some(server_message::Msg::SkillList(SkillList { skills })),
+                } => Ok(skills),
                 ServerMessage {
                     msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Enable or disable a provider, MCP, or skill.
+    fn set_enabled(
+        &mut self,
+        kind: ResourceKind,
+        name: String,
+        enabled: bool,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::SetEnabled(SetEnabledMsg {
+                        kind: kind.into(),
+                        name,
+                        enabled,
+                    })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
         }

@@ -54,7 +54,7 @@ impl Aggregator {
 
         let client = self.client.clone();
 
-        for (id, engine) in self.registry.engines() {
+        for (id, engine) in &self.registry.engines {
             let id = *id;
             let query = query.to_string();
             let ua = ua.to_string();

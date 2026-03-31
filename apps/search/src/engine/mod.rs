@@ -100,7 +100,7 @@ impl<T: SearchEngine> SearchEngineDyn for T {
 
 /// Registry mapping engine IDs to their implementations.
 pub struct EngineRegistry {
-    engines: Vec<(EngineId, Arc<dyn SearchEngineDyn>)>,
+    pub engines: Vec<(EngineId, Arc<dyn SearchEngineDyn>)>,
 }
 
 impl EngineRegistry {
@@ -120,9 +120,5 @@ impl EngineRegistry {
             })
             .collect();
         Self { engines }
-    }
-
-    pub fn engines(&self) -> &[(EngineId, Arc<dyn SearchEngineDyn>)] {
-        &self.engines
     }
 }

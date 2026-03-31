@@ -30,11 +30,6 @@ impl TcpClient {
         Self { config }
     }
 
-    /// Access the client configuration.
-    pub fn config(&self) -> &TcpClientConfig {
-        &self.config
-    }
-
     /// Connect to the daemon and return a [`TcpConnection`].
     pub async fn connect(&self) -> Result<TcpConnection> {
         TcpConnection::connect(self.config.addr).await

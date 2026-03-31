@@ -30,6 +30,20 @@ pub struct ManifestConfig {
     /// Per-agent configurations (name → config).
     #[serde(default)]
     pub agents: BTreeMap<String, AgentConfig>,
+    /// Disabled items — filtered out during runtime build.
+    #[serde(default)]
+    pub disabled: DisabledItems,
+}
+
+/// Items disabled by the user.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DisabledItems {
+    #[serde(default)]
+    pub providers: Vec<String>,
+    #[serde(default)]
+    pub mcps: Vec<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
 }
 
 /// Package metadata in a manifest.
@@ -91,6 +105,8 @@ pub struct ResolvedManifest {
     /// Package identifier → skill directory for resolving qualified skill
     /// references (e.g. `"crabtalk/gstack"` → repo skill dir).
     pub package_skill_dirs: BTreeMap<String, PathBuf>,
+    /// Items disabled by the user (from local manifest).
+    pub disabled: DisabledItems,
 }
 
 /// Resolve all manifests into a single merged view.
@@ -118,6 +134,7 @@ pub fn resolve_manifests(config_dir: &Path) -> (ResolvedManifest, Vec<String>) {
     // Load local manifest.
     let local_manifest_path = config_dir.join(LOCAL_DIR).join("CrabTalk.toml");
     if let Ok(Some(manifest)) = ManifestConfig::load(&local_manifest_path) {
+        resolved.disabled = manifest.disabled.clone();
         merge_manifest(&mut resolved, &manifest, "local", &mut warnings);
     }
 

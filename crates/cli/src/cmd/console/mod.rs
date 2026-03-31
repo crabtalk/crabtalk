@@ -17,6 +17,7 @@ use ratatui::{
 use sessions::{SessionView, render_session_view};
 use std::collections::VecDeque;
 use tokio::sync::mpsc;
+use wcore::protocol::api::Client;
 use wcore::protocol::message::AgentEventMsg;
 
 mod events;
@@ -33,7 +34,7 @@ impl Console {
     pub async fn run(self, mut runner: Runner) -> Result<Option<std::path::PathBuf>> {
         // Spawn background event subscription task.
         let (event_tx, event_rx) = mpsc::unbounded_channel::<AgentEventMsg>();
-        let conn_info = runner.conn_info().clone();
+        let conn_info = runner.conn_info.clone();
         tokio::spawn(async move {
             let Ok(mut sub_runner) = Runner::connect_from(&conn_info).await else {
                 return;
@@ -51,7 +52,10 @@ impl Console {
 
         // Fetch initial data from daemon.
         let daemon_sessions = runner.list_sessions().await.unwrap_or_default();
-        let conversations = runner.list_conversations("", "").await.unwrap_or_default();
+        let conversations = runner
+            .list_conversations(String::new(), String::new())
+            .await
+            .unwrap_or_default();
         let mut session_view = SessionView::default();
         session_view.refresh_identities(&conversations, &daemon_sessions);
 
@@ -186,12 +190,16 @@ async fn handle_sessions_key(
                 {
                     state.daemon_sessions = sessions;
                 }
-                let conversations =
-                    tokio::time::timeout(timeout, state.runner.list_conversations(&agent, &sender))
-                        .await
-                        .ok()
-                        .and_then(|r| r.ok())
-                        .unwrap_or_default();
+                let conversations = tokio::time::timeout(
+                    timeout,
+                    state
+                        .runner
+                        .list_conversations(agent.clone(), sender.clone()),
+                )
+                .await
+                .ok()
+                .and_then(|r| r.ok())
+                .unwrap_or_default();
                 state
                     .session_view
                     .enter(&conversations, &state.daemon_sessions);
@@ -199,12 +207,16 @@ async fn handle_sessions_key(
         }
         KeyCode::Esc => {
             let timeout = std::time::Duration::from_millis(500);
-            let conversations =
-                tokio::time::timeout(timeout, state.runner.list_conversations("", ""))
-                    .await
-                    .ok()
-                    .and_then(|r| r.ok())
-                    .unwrap_or_default();
+            let conversations = tokio::time::timeout(
+                timeout,
+                state
+                    .runner
+                    .list_conversations(String::new(), String::new()),
+            )
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .unwrap_or_default();
             state
                 .session_view
                 .back(&conversations, &state.daemon_sessions);
@@ -216,12 +228,16 @@ async fn handle_sessions_key(
             {
                 state.daemon_sessions = sessions;
             }
-            let conversations =
-                tokio::time::timeout(timeout, state.runner.list_conversations("", ""))
-                    .await
-                    .ok()
-                    .and_then(|r| r.ok())
-                    .unwrap_or_default();
+            let conversations = tokio::time::timeout(
+                timeout,
+                state
+                    .runner
+                    .list_conversations(String::new(), String::new()),
+            )
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .unwrap_or_default();
             state
                 .session_view
                 .refresh_identities(&conversations, &state.daemon_sessions);

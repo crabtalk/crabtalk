@@ -262,11 +262,10 @@ impl<H: Host + 'static> Hook for Env<H> {
             ));
         }
         if let Ok(reg) = self.skills.registry.try_lock() {
-            let all_skills = reg.skills();
             let visible: Vec<_> = if config.skills.is_empty() {
-                all_skills.iter().collect()
+                reg.skills.iter().collect()
             } else {
-                all_skills
+                reg.skills
                     .iter()
                     .filter(|s| config.skills.iter().any(|n| n == &s.name))
                     .collect()

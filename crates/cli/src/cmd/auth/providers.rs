@@ -185,7 +185,7 @@ fn handle_provider_editing(key: crossterm::event::KeyEvent, state: &mut AuthStat
                 && let Some(TreeItem::Provider(pi)) = state.selected_item()
             {
                 if field == 2 {
-                    toggle_standard(state, pi);
+                    toggle_kind(state, pi);
                     return;
                 }
                 if let Some(next) = next_editable_field(&state.providers[pi], field) {
@@ -226,34 +226,45 @@ fn handle_provider_editing(key: crossterm::event::KeyEvent, state: &mut AuthStat
             if state.editing_field == Some(2)
                 && let Some(TreeItem::Provider(pi)) = state.selected_item()
             {
-                toggle_standard(state, pi);
+                toggle_kind(state, pi);
             }
         }
         _ => handle_text_input(key.code, &mut state.edit_buf, &mut state.cursor),
     }
 }
 
-const STANDARDS: &[&str] = &[
-    "openai_compat",
-    "anthropic",
-    "google",
-    "bedrock",
-    "ollama",
-    "azure",
+use wcore::ApiStandard;
+
+const API_STANDARDS: &[ApiStandard] = &[
+    ApiStandard::Openai,
+    ApiStandard::Anthropic,
+    ApiStandard::Google,
+    ApiStandard::Bedrock,
+    ApiStandard::Ollama,
+    ApiStandard::Azure,
 ];
 
-fn toggle_standard(state: &mut AuthState, pi: usize) {
+fn toggle_kind(state: &mut AuthState, pi: usize) {
     let p = &mut state.providers[pi];
-    // Don't allow changing the standard for built-in presets — it would
+    // Don't allow changing the kind for built-in presets — it would
     // break the preset lookup and hide the fixed URL indicator.
     if p.preset().is_some() {
-        state.status = String::from("Standard is fixed for built-in providers");
+        state.status = String::from("Kind is fixed for built-in providers");
         return;
     }
-    let cur = STANDARDS.iter().position(|s| *s == p.standard).unwrap_or(0);
-    let next = (cur + 1) % STANDARDS.len();
-    p.standard = STANDARDS[next].to_string();
-    state.edit_buf = state.providers[pi].standard.clone();
+    let cur_kind: ApiStandard =
+        serde_json::from_value(serde_json::Value::String(p.kind.clone())).unwrap_or_default();
+    let cur = API_STANDARDS
+        .iter()
+        .position(|s| *s == cur_kind)
+        .unwrap_or(0);
+    let next = (cur + 1) % API_STANDARDS.len();
+    let next_str = serde_json::to_value(API_STANDARDS[next])
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| "openai".to_string());
+    p.kind = next_str;
+    state.edit_buf.clone_from(&state.providers[pi].kind);
     state.cursor = state.edit_buf.chars().count();
 }
 

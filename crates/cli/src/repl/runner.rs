@@ -13,12 +13,9 @@ use transport::uds::{ClientConfig, Connection, CrabtalkClient};
 use wcore::protocol::{
     api::Client,
     message::{
-        AgentEventMsg, AskQuestion, ClientMessage, ConfigMsg, ConversationInfo, ConversationList,
-        DeleteProviderMsg, GetConfig, HubEvent, InstallPackageMsg, KillMsg, ListConversationsMsg,
-        ListMcpsMsg, ListProvidersMsg, ListSkillsMsg, McpInfo, McpList, ProviderInfo, ProviderList,
-        ReplyToAsk, ServerMessage, SessionInfo, SetActiveModelMsg, SetLocalMcpsMsg, SetProviderMsg,
-        SkillList, StreamMsg, SubscribeEvents, UninstallPackageMsg, client_message, hub_event,
-        server_message, stream_event,
+        AgentEventMsg, AskQuestion, ClientMessage, HubEvent, InstallPackageMsg, KillMsg,
+        ReplyToAsk, ServerMessage, SessionInfo, StreamMsg, SubscribeEvents, UninstallPackageMsg,
+        client_message, hub_event, server_message, stream_event,
     },
 };
 
@@ -42,7 +39,9 @@ pub enum OutputChunk {
 }
 
 /// Transport-agnostic connection to the crabtalk daemon.
-enum Transport {
+///
+/// Implements [`Client`] so all typed protocol methods are available.
+pub enum Transport {
     #[cfg(unix)]
     Uds(Connection),
     Tcp(TcpConnection),
@@ -59,7 +58,7 @@ macro_rules! dispatch {
     };
 }
 
-impl Transport {
+impl Client for Transport {
     async fn request(&mut self, msg: ClientMessage) -> Result<ServerMessage> {
         dispatch!(self, |c| c.request(msg).await)
     }
@@ -89,9 +88,25 @@ pub enum ConnectionInfo {
 }
 
 /// Runs agents via a crabtalk daemon connection (UDS or TCP).
+///
+/// Implements `DerefMut<Target = Transport>` so all [`Client`] trait methods
+/// (list_providers, set_provider, list_mcps, etc.) are callable directly.
 pub struct Runner {
     transport: Transport,
-    conn_info: ConnectionInfo,
+    pub conn_info: ConnectionInfo,
+}
+
+impl std::ops::Deref for Runner {
+    type Target = Transport;
+    fn deref(&self) -> &Self::Target {
+        &self.transport
+    }
+}
+
+impl std::ops::DerefMut for Runner {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.transport
+    }
 }
 
 impl Runner {
@@ -126,11 +141,6 @@ impl Runner {
             ConnectionInfo::Uds(path) => Self::connect(path).await,
             ConnectionInfo::Tcp(port) => Self::connect_tcp(*port).await,
         }
-    }
-
-    /// Connection info for creating separate connections (e.g. for ReplyToAsk).
-    pub fn conn_info(&self) -> &ConnectionInfo {
-        &self.conn_info
     }
 
     /// Stream a response, yielding typed output chunks.
@@ -386,172 +396,6 @@ impl Runner {
                     Err(e) => Some(Err(e)),
                 })
             })
-    }
-
-    /// List historical conversations from the daemon.
-    pub async fn list_conversations(
-        &mut self,
-        agent: &str,
-        sender: &str,
-    ) -> Result<Vec<ConversationInfo>> {
-        let msg = ClientMessage {
-            msg: Some(client_message::Msg::ListConversations(
-                ListConversationsMsg {
-                    agent: agent.to_string(),
-                    sender: sender.to_string(),
-                },
-            )),
-        };
-        match self.transport.request(msg).await? {
-            ServerMessage {
-                msg: Some(server_message::Msg::ConversationList(ConversationList { conversations })),
-            } => Ok(conversations),
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(e)),
-            } => {
-                anyhow::bail!("server error ({}): {}", e.code, e.message)
-            }
-            other => anyhow::bail!("unexpected response: {other:?}"),
-        }
-    }
-
-    /// List all available skill names from the daemon.
-    pub async fn list_skills(&mut self) -> Result<Vec<String>> {
-        let msg = ClientMessage {
-            msg: Some(client_message::Msg::ListSkills(ListSkillsMsg {})),
-        };
-        match self.transport.request(msg).await? {
-            ServerMessage {
-                msg: Some(server_message::Msg::SkillList(SkillList { names })),
-            } => Ok(names),
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(e)),
-            } => {
-                anyhow::bail!("server error ({}): {}", e.code, e.message)
-            }
-            other => anyhow::bail!("unexpected response: {other:?}"),
-        }
-    }
-
-    /// List all registered providers with config.
-    pub async fn list_providers(&mut self) -> Result<Vec<ProviderInfo>> {
-        let msg = ClientMessage {
-            msg: Some(client_message::Msg::ListProviders(ListProvidersMsg {})),
-        };
-        match self.transport.request(msg).await? {
-            ServerMessage {
-                msg: Some(server_message::Msg::ProviderList(ProviderList { providers })),
-            } => Ok(providers),
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(e)),
-            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
-            other => anyhow::bail!("unexpected response: {other:?}"),
-        }
-    }
-
-    /// Create or update a provider.
-    pub async fn set_provider(&mut self, name: String, config: String) -> Result<()> {
-        let msg = ClientMessage {
-            msg: Some(client_message::Msg::SetProvider(SetProviderMsg {
-                name,
-                config,
-            })),
-        };
-        match self.transport.request(msg).await? {
-            ServerMessage {
-                msg: Some(server_message::Msg::ProviderList(_)),
-            } => Ok(()),
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(e)),
-            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
-            other => anyhow::bail!("unexpected response: {other:?}"),
-        }
-    }
-
-    /// Delete a provider by name.
-    pub async fn delete_provider(&mut self, name: String) -> Result<()> {
-        let msg = ClientMessage {
-            msg: Some(client_message::Msg::DeleteProvider(DeleteProviderMsg {
-                name,
-            })),
-        };
-        match self.transport.request(msg).await? {
-            ServerMessage {
-                msg: Some(server_message::Msg::Pong(_)),
-            } => Ok(()),
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(e)),
-            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
-            other => anyhow::bail!("unexpected response: {other:?}"),
-        }
-    }
-
-    /// Set the active model.
-    pub async fn set_active_model(&mut self, model: String) -> Result<()> {
-        let msg = ClientMessage {
-            msg: Some(client_message::Msg::SetActiveModel(SetActiveModelMsg {
-                model,
-            })),
-        };
-        match self.transport.request(msg).await? {
-            ServerMessage {
-                msg: Some(server_message::Msg::Pong(_)),
-            } => Ok(()),
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(e)),
-            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
-            other => anyhow::bail!("unexpected response: {other:?}"),
-        }
-    }
-
-    /// List all MCP server configs.
-    pub async fn list_mcps(&mut self) -> Result<Vec<McpInfo>> {
-        let msg = ClientMessage {
-            msg: Some(client_message::Msg::ListMcps(ListMcpsMsg {})),
-        };
-        match self.transport.request(msg).await? {
-            ServerMessage {
-                msg: Some(server_message::Msg::McpList(McpList { mcps })),
-            } => Ok(mcps),
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(e)),
-            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
-            other => anyhow::bail!("unexpected response: {other:?}"),
-        }
-    }
-
-    /// Replace all local MCPs.
-    pub async fn set_local_mcps(&mut self, mcps: Vec<McpInfo>) -> Result<()> {
-        let msg = ClientMessage {
-            msg: Some(client_message::Msg::SetLocalMcps(SetLocalMcpsMsg { mcps })),
-        };
-        match self.transport.request(msg).await? {
-            ServerMessage {
-                msg: Some(server_message::Msg::Pong(_)),
-            } => Ok(()),
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(e)),
-            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
-            other => anyhow::bail!("unexpected response: {other:?}"),
-        }
-    }
-
-    /// Get the daemon config as JSON string.
-    pub async fn get_config(&mut self) -> Result<String> {
-        let msg = ClientMessage {
-            msg: Some(client_message::Msg::GetConfig(GetConfig {})),
-        };
-        match self.transport.request(msg).await? {
-            ServerMessage {
-                msg: Some(server_message::Msg::Config(ConfigMsg { config })),
-            } => Ok(config),
-            ServerMessage {
-                msg: Some(server_message::Msg::Error(e)),
-            } => {
-                anyhow::bail!("server error ({}): {}", e.code, e.message)
-            }
-            other => anyhow::bail!("unexpected response: {other:?}"),
-        }
     }
 }
 

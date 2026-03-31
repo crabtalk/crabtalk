@@ -61,9 +61,9 @@ async fn register_and_unregister_tool() {
         parameters: schemars::Schema::default(),
         strict: true,
     };
-    runtime.register_tool(tool);
-    assert!(runtime.unregister_tool("bash"));
-    assert!(!runtime.unregister_tool("bash"));
+    runtime.tools.insert(tool);
+    assert!(runtime.tools.remove("bash"));
+    assert!(!runtime.tools.remove("bash"));
 }
 
 // --- Session management ---

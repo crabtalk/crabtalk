@@ -24,8 +24,8 @@ impl Default for SkillHandler {
 
 impl SkillHandler {
     /// Load skills from multiple directories. Tolerates missing directories
-    /// by skipping them. Returns a handler with all discovered skills.
-    pub fn load(skill_dirs: Vec<PathBuf>) -> Result<Self> {
+    /// by skipping them. Skills whose names appear in `disabled` are excluded.
+    pub fn load(skill_dirs: Vec<PathBuf>, disabled: &[String]) -> Result<Self> {
         let mut registry = SkillRegistry::new();
         for dir in &skill_dirs {
             if !dir.exists() {
@@ -33,9 +33,11 @@ impl SkillHandler {
             }
             match loader::load_skills_dir(dir) {
                 Ok(r) => {
-                    let count = r.len();
-                    for skill in r.skills() {
-                        if registry.contains(&skill.name) {
+                    let count = r.skills.len();
+                    for skill in &r.skills {
+                        if disabled.contains(&skill.name) {
+                            tracing::info!("skill '{}' disabled, skipping", skill.name);
+                        } else if registry.contains(&skill.name) {
                             tracing::warn!(
                                 "skill '{}' from {} conflicts with already-loaded skill, skipping",
                                 skill.name,
@@ -52,7 +54,7 @@ impl SkillHandler {
                 }
             }
         }
-        tracing::info!("total {} skill(s) loaded", registry.len());
+        tracing::info!("total {} skill(s) loaded", registry.skills.len());
         Ok(Self {
             registry: Mutex::new(registry),
             skill_dirs,

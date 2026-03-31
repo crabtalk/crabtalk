@@ -321,7 +321,7 @@ async fn tg_stream(
                             pending_ask_questions = Some(questions);
                         }
 
-                        if acc.is_done() {
+                        if acc.done {
                             break;
                         }
                     }
@@ -356,7 +356,7 @@ async fn tg_stream(
                     };
 
                     if let Some(json_reply) = resolved {
-                        if let Some(session_id) = acc.session() {
+                        if let Some(session_id) = acc.session {
                             let reply_msg = ClientMessage::from(ReplyToAsk {
                                 session: session_id,
                                 content: json_reply,
@@ -434,7 +434,7 @@ async fn tg_stream(
         }
     }
 
-    match acc.session() {
+    match acc.session {
         Some(session_id) => StreamResult::Ok { session_id },
         None => StreamResult::Failed,
     }

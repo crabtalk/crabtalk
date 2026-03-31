@@ -12,11 +12,11 @@ pub struct StreamAccumulator {
     /// Current tool call status line (e.g., "[calling bash, read...]").
     tool_line: Option<String>,
     /// Session ID from StreamStart.
-    session: Option<u64>,
+    pub session: Option<u64>,
     /// Captured error, if any.
     error: Option<String>,
     /// Whether the stream has ended.
-    done: bool,
+    pub done: bool,
     /// Pending structured questions from an `AskUserEvent`.
     pending_questions: Option<Vec<AskQuestion>>,
 }
@@ -74,11 +74,6 @@ impl StreamAccumulator {
         }
     }
 
-    /// Session ID extracted from StreamStart.
-    pub fn session(&self) -> Option<u64> {
-        self.session
-    }
-
     /// Set a captured error message.
     pub fn set_error(&mut self, msg: String) {
         self.error = Some(msg);
@@ -87,11 +82,6 @@ impl StreamAccumulator {
     /// The captured error, if any.
     pub fn error(&self) -> Option<&str> {
         self.error.as_deref()
-    }
-
-    /// Whether the stream has ended.
-    pub fn is_done(&self) -> bool {
-        self.done
     }
 
     /// Pending questions from an `AskUserEvent`, if any.

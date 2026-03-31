@@ -1,12 +1,12 @@
 //! Server trait — one async method per protocol operation.
 
 use crate::protocol::message::{
-    AgentEventMsg, AgentInfo, AgentList, ClientMessage, CompactResponse, ConfigMsg,
-    ConversationInfo, ConversationList, CreateAgentMsg, CreateCronMsg, CronInfo, CronList,
-    DaemonStats, ErrorMsg, HubEvent, InstallPackageMsg, McpInfo, McpList, PackageInfo, PackageList,
-    Pong, ProviderInfo, ProviderList, ProviderPresetInfo, ProviderPresetList, SendMsg,
-    SendResponse, ServerMessage, ServiceLogOutput, SessionInfo, SessionList, SkillList,
-    StreamEvent, StreamMsg, UpdateAgentMsg, client_message, server_message,
+    AgentEventMsg, AgentInfo, AgentList, ClientMessage, CompactResponse, ConversationInfo,
+    ConversationList, CreateAgentMsg, CreateCronMsg, CronInfo, CronList, DaemonStats, ErrorMsg,
+    HubEvent, InstallPackageMsg, McpInfo, McpList, PackageInfo, PackageList, Pong, ProviderInfo,
+    ProviderList, ProviderPresetInfo, ProviderPresetList, ResourceKind, SendMsg, SendResponse,
+    ServerMessage, ServiceLogOutput, SessionInfo, SessionList, SkillInfo, SkillList, StreamEvent,
+    StreamMsg, UpdateAgentMsg, client_message, server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -61,9 +61,6 @@ pub trait Server: Sync {
 
     /// Handle `SubscribeEvents` — stream agent events.
     fn subscribe_events(&self) -> impl Stream<Item = Result<AgentEventMsg>> + Send;
-
-    /// Handle `GetConfig` — return the full daemon config as JSON.
-    fn get_config(&self) -> impl std::future::Future<Output = Result<String>> + Send;
 
     /// Handle `Reload` — hot-reload runtime from disk.
     fn reload(&self) -> impl std::future::Future<Output = Result<()>> + Send;
@@ -136,8 +133,16 @@ pub trait Server: Sync {
     /// Handle `ListPackages` — return all installed hub packages.
     fn list_packages(&self) -> impl std::future::Future<Output = Result<Vec<PackageInfo>>> + Send;
 
-    /// Handle `ListSkills` — return all available skill names.
-    fn list_skills(&self) -> impl std::future::Future<Output = Result<Vec<String>>> + Send;
+    /// Handle `ListSkills` — return all available skills with enabled state.
+    fn list_skills(&self) -> impl std::future::Future<Output = Result<Vec<SkillInfo>>> + Send;
+
+    /// Handle `SetEnabled` — enable or disable a provider, MCP, or skill.
+    fn set_enabled(
+        &self,
+        kind: ResourceKind,
+        name: String,
+        enabled: bool,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Handle `ListConversations` — return historical conversations from disk.
     fn list_conversations(
@@ -241,12 +246,7 @@ pub trait Server: Sync {
                     };
                 }
                 client_message::Msg::GetConfig(_) => {
-                    yield match self.get_config().await {
-                        Ok(config) => ServerMessage {
-                            msg: Some(server_message::Msg::Config(ConfigMsg { config })),
-                        },
-                        Err(e) => server_error(500, e.to_string()),
-                    };
+                    yield server_error(410, "GetConfig is deprecated — use GetStats and granular APIs".into());
                 }
                 client_message::Msg::SubscribeEvents(_) => {
                     let s = self.subscribe_events();
@@ -406,9 +406,17 @@ pub trait Server: Sync {
                 }
                 client_message::Msg::ListSkills(_) => {
                     yield match self.list_skills().await {
-                        Ok(names) => ServerMessage {
-                            msg: Some(server_message::Msg::SkillList(SkillList { names })),
+                        Ok(skills) => ServerMessage {
+                            msg: Some(server_message::Msg::SkillList(SkillList { skills })),
                         },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::SetEnabled(req) => {
+                    let kind = ResourceKind::try_from(req.kind)
+                        .unwrap_or(ResourceKind::Unknown);
+                    yield match self.set_enabled(kind, req.name, req.enabled).await {
+                        Ok(()) => server_pong(),
                         Err(e) => server_error(500, e.to_string()),
                     };
                 }

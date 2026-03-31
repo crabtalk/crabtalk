@@ -38,6 +38,8 @@ message ClientMessage {
     ListPackagesMsg list_packages = 22;
     // Skills
     ListSkillsMsg list_skills = 23;
+    // Enable/disable
+    SetEnabledMsg set_enabled = 35;
     // Services
     StartServiceMsg start_service = 24;
     StopServiceMsg stop_service = 25;
@@ -143,6 +145,19 @@ message ListPackagesMsg {}
 
 message ListSkillsMsg {}
 
+enum ResourceKind {
+  RESOURCE_KIND_UNKNOWN = 0;
+  PROVIDER = 1;
+  MCP = 2;
+  SKILL = 3;
+}
+
+message SetEnabledMsg {
+  ResourceKind kind = 1;
+  string name = 2;
+  bool enabled = 3;
+}
+
 message ListConversationsMsg {
   string agent = 1;
   string sender = 2;
@@ -226,6 +241,7 @@ message DaemonStats {
   uint64 uptime_secs = 1;
   uint32 active_sessions = 2;
   uint32 registered_agents = 3;
+  string active_model = 4;
 }
 
 message Pong {}
@@ -392,6 +408,7 @@ message ProviderInfo {
   string name = 1;
   bool active = 2;
   string config = 3;
+  bool enabled = 4;
 }
 
 message ProviderList {
@@ -411,8 +428,13 @@ message ServiceLogOutput {
   string content = 1;
 }
 
+message SkillInfo {
+  string name = 1;
+  bool enabled = 2;
+}
+
 message SkillList {
-  repeated string names = 1;
+  repeated SkillInfo skills = 1;
 }
 
 message ConversationInfo {
@@ -439,6 +461,7 @@ message McpInfo {
   bool auth = 6;
   string source = 7;
   bool auto_restart = 8;
+  bool enabled = 9;
 }
 
 message McpList {

@@ -41,7 +41,7 @@ pub struct Runtime<M: Model, H: Hook> {
     agents: BTreeMap<String, Agent<M>>,
     sessions: RwLock<BTreeMap<u64, Arc<Mutex<Session>>>>,
     next_session_id: AtomicU64,
-    tools: ToolRegistry,
+    pub tools: ToolRegistry,
     tool_tx: Option<ToolSender>,
     active_sessions: RwLock<HashSet<u64>>,
 }
@@ -65,18 +65,6 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             tool_tx,
             active_sessions: RwLock::new(HashSet::new()),
         }
-    }
-
-    // --- Tool registry ---
-
-    /// Register a tool schema.
-    pub fn register_tool(&mut self, tool: crate::model::Tool) {
-        self.tools.insert(tool);
-    }
-
-    /// Remove a tool schema by name. Returns `true` if it existed.
-    pub fn unregister_tool(&mut self, name: &str) -> bool {
-        self.tools.remove(name)
     }
 
     // --- Agent registry ---

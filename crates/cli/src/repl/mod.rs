@@ -19,6 +19,7 @@ use ratatui::{
 };
 use std::{collections::VecDeque, path::PathBuf, pin::pin, time::Duration};
 use tokio::sync::mpsc;
+use wcore::protocol::api::Client;
 
 mod ask;
 pub mod chat;
@@ -74,10 +75,18 @@ impl ChatRepl {
 
     async fn run_inner(&mut self, chat_title: String, resume_file: Option<String>) -> Result<()> {
         let model = self.fetch_model_name().await;
-        let conn_info = self.runner.conn_info().clone();
+        let conn_info = self.runner.conn_info.clone();
         let os_user = std::env::var("USER").unwrap_or_else(|_| "user".into());
 
-        let skill_names = self.runner.list_skills().await.unwrap_or_default();
+        let skill_names: Vec<String> = self
+            .runner
+            .list_skills()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|s| s.enabled)
+            .map(|s| s.name)
+            .collect();
         let history = std::mem::take(&mut self.history);
         let mut app = App {
             renderer: MarkdownRenderer::new(),
@@ -118,13 +127,12 @@ impl ChatRepl {
     }
 
     async fn fetch_model_name(&mut self) -> Option<String> {
-        let config_json = self.runner.get_config().await.ok()?;
-        let val: serde_json::Value = serde_json::from_str(&config_json).ok()?;
-        val.get("system")?
-            .get("crab")?
-            .get("model")?
-            .as_str()
-            .map(|s| s.to_string())
+        let stats = self.runner.get_stats().await.ok()?;
+        if stats.active_model.is_empty() {
+            None
+        } else {
+            Some(stats.active_model)
+        }
     }
 
     fn save_history(&self) {

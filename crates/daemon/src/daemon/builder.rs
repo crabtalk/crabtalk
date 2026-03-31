@@ -27,7 +27,7 @@ fn resolve_package_skills(
             if let Some(dir) = package_skill_dirs.get(&entry) {
                 match runtime::skill::loader::load_skills_dir(dir) {
                     Ok(registry) => {
-                        for skill in registry.skills() {
+                        for skill in &registry.skills {
                             resolved.push(skill.name.clone());
                         }
                     }
@@ -102,8 +102,8 @@ impl<H: Host + 'static> Daemon<H> {
         event_tx: &DaemonEventSender,
         host: H,
     ) -> Result<Runtime<ProviderRegistry, Env<H>>> {
-        let manager = build_providers(config)?;
         let (manifest, _warnings) = resolve_manifests(config_dir);
+        let manager = build_providers(config, &manifest.disabled)?;
         let hook = build_env(config, config_dir, &manifest, host).await?;
         let tool_tx = build_tool_sender(event_tx);
         let mut runtime = Runtime::new(manager, hook, Some(tool_tx)).await;
@@ -112,15 +112,32 @@ impl<H: Host + 'static> Daemon<H> {
     }
 }
 
-/// Construct the provider registry from config.
-fn build_providers(config: &DaemonConfig) -> Result<ProviderRegistry> {
+/// Construct the provider registry from config, filtering out disabled providers.
+fn build_providers(
+    config: &DaemonConfig,
+    disabled: &wcore::config::DisabledItems,
+) -> Result<ProviderRegistry> {
     let active_model = config
         .system
         .crab
         .model
         .clone()
         .ok_or_else(|| anyhow::anyhow!("system.crab.model is required in config.toml"))?;
-    let registry = ProviderRegistry::from_providers(active_model.clone(), &config.provider)?;
+    let providers: BTreeMap<_, _> = config
+        .provider
+        .iter()
+        .filter(|(name, _)| !disabled.providers.contains(name))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let registry = ProviderRegistry::from_providers(active_model.clone(), &providers)?;
+
+    // Verify the active model's provider wasn't disabled.
+    if registry.provider_name_for(&active_model).is_none() && !providers.is_empty() {
+        anyhow::bail!(
+            "active model '{}' requires a disabled provider — re-enable it or change the active model",
+            active_model
+        );
+    }
 
     tracing::info!(
         "provider registry initialized — active model: {}",
@@ -136,16 +153,18 @@ async fn build_env<H: Host>(
     manifest: &ResolvedManifest,
     host: H,
 ) -> Result<Env<H>> {
-    let skills = SkillHandler::load(manifest.skill_dirs.clone()).unwrap_or_else(|e| {
-        tracing::warn!("failed to load skills: {e}");
-        SkillHandler::default()
-    });
+    let skills = SkillHandler::load(manifest.skill_dirs.clone(), &manifest.disabled.skills)
+        .unwrap_or_else(|e| {
+            tracing::warn!("failed to load skills: {e}");
+            SkillHandler::default()
+        });
 
-    // Inject [env] from config.toml into each MCP's env map.
+    // Inject [env] from config.toml into each MCP's env map, skipping disabled.
     let mcp_servers: Vec<_> = manifest
         .mcps
-        .values()
-        .map(|mcp| {
+        .iter()
+        .filter(|(name, _)| !manifest.disabled.mcps.contains(name))
+        .map(|(_, mcp)| {
             let mut mcp = mcp.clone();
             for (k, v) in &config.env {
                 mcp.env.entry(k.clone()).or_insert_with(|| v.clone());
