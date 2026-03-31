@@ -113,6 +113,20 @@ impl From<ApiStandard> for ProviderKind {
     }
 }
 
+impl From<ProviderKind> for ApiStandard {
+    fn from(kind: ProviderKind) -> Self {
+        match kind {
+            ProviderKind::Openai | ProviderKind::Unknown => Self::OpenaiCompat,
+            ProviderKind::Anthropic => Self::Anthropic,
+            ProviderKind::Google => Self::Google,
+            ProviderKind::Bedrock => Self::Bedrock,
+            ProviderKind::Ollama => Self::Ollama,
+            ProviderKind::Azure => Self::Azure,
+            ProviderKind::LlamaCpp => Self::LlamaCpp,
+        }
+    }
+}
+
 impl TryFrom<ServerMessage> for hub_event::Event {
     type Error = anyhow::Error;
     fn try_from(msg: ServerMessage) -> anyhow::Result<Self> {

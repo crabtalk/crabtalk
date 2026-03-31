@@ -572,7 +572,9 @@ impl<H: Host + 'static> Server for Daemon<H> {
         sender: String,
     ) -> Result<Vec<ConversationInfo>> {
         let sessions_dir = self.config_dir.join("sessions");
-        Ok(scan_conversations_all(&sessions_dir, &agent, &sender))
+        tokio::task::spawn_blocking(move || scan_conversations_all(&sessions_dir, &agent, &sender))
+            .await
+            .context("conversation scan task panicked")
     }
 
     async fn list_mcps(&self) -> Result<Vec<McpInfo>> {
@@ -679,6 +681,13 @@ impl<H: Host + 'static> Server for Daemon<H> {
 
         let def: wcore::ProviderDef =
             serde_json::from_str(&config).context("invalid ProviderDef JSON")?;
+
+        // Validate before writing: merge with existing providers and check.
+        let daemon_config = self.load_config()?;
+        let mut all_providers = daemon_config.provider;
+        all_providers.insert(name.clone(), def.clone());
+        model::validate_providers(&all_providers)?;
+
         let toml_value = toml::to_string(&def).context("failed to serialize provider to TOML")?;
         let provider_doc: DocumentMut = toml_value
             .parse()

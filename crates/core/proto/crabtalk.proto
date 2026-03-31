@@ -429,13 +429,14 @@ message McpList {
 }
 
 enum ProviderKind {
-  OPENAI = 0;
-  ANTHROPIC = 1;
-  GOOGLE = 2;
-  BEDROCK = 3;
-  OLLAMA = 4;
-  AZURE = 5;
-  LLAMA_CPP = 6;
+  PROVIDER_KIND_UNKNOWN = 0;
+  OPENAI = 1;
+  ANTHROPIC = 2;
+  GOOGLE = 3;
+  BEDROCK = 4;
+  OLLAMA = 5;
+  AZURE = 6;
+  LLAMA_CPP = 7;
 }
 
 message ProviderPresetInfo {
