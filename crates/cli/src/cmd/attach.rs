@@ -1,12 +1,12 @@
 //! Attach to an agent via the interactive chat REPL.
 
-use crate::cmd::auth::PRESETS;
 use crate::repl::{ChatRepl, runner::Runner};
 use anyhow::Result;
 use clap::Args;
 use dialoguer::{Input, Password, Select, theme::ColorfulTheme};
 use std::path::Path;
 use toml_edit::{Array, DocumentMut, Item, Table, value};
+use wcore::config::PROVIDER_PRESETS;
 
 /// Attach to an agent and start an interactive chat REPL.
 #[derive(Args, Debug)]
@@ -31,7 +31,7 @@ impl Attach {
 /// Interactive provider setup for first-time daemon start.
 pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
     let theme = ColorfulTheme::default();
-    let preset_names: Vec<&str> = PRESETS.iter().map(|p| p.name).collect();
+    let preset_names: Vec<&str> = PROVIDER_PRESETS.iter().map(|p| p.name).collect();
 
     println!("\nNo providers configured. Let's set one up.\n");
     let idx = Select::with_theme(&theme)
@@ -39,20 +39,9 @@ pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
         .items(&preset_names)
         .default(0)
         .interact()?;
-    let preset = &PRESETS[idx];
+    let preset = &PROVIDER_PRESETS[idx];
 
-    // 1. Provider name — only for custom presets.
-    let provider_name = if preset.allows_custom_name() {
-        let name: String = Input::with_theme(&theme)
-            .with_prompt("Provider name (used as [provider.<name>] in config)")
-            .interact_text()?;
-        if name.is_empty() {
-            anyhow::bail!("provider name is required");
-        }
-        name
-    } else {
-        preset.name.to_string()
-    };
+    let provider_name = preset.name.to_string();
 
     // 2. API key — skipped for ollama.
     let api_key = if preset.name != "ollama" {
@@ -88,10 +77,10 @@ pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
         url
     };
 
-    let model: String = if let Some(default) = default_model_for(preset.name) {
+    let model: String = if !preset.default_model.is_empty() {
         Input::with_theme(&theme)
             .with_prompt("Model name")
-            .default(default.to_string())
+            .default(preset.default_model.to_string())
             .interact_text()?
     } else {
         let m: String = Input::with_theme(&theme)
@@ -130,7 +119,11 @@ pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
     if !base_url.is_empty() {
         entry.insert("base_url", value(base_url.as_str()));
     }
-    entry.insert("standard", value(preset.standard));
+    let kind_str = serde_json::to_value(preset.kind)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| "openai".to_string());
+    entry.insert("kind", value(&kind_str));
     let mut models = Array::new();
     models.push(model.as_str());
     entry.insert("models", value(models));
@@ -139,15 +132,4 @@ pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
     std::fs::write(config_path, doc.to_string())?;
     println!("\nSaved to {}\n", config_path.display());
     Ok(())
-}
-
-fn default_model_for(provider: &str) -> Option<&str> {
-    match provider {
-        "anthropic" => Some("claude-sonnet-4-5-20250514"),
-        "openai" => Some("gpt-4o"),
-        "google" => Some("gemini-2.5-pro"),
-        "ollama" => Some("llama3"),
-        "azure" => Some("gpt-4o"),
-        _ => None,
-    }
 }

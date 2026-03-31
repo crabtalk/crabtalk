@@ -10,7 +10,8 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs},
 };
-use toml_edit::{Array, DocumentMut, Item, Table, value};
+pub(crate) use wcore::config::{PROVIDER_PRESETS, ProviderPreset};
+use wcore::protocol::message::McpInfo;
 
 use mcps::{handle_mcps_key, render_mcps};
 use providers::{handle_providers_key, render_providers};
@@ -24,85 +25,67 @@ pub struct Auth {}
 
 impl Auth {
     pub async fn run(self) -> Result<()> {
-        tui::run_app(AuthState::load, render, handle_key)?;
+        let mut runner = crate::cmd::connect_default()
+            .await
+            .context("daemon must be running for auth — run 'crabtalk' first")?;
 
-        // Reload daemon to pick up config changes (model, providers, MCPs).
-        if let Ok(mut runner) = crate::cmd::connect_default().await {
-            let _ = runner.reload().await;
+        // Load via protocol.
+        let provider_infos = runner.list_providers().await?;
+        let config_json = runner.get_config().await?;
+        let mcp_infos = runner.list_mcps().await?;
+        let initial_names: Vec<String> = provider_infos.iter().map(|p| p.name.clone()).collect();
+
+        let active_model = serde_json::from_str::<serde_json::Value>(&config_json)
+            .ok()
+            .and_then(|v| {
+                v.get("system")?
+                    .get("crab")?
+                    .get("model")?
+                    .as_str()
+                    .map(String::from)
+            })
+            .unwrap_or_default();
+
+        let state = tui::run_app_with_state(
+            || AuthState::from_protocol(provider_infos, active_model, mcp_infos),
+            render,
+            handle_key,
+        )?;
+
+        if !state.needs_save {
+            return Ok(());
         }
+
+        // Save via protocol.
+        runner.set_active_model(state.active_model.clone()).await?;
+
+        // Delete removed providers.
+        let final_names: Vec<String> = state.providers.iter().map(|p| p.name.clone()).collect();
+        for name in &initial_names {
+            if !final_names.contains(name) {
+                let _ = runner.delete_provider(name.clone()).await;
+            }
+        }
+
+        // Set all current providers.
+        for p in &state.providers {
+            let def = p.to_provider_def();
+            let json = serde_json::to_string(&def).context("failed to serialize provider")?;
+            runner.set_provider(p.name.clone(), json).await?;
+        }
+
+        // Save local MCPs.
+        let local_mcps: Vec<McpInfo> = state
+            .mcps
+            .iter()
+            .filter(|m| m.source == McpSource::Local)
+            .map(McpData::to_mcp_info)
+            .collect();
+        runner.set_local_mcps(local_mcps).await?;
+
         Ok(())
     }
 }
-
-// ── Presets ──────────────────────────────────────────────────────────
-
-pub(crate) struct Preset {
-    pub(crate) name: &'static str,
-    pub(crate) base_url: &'static str,
-    pub(crate) standard: &'static str,
-    /// URL hardcoded in crabllm — shown read-only, not saved to config.
-    pub(crate) fixed_base_url: &'static str,
-}
-
-impl Preset {
-    /// Whether this preset allows user-defined provider names.
-    pub(crate) fn allows_custom_name(&self) -> bool {
-        self.name == "custom"
-    }
-
-    /// Whether the base_url field is editable for this preset.
-    pub(crate) fn base_url_editable(&self) -> bool {
-        self.fixed_base_url.is_empty()
-    }
-
-    /// The display URL — fixed if hardcoded, otherwise whatever the user set.
-    pub(crate) fn display_url(&self) -> &str {
-        if self.fixed_base_url.is_empty() {
-            self.base_url
-        } else {
-            self.fixed_base_url
-        }
-    }
-}
-
-pub(crate) const PRESETS: &[Preset] = &[
-    Preset {
-        name: "anthropic",
-        base_url: "",
-        standard: "anthropic",
-        fixed_base_url: "https://api.anthropic.com/v1",
-    },
-    Preset {
-        name: "openai",
-        base_url: "https://api.openai.com/v1",
-        standard: "openai_compat",
-        fixed_base_url: "",
-    },
-    Preset {
-        name: "google",
-        base_url: "",
-        standard: "google",
-        fixed_base_url: "https://generativelanguage.googleapis.com/v1beta",
-    },
-    Preset {
-        name: "ollama",
-        base_url: "http://localhost:11434/v1",
-        standard: "ollama",
-        fixed_base_url: "",
-    },
-    Preset {
-        name: "azure",
-        base_url: "",
-        standard: "azure",
-        fixed_base_url: "",
-    },
-    Preset {
-        name: "custom",
-        base_url: "",
-        standard: "openai_compat",
-        fixed_base_url: "",
-    },
-];
 
 // ── Tabs ─────────────────────────────────────────────────────────────
 
@@ -131,12 +114,9 @@ pub(crate) struct ProviderData {
 }
 
 impl ProviderData {
-    /// Look up the preset for this provider by matching standard.
-    /// Returns None for providers with no matching preset (custom names).
-    pub(crate) fn preset(&self) -> Option<&'static Preset> {
-        PRESETS
-            .iter()
-            .find(|p| p.name == self.name && p.standard == self.standard)
+    /// Look up the preset for this provider by matching name.
+    pub(crate) fn preset(&self) -> Option<&'static ProviderPreset> {
+        PROVIDER_PRESETS.iter().find(|p| p.name == self.name)
     }
 
     /// Whether the base_url field is editable (not hardcoded by crabllm).
@@ -153,6 +133,38 @@ impl ProviderData {
         }
         &self.base_url
     }
+
+    /// Build a ProviderDef for serialization.
+    pub(crate) fn to_provider_def(&self) -> wcore::ProviderDef {
+        let kind: wcore::ApiStandard =
+            serde_json::from_value(serde_json::Value::String(self.standard.clone()))
+                .unwrap_or_default();
+        wcore::ProviderDef {
+            kind,
+            api_key: if self.api_key.is_empty() {
+                None
+            } else {
+                Some(self.api_key.clone())
+            },
+            base_url: if self.base_url.is_empty() {
+                None
+            } else {
+                Some(self.base_url.clone())
+            },
+            models: self.models.clone(),
+            weight: None,
+            max_retries: None,
+            api_version: None,
+            timeout: None,
+            region: None,
+            access_key: None,
+            secret_key: None,
+            model_path: None,
+            n_gpu_layers: None,
+            n_ctx: None,
+            n_threads: None,
+        }
+    }
 }
 
 pub(crate) const PROVIDER_FIELDS: &[&str] = &["api_key", "base_url", "standard"];
@@ -165,6 +177,20 @@ pub(crate) struct McpData {
     pub(crate) url: Option<String>,
     pub(crate) auth: bool,
     pub(crate) source: McpSource,
+}
+
+impl McpData {
+    pub(crate) fn to_mcp_info(&self) -> McpInfo {
+        McpInfo {
+            name: self.name.clone(),
+            command: self.command.clone(),
+            args: self.args.clone(),
+            env: self.env.iter().cloned().collect(),
+            url: self.url.clone().unwrap_or_default(),
+            auth: self.auth,
+            source: String::new(), // always local when saving
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -206,170 +232,51 @@ pub(crate) struct AuthState {
     pub(crate) mcp_add_step: usize, // 0=name, 1=transport, 2=command/url, 3=args
     pub(crate) mcp_add_http: bool,  // true when adding an HTTP MCP
     // Shared.
+    pub(crate) needs_save: bool,
     pub(crate) status: String,
 }
 
 impl AuthState {
-    fn load() -> Result<Self> {
-        let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
+    fn from_protocol(
+        provider_infos: Vec<wcore::protocol::message::ProviderInfo>,
+        active_model: String,
+        mcp_infos: Vec<McpInfo>,
+    ) -> Result<Self> {
         let mut providers = Vec::new();
-        let mut active_model = String::new();
-        let mut mcps = Vec::new();
-
-        if config_path.exists() {
-            let content = std::fs::read_to_string(&config_path)
-                .with_context(|| format!("cannot read {}", config_path.display()))?;
-            let doc: DocumentMut = content
-                .parse()
-                .with_context(|| format!("invalid TOML in {}", config_path.display()))?;
-
-            if let Some(system) = doc.get("system").and_then(|s| s.as_table())
-                && let Some(crab) = system.get("crab").and_then(|w| w.as_table())
-                && let Some(m) = crab.get("model").and_then(|v| v.as_str())
-            {
-                active_model = m.to_string();
+        for p in provider_infos {
+            if p.config.is_empty() {
+                continue;
             }
-
-            if let Some(provider_table) = doc.get("provider").and_then(|p| p.as_table()) {
-                for (name, item) in provider_table.iter() {
-                    let Some(tbl) = item.as_table() else {
-                        continue;
-                    };
-                    let api_key = tbl
-                        .get("api_key")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let base_url = tbl
-                        .get("base_url")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let standard = tbl
-                        .get("standard")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("openai")
-                        .to_string();
-                    let mut models = Vec::new();
-                    if let Some(arr) = tbl.get("models").and_then(|v| v.as_array()) {
-                        for m in arr.iter() {
-                            if let Some(s) = m.as_str() {
-                                models.push(s.to_string());
-                            }
-                        }
-                    }
-                    providers.push(ProviderData {
-                        name: name.to_string(),
-                        api_key,
-                        base_url,
-                        standard,
-                        models,
-                    });
-                }
-            }
+            let def: wcore::ProviderDef = serde_json::from_str(&p.config)
+                .with_context(|| format!("invalid provider config for '{}'", p.name))?;
+            providers.push(ProviderData {
+                name: p.name,
+                api_key: def.api_key.unwrap_or_default(),
+                base_url: def.base_url.unwrap_or_default(),
+                standard: serde_json::to_value(def.kind)
+                    .ok()
+                    .and_then(|v| v.as_str().map(String::from))
+                    .unwrap_or_else(|| "openai".to_string()),
+                models: def.models,
+            });
         }
 
-        // Load MCPs from local/CrabTalk.toml.
-        let manifest_path = wcore::paths::CONFIG_DIR
-            .join(wcore::paths::LOCAL_DIR)
-            .join("CrabTalk.toml");
-        if manifest_path.exists() {
-            let manifest_content = std::fs::read_to_string(&manifest_path)
-                .with_context(|| format!("cannot read {}", manifest_path.display()))?;
-            let manifest_doc: DocumentMut = manifest_content
-                .parse()
-                .with_context(|| format!("invalid TOML in {}", manifest_path.display()))?;
-
-            if let Some(mcps_table) = manifest_doc.get("mcps").and_then(|m| m.as_table()) {
-                for (name, item) in mcps_table.iter() {
-                    let Some(tbl) = item.as_table() else {
-                        continue;
-                    };
-                    let command = tbl
-                        .get("command")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let mut args = Vec::new();
-                    if let Some(arr) = tbl.get("args").and_then(|v| v.as_array()) {
-                        for a in arr.iter() {
-                            if let Some(s) = a.as_str() {
-                                args.push(s.to_string());
-                            }
-                        }
-                    }
-                    let mut env = Vec::new();
-                    if let Some(env_tbl) = tbl.get("env").and_then(|e| e.as_table()) {
-                        for (k, v) in env_tbl.iter() {
-                            let val = v.as_str().unwrap_or("").to_string();
-                            env.push((k.to_string(), val));
-                        }
-                    }
-                    let url = tbl.get("url").and_then(|v| v.as_str()).map(String::from);
-                    let auth = tbl.get("auth").and_then(|v| v.as_bool()).unwrap_or(false);
-                    mcps.push(McpData {
-                        name: name.to_string(),
-                        command,
-                        args,
-                        env,
-                        url,
-                        auth,
-                        source: McpSource::Local,
-                    });
-                }
-            }
-        }
-
-        // Load hub-installed MCPs (read-only).
-        let packages_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::PACKAGES_DIR);
-        if let Ok(scopes) = std::fs::read_dir(&packages_dir) {
-            for scope_entry in scopes.flatten() {
-                let scope_path = scope_entry.path();
-                let toml_files: Vec<_> = if scope_path.is_dir() {
-                    std::fs::read_dir(&scope_path)
-                        .into_iter()
-                        .flatten()
-                        .flatten()
-                        .map(|e| e.path())
-                        .filter(|p| p.extension().is_some_and(|e| e == "toml"))
-                        .collect()
-                } else if scope_path.extension().is_some_and(|e| e == "toml") {
-                    vec![scope_path.clone()]
+        let mcps = mcp_infos
+            .into_iter()
+            .map(|m| McpData {
+                name: m.name,
+                command: m.command,
+                args: m.args,
+                env: m.env.into_iter().collect(),
+                url: if m.url.is_empty() { None } else { Some(m.url) },
+                auth: m.auth,
+                source: if m.source.is_empty() {
+                    McpSource::Local
                 } else {
-                    continue;
-                };
-
-                for toml_path in toml_files {
-                    let pkg_id = toml_path
-                        .strip_prefix(&packages_dir)
-                        .unwrap_or(&toml_path)
-                        .with_extension("")
-                        .to_string_lossy()
-                        .into_owned();
-                    if let Ok(Some(manifest)) = wcore::ManifestConfig::load(&toml_path) {
-                        for (name, cfg) in &manifest.mcps {
-                            // Skip if already loaded as local (local wins).
-                            if mcps.iter().any(|m| m.name == *name) {
-                                continue;
-                            }
-                            mcps.push(McpData {
-                                name: name.clone(),
-                                command: cfg.command.clone(),
-                                args: cfg.args.clone(),
-                                env: cfg
-                                    .env
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                    .collect(),
-                                url: cfg.url.clone(),
-                                auth: cfg.auth,
-                                source: McpSource::Hub(pkg_id.clone()),
-                            });
-                        }
-                    }
-                }
-            }
-        }
+                    McpSource::Hub(m.source)
+                },
+            })
+            .collect();
 
         Ok(Self {
             tab: Tab::Providers,
@@ -386,134 +293,14 @@ impl AuthState {
             mcp_env_selected: 0,
             mcp_add_step: 0,
             mcp_add_http: false,
+            needs_save: false,
             status: String::from("Ready"),
         })
     }
 
-    fn save(&mut self) -> Result<()> {
-        let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
-        std::fs::create_dir_all(&*wcore::paths::CONFIG_DIR)
-            .with_context(|| format!("cannot create {}", wcore::paths::CONFIG_DIR.display()))?;
-
-        let content = if config_path.exists() {
-            std::fs::read_to_string(&config_path)
-                .with_context(|| format!("cannot read {}", config_path.display()))?
-        } else {
-            String::new()
-        };
-
-        let mut doc: DocumentMut = content
-            .parse()
-            .with_context(|| format!("invalid TOML in {}", config_path.display()))?;
-
-        // [system.crab].model
-        if !self.active_model.is_empty() {
-            if doc.get("system").is_none() {
-                doc.insert("system", Item::Table(Table::new()));
-            }
-            if let Some(system) = doc.get_mut("system").and_then(|s| s.as_table_mut()) {
-                if system.get("crab").is_none() {
-                    system.insert("crab", Item::Table(Table::new()));
-                }
-                if let Some(crab) = system.get_mut("crab").and_then(|w| w.as_table_mut()) {
-                    crab.insert("model", value(&self.active_model));
-                }
-            }
-        }
-
-        // [provider.*]
-        doc.remove("provider");
-        if !self.providers.is_empty() {
-            let mut provider_table = Table::new();
-            for p in &self.providers {
-                let mut tbl = Table::new();
-                if !p.api_key.is_empty() {
-                    tbl.insert("api_key", value(&p.api_key));
-                }
-                if !p.base_url.is_empty() {
-                    tbl.insert("base_url", value(&p.base_url));
-                }
-                tbl.insert("standard", value(&p.standard));
-                if !p.models.is_empty() {
-                    let mut arr = Array::new();
-                    for m in &p.models {
-                        arr.push(m.as_str());
-                    }
-                    tbl.insert("models", Item::Value(arr.into()));
-                }
-                provider_table.insert(&p.name, Item::Table(tbl));
-            }
-            doc.insert("provider", Item::Table(provider_table));
-        }
-
-        // Remove legacy sections from config.toml if present.
-        doc.remove("mcps");
-
-        std::fs::write(&config_path, doc.to_string())
-            .with_context(|| format!("failed to write {}", config_path.display()))?;
-
-        // Save MCPs to local/CrabTalk.toml.
-        let manifest_path = wcore::paths::CONFIG_DIR
-            .join(wcore::paths::LOCAL_DIR)
-            .join("CrabTalk.toml");
-        let local_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::LOCAL_DIR);
-        std::fs::create_dir_all(&local_dir)
-            .with_context(|| format!("cannot create {}", local_dir.display()))?;
-
-        let manifest_content = if manifest_path.exists() {
-            std::fs::read_to_string(&manifest_path)
-                .with_context(|| format!("cannot read {}", manifest_path.display()))?
-        } else {
-            String::new()
-        };
-        let mut manifest_doc: DocumentMut = manifest_content
-            .parse()
-            .with_context(|| format!("invalid TOML in {}", manifest_path.display()))?;
-
-        manifest_doc.remove("mcps");
-        let local_mcps: Vec<_> = self
-            .mcps
-            .iter()
-            .filter(|m| m.source == McpSource::Local)
-            .collect();
-        if !local_mcps.is_empty() {
-            let mut mcps_table = Table::new();
-            for mcp in local_mcps {
-                let mut tbl = Table::new();
-                if let Some(ref url) = mcp.url {
-                    tbl.insert("url", value(url));
-                } else {
-                    if !mcp.command.is_empty() {
-                        tbl.insert("command", value(&mcp.command));
-                    }
-                    if !mcp.args.is_empty() {
-                        let mut arr = Array::new();
-                        for a in &mcp.args {
-                            arr.push(a.as_str());
-                        }
-                        tbl.insert("args", Item::Value(arr.into()));
-                    }
-                }
-                if mcp.auth {
-                    tbl.insert("auth", value(true));
-                }
-                if !mcp.env.is_empty() {
-                    let mut env_tbl = Table::new();
-                    for (k, v) in &mcp.env {
-                        env_tbl.insert(k, value(v));
-                    }
-                    tbl.insert("env", Item::Table(env_tbl));
-                }
-                mcps_table.insert(&mcp.name, Item::Table(tbl));
-            }
-            manifest_doc.insert("mcps", Item::Table(mcps_table));
-        }
-
-        std::fs::write(&manifest_path, manifest_doc.to_string())
-            .with_context(|| format!("failed to write {}", manifest_path.display()))?;
-
+    fn mark_saved(&mut self) {
+        self.needs_save = true;
         self.status = String::from("Saved!");
-        Ok(())
     }
 
     // ── Provider tree helpers ────────────────────────────────────────
@@ -560,12 +347,16 @@ impl AuthState {
         }
     }
 
-    pub(crate) fn add_preset(&mut self, preset: &Preset, name: Option<&str>) {
+    pub(crate) fn add_preset(&mut self, preset: &ProviderPreset, name: Option<&str>) {
+        let kind_str = serde_json::to_value(preset.kind)
+            .ok()
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_else(|| "openai".to_string());
         self.providers.push(ProviderData {
             name: name.unwrap_or(preset.name).to_string(),
             api_key: String::new(),
             base_url: preset.base_url.to_string(),
-            standard: preset.standard.to_string(),
+            standard: kind_str,
             models: Vec::new(),
         });
         let new_idx = self.tree_len().saturating_sub(1);
@@ -580,9 +371,7 @@ fn handle_key(
     state: &mut AuthState,
 ) -> Result<Option<Result<()>>> {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
-        if let Err(e) = state.save() {
-            state.status = format!("Error: {e}");
-        }
+        state.mark_saved();
         return Ok(None);
     }
 

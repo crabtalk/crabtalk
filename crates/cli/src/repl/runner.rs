@@ -14,9 +14,11 @@ use wcore::protocol::{
     api::Client,
     message::{
         AgentEventMsg, AskQuestion, ClientMessage, ConfigMsg, ConversationInfo, ConversationList,
-        GetConfig, HubEvent, InstallPackageMsg, KillMsg, ListConversationsMsg, ListSkillsMsg,
-        ReplyToAsk, ServerMessage, SessionInfo, SkillList, StreamMsg, SubscribeEvents,
-        UninstallPackageMsg, client_message, hub_event, server_message, stream_event,
+        DeleteProviderMsg, GetConfig, HubEvent, InstallPackageMsg, KillMsg, ListConversationsMsg,
+        ListMcpsMsg, ListProvidersMsg, ListSkillsMsg, McpInfo, McpList, ProviderInfo, ProviderList,
+        ReplyToAsk, ServerMessage, SessionInfo, SetActiveModelMsg, SetLocalMcpsMsg, SetProviderMsg,
+        SkillList, StreamMsg, SubscribeEvents, UninstallPackageMsg, client_message, hub_event,
+        server_message, stream_event,
     },
 };
 
@@ -427,6 +429,109 @@ impl Runner {
             } => {
                 anyhow::bail!("server error ({}): {}", e.code, e.message)
             }
+            other => anyhow::bail!("unexpected response: {other:?}"),
+        }
+    }
+
+    /// List all registered providers with config.
+    pub async fn list_providers(&mut self) -> Result<Vec<ProviderInfo>> {
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::ListProviders(ListProvidersMsg {})),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::ProviderList(ProviderList { providers })),
+            } => Ok(providers),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
+            other => anyhow::bail!("unexpected response: {other:?}"),
+        }
+    }
+
+    /// Create or update a provider.
+    pub async fn set_provider(&mut self, name: String, config: String) -> Result<()> {
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::SetProvider(SetProviderMsg {
+                name,
+                config,
+            })),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::ProviderList(_)),
+            } => Ok(()),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
+            other => anyhow::bail!("unexpected response: {other:?}"),
+        }
+    }
+
+    /// Delete a provider by name.
+    pub async fn delete_provider(&mut self, name: String) -> Result<()> {
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::DeleteProvider(DeleteProviderMsg {
+                name,
+            })),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::Pong(_)),
+            } => Ok(()),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
+            other => anyhow::bail!("unexpected response: {other:?}"),
+        }
+    }
+
+    /// Set the active model.
+    pub async fn set_active_model(&mut self, model: String) -> Result<()> {
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::SetActiveModel(SetActiveModelMsg {
+                model,
+            })),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::Pong(_)),
+            } => Ok(()),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
+            other => anyhow::bail!("unexpected response: {other:?}"),
+        }
+    }
+
+    /// List all MCP server configs.
+    pub async fn list_mcps(&mut self) -> Result<Vec<McpInfo>> {
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::ListMcps(ListMcpsMsg {})),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::McpList(McpList { mcps })),
+            } => Ok(mcps),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
+            other => anyhow::bail!("unexpected response: {other:?}"),
+        }
+    }
+
+    /// Replace all local MCPs.
+    pub async fn set_local_mcps(&mut self, mcps: Vec<McpInfo>) -> Result<()> {
+        let msg = ClientMessage {
+            msg: Some(client_message::Msg::SetLocalMcps(SetLocalMcpsMsg { mcps })),
+        };
+        match self.transport.request(msg).await? {
+            ServerMessage {
+                msg: Some(server_message::Msg::Pong(_)),
+            } => Ok(()),
+            ServerMessage {
+                msg: Some(server_message::Msg::Error(e)),
+            } => anyhow::bail!("server error ({}): {}", e.code, e.message),
             other => anyhow::bail!("unexpected response: {other:?}"),
         }
     }

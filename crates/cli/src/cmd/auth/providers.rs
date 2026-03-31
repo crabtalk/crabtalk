@@ -1,6 +1,6 @@
 use crate::{
     cmd::auth::{
-        AuthState, Focus, PRESETS, PROVIDER_FIELDS, ProviderData, Tab, TreeItem,
+        AuthState, Focus, PROVIDER_FIELDS, PROVIDER_PRESETS, ProviderData, Tab, TreeItem,
         commit_provider_edit,
     },
     tui::{border_dim, border_focused, char_to_byte, handle_text_input, mask_token},
@@ -266,17 +266,13 @@ fn handle_preset(key: crossterm::event::KeyEvent, state: &mut AuthState) {
             state.preset_idx = state.preset_idx.saturating_sub(1);
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if state.preset_idx < PRESETS.len() - 1 {
+            if state.preset_idx < PROVIDER_PRESETS.len() - 1 {
                 state.preset_idx += 1;
             }
         }
         KeyCode::Enter => {
-            let preset = &PRESETS[state.preset_idx];
-            if preset.allows_custom_name() {
-                state.edit_buf.clear();
-                state.cursor = 0;
-                state.focus = Focus::NamingProvider;
-            } else if state.providers.iter().any(|p| p.name == preset.name) {
+            let preset = &PROVIDER_PRESETS[state.preset_idx];
+            if state.providers.iter().any(|p| p.name == preset.name) {
                 state.status = format!("Provider '{}' already exists", preset.name);
             } else {
                 state.add_preset(preset, None);
@@ -303,7 +299,7 @@ fn handle_naming_provider(key: crossterm::event::KeyEvent, state: &mut AuthState
                 state.status = format!("Provider '{}' already exists", name);
                 return;
             }
-            let preset = &PRESETS[state.preset_idx];
+            let preset = &PROVIDER_PRESETS[state.preset_idx];
             state.add_preset(preset, Some(&name));
             state.status = format!("Added provider: {}", name);
             state.focus = Focus::List;
@@ -565,7 +561,7 @@ fn render_presets(frame: &mut Frame, state: &AuthState, area: Rect) {
         .borders(Borders::ALL)
         .border_style(border_focused());
 
-    let lines: Vec<Line> = PRESETS
+    let lines: Vec<Line> = PROVIDER_PRESETS
         .iter()
         .enumerate()
         .map(|(i, preset)| {
@@ -577,7 +573,11 @@ fn render_presets(frame: &mut Frame, state: &AuthState, area: Rect) {
             } else {
                 Style::default().fg(Color::White)
             };
-            let url = preset.display_url();
+            let url = if preset.fixed_base_url.is_empty() {
+                preset.base_url
+            } else {
+                preset.fixed_base_url
+            };
             let detail = if url.is_empty() {
                 String::new()
             } else {
