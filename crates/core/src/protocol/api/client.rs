@@ -280,21 +280,15 @@ pub trait Client: Send {
                 force,
             })),
         })
-        .scan(false, |done, item| {
-            if *done {
-                return std::future::ready(None);
-            }
-            if matches!(
-                &item,
+        .take_while(|r| {
+            std::future::ready(!matches!(
+                r,
                 Ok(ServerMessage {
                     msg: Some(server_message::Msg::HubEvent(HubEvent {
-                        event: Some(hub_event::Event::Done(_))
+                        event: Some(hub_event::Event::Done(d))
                     }))
-                })
-            ) {
-                *done = true;
-            }
-            std::future::ready(Some(item))
+                }) if d.error.is_empty()
+            ))
         })
         .map(|r| r.and_then(hub_event::Event::try_from))
     }
@@ -309,21 +303,15 @@ pub trait Client: Send {
                 package,
             })),
         })
-        .scan(false, |done, item| {
-            if *done {
-                return std::future::ready(None);
-            }
-            if matches!(
-                &item,
+        .take_while(|r| {
+            std::future::ready(!matches!(
+                r,
                 Ok(ServerMessage {
                     msg: Some(server_message::Msg::HubEvent(HubEvent {
-                        event: Some(hub_event::Event::Done(_))
+                        event: Some(hub_event::Event::Done(d))
                     }))
-                })
-            ) {
-                *done = true;
-            }
-            std::future::ready(Some(item))
+                }) if d.error.is_empty()
+            ))
         })
         .map(|r| r.and_then(hub_event::Event::try_from))
     }

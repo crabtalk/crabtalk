@@ -79,11 +79,13 @@ impl Hub {
                         match event? {
                             hub_event::Event::Step(s) => println!("  {}", s.message),
                             hub_event::Event::Warning(w) => eprintln!("  warning: {}", w.message),
+                            hub_event::Event::Setup(s) => {
+                                setup_prompt = s.prompt;
+                            }
                             hub_event::Event::Done(d) => {
                                 if !d.error.is_empty() {
                                     anyhow::bail!("{}", d.error);
                                 }
-                                setup_prompt = d.setup_prompt;
                             }
                             _ => {}
                         }
