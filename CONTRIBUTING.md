@@ -107,7 +107,13 @@ upstream.
   Mechanical changes (lockfile updates, renames, `cargo fmt`) can be large.
 - PR titles use conventional commits: `type(scope): description`.
 
-## Features
+## Design
 
-Features and their design rationale are documented as RFCs in the
-[development book](docs/).
+Design decisions and their rationale are documented as RFCs in the
+[development book](https://crabtalk.github.io/crabtalk/)
+([source](docs/src/SUMMARY.md)). Read the ones relevant to the crate you're
+touching — they explain the why, not just the what.
+
+An RFC is needed when a change defines a public contract, protocol, or
+interface that external builders would implement against. Internal refactors,
+bug fixes, and enhancements don't need one.
