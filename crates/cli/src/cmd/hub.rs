@@ -1,6 +1,6 @@
 //! Hub package management command.
 
-use crate::repl::runner::{OutputChunk, Runner, send_reply};
+use crate::repl::runner::Runner;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use crabhub::manifest::Manifest;
@@ -70,68 +70,20 @@ impl Hub {
         match self.command {
             HubCommand::Test(t) => return test_manifest(&t.path),
             HubCommand::Install(p) => {
-                let conn_info = runner.conn_info.clone();
-                let mut setup_prompt = String::new();
-                {
-                    let mut stream =
-                        std::pin::pin!(runner.install_package(&p.package, branch, &path, p.force));
-                    while let Some(event) = stream.next().await {
-                        match event? {
-                            hub_event::Event::Step(s) => println!("  {}", s.message),
-                            hub_event::Event::Warning(w) => eprintln!("  warning: {}", w.message),
-                            hub_event::Event::Setup(s) => {
-                                setup_prompt = s.prompt;
-                            }
-                            hub_event::Event::Done(d) => {
-                                if !d.error.is_empty() {
-                                    anyhow::bail!("{}", d.error);
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-
-                // Run setup prompt on the client side so the user sees full
-                // LLM output and can respond to ask_user prompts.
-                if !setup_prompt.is_empty() {
-                    println!("  running setup…");
-                    let mut stream = std::pin::pin!(runner.stream(
-                        wcore::paths::DEFAULT_AGENT,
-                        &setup_prompt,
-                        None,
-                        true,
-                        None,
-                        Some("hub-setup".to_string()),
-                    ));
-                    while let Some(chunk) = stream.next().await {
-                        match chunk? {
-                            OutputChunk::Text(text) => print!("{text}"),
-                            OutputChunk::Thinking(text) => print!("{text}"),
-                            OutputChunk::ToolStart(calls) => {
-                                let names: Vec<_> = calls.iter().map(|(n, _)| n.as_str()).collect();
-                                println!("  [{}]", names.join(", "));
-                            }
-                            OutputChunk::ToolResult(_, _) | OutputChunk::ToolDone(_) => {}
-                            OutputChunk::AskUser { questions, session } => {
-                                for q in &questions {
-                                    println!("{}", q.header);
-                                    for (i, opt) in q.options.iter().enumerate() {
-                                        println!("  {}: {}", i + 1, opt.label);
-                                    }
-                                    print!("> ");
-                                    std::io::Write::flush(&mut std::io::stdout())?;
-                                    let mut reply = String::new();
-                                    std::io::stdin().read_line(&mut reply)?;
-                                    send_reply(&conn_info, session, reply.trim().to_string())
-                                        .await?;
-                                }
+                let mut stream =
+                    std::pin::pin!(runner.install_package(&p.package, branch, &path, p.force));
+                while let Some(event) = stream.next().await {
+                    match event? {
+                        hub_event::Event::Step(s) => println!("  {}", s.message),
+                        hub_event::Event::Warning(w) => eprintln!("  warning: {}", w.message),
+                        hub_event::Event::Done(d) => {
+                            if !d.error.is_empty() {
+                                anyhow::bail!("{}", d.error);
                             }
                         }
+                        _ => {}
                     }
-                    println!();
                 }
-
                 println!("Done: {}", p.package);
             }
             HubCommand::Uninstall(p) => {

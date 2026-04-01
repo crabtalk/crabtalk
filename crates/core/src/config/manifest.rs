@@ -63,16 +63,11 @@ pub struct PackageMeta {
     pub setup: Option<Setup>,
 }
 
-/// Package setup — either a bash script or a prompt for inference.
+/// Package setup — a bash script run after install.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Setup {
-    /// Path to a bash script (relative to the repo root) run from the cached
-    /// repo directory.
-    Script { script: String },
-    /// Prompt sent to the daemon for inference. If the value ends with `.md`,
-    /// it is read as a file path relative to the repo root.
-    Prompt { prompt: String },
+pub struct Setup {
+    /// Bash script or command to run from the cached repo directory.
+    pub script: String,
 }
 
 impl ManifestConfig {

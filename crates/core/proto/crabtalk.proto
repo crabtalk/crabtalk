@@ -535,12 +535,7 @@ message HubEvent {
     HubWarning warning = 2;
     HubSetupOutput setup_output = 3;
     HubDone done = 4;
-    HubSetup setup = 5;
   }
-}
-
-message HubSetup {
-  string prompt = 1;
 }
 
 message HubStep {
