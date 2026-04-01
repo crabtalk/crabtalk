@@ -594,9 +594,7 @@ pub trait Client: Send {
     }
 
     /// List all resolved models with provider and active state.
-    fn list_models(
-        &mut self,
-    ) -> impl std::future::Future<Output = Result<Vec<ModelInfo>>> + Send {
+    fn list_models(&mut self) -> impl std::future::Future<Output = Result<Vec<ModelInfo>>> + Send {
         async move {
             match self
                 .request(ClientMessage {

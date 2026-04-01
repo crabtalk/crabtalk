@@ -301,7 +301,11 @@ impl<H: Host + 'static> Server for Daemon<H> {
 
     async fn list_agents(&self) -> Result<Vec<AgentInfo>> {
         let rt = self.runtime.read().await.clone();
-        Ok(rt.agents().into_iter().map(|c| agent_config_to_info(&c)).collect())
+        Ok(rt
+            .agents()
+            .into_iter()
+            .map(|c| agent_config_to_info(&c))
+            .collect())
     }
 
     async fn get_agent(&self, name: String) -> Result<AgentInfo> {
@@ -576,7 +580,13 @@ impl<H: Host + 'static> Server for Daemon<H> {
                 }
                 let enabled = !disabled_mcps.contains(name);
                 let cfg = mcp_res.to_server_config();
-                mcps.push(mcp_to_info(name, &cfg, &pkg_id, SourceKind::Package, enabled));
+                mcps.push(mcp_to_info(
+                    name,
+                    &cfg,
+                    &pkg_id,
+                    SourceKind::Package,
+                    enabled,
+                ));
             }
         }
 

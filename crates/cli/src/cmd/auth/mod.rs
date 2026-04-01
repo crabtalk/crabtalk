@@ -11,7 +11,10 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Tabs},
 };
 pub(crate) use wcore::config::{PROVIDER_PRESETS, ProviderPreset};
-use wcore::protocol::{api::Client, message::{McpInfo, SourceKind}};
+use wcore::protocol::{
+    api::Client,
+    message::{McpInfo, SourceKind},
+};
 
 use mcps::{handle_mcps_key, render_mcps};
 use providers::{handle_providers_key, render_providers};
