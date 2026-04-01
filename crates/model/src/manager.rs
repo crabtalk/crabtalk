@@ -116,7 +116,12 @@ impl ProviderRegistry {
             .inner
             .read()
             .map_err(|_| anyhow!("provider lock poisoned"))?;
-        Ok(inner.providers[&inner.active].clone())
+        inner.providers.get(&inner.active).cloned().ok_or_else(|| {
+            anyhow!(
+                "active model '{}' not found in registry — its provider may be disabled",
+                inner.active
+            )
+        })
     }
 
     /// Get the model name of the active provider (also its key).

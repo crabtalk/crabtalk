@@ -130,24 +130,7 @@ fn build_providers(
         .filter(|(name, _)| !disabled.providers.contains(name))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    // Fall back to first available model if the configured one is disabled.
-    let effective_model = if providers
-        .values()
-        .any(|def| def.models.iter().any(|m| *m == active_model))
-    {
-        active_model
-    } else if let Some(fallback) = providers.values().flat_map(|def| def.models.first()).next() {
-        tracing::warn!(
-            "active model '{}' belongs to a disabled provider — falling back to '{}'",
-            active_model,
-            fallback,
-        );
-        fallback.clone()
-    } else {
-        active_model
-    };
-
-    let registry = ProviderRegistry::from_providers(effective_model, &providers)?;
+    let registry = ProviderRegistry::from_providers(active_model, &providers)?;
 
     tracing::info!(
         "provider registry initialized — active model: {}",
