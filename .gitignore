@@ -1,7 +1,19 @@
-.fastembed_cache
+# Build
+target
+
+# Cargo registry artifacts
+.cargo-ok
+.cargo_vcs_info.json
+Cargo.toml.orig
+
+# Environment
 .env
 .mcp.json
-target
+
+# Caches
+.fastembed_cache
+
+# Local
+TODOs.md
 spec
 res
-TODOs.md

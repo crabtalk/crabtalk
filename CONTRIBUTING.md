@@ -91,6 +91,22 @@ Client (CLI/Telegram/etc) → UDS/TCP → Daemon event loop
 - `ToolRequest` — single tool call with reply channel
 - Protocol — `ClientMessage` / `ServerMessage` (protobuf)
 
+## External Dependencies
+
+LLM provider implementations (auth, request formatting, streaming) live in
+[`crabtalk/crabllm`](https://github.com/crabtalk/crabllm). The `model` crate
+wraps `crabllm-provider` — changes to provider internals should be contributed
+upstream.
+
+## Pull Requests
+
+- One logical change per PR. Don't mix features, refactors, and dependency changes.
+- Don't vendor dependencies. If you need to patch an upstream crate, PR the fix upstream.
+- Break work into reviewable commits — each commit should be one coherent change.
+- Keep commits focused — each commit should have a single reason to exist.
+  Mechanical changes (lockfile updates, renames, `cargo fmt`) can be large.
+- PR titles use conventional commits: `type(scope): description`.
+
 ## Features
 
 Features and their design rationale are documented as RFCs in the
