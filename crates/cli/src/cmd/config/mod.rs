@@ -24,9 +24,9 @@ mod providers;
 
 /// Configure providers and MCP servers interactively.
 #[derive(clap::Args, Debug)]
-pub struct Auth {}
+pub struct Config {}
 
-impl Auth {
+impl Config {
     pub async fn run(self) -> Result<()> {
         let mut runner = crate::cmd::connect_default()
             .await

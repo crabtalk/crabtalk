@@ -1,5 +1,5 @@
 use crate::{
-    cmd::auth::{
+    cmd::config::{
         AuthState, Focus, PROVIDER_FIELDS, PROVIDER_PRESETS, ProviderData, Tab, TreeItem,
         commit_provider_edit,
     },

@@ -1,4 +1,4 @@
-//! `crabtalk daemon start/stop` — system service management.
+//! System service management (install/uninstall daemon as launchd/systemd service).
 
 use crate::cmd::attach::setup_provider;
 use anyhow::Result;

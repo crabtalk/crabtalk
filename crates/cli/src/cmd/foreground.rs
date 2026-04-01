@@ -1,4 +1,4 @@
-//! `crabtalk daemon start` — foreground daemon startup.
+//! `crabtalk --foreground` — run the daemon in the foreground.
 
 use anyhow::Result;
 use wcore::paths::{CONFIG_DIR, TCP_PORT_FILE};

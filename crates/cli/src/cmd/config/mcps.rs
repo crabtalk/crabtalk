@@ -1,5 +1,5 @@
 use crate::{
-    cmd::auth::{AuthState, Focus, McpData, McpSource, Tab},
+    cmd::config::{AuthState, Focus, McpData, McpSource, Tab},
     tui::{border_dim, border_focused, char_to_byte, handle_text_input, mask_token},
 };
 use anyhow::Result;
