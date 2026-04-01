@@ -301,19 +301,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
 
     async fn list_agents(&self) -> Result<Vec<AgentInfo>> {
         let rt = self.runtime.read().await.clone();
-        let agents = rt.agents();
-        agents
-            .into_iter()
-            .map(|config| {
-                let json =
-                    serde_json::to_string(&config).context("failed to serialize agent config")?;
-                Ok(AgentInfo {
-                    name: config.name,
-                    description: config.description,
-                    config: json,
-                })
-            })
-            .collect()
+        Ok(rt.agents().into_iter().map(|c| agent_config_to_info(&c)).collect())
     }
 
     async fn get_agent(&self, name: String) -> Result<AgentInfo> {
@@ -321,12 +309,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
         let config = rt
             .agent(&name)
             .ok_or_else(|| anyhow::anyhow!("agent '{name}' not found"))?;
-        let json = serde_json::to_string(&config).context("failed to serialize agent config")?;
-        Ok(AgentInfo {
-            name: config.name,
-            description: config.description,
-            config: json,
-        })
+        Ok(agent_config_to_info(&config))
     }
 
     async fn create_agent(&self, req: CreateAgentMsg) -> Result<AgentInfo> {
@@ -1349,6 +1332,22 @@ fn mcp_to_info(
         auto_restart: cfg.auto_restart,
         enabled,
         source_kind: source_kind.into(),
+    }
+}
+
+fn agent_config_to_info(config: &wcore::AgentConfig) -> AgentInfo {
+    AgentInfo {
+        name: config.name.clone(),
+        description: config.description.clone(),
+        config: String::new(),
+        model: config.model.clone(),
+        max_iterations: config.max_iterations as u32,
+        thinking: config.thinking,
+        members: config.members.clone(),
+        skills: config.skills.clone(),
+        mcps: config.mcps.clone(),
+        compact_threshold: config.compact_threshold.map(|t| t as u32),
+        compact_tool_max_len: config.compact_tool_max_len as u32,
     }
 }
 
