@@ -13,11 +13,11 @@ use wcore::protocol::{
     api::Server,
     message::{
         AgentEventMsg, AgentInfo, AskOption, AskQuestion, AskUserEvent, ConversationInfo,
-        CreateAgentMsg, CreateCronMsg, CronInfo, CronList, DaemonStats, HubDone, HubEvent, HubStep,
-        HubWarning, InstallPackageMsg, McpInfo, ModelInfo, PackageInfo, ProtoProviderKind,
-        ProviderInfo, ProviderPresetInfo, ResourceKind, SendMsg, SendResponse, SessionInfo,
-        SkillInfo, SourceKind, StreamChunk, StreamEnd, StreamEvent, StreamMsg, StreamStart,
-        StreamThinking, TokenUsage, ToolCallInfo, ToolResultEvent, ToolStartEvent,
+        CreateAgentMsg, CreateCronMsg, CronInfo, CronList, DaemonStats, HubDone, HubEvent,
+        HubSetupOutput, HubStep, HubWarning, InstallPackageMsg, McpInfo, ModelInfo, PackageInfo,
+        ProtoProviderKind, ProviderInfo, ProviderPresetInfo, ResourceKind, SendMsg, SendResponse,
+        SessionInfo, SkillInfo, SourceKind, StreamChunk, StreamEnd, StreamEvent, StreamMsg,
+        StreamStart, StreamThinking, TokenUsage, ToolCallInfo, ToolResultEvent, ToolStartEvent,
         ToolsCompleteEvent, UpdateAgentMsg, hub_event, stream_event,
     },
 };
@@ -390,18 +390,22 @@ impl<H: Host + 'static> Server for Daemon<H> {
             let path = req.path;
             let force = req.force;
 
-            // Channel bridge: sync on_step callback → async stream.
-            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            // Channel bridge: sync callbacks → async stream.
+            // false = step message, true = script output.
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(bool, String)>();
             let handle = tokio::spawn({
                 let branch = branch.clone();
                 let path = path.clone();
                 let package = package.clone();
+                let tx2 = tx.clone();
                 async move {
                     let branch = if branch.is_empty() { None } else { Some(branch.as_str()) };
                     let path = if path.is_empty() { None } else { Some(std::path::Path::new(&path)) };
-                    crabhub::package::install(&package, branch, path, force, |msg| {
-                        let _ = tx.send(msg.to_string());
-                    })
+                    crabhub::package::install(
+                        &package, branch, path, force,
+                        |msg| { let _ = tx.send((false, msg.to_string())); },
+                        |msg| { let _ = tx2.send((true, msg.to_string())); },
+                    )
                     .await
                 }
             });
@@ -413,7 +417,13 @@ impl<H: Host + 'static> Server for Daemon<H> {
                 tokio::select! {
                     msg = rx.recv() => {
                         match msg {
-                            Some(m) => yield hub_step(&m),
+                            Some((is_output, m)) => {
+                                if is_output {
+                                    yield hub_output(&m);
+                                } else {
+                                    yield hub_step(&m);
+                                }
+                            }
                             None => {
                                 // Sender dropped — task finished, await it.
                                 task_result = handle.await;
@@ -423,8 +433,12 @@ impl<H: Host + 'static> Server for Daemon<H> {
                     }
                     result = &mut handle => {
                         rx.close();
-                        while let Some(m) = rx.recv().await {
-                            yield hub_step(&m);
+                        while let Some((is_output, m)) = rx.recv().await {
+                            if is_output {
+                                yield hub_output(&m);
+                            } else {
+                                yield hub_step(&m);
+                            }
                         }
                         task_result = result;
                         break;
@@ -1123,6 +1137,14 @@ fn hub_done(error: &str) -> HubEvent {
     HubEvent {
         event: Some(hub_event::Event::Done(HubDone {
             error: error.to_string(),
+        })),
+    }
+}
+
+fn hub_output(content: &str) -> HubEvent {
+    HubEvent {
+        event: Some(hub_event::Event::SetupOutput(HubSetupOutput {
+            content: content.to_string(),
         })),
     }
 }

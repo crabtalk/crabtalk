@@ -23,6 +23,7 @@ pub async fn install(
     path: Option<&Path>,
     force: bool,
     on_step: impl Fn(&str),
+    on_output: impl Fn(&str),
 ) -> Result<()> {
     let (scope, name) = parse_package(package)?;
 
@@ -111,12 +112,12 @@ pub async fn install(
         loop {
             tokio::select! {
                 line = stdout_lines.next_line() => match line {
-                    Ok(Some(line)) => on_step(&line),
+                    Ok(Some(line)) => on_output(&line),
                     Ok(None) => break,
                     Err(_) => break,
                 },
                 line = stderr_lines.next_line() => match line {
-                    Ok(Some(line)) => on_step(&line),
+                    Ok(Some(line)) => on_output(&line),
                     Ok(None) => {}
                     Err(_) => {}
                 },

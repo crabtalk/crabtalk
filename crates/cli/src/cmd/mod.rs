@@ -102,22 +102,40 @@ impl Cli {
                 }
             }
             Some(Command::Pull { package, force }) => {
+                use std::io::Write;
+                use wcore::protocol::message::hub_event;
                 let mut runner = connect_default_or_tcp(self.tcp).await?;
-                let mut stream = std::pin::pin!(runner.install_package(&package, "", "", force,));
+                let mut stream = std::pin::pin!(runner.install_package(&package, "", "", force));
+                let mut last_was_output = false;
                 while let Some(event) = stream.next().await {
                     match event? {
-                        wcore::protocol::message::hub_event::Event::Step(s) => {
+                        hub_event::Event::Step(s) => {
+                            if last_was_output {
+                                println!();
+                                last_was_output = false;
+                            }
                             println!("  {}", s.message);
                         }
-                        wcore::protocol::message::hub_event::Event::Warning(w) => {
+                        hub_event::Event::SetupOutput(o) => {
+                            print!("\r  {}", o.content);
+                            let _ = std::io::stdout().flush();
+                            last_was_output = true;
+                        }
+                        hub_event::Event::Warning(w) => {
+                            if last_was_output {
+                                println!();
+                                last_was_output = false;
+                            }
                             eprintln!("  warning: {}", w.message);
                         }
-                        wcore::protocol::message::hub_event::Event::Done(d) => {
+                        hub_event::Event::Done(d) => {
+                            if last_was_output {
+                                println!();
+                            }
                             if !d.error.is_empty() {
                                 anyhow::bail!("{}", d.error);
                             }
                         }
-                        _ => {}
                     }
                 }
                 println!("Done: {package}");
