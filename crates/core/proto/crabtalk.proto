@@ -508,6 +508,13 @@ message ConversationList {
   repeated ConversationInfo conversations = 1;
 }
 
+enum McpStatus {
+  MCP_STATUS_UNKNOWN = 0;
+  CONNECTED = 1;
+  DISCONNECTED = 2;
+  FAILED = 3;
+}
+
 message McpInfo {
   string name = 1;
   string command = 2;
@@ -519,6 +526,9 @@ message McpInfo {
   bool auto_restart = 8;
   bool enabled = 9;
   SourceKind source_kind = 10;
+  McpStatus status = 11;
+  string error = 12;
+  uint32 tool_count = 13;
 }
 
 message McpList {

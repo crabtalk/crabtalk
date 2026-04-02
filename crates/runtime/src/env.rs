@@ -72,6 +72,11 @@ impl<H: Host> Env<H> {
         self.memory.as_ref()
     }
 
+    /// List connected MCP servers with their tool names.
+    pub fn mcp_servers(&self) -> Vec<(String, Vec<String>)> {
+        self.mcp.cached_list()
+    }
+
     /// Register an agent's scope for dispatch enforcement.
     pub fn register_scope(&mut self, name: String, config: &AgentConfig) {
         if name != wcore::paths::DEFAULT_AGENT && !config.description.is_empty() {

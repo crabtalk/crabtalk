@@ -176,6 +176,9 @@ impl McpData {
             source: String::new(), // always local when saving
             enabled: true,
             source_kind: SourceKind::Local.into(),
+            status: 0,
+            error: String::new(),
+            tool_count: 0,
         }
     }
 }

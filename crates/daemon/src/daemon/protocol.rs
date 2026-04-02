@@ -14,11 +14,12 @@ use wcore::protocol::{
     message::{
         AgentEventMsg, AgentInfo, AskOption, AskQuestion, AskUserEvent, ConversationInfo,
         CreateAgentMsg, CreateCronMsg, CronInfo, CronList, DaemonStats, HubDone, HubEvent,
-        HubPackageInfo, HubSetupOutput, HubStep, HubWarning, InstallPackageMsg, McpInfo, ModelInfo,
-        PackageInfo, ProtoProviderKind, ProviderInfo, ProviderPresetInfo, ResourceKind, SendMsg,
-        SendResponse, SessionInfo, SkillInfo, SourceKind, StreamChunk, StreamEnd, StreamEvent,
-        StreamMsg, StreamStart, StreamThinking, TokenUsage, ToolCallInfo, ToolResultEvent,
-        ToolStartEvent, ToolsCompleteEvent, UpdateAgentMsg, hub_event, stream_event,
+        HubPackageInfo, HubSetupOutput, HubStep, HubWarning, InstallPackageMsg, McpInfo, McpStatus,
+        ModelInfo, PackageInfo, ProtoProviderKind, ProviderInfo, ProviderPresetInfo, ResourceKind,
+        SendMsg, SendResponse, SessionInfo, SkillInfo, SourceKind, StreamChunk, StreamEnd,
+        StreamEvent, StreamMsg, StreamStart, StreamThinking, TokenUsage, ToolCallInfo,
+        ToolResultEvent, ToolStartEvent, ToolsCompleteEvent, UpdateAgentMsg, hub_event,
+        stream_event,
     },
 };
 use wcore::{AgentEvent, AgentStep};
@@ -529,6 +530,14 @@ impl<H: Host + 'static> Server for Daemon<H> {
 
     async fn list_mcps(&self) -> Result<Vec<McpInfo>> {
         let config = self.load_config()?;
+        let rt = self.runtime.read().await.clone();
+        let connected: std::collections::BTreeMap<String, usize> = rt
+            .hook
+            .mcp_servers()
+            .into_iter()
+            .map(|(name, tools)| (name, tools.len()))
+            .collect();
+
         let mut mcps = Vec::new();
 
         // Local MCPs from CrabTalk.toml.
@@ -539,7 +548,16 @@ impl<H: Host + 'static> Server for Daemon<H> {
         if let Ok(Some(local)) = wcore::ManifestConfig::load(&manifest_path) {
             for (name, cfg) in &local.mcps {
                 let enabled = !config.disabled.mcps.contains(name);
-                mcps.push(mcp_to_info(name, cfg, "local", SourceKind::Local, enabled));
+                let (status, tool_count) = mcp_status(&connected, name, enabled);
+                mcps.push(mcp_to_info(
+                    name,
+                    cfg,
+                    "local",
+                    SourceKind::Local,
+                    enabled,
+                    status,
+                    tool_count,
+                ));
             }
         }
 
@@ -550,6 +568,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
                     continue; // local wins
                 }
                 let enabled = !config.disabled.mcps.contains(name);
+                let (status, tool_count) = mcp_status(&connected, name, enabled);
                 let cfg = mcp_res.to_server_config();
                 mcps.push(mcp_to_info(
                     name,
@@ -557,6 +576,8 @@ impl<H: Host + 'static> Server for Daemon<H> {
                     &pkg_id,
                     SourceKind::Package,
                     enabled,
+                    status,
+                    tool_count,
                 ));
             }
         }
@@ -1302,12 +1323,28 @@ fn mtime_to_label(mtime: std::time::SystemTime, today: chrono::NaiveDate) -> Str
     }
 }
 
+fn mcp_status(
+    connected: &std::collections::BTreeMap<String, usize>,
+    name: &str,
+    enabled: bool,
+) -> (McpStatus, u32) {
+    if !enabled {
+        return (McpStatus::Disconnected, 0);
+    }
+    match connected.get(name) {
+        Some(&count) => (McpStatus::Connected, count as u32),
+        None => (McpStatus::Failed, 0),
+    }
+}
+
 fn mcp_to_info(
     name: &str,
     cfg: &wcore::McpServerConfig,
     source: &str,
     source_kind: SourceKind,
     enabled: bool,
+    status: McpStatus,
+    tool_count: u32,
 ) -> McpInfo {
     McpInfo {
         name: name.to_string(),
@@ -1324,6 +1361,9 @@ fn mcp_to_info(
         auto_restart: cfg.auto_restart,
         enabled,
         source_kind: source_kind.into(),
+        status: status.into(),
+        error: String::new(),
+        tool_count,
     }
 }
 

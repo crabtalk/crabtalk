@@ -3,8 +3,8 @@
 mod convert;
 
 pub use crate::protocol::proto::{
-    AgentEventKind, ProviderKind as ProtoProviderKind, SourceKind, client_message, hub_event,
-    server_message, stream_event,
+    AgentEventKind, McpStatus, ProviderKind as ProtoProviderKind, SourceKind, client_message,
+    hub_event, server_message, stream_event,
 };
 pub use crate::protocol::proto::{
     AgentEventMsg, AgentInfo, AgentList, AskOption, AskQuestion, AskUserEvent, ClientMessage,
