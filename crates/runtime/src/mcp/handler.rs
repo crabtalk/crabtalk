@@ -13,39 +13,44 @@ pub struct McpHandler {
 
 impl McpHandler {
     /// Build a bridge from the given MCP server configs and discovered port files.
+    /// Timeout for connecting to a single MCP server (30 seconds).
+    const MCP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
     async fn build_bridge(configs: &[McpServerConfig]) -> McpBridge {
         let bridge = McpBridge::new();
         let mut connected_names: Vec<String> = Vec::new();
 
         // 1. Connect servers from config.
         for server_config in configs {
-            let result = if let Some(url) = &server_config.url {
-                tracing::info!(
-                    server = %server_config.name,
-                    url = %url,
-                    "connecting MCP server via HTTP"
-                );
-                bridge
-                    .connect_http_named(server_config.name.clone(), url)
-                    .await
-            } else {
-                let mut cmd = tokio::process::Command::new(&server_config.command);
-                cmd.args(&server_config.args);
-                for (k, v) in &server_config.env {
-                    cmd.env(k, v);
+            let fut = async {
+                if let Some(url) = &server_config.url {
+                    tracing::info!(
+                        server = %server_config.name,
+                        url = %url,
+                        "connecting MCP server via HTTP"
+                    );
+                    bridge
+                        .connect_http_named(server_config.name.clone(), url)
+                        .await
+                } else {
+                    let mut cmd = tokio::process::Command::new(&server_config.command);
+                    cmd.args(&server_config.args);
+                    for (k, v) in &server_config.env {
+                        cmd.env(k, v);
+                    }
+                    tracing::info!(
+                        server = %server_config.name,
+                        command = %server_config.command,
+                        "connecting MCP server via stdio"
+                    );
+                    bridge
+                        .connect_stdio_named(server_config.name.clone(), cmd)
+                        .await
                 }
-                tracing::info!(
-                    server = %server_config.name,
-                    command = %server_config.command,
-                    "connecting MCP server via stdio"
-                );
-                bridge
-                    .connect_stdio_named(server_config.name.clone(), cmd)
-                    .await
             };
 
-            match result {
-                Ok(tools) => {
+            match tokio::time::timeout(Self::MCP_CONNECT_TIMEOUT, fut).await {
+                Ok(Ok(tools)) => {
                     connected_names.push(server_config.name.clone());
                     tracing::info!(
                         "connected MCP server '{}' — {} tool(s)",
@@ -53,8 +58,15 @@ impl McpHandler {
                         tools.len()
                     );
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     tracing::warn!("failed to connect MCP server '{}': {e}", server_config.name);
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "MCP server '{}' timed out after {}s, skipping",
+                        server_config.name,
+                        Self::MCP_CONNECT_TIMEOUT.as_secs()
+                    );
                 }
             }
         }
@@ -69,12 +81,23 @@ impl McpHandler {
                 url = %url,
                 "connecting MCP server via port file"
             );
-            match bridge.connect_http_named(name.clone(), &url).await {
-                Ok(tools) => {
+            match tokio::time::timeout(
+                Self::MCP_CONNECT_TIMEOUT,
+                bridge.connect_http_named(name.clone(), &url),
+            )
+            .await
+            {
+                Ok(Ok(tools)) => {
                     tracing::info!("connected MCP server '{name}' — {} tool(s)", tools.len());
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     tracing::warn!("failed to connect MCP server '{name}': {e}");
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        "MCP server '{name}' timed out after {}s, skipping",
+                        Self::MCP_CONNECT_TIMEOUT.as_secs()
+                    );
                 }
             }
         }
