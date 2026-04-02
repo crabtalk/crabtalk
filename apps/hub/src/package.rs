@@ -280,6 +280,8 @@ pub struct HubPackageEntry {
     pub mcp_count: u32,
     /// Whether the package is installed locally.
     pub installed: bool,
+    /// Source repository URL.
+    pub repository: String,
 }
 
 /// Search the hub for packages matching the query.
@@ -361,6 +363,7 @@ pub async fn search_hub(query: &str) -> Result<Vec<HubPackageEntry>> {
                 skill_count: 0,
                 mcp_count,
                 installed,
+                repository: manifest.package.repository,
             });
         }
     }

@@ -911,6 +911,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
                 skill_count: e.skill_count,
                 mcp_count: e.mcp_count,
                 installed: e.installed,
+                repository: e.repository,
             })
             .collect())
     }

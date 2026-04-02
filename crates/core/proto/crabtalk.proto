@@ -161,6 +161,7 @@ message HubPackageInfo {
   uint32 skill_count = 3;
   uint32 mcp_count = 4;
   bool installed = 5;
+  string repository = 6;
 }
 
 message HubPackageList {
