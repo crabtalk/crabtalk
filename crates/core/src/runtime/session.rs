@@ -72,6 +72,16 @@ impl Session {
         }
     }
 
+    /// Ensure the JSONL file exists, creating it on first call.
+    ///
+    /// No-op if the file was already created or loaded from disk.
+    pub fn ensure_file(&mut self) {
+        if self.file_path.is_some() {
+            return;
+        }
+        self.init_file(&crate::paths::SESSIONS_DIR);
+    }
+
     /// Initialize a new JSONL file in the flat sessions directory.
     ///
     /// Creates `{sessions_dir}/{agent}_{sender}_{seq}.jsonl` with

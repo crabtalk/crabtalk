@@ -146,13 +146,16 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
     }
 
     /// Create a new session for the given agent. Returns the session ID.
+    ///
+    /// The JSONL file is not created here — it is deferred until the first
+    /// message is persisted via [`Session::ensure_file`], avoiding ghost
+    /// session files from connections that drop before any exchange.
     pub async fn create_session(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.agents.contains_key(agent) {
             bail!("agent '{agent}' not registered");
         }
         let id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
-        let mut session = Session::new(id, agent, created_by);
-        session.init_file(&crate::paths::SESSIONS_DIR);
+        let session = Session::new(id, agent, created_by);
         self.sessions
             .write()
             .await
@@ -353,6 +356,9 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             self.hook.on_event(&agent_name, session_id, &event);
         }
 
+        // Create the JSONL file on first persist (deferred from create_session).
+        session.ensure_file();
+
         // Append-only persistence.
         if let Some(summary) = compact_summary {
             // Compaction happened: append compact marker + post-compact messages.
@@ -451,6 +457,8 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             }
             // Borrow on session.history is released. Persist now.
             session.uptime_secs += run_start.elapsed().as_secs();
+            // Create the JSONL file on first persist (deferred from create_session).
+            session.ensure_file();
             if let Some(summary) = compact_summary {
                 session.append_compact(&summary);
                 if session.history.len() > 1 {
