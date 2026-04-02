@@ -167,6 +167,13 @@ pub trait Server: Sync {
         file_path: String,
     ) -> impl std::future::Future<Output = Result<ConversationHistory>> + Send;
 
+    /// Handle `ArchiveConversation` — archive or unarchive a conversation.
+    fn archive_conversation(
+        &self,
+        file_path: String,
+        unarchive: bool,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
     /// Handle `ListMcps` — return all MCP server configs with source info.
     fn list_mcps(&self) -> impl std::future::Future<Output = Result<Vec<McpInfo>>> + Send;
 
@@ -466,6 +473,12 @@ pub trait Server: Sync {
                 }
                 client_message::Msg::GetConversationHistory(req) => {
                     yield result_to_msg(self.get_conversation_history(req.file_path).await);
+                }
+                client_message::Msg::ArchiveConversation(req) => {
+                    yield match self.archive_conversation(req.file_path, req.unarchive).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
                 }
                 client_message::Msg::ListMcps(_) => {
                     yield match self.list_mcps().await {

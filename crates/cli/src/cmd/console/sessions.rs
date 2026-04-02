@@ -231,6 +231,15 @@ impl SessionView {
     }
 
     /// Get the (agent, sender) of the currently selected identity.
+    /// Get the current identity (agent, sender) when in conversations view.
+    pub fn current_identity(&self) -> Option<(String, String)> {
+        if let Self::Conversations { agent, sender, .. } = self {
+            Some((agent.clone(), sender.clone()))
+        } else {
+            None
+        }
+    }
+
     pub fn selected_identity(&self) -> Option<(&str, &str)> {
         if let Self::Identities { entries, selected } = self {
             entries

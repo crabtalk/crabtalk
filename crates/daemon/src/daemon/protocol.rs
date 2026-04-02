@@ -523,9 +523,19 @@ impl<H: Host + 'static> Server for Daemon<H> {
         sender: String,
     ) -> Result<Vec<ConversationInfo>> {
         let sessions_dir = self.config_dir.join("sessions");
-        tokio::task::spawn_blocking(move || scan_conversations_all(&sessions_dir, &agent, &sender))
-            .await
-            .context("conversation scan task panicked")
+        let archive_path = self.config_dir.join("archived.json");
+        let archived: std::collections::BTreeSet<String> = std::fs::read_to_string(&archive_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        tokio::task::spawn_blocking(move || {
+            scan_conversations_all(&sessions_dir, &agent, &sender)
+                .into_iter()
+                .filter(|c| !archived.contains(&c.file_path))
+                .collect()
+        })
+        .await
+        .context("conversation scan task panicked")
     }
 
     async fn get_conversation_history(&self, file_path: String) -> Result<ConversationHistory> {
@@ -555,6 +565,22 @@ impl<H: Host + 'static> Server for Daemon<H> {
                 })
                 .collect(),
         })
+    }
+
+    async fn archive_conversation(&self, file_path: String, unarchive: bool) -> Result<()> {
+        let archive_path = self.config_dir.join("archived.json");
+        let mut archived: std::collections::BTreeSet<String> =
+            std::fs::read_to_string(&archive_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+        if unarchive {
+            archived.remove(&file_path);
+        } else {
+            archived.insert(file_path);
+        }
+        std::fs::write(&archive_path, serde_json::to_string_pretty(&archived)?)?;
+        Ok(())
     }
 
     async fn list_mcps(&self) -> Result<Vec<McpInfo>> {

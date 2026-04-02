@@ -46,6 +46,8 @@ message ClientMessage {
     SearchHubMsg search_hub = 37;
     // Conversation history
     GetConversationHistoryMsg get_conversation_history = 38;
+    // Archive
+    ArchiveConversationMsg archive_conversation = 39;
     // Services
     StartServiceMsg start_service = 24;
     StopServiceMsg stop_service = 25;
@@ -510,6 +512,11 @@ message ModelInfo {
 
 message ModelList {
   repeated ModelInfo models = 1;
+}
+
+message ArchiveConversationMsg {
+  string file_path = 1;
+  bool unarchive = 2;
 }
 
 message ConversationInfo {

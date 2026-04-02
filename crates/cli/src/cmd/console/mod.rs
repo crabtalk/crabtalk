@@ -205,6 +205,33 @@ async fn handle_sessions_key(
                     .enter(&conversations, &state.daemon_sessions);
             }
         }
+        KeyCode::Char('d') => {
+            // Archive the selected conversation.
+            if let Some(path) = state.session_view.selected_file() {
+                let _ = state
+                    .runner
+                    .archive_conversation(path.to_string_lossy().into_owned(), false)
+                    .await;
+                state.status = "Archived".into();
+                // Refresh the conversation list.
+                if let Some((agent, sender)) = state.session_view.current_identity() {
+                    let timeout = std::time::Duration::from_millis(500);
+                    let conversations = tokio::time::timeout(
+                        timeout,
+                        state
+                            .runner
+                            .list_conversations(agent.clone(), sender.clone()),
+                    )
+                    .await
+                    .ok()
+                    .and_then(|r| r.ok())
+                    .unwrap_or_default();
+                    state
+                        .session_view
+                        .enter(&conversations, &state.daemon_sessions);
+                }
+            }
+        }
         KeyCode::Esc => {
             let timeout = std::time::Duration::from_millis(500);
             let conversations = tokio::time::timeout(
