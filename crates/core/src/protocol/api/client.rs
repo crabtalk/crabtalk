@@ -1,14 +1,14 @@
 //! Client trait — transport primitives plus typed provided methods.
 
 use crate::protocol::message::{
-    AgentInfo, AgentList, ArchiveConversationMsg, ClientMessage, ConversationHistory,
-    ConversationInfo, ConversationList, CreateAgentMsg, DaemonStats, DeleteAgentMsg,
-    DeleteProviderMsg, ErrorMsg, GetAgentMsg, GetConversationHistoryMsg, GetStats, HubEvent,
-    HubPackageInfo, HubPackageList, InstallPackageMsg, ListAgentsMsg, ListConversationsMsg,
-    ListMcpsMsg, ListModelsMsg, ListPackagesMsg, ListProviderPresetsMsg, ListProvidersMsg,
-    ListSkillsMsg, McpInfo, McpList, ModelInfo, ModelList, PackageInfo, PackageList, Ping,
-    ProviderInfo, ProviderList, ProviderPresetInfo, ProviderPresetList, ResourceKind, SearchHubMsg,
-    SendMsg, SendResponse, ServerMessage, ServiceLogOutput, ServiceLogsMsg, SetActiveModelMsg,
+    AgentInfo, AgentList, ClientMessage, ConversationHistory, ConversationInfo, ConversationList,
+    CreateAgentMsg, DaemonStats, DeleteAgentMsg, DeleteConversationMsg, DeleteProviderMsg,
+    ErrorMsg, GetAgentMsg, GetConversationHistoryMsg, GetStats, HubEvent, HubPackageInfo,
+    HubPackageList, InstallPackageMsg, ListAgentsMsg, ListConversationsMsg, ListMcpsMsg,
+    ListModelsMsg, ListPackagesMsg, ListProviderPresetsMsg, ListProvidersMsg, ListSkillsMsg,
+    McpInfo, McpList, ModelInfo, ModelList, PackageInfo, PackageList, Ping, ProviderInfo,
+    ProviderList, ProviderPresetInfo, ProviderPresetList, ResourceKind, SearchHubMsg, SendMsg,
+    SendResponse, ServerMessage, ServiceLogOutput, ServiceLogsMsg, SetActiveModelMsg,
     SetEnabledMsg, SetLocalMcpsMsg, SetProviderMsg, SkillInfo, SkillList, StartServiceMsg,
     StopServiceMsg, StreamEvent, StreamMsg, UninstallPackageMsg, UpdateAgentMsg, client_message,
     hub_event, server_message, stream_event,
@@ -423,20 +423,16 @@ pub trait Client: Send {
         }
     }
 
-    /// Archive or unarchive a conversation.
-    fn archive_conversation(
+    /// Delete a conversation file from disk.
+    fn delete_conversation(
         &mut self,
         file_path: String,
-        unarchive: bool,
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
                 .request(ClientMessage {
-                    msg: Some(client_message::Msg::ArchiveConversation(
-                        ArchiveConversationMsg {
-                            file_path,
-                            unarchive,
-                        },
+                    msg: Some(client_message::Msg::DeleteConversation(
+                        DeleteConversationMsg { file_path },
                     )),
                 })
                 .await?

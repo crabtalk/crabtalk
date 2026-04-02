@@ -7,10 +7,10 @@ pub use crate::protocol::proto::{
     hub_event, server_message, stream_event,
 };
 pub use crate::protocol::proto::{
-    AgentEventMsg, AgentInfo, AgentList, ArchiveConversationMsg, AskOption, AskQuestion,
-    AskUserEvent, ClientMessage, CompactMsg, CompactResponse, ConfigMsg, ConversationHistory,
-    ConversationInfo, ConversationList, ConversationMessage, CreateAgentMsg, CreateCronMsg,
-    CronInfo, CronList, DaemonStats, DeleteAgentMsg, DeleteCronMsg, DeleteProviderMsg, ErrorMsg,
+    AgentEventMsg, AgentInfo, AgentList, AskOption, AskQuestion, AskUserEvent, ClientMessage,
+    CompactMsg, CompactResponse, ConfigMsg, ConversationHistory, ConversationInfo,
+    ConversationList, ConversationMessage, CreateAgentMsg, CreateCronMsg, CronInfo, CronList,
+    DaemonStats, DeleteAgentMsg, DeleteConversationMsg, DeleteCronMsg, DeleteProviderMsg, ErrorMsg,
     GetAgentMsg, GetConfig, GetConversationHistoryMsg, GetStats, HubDone, HubEvent, HubPackageInfo,
     HubPackageList, HubSetupOutput, HubStep, HubWarning, InstallPackageMsg, KillMsg, ListAgentsMsg,
     ListConversationsMsg, ListCronsMsg, ListMcpsMsg, ListModelsMsg, ListPackagesMsg,

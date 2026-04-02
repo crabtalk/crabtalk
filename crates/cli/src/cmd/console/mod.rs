@@ -206,13 +206,13 @@ async fn handle_sessions_key(
             }
         }
         KeyCode::Char('d') => {
-            // Archive the selected conversation.
+            // Delete the selected conversation.
             if let Some(path) = state.session_view.selected_file() {
                 let _ = state
                     .runner
-                    .archive_conversation(path.to_string_lossy().into_owned(), false)
+                    .delete_conversation(path.to_string_lossy().into_owned())
                     .await;
-                state.status = "Archived".into();
+                state.status = "Deleted".into();
                 // Refresh the conversation list.
                 if let Some((agent, sender)) = state.session_view.current_identity() {
                     let timeout = std::time::Duration::from_millis(500);
