@@ -11,6 +11,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
+use wcore::protocol::message::McpStatus;
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -226,6 +227,8 @@ fn handle_add_mcp(key: crossterm::event::KeyEvent, state: &mut AuthState) {
                 auth: false,
                 auto_restart: false,
                 source: McpSource::Local,
+                status: 0,
+                tool_count: 0,
             });
             state.mcp_selected = state.mcps.len() - 1;
             state.mcp_add_step = 2;
@@ -362,19 +365,14 @@ fn render_mcp_list(frame: &mut Frame, state: &AuthState, area: Rect) {
         .map(|(i, mcp)| {
             let marker = if i == state.mcp_selected { "> " } else { "  " };
 
-            // Auth/status indicator.
-            let indicator = if mcp.url.is_some() {
-                if has_token(&mcp.name) {
-                    " \u{2713}" // ✓
-                } else if mcp.auth {
-                    " !" // needs login
-                } else {
-                    ""
+            // Connection status indicator.
+            let status_indicator = match McpStatus::try_from(mcp.status) {
+                Ok(McpStatus::Connected) => {
+                    format!(" \u{2713} {}t", mcp.tool_count) // ✓ 3t
                 }
-            } else if mcp.env.iter().any(|(_, v)| !v.is_empty()) {
-                " *"
-            } else {
-                ""
+                Ok(McpStatus::Failed) => " \u{2717}".to_string(), // ✗
+                Ok(McpStatus::Disconnected) => " -".to_string(),
+                _ => String::new(),
             };
 
             let hub_tag = if matches!(mcp.source, McpSource::Hub(_)) {
@@ -383,11 +381,15 @@ fn render_mcp_list(frame: &mut Frame, state: &AuthState, area: Rect) {
                 ""
             };
 
-            let text = format!("{marker}{}{indicator}{hub_tag}", mcp.name);
+            let text = format!("{marker}{}{status_indicator}{hub_tag}", mcp.name);
             let style = if i == state.mcp_selected {
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD)
+            } else if mcp.status == McpStatus::Failed as i32 {
+                Style::default().fg(Color::Red)
+            } else if mcp.status == McpStatus::Disconnected as i32 {
+                Style::default().fg(Color::DarkGray)
             } else {
                 Style::default().fg(Color::White)
             };
