@@ -18,16 +18,19 @@ mod service;
 #[command(name = "crabtalk", about = "Crabtalk — AI agent platform")]
 pub struct Cli {
     /// Start the daemon service without entering chat.
-    #[arg(long, conflicts_with_all = ["foreground", "stop", "events"])]
+    #[arg(long, conflicts_with_all = ["foreground", "stop", "reload", "events"])]
     pub start: bool,
     /// Run the daemon in the foreground.
-    #[arg(long, conflicts_with_all = ["start", "stop", "events"])]
+    #[arg(long, conflicts_with_all = ["start", "stop", "reload", "events"])]
     pub foreground: bool,
     /// Stop the daemon service.
-    #[arg(long, conflicts_with_all = ["start", "foreground", "events"])]
+    #[arg(long, conflicts_with_all = ["start", "foreground", "reload", "events"])]
     pub stop: bool,
+    /// Hot-reload daemon config.
+    #[arg(long, conflicts_with_all = ["start", "foreground", "stop", "events"])]
+    pub reload: bool,
     /// Stream daemon events.
-    #[arg(long, conflicts_with_all = ["start", "foreground", "stop"])]
+    #[arg(long, conflicts_with_all = ["start", "foreground", "stop", "reload"])]
     pub events: bool,
     /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
     #[arg(short, long, action = clap::ArgAction::Count)]
@@ -76,6 +79,12 @@ impl Cli {
         }
         if self.stop {
             return service::uninstall();
+        }
+        if self.reload {
+            let mut runner = connect_default_or_tcp(self.tcp).await?;
+            runner.reload().await?;
+            println!("daemon reloaded");
+            return Ok(());
         }
         if self.events {
             let mut runner = connect_default_or_tcp(self.tcp).await?;
@@ -207,12 +216,6 @@ impl Cli {
                 Ok(())
             }
             Some(Command::Logs { tail_args }) => crabtalk_command::view_logs("daemon", &tail_args),
-            Some(Command::Reload) => {
-                let mut runner = connect_default_or_tcp(self.tcp).await?;
-                runner.reload().await?;
-                println!("daemon reloaded");
-                Ok(())
-            }
             Some(Command::External(args)) => external::run(args),
         }
     }
@@ -244,8 +247,6 @@ pub enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         tail_args: Vec<String>,
     },
-    /// Hot-reload daemon config.
-    Reload,
     /// Resume a previous chat session.
     Resume {
         /// Session file to resume. If omitted, shows a session picker.
