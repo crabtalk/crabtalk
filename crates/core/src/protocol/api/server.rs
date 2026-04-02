@@ -3,10 +3,11 @@
 use crate::protocol::message::{
     AgentEventMsg, AgentInfo, AgentList, ClientMessage, CompactResponse, ConversationInfo,
     ConversationList, CreateAgentMsg, CreateCronMsg, CronInfo, CronList, DaemonStats, ErrorMsg,
-    HubEvent, InstallPackageMsg, McpInfo, McpList, ModelInfo, ModelList, PackageInfo, PackageList,
-    Pong, ProviderInfo, ProviderList, ProviderPresetInfo, ProviderPresetList, ResourceKind,
-    SendMsg, SendResponse, ServerMessage, ServiceLogOutput, SessionInfo, SessionList, SkillInfo,
-    SkillList, StreamEvent, StreamMsg, UpdateAgentMsg, client_message, server_message,
+    HubEvent, HubPackageInfo, HubPackageList, InstallPackageMsg, McpInfo, McpList, ModelInfo,
+    ModelList, PackageInfo, PackageList, Pong, ProviderInfo, ProviderList, ProviderPresetInfo,
+    ProviderPresetList, ResourceKind, SendMsg, SendResponse, ServerMessage, ServiceLogOutput,
+    SessionInfo, SessionList, SkillInfo, SkillList, StreamEvent, StreamMsg, UpdateAgentMsg,
+    client_message, server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -132,6 +133,12 @@ pub trait Server: Sync {
 
     /// Handle `ListPackages` — return all installed hub packages.
     fn list_packages(&self) -> impl std::future::Future<Output = Result<Vec<PackageInfo>>> + Send;
+
+    /// Handle `SearchHub` — search hub for available packages.
+    fn search_hub(
+        &self,
+        query: String,
+    ) -> impl std::future::Future<Output = Result<Vec<HubPackageInfo>>> + Send;
 
     /// Handle `ListSkills` — return all available skills with enabled state.
     fn list_skills(&self) -> impl std::future::Future<Output = Result<Vec<SkillInfo>>> + Send;
@@ -379,6 +386,16 @@ pub trait Server: Sync {
                     yield match self.list_packages().await {
                         Ok(packages) => ServerMessage {
                             msg: Some(server_message::Msg::PackageList(PackageList {
+                                packages,
+                            })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::SearchHub(req) => {
+                    yield match self.search_hub(req.query).await {
+                        Ok(packages) => ServerMessage {
+                            msg: Some(server_message::Msg::HubPackageList(HubPackageList {
                                 packages,
                             })),
                         },

@@ -3,13 +3,14 @@
 use crate::protocol::message::{
     AgentInfo, AgentList, ClientMessage, ConversationInfo, ConversationList, CreateAgentMsg,
     DaemonStats, DeleteAgentMsg, DeleteProviderMsg, ErrorMsg, GetAgentMsg, GetStats, HubEvent,
-    InstallPackageMsg, ListAgentsMsg, ListConversationsMsg, ListMcpsMsg, ListModelsMsg,
-    ListPackagesMsg, ListProviderPresetsMsg, ListProvidersMsg, ListSkillsMsg, McpInfo, McpList,
-    ModelInfo, ModelList, PackageInfo, PackageList, Ping, ProviderInfo, ProviderList,
-    ProviderPresetInfo, ProviderPresetList, ResourceKind, SendMsg, SendResponse, ServerMessage,
-    ServiceLogOutput, ServiceLogsMsg, SetActiveModelMsg, SetEnabledMsg, SetLocalMcpsMsg,
-    SetProviderMsg, SkillInfo, SkillList, StartServiceMsg, StopServiceMsg, StreamEvent, StreamMsg,
-    UninstallPackageMsg, UpdateAgentMsg, client_message, hub_event, server_message, stream_event,
+    HubPackageInfo, HubPackageList, InstallPackageMsg, ListAgentsMsg, ListConversationsMsg,
+    ListMcpsMsg, ListModelsMsg, ListPackagesMsg, ListProviderPresetsMsg, ListProvidersMsg,
+    ListSkillsMsg, McpInfo, McpList, ModelInfo, ModelList, PackageInfo, PackageList, Ping,
+    ProviderInfo, ProviderList, ProviderPresetInfo, ProviderPresetList, ResourceKind, SearchHubMsg,
+    SendMsg, SendResponse, ServerMessage, ServiceLogOutput, ServiceLogsMsg, SetActiveModelMsg,
+    SetEnabledMsg, SetLocalMcpsMsg, SetProviderMsg, SkillInfo, SkillList, StartServiceMsg,
+    StopServiceMsg, StreamEvent, StreamMsg, UninstallPackageMsg, UpdateAgentMsg, client_message,
+    hub_event, server_message, stream_event,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -329,6 +330,31 @@ pub trait Client: Send {
             {
                 ServerMessage {
                     msg: Some(server_message::Msg::PackageList(PackageList { packages })),
+                } => Ok(packages),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Search hub for available packages.
+    fn search_hub(
+        &mut self,
+        query: String,
+    ) -> impl std::future::Future<Output = Result<Vec<HubPackageInfo>>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::SearchHub(SearchHubMsg { query })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::HubPackageList(HubPackageList { packages })),
                 } => Ok(packages),
                 ServerMessage {
                     msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),

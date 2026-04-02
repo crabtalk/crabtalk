@@ -14,11 +14,11 @@ use wcore::protocol::{
     message::{
         AgentEventMsg, AgentInfo, AskOption, AskQuestion, AskUserEvent, ConversationInfo,
         CreateAgentMsg, CreateCronMsg, CronInfo, CronList, DaemonStats, HubDone, HubEvent,
-        HubSetupOutput, HubStep, HubWarning, InstallPackageMsg, McpInfo, ModelInfo, PackageInfo,
-        ProtoProviderKind, ProviderInfo, ProviderPresetInfo, ResourceKind, SendMsg, SendResponse,
-        SessionInfo, SkillInfo, SourceKind, StreamChunk, StreamEnd, StreamEvent, StreamMsg,
-        StreamStart, StreamThinking, TokenUsage, ToolCallInfo, ToolResultEvent, ToolStartEvent,
-        ToolsCompleteEvent, UpdateAgentMsg, hub_event, stream_event,
+        HubPackageInfo, HubSetupOutput, HubStep, HubWarning, InstallPackageMsg, McpInfo, ModelInfo,
+        PackageInfo, ProtoProviderKind, ProviderInfo, ProviderPresetInfo, ResourceKind, SendMsg,
+        SendResponse, SessionInfo, SkillInfo, SourceKind, StreamChunk, StreamEnd, StreamEvent,
+        StreamMsg, StreamStart, StreamThinking, TokenUsage, ToolCallInfo, ToolResultEvent,
+        ToolStartEvent, ToolsCompleteEvent, UpdateAgentMsg, hub_event, stream_event,
     },
 };
 use wcore::{AgentEvent, AgentStep};
@@ -899,6 +899,20 @@ impl<H: Host + 'static> Server for Daemon<H> {
             .collect();
         result.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(result)
+    }
+
+    async fn search_hub(&self, query: String) -> Result<Vec<HubPackageInfo>> {
+        let entries = crabhub::package::search_hub(&query).await?;
+        Ok(entries
+            .into_iter()
+            .map(|e| HubPackageInfo {
+                name: e.name,
+                description: e.description,
+                skill_count: e.skill_count,
+                mcp_count: e.mcp_count,
+                installed: e.installed,
+            })
+            .collect())
     }
 
     async fn start_service(&self, name: String, force: bool) -> Result<()> {

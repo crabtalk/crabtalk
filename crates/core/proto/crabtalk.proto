@@ -42,6 +42,8 @@ message ClientMessage {
     SetEnabledMsg set_enabled = 35;
     // Models
     ListModelsMsg list_models = 36;
+    // Hub search
+    SearchHubMsg search_hub = 37;
     // Services
     StartServiceMsg start_service = 24;
     StopServiceMsg stop_service = 25;
@@ -149,6 +151,22 @@ message ListSkillsMsg {}
 
 message ListModelsMsg {}
 
+message SearchHubMsg {
+  string query = 1;
+}
+
+message HubPackageInfo {
+  string name = 1;
+  string description = 2;
+  uint32 skill_count = 3;
+  uint32 mcp_count = 4;
+  bool installed = 5;
+}
+
+message HubPackageList {
+  repeated HubPackageInfo packages = 1;
+}
+
 enum ResourceKind {
   RESOURCE_KIND_UNKNOWN = 0;
   PROVIDER = 1;
@@ -238,6 +256,8 @@ message ServerMessage {
     SkillList skill_list = 15;
     // Models
     ModelList model_list = 22;
+    // Hub search
+    HubPackageList hub_package_list = 23;
     // Services
     ServiceLogOutput service_log_output = 16;
     // Cron
