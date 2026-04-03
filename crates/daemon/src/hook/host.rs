@@ -212,6 +212,7 @@ fn spawn_agent_task(
             content: message,
             sender: Some(delegate_sender.clone()),
             cwd: None,
+            guest: None,
         });
         if event_tx
             .send(DaemonEvent::Message {

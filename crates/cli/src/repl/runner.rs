@@ -169,6 +169,7 @@ impl Runner {
                 content: content.to_string(),
                 sender,
                 cwd,
+                guest: None,
             }))
             .take_while(|r| {
                 std::future::ready(!matches!(

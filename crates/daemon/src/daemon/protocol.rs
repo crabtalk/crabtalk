@@ -57,6 +57,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
         let content = req.content;
         let sender = req.sender.unwrap_or_default();
         let cwd = req.cwd.map(std::path::PathBuf::from);
+        let guest = req.guest.unwrap_or_default();
         async_stream::try_stream! {
             let rt: Arc<_> = runtime.read().await.clone();
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
@@ -65,9 +66,14 @@ impl<H: Host + 'static> Server for Daemon<H> {
                 rt.hook.host.set_conversation_cwd(conversation_id, cwd.clone()).await;
             }
 
-            yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: agent.clone() })) };
+            let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
+            yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.clone() })) };
 
-            let stream = rt.stream_to(conversation_id, &content, &sender);
+            let stream: std::pin::Pin<Box<dyn futures_core::Stream<Item = wcore::AgentEvent> + Send + '_>> = if guest.is_empty() {
+                Box::pin(rt.stream_to(conversation_id, &content, &sender))
+            } else {
+                Box::pin(rt.guest_stream_to(conversation_id, &content, &sender, &guest))
+            };
             pin_mut!(stream);
             while let Some(event) = stream.next().await {
                 match event {

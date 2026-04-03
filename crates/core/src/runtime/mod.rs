@@ -492,4 +492,181 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             }
         }
     }
+
+    /// Run a guest agent against a conversation's history for a single turn.
+    ///
+    /// The user message is added to the primary agent's conversation. The guest
+    /// agent responds with its own system prompt but no tools (v1: advisors,
+    /// not operators). The response is tagged with the guest's name and
+    /// appended to the primary's history.
+    pub fn guest_stream_to(
+        &self,
+        conversation_id: u64,
+        content: &str,
+        sender: &str,
+        guest: &str,
+    ) -> impl Stream<Item = AgentEvent> + '_ {
+        let content = content.to_owned();
+        let sender = sender.to_owned();
+        let guest = guest.to_owned();
+        stream! {
+            // Validate guest agent exists.
+            let guest_agent = match self.agents.get(&guest) {
+                Some(a) => a,
+                None => {
+                    yield AgentEvent::Done(AgentResponse {
+                        final_response: None,
+                        iterations: 0,
+                        stop_reason: AgentStopReason::Error(
+                            format!("guest agent '{guest}' not registered"),
+                        ),
+                        steps: vec![],
+                        model: String::new(),
+                    });
+                    return;
+                }
+            };
+
+            let conversation_mutex = match self
+                .conversations
+                .read()
+                .await
+                .get(&conversation_id)
+                .cloned()
+            {
+                Some(m) => m,
+                None => {
+                    yield AgentEvent::Done(AgentResponse {
+                        final_response: None,
+                        iterations: 0,
+                        stop_reason: AgentStopReason::Error(
+                            format!("conversation {conversation_id} not found"),
+                        ),
+                        steps: vec![],
+                        model: String::new(),
+                    });
+                    return;
+                }
+            };
+
+            let mut conversation = conversation_mutex.lock().await;
+            let pre_run_len = conversation.history.len();
+
+            // Add user message to the primary's history.
+            let content = self.hook.preprocess(&conversation.agent, &content);
+            if sender.is_empty() {
+                conversation.history.push(Message::user(&content));
+            } else {
+                conversation
+                    .history
+                    .push(Message::user_with_sender(&content, &sender));
+            }
+
+            // Strip old auto-injected messages.
+            conversation.history.retain(|m| !m.auto_injected);
+
+            // Inject guest framing as auto_injected so it gets stripped next run.
+            let mut framing = Message::system(format!(
+                "You are joining a conversation as a guest. The primary agent is '{}'. \
+                 Messages prefixed with [agent_name] are from other agents. \
+                 Respond as yourself to the user's latest message.",
+                conversation.agent
+            ));
+            framing.auto_injected = true;
+            let insert_pos = conversation.history.len().saturating_sub(1);
+            conversation.history.insert(insert_pos, framing);
+
+            // Run the guest agent — text-only, no tools. The guest is an
+            // advisor: it reads the conversation and responds, but cannot
+            // execute tools, call APIs, or mutate files.
+            let run_start = std::time::Instant::now();
+            let model_name = guest_agent
+                .config
+                .model
+                .clone()
+                .unwrap_or_else(|| self.model.active_model());
+
+            let mut messages = Vec::with_capacity(1 + conversation.history.len());
+            if !guest_agent.config.system_prompt.is_empty() {
+                messages.push(Message::system(&guest_agent.config.system_prompt));
+            }
+            // Prefix guest-attributed messages for speaker disambiguation.
+            messages.extend(conversation.history.iter().cloned().map(|mut m| {
+                if m.role == crate::model::Role::Assistant && !m.agent.is_empty() {
+                    m.content = format!("[{}]: {}", m.agent, m.content);
+                }
+                m
+            }));
+
+            let request = crate::model::Request::new(model_name.clone())
+                .with_messages(messages)
+                .with_think(guest_agent.config.thinking);
+
+            // Stream the response token-by-token — text only, no tool dispatch.
+            let mut response_content = String::new();
+            let mut reasoning = String::new();
+            {
+                let mut stream = std::pin::pin!(self.model.stream(request));
+                while let Some(result) = stream.next().await {
+                    match result {
+                        Ok(chunk) => {
+                            if let Some(text) = chunk.content() {
+                                response_content.push_str(text);
+                                yield AgentEvent::TextDelta(text.to_string());
+                            }
+                            if let Some(text) = chunk.reasoning_content() {
+                                reasoning.push_str(text);
+                                yield AgentEvent::ThinkingDelta(text.to_string());
+                            }
+                        }
+                        Err(e) => {
+                            yield AgentEvent::Done(AgentResponse {
+                                final_response: None,
+                                iterations: 1,
+                                stop_reason: AgentStopReason::Error(e.to_string()),
+                                steps: vec![],
+                                model: model_name.clone(),
+                            });
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // Append the guest's response to the conversation history.
+            let reasoning = if reasoning.is_empty() {
+                None
+            } else {
+                Some(reasoning)
+            };
+            conversation
+                .history
+                .push(Message::assistant(&response_content, reasoning, None));
+
+            // Tag the guest's response with the guest agent name.
+            if let Some(last) = conversation.history.last_mut() {
+                if last.role == crate::model::Role::Assistant {
+                    last.agent = guest.clone();
+                }
+            }
+
+            // Persist.
+            conversation.uptime_secs += run_start.elapsed().as_secs();
+            conversation.ensure_file();
+            conversation.append_messages(&conversation.history[pre_run_len..]);
+            conversation.rewrite_meta();
+
+            if conversation.title.is_empty() && conversation.history.len() >= 2 {
+                self.spawn_title_generation(conversation_id, conversation_mutex.clone());
+            }
+
+            yield AgentEvent::Done(AgentResponse {
+                final_response: Some(response_content),
+                iterations: 1,
+                stop_reason: AgentStopReason::TextResponse,
+                steps: vec![],
+                model: model_name,
+            });
+        }
+    }
 }

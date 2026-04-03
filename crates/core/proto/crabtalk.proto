@@ -70,6 +70,7 @@ message SendMsg {
   string content = 2;
   optional string sender = 4;
   optional string cwd = 5;
+  optional string guest = 6;
 }
 
 message StreamMsg {
@@ -77,6 +78,7 @@ message StreamMsg {
   string content = 2;
   optional string sender = 4;
   optional string cwd = 5;
+  optional string guest = 6;
 }
 
 message Ping {}

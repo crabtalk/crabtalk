@@ -344,6 +344,17 @@ impl<H: Host + 'static> Hook for Env<H> {
             msg.auto_injected = true;
             messages.push(msg);
         }
+        // If guest agents have spoken in this conversation, inject framing
+        // so the primary agent doesn't drift toward the guests' personality.
+        if history.iter().any(|m| !m.agent.is_empty()) {
+            let mut msg = Message::user(
+                "Messages prefixed with [agent_name] are from guest agents who were \
+                 consulted in this conversation. Continue responding as yourself."
+                    .to_string(),
+            );
+            msg.auto_injected = true;
+            messages.push(msg);
+        }
         messages
     }
 

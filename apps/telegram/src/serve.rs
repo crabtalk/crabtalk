@@ -220,6 +220,7 @@ async fn tg_stream(
         content: content.to_string(),
         sender: Some(sender.to_string()),
         cwd: None,
+        guest: None,
     });
     let mut server_rx = client.send(client_msg).await;
     let mut acc = StreamAccumulator::new();
