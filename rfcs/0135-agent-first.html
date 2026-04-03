@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>0064 - Session - The Crabtalk RFC Book</title>
+        <title>0135 - Agent-First Protocol - The Crabtalk RFC Book</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-853a3b5b.js";
+            window.path_to_searchindex_js = "../searchindex-8f92d67c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-d16faba6.js"></script>
+        <script src="../toc-18b7bade.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -146,7 +146,7 @@
                         <a href="https://github.com/crabtalk/crabtalk" title="Git repository" aria-label="Git repository">
                             <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
                         </a>
-                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/rfcs/0064-session.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/rfcs/0135-agent-first.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
                         </a>
 
@@ -180,100 +180,189 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="0064---session"><a class="header" href="#0064---session">0064 - Session</a></h1>
+                        <h1 id="0135---agent-first-protocol"><a class="header" href="#0135---agent-first-protocol">0135 - Agent-First Protocol</a></h1>
 <ul>
-<li>Feature Name: Session System</li>
-<li>Start Date: 2026-02-25</li>
-<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/64">#64</a></li>
-<li>Crates: core, daemon</li>
+<li>Feature Name: Agent-First Protocol</li>
+<li>Start Date: 2026-04-03</li>
+<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/135">#135</a></li>
+<li>Crates: core, runtime, daemon, cli, gateway</li>
+<li>Supersedes: <a href="0064-session.html">0064 (Session)</a>, <a href="0078-compact-session.html">0078 (Compact Session)</a></li>
+<li>Updates: <a href="0018-protocol.html">0018 (Protocol)</a>, <a href="0038-memory.html">0038 (Memory)</a></li>
 </ul>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
-<p>Append-only JSONL session persistence with compact markers, identity-based file
-naming, and an auto-injected message lifecycle that separates ephemeral context
-from durable history.</p>
+<p>Replace session-centric protocol addressing with agent-centric addressing.
+Users talk to agents, not sessions. Introduce guest turns for multi-agent
+conversations and compaction archives as the agent’s long-term memory.</p>
 <h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
-<p>An agent daemon needs conversation persistence that is simple, inspectable, and
-crash-safe. Database-backed persistence adds operational weight for what is
-fundamentally a sequential log. The session format must support:</p>
-<ul>
-<li>Resuming conversations across daemon restarts.</li>
-<li>Compaction — summarizing long histories without losing them.</li>
-<li>Multiple identities — the same agent can talk to different users/platforms.</li>
-<li>Ephemeral context injection — memory recall, environment blocks, and agent
-descriptions must be fresh each run, never accumulating in history.</li>
-</ul>
+<p>The original protocol was session-centric: clients managed session IDs to kill,
+reply, compact, and route messages. This leaked an implementation detail (the
+session ID) into every client and forced multi-agent interaction into either
+permanent agent switching or invisible delegation.</p>
+<p>Problems with the session model:</p>
+<ol>
+<li>
+<p><strong>Session IDs leak everywhere.</strong> Every client (CLI, Telegram, WeChat, IDE)
+must track session IDs to route replies, kill conversations, and handle
+ask_user prompts. If a client loses the ID, the conversation is orphaned.</p>
+</li>
+<li>
+<p><strong>Multi-agent is invisible.</strong> When agent A delegates to agent B, the result
+comes back as a tool result string. The user hears A’s summary of B’s
+answer, never B’s actual voice. There’s no multi-agent conversation.</p>
+</li>
+<li>
+<p><strong>Session ≠ conversation.</strong> “Session” conflated device connections (CWD,
+transport state) with agent memory (message history, compaction). These are
+different lifecycles — connections are ephemeral, conversations persist.</p>
+</li>
+</ol>
 <h2 id="design"><a class="header" href="#design">Design</a></h2>
-<h3 id="file-format"><a class="header" href="#file-format">File format</a></h3>
-<p>Each session is a JSONL file. Line 1 is metadata, subsequent lines are messages
-or compact markers.</p>
-<pre><code>{"agent":"crab","created_by":"user","created_at":"...","title":"","uptime_secs":0}
-{"role":"user","content":"hello"}
-{"role":"assistant","content":"hi there"}
-{"compact":"Summary of conversation so far..."}
-{"role":"user","content":"what were we talking about?"}
+<h3 id="core-model"><a class="header" href="#core-model">Core model</a></h3>
+<p>Each agent has <strong>one continuous conversation</strong> per user. Conversations are
+keyed by <code>(agent, sender)</code> — no session IDs in the protocol.</p>
+<pre><code>Client: StreamMsg { agent: "crab", content: "hello", sender: "user" }
+Daemon: resolves (crab, user) → internal conversation, runs agent, streams response
 </code></pre>
-<h3 id="naming"><a class="header" href="#naming">Naming</a></h3>
-<p>Files live in a flat <code>sessions/</code> directory:
-<code>{agent}_{sender_slug}_{seq}.jsonl</code></p>
+<h3 id="conversation-vs-session"><a class="header" href="#conversation-vs-session">Conversation vs session</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th>Session</th><th>Conversation</th></tr>
+</thead>
+<tbody>
+<tr><td>What</td><td>Device ↔ daemon connection</td><td>Agent’s memory with a user</td></tr>
+<tr><td>Key</td><td>connection/device ID</td><td>(agent, sender)</td></tr>
+<tr><td>Lifetime</td><td>ephemeral</td><td>persistent</td></tr>
+<tr><td>State</td><td>CWD, transport</td><td>messages, title, JSONL, archives</td></tr>
+</tbody>
+</table>
+</div>
+<p>Sessions are daemon-internal. Conversations are the protocol-visible abstraction.</p>
+<h3 id="protocol-changes"><a class="header" href="#protocol-changes">Protocol changes</a></h3>
+<p>Client messages address conversations by <code>(agent, sender)</code>:</p>
+<pre><code class="language-protobuf">message StreamMsg {
+  string agent = 1;
+  string content = 2;
+  optional string sender = 4;
+  optional string cwd = 5;
+  optional string guest = 6;  // guest turn
+}
+
+message KillMsg {
+  string agent = 1;
+  string sender = 2;
+}
+
+message ReplyToAsk {
+  string agent = 1;
+  string sender = 2;
+  string content = 3;
+}
+
+message CompactMsg {
+  string agent = 1;
+  string sender = 2;
+}
+</code></pre>
+<p>Removed from the protocol: <code>session</code> (u64 ID), <code>new_chat</code>, <code>resume_file</code>.</p>
+<p>Server responses no longer include session IDs:</p>
+<pre><code class="language-protobuf">message StreamStart {
+  string agent = 1;  // no session field
+}
+</code></pre>
+<h3 id="guest-turns"><a class="header" href="#guest-turns">Guest turns</a></h3>
+<p>The <code>guest</code> field on <code>StreamMsg</code> enables multi-agent conversations. When set,
+the daemon runs the guest agent against the primary agent’s conversation
+history — text-only, no tool dispatch.</p>
+<p>Flow:</p>
+<ol>
+<li>Client sends <code>StreamMsg { agent: "twin", content: "question", guest: "crab" }</code></li>
+<li>Daemon finds twin’s conversation</li>
+<li>Adds user message to twin’s history</li>
+<li>Injects guest framing (auto-injected system message)</li>
+<li>Runs crab against twin’s history with crab’s system prompt (no tools)</li>
+<li>Tags response with <code>agent: "crab"</code></li>
+<li>Appends to twin’s history</li>
+</ol>
+<p>The guest’s response appears as a first-class message in the conversation,
+attributed to the guest. No delegation, no tool results, no paraphrasing.</p>
+<h3 id="bidirectional-framing"><a class="header" href="#bidirectional-framing">Bidirectional framing</a></h3>
+<p>Both guest and primary need context about multi-agent conversation:</p>
 <ul>
-<li><code>sender_slug</code> — sanitized identity (e.g. <code>user</code>, <code>tg-12345</code>).</li>
-<li><code>seq</code> — monotonically increasing per (agent, sender) pair.</li>
-<li>After <code>set_title</code>, the file is renamed to append a title slug.</li>
+<li><strong>Guest framing</strong> (injected when a guest runs): “You are joining a
+conversation as a guest. Messages wrapped in <code>&lt;from agent="..."&gt;</code> tags are from other
+agents.”</li>
+<li><strong>Primary framing</strong> (injected when the primary runs and guest messages exist
+in history): “Messages wrapped in <code>&lt;from agent="..."&gt;</code> tags are from guest agents.
+Continue responding as yourself.”</li>
 </ul>
-<h3 id="compact-markers"><a class="header" href="#compact-markers">Compact markers</a></h3>
-<p>When history exceeds a threshold, the agent compacts: the LLM summarizes the
-conversation, and a <code>{"compact":"..."}</code> line is appended. On load,
-<code>load_context</code> reads from the <strong>last compact marker forward</strong>. The compact
-summary is injected as a <code>{"role":"user"}</code> message — the agent sees it as
-context, not as a special marker.</p>
-<p>History before the last compact marker is archived in place — still in the file,
-but not loaded. Nothing is deleted.</p>
-<h3 id="auto-injected-messages"><a class="header" href="#auto-injected-messages">Auto-injected messages</a></h3>
-<p>Messages marked <code>auto_injected: true</code> are:</p>
+<p>Both are <code>auto_injected</code> — stripped before each run, re-injected fresh. Zero
+accumulation.</p>
+<h3 id="message-attribution"><a class="header" href="#message-attribution">Message attribution</a></h3>
+<p>The <code>Message</code> struct gains an <code>agent</code> field:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[serde(default, skip_serializing_if = "String::is_empty")]
+pub agent: String,
+<span class="boring">}</span></code></pre>
+<p>Empty = the conversation’s primary agent. Non-empty = a guest. When building
+LLM requests, assistant messages with non-empty <code>agent</code> are prefixed with
+<code>&lt;from agent="..."&gt;</code> XML tags so every agent can distinguish speakers.</p>
+<p><code>Message::with_agent_tag()</code> handles the prefixing — one function, used by
+both <code>build_request</code> and <code>guest_stream_to</code>.</p>
+<h3 id="compaction-as-memory"><a class="header" href="#compaction-as-memory">Compaction as memory</a></h3>
+<p>Compaction markers become archive boundaries. Each compact marker stores a
+title (first sentence of the summary, max 60 chars) and a timestamp:</p>
+<pre><code class="language-json">{"compact":"Summary of pricing discussion...","title":"Pricing analysis for solo dev tools.","archived_at":"2026-04-03T10:00:00Z"}
+</code></pre>
+<p>The conversation is continuous — compaction doesn’t create a new conversation,
+it archives a segment of the existing one. Archived segments are browsable
+via <code>Conversation::load_archives()</code> and available to the recall tool as
+long-term memory.</p>
+<pre><code>Crab's memory:
+├── [active] Current conversation
+├── "Pricing analysis for solo dev tools." — 2 days ago
+├── "Auth module refactor plan." — 5 days ago
+└── "HN competitor signal analysis." — last week
+</code></pre>
+<h3 id="what-dies"><a class="header" href="#what-dies">What dies</a></h3>
 <ul>
-<li><strong>Not persisted</strong> to JSONL (skipped in <code>append_messages</code>).</li>
-<li><strong>Stripped</strong> before each run (prevents accumulation).</li>
-<li><strong>Re-injected fresh</strong> via <code>Hook::on_before_run()</code> every execution.</li>
+<li><strong>Session IDs in the protocol</strong> — replaced by (agent, sender)</li>
+<li><strong><code>new_chat</code></strong> — the conversation is continuous, compaction handles the window</li>
+<li><strong><code>resume_file</code></strong> — one conversation per (agent, user), always active</li>
+<li><strong>Client-side @mention logic</strong> (<a href="0078-compact-session.html">0078</a>) — guest turns
+handle it daemon-side</li>
+<li><strong>Session forking</strong> — agents are the abstraction, not sessions</li>
 </ul>
-<p>This covers memory recall results, environment blocks, agent description lists,
-and working directory announcements. They must be current, not stale from a
-previous run.</p>
-<h3 id="session-identity"><a class="header" href="#session-identity">Session identity</a></h3>
-<p>Sessions are bound to an (agent, sender) pair. <code>find_latest_session</code> scans the
-directory for the matching prefix and returns the highest seq number. New chats
-increment the seq.</p>
-<h3 id="uptime-tracking"><a class="header" href="#uptime-tracking">Uptime tracking</a></h3>
-<p>Each session tracks <code>uptime_secs</code> — accumulated active time, persisted to the
-meta line. The meta line is rewritten by reading the full file and writing it
-back with the updated first line. This is the one non-append operation — it
-trades the append-only guarantee for keeping metadata current. Crash during
-rewrite can lose the meta line but not the conversation history (messages are
-append-only and survive).</p>
-<h2 id="alternatives"><a class="header" href="#alternatives">Alternatives</a></h2>
-<p><strong>SQLite.</strong> Adds a dependency and operational surface for what is a sequential
-append log. JSONL files are inspectable with standard tools and trivially
-backupable. Appends are crash-safe (partial last line is just a truncated write).</p>
-<p><strong>One file per message.</strong> Too many files. The append-only JSONL approach gives
-one file per conversation with clear boundaries.</p>
-<p><strong>No compaction.</strong> Works for short conversations but becomes expensive as
-history grows. The compact marker approach keeps the file intact while bounding
-the working context.</p>
-<h2 id="unresolved-questions"><a class="header" href="#unresolved-questions">Unresolved Questions</a></h2>
-<ul>
-<li>Should session files be organized in date-based subdirectories for easier
-cleanup?</li>
-<li>Should compact threshold be per-agent configurable or global?</li>
-</ul>
+<h2 id="supersedes"><a class="header" href="#supersedes">Supersedes</a></h2>
+<h3 id="0064---session"><a class="header" href="#0064---session">0064 - Session</a></h3>
+<p>The session model is replaced by conversations. The JSONL file format is
+preserved (backward compatible with added <code>title</code> and <code>archived_at</code> fields on
+compact markers, and <code>agent</code> field on messages). The <code>Session</code> struct is renamed
+to <code>Conversation</code>. Session IDs are removed from the protocol.</p>
+<h3 id="0078---compact-session"><a class="header" href="#0078---compact-session">0078 - Compact Session</a></h3>
+<p>The compact-then-handoff pattern for @mentions is replaced by guest turns.
+The daemon handles multi-agent conversation natively — no client-side compact
+logic needed.</p>
+<h2 id="updates"><a class="header" href="#updates">Updates</a></h2>
+<h3 id="0018---protocol"><a class="header" href="#0018---protocol">0018 - Protocol</a></h3>
+<p>Session-addressed messages are replaced with (agent, sender) addressing.
+<code>StreamMsg</code> and <code>SendMsg</code> gain a <code>guest</code> field. <code>SessionInfo</code> becomes
+<code>ActiveConversationInfo</code>. See protocol changes section above.</p>
+<h3 id="0038---memory"><a class="header" href="#0038---memory">0038 - Memory</a></h3>
+<p>Compaction archives become the primary long-term memory mechanism. The
+recall tool searches across archived segments. See <a href="https://github.com/crabtalk/crabtalk/issues/101">#101 (revised)</a> for
+the pluggable memory provider aligned with this model.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../rfcs/0043-component.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rfcs/0082-scoping.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../rfcs/0075-hook.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../rfcs/superseded.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -283,11 +372,11 @@ cleanup?</li>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../rfcs/0043-component.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rfcs/0082-scoping.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../rfcs/0075-hook.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../rfcs/superseded.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -312,7 +401,7 @@ cleanup?</li>
         <script src="../searcher-c2a407aa.js"></script>
 
         <script src="../clipboard-1626706a.min.js"></script>
-        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../highlight-defcc054.js"></script>
         <script src="../book-a0b12cfe.js"></script>
 
         <!-- Custom JS scripts -->

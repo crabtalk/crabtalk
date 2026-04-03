@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-853a3b5b.js";
+            window.path_to_searchindex_js = "searchindex-8f92d67c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-d16faba6.js"></script>
+        <script src="toc-18b7bade.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -961,91 +961,6 @@ drifts across components. A shared Rust crate is portable and stays consistent.<
 scanning only at startup/reload?</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="0064---session"><a class="header" href="#0064---session">0064 - Session</a></h1>
-<ul>
-<li>Feature Name: Session System</li>
-<li>Start Date: 2026-02-25</li>
-<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/64">#64</a></li>
-<li>Crates: core, daemon</li>
-</ul>
-<h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
-<p>Append-only JSONL session persistence with compact markers, identity-based file
-naming, and an auto-injected message lifecycle that separates ephemeral context
-from durable history.</p>
-<h2 id="motivation-7"><a class="header" href="#motivation-7">Motivation</a></h2>
-<p>An agent daemon needs conversation persistence that is simple, inspectable, and
-crash-safe. Database-backed persistence adds operational weight for what is
-fundamentally a sequential log. The session format must support:</p>
-<ul>
-<li>Resuming conversations across daemon restarts.</li>
-<li>Compaction — summarizing long histories without losing them.</li>
-<li>Multiple identities — the same agent can talk to different users/platforms.</li>
-<li>Ephemeral context injection — memory recall, environment blocks, and agent
-descriptions must be fresh each run, never accumulating in history.</li>
-</ul>
-<h2 id="design-7"><a class="header" href="#design-7">Design</a></h2>
-<h3 id="file-format"><a class="header" href="#file-format">File format</a></h3>
-<p>Each session is a JSONL file. Line 1 is metadata, subsequent lines are messages
-or compact markers.</p>
-<pre><code>{"agent":"crab","created_by":"user","created_at":"...","title":"","uptime_secs":0}
-{"role":"user","content":"hello"}
-{"role":"assistant","content":"hi there"}
-{"compact":"Summary of conversation so far..."}
-{"role":"user","content":"what were we talking about?"}
-</code></pre>
-<h3 id="naming"><a class="header" href="#naming">Naming</a></h3>
-<p>Files live in a flat <code>sessions/</code> directory:
-<code>{agent}_{sender_slug}_{seq}.jsonl</code></p>
-<ul>
-<li><code>sender_slug</code> — sanitized identity (e.g. <code>user</code>, <code>tg-12345</code>).</li>
-<li><code>seq</code> — monotonically increasing per (agent, sender) pair.</li>
-<li>After <code>set_title</code>, the file is renamed to append a title slug.</li>
-</ul>
-<h3 id="compact-markers"><a class="header" href="#compact-markers">Compact markers</a></h3>
-<p>When history exceeds a threshold, the agent compacts: the LLM summarizes the
-conversation, and a <code>{"compact":"..."}</code> line is appended. On load,
-<code>load_context</code> reads from the <strong>last compact marker forward</strong>. The compact
-summary is injected as a <code>{"role":"user"}</code> message — the agent sees it as
-context, not as a special marker.</p>
-<p>History before the last compact marker is archived in place — still in the file,
-but not loaded. Nothing is deleted.</p>
-<h3 id="auto-injected-messages"><a class="header" href="#auto-injected-messages">Auto-injected messages</a></h3>
-<p>Messages marked <code>auto_injected: true</code> are:</p>
-<ul>
-<li><strong>Not persisted</strong> to JSONL (skipped in <code>append_messages</code>).</li>
-<li><strong>Stripped</strong> before each run (prevents accumulation).</li>
-<li><strong>Re-injected fresh</strong> via <code>Hook::on_before_run()</code> every execution.</li>
-</ul>
-<p>This covers memory recall results, environment blocks, agent description lists,
-and working directory announcements. They must be current, not stale from a
-previous run.</p>
-<h3 id="session-identity"><a class="header" href="#session-identity">Session identity</a></h3>
-<p>Sessions are bound to an (agent, sender) pair. <code>find_latest_session</code> scans the
-directory for the matching prefix and returns the highest seq number. New chats
-increment the seq.</p>
-<h3 id="uptime-tracking"><a class="header" href="#uptime-tracking">Uptime tracking</a></h3>
-<p>Each session tracks <code>uptime_secs</code> — accumulated active time, persisted to the
-meta line. The meta line is rewritten by reading the full file and writing it
-back with the updated first line. This is the one non-append operation — it
-trades the append-only guarantee for keeping metadata current. Crash during
-rewrite can lose the meta line but not the conversation history (messages are
-append-only and survive).</p>
-<h2 id="alternatives-7"><a class="header" href="#alternatives-7">Alternatives</a></h2>
-<p><strong>SQLite.</strong> Adds a dependency and operational surface for what is a sequential
-append log. JSONL files are inspectable with standard tools and trivially
-backupable. Appends are crash-safe (partial last line is just a truncated write).</p>
-<p><strong>One file per message.</strong> Too many files. The append-only JSONL approach gives
-one file per conversation with clear boundaries.</p>
-<p><strong>No compaction.</strong> Works for short conversations but becomes expensive as
-history grows. The compact marker approach keeps the file intact while bounding
-the working context.</p>
-<h2 id="unresolved-questions-7"><a class="header" href="#unresolved-questions-7">Unresolved Questions</a></h2>
-<ul>
-<li>Should session files be organized in date-based subdirectories for easier
-cleanup?</li>
-<li>Should compact threshold be per-agent configurable or global?</li>
-</ul>
-<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="0075---hook"><a class="header" href="#0075---hook">0075 - Hook</a></h1>
 <ul>
 <li>Feature Name: Hook Lifecycle</li>
@@ -1053,13 +968,13 @@ cleanup?</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/pull/75">#75</a></li>
 <li>Crates: core, runtime, daemon</li>
 </ul>
-<h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
+<h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
 <p>The Hook trait is the central extensibility point for agent lifecycle. It
 defines five methods that the runtime calls at specific points: building an
 agent, registering tools, preprocessing input, injecting context before a run,
 and observing events. Everything that customizes agent behavior — skills, memory,
 MCP, scoping, prompt injection — composes through this trait.</p>
-<h2 id="motivation-8"><a class="header" href="#motivation-8">Motivation</a></h2>
+<h2 id="motivation-7"><a class="header" href="#motivation-7">Motivation</a></h2>
 <p>When the runtime was split out of the daemon (#75), a clean interface was needed
 between the runtime (which executes agents) and the hook implementations (which
 customize them). The runtime must not know about skills, memory, MCP, or daemon
@@ -1067,7 +982,7 @@ infrastructure. It only knows it has a <code>Hook</code> and calls its methods a
 times.</p>
 <p>This separation enables two modes: the daemon (full hook with skills, MCP,
 memory, event broadcasting) and embedded use (no hook, or a minimal one).</p>
-<h2 id="design-8"><a class="header" href="#design-8">Design</a></h2>
+<h2 id="design-7"><a class="header" href="#design-7">Design</a></h2>
 <h3 id="the-trait"><a class="header" href="#the-trait">The trait</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1083,7 +998,7 @@ memory, event broadcasting) and embedded use (no hook, or a minimal one).</p>
 <h3 id="lifecycle-points"><a class="header" href="#lifecycle-points">Lifecycle points</a></h3>
 <p><strong><code>on_build_agent</code></strong> — called when an agent is registered with the runtime.
 Receives the agent config, returns a modified config. This is where the system
-prompt is composed. The <code>RuntimeHook</code> implementation chains:</p>
+prompt is composed. The <code>Env</code> implementation chains:</p>
 <ol>
 <li>Environment block (OS, shell, platform).</li>
 <li>Memory prompt (MEMORY.md content as <code>&lt;memory&gt;</code> block).</li>
@@ -1094,13 +1009,13 @@ XML block listing allowed resources).</li>
 </ol>
 <p><strong><code>on_register_tools</code></strong> — called at runtime startup. Registers tool schemas
 (name, description, JSON schema) into the <code>ToolRegistry</code>. No handlers — dispatch
-is separate. <code>RuntimeHook</code> registers: OS tools, skill tool, task/delegate tool,
+is separate. <code>Env</code> registers: OS tools, skill tool, task/delegate tool,
 ask_user tool, memory tools (if enabled), and MCP-discovered tools.</p>
 <p><strong><code>preprocess</code></strong> — called before a user message enters the conversation. Used
 for slash command resolution: <code>/skill-name args</code> is transformed into the skill
 body wrapped in a <code>&lt;skill&gt;</code> tag. Happens before tool dispatch.</p>
 <p><strong><code>on_before_run</code></strong> — called before each agent execution (send/stream). Returns
-messages to inject into the conversation. <code>RuntimeHook</code> injects:</p>
+messages to inject into the conversation. <code>Env</code> injects:</p>
 <ol>
 <li>Agent descriptions (if the agent has delegation members).</li>
 <li>Memory auto-recall (BM25 search on last user message, as <code>&lt;recall&gt;</code> block).</li>
@@ -1109,111 +1024,34 @@ messages to inject into the conversation. <code>RuntimeHook</code> injects:</p>
 <p>All injected messages are marked <code>auto_injected: true</code> — they’re ephemeral, not
 persisted, stripped before each run, and refreshed.</p>
 <p><strong><code>on_event</code></strong> — called after each agent step. Receives every <code>AgentEvent</code>
-(text deltas, tool calls, completions). <code>DaemonBridge</code> uses this to broadcast
+(text deltas, tool calls, completions). <code>DaemonHost</code> uses this to broadcast
 events to console subscribers.</p>
 <h3 id="composition"><a class="header" href="#composition">Composition</a></h3>
-<p><code>RuntimeHook&lt;B: RuntimeBridge&gt;</code> is the engine hook. It composes <code>SkillHandler</code>,
+<p><code>Env&lt;H: Host&gt;</code> is the engine environment. It composes <code>SkillHandler</code>,
 <code>McpHandler</code>, <code>Memory</code>, and <code>AgentScope</code> maps. It implements <code>Hook</code> by
 orchestrating all subsystems.</p>
-<p><code>DaemonHook</code> is a type alias: <code>RuntimeHook&lt;DaemonBridge&gt;</code>. The daemon bridge
+<p><code>DaemonEnv</code> is a type alias: <code>Env&lt;DaemonHost&gt;</code>. The daemon host
 adds ask_user dispatch, delegate dispatch, session CWD, and event broadcasting.</p>
-<p>For embedded use, <code>RuntimeHook&lt;NoBridge&gt;</code> provides the full engine without
+<p>For embedded use, <code>Env&lt;NoHost&gt;</code> provides the full engine without
 daemon infrastructure.</p>
 <h3 id="tool-dispatch"><a class="header" href="#tool-dispatch">Tool dispatch</a></h3>
-<p><code>RuntimeHook::dispatch_tool</code> is the central routing table — a match on tool
+<p><code>Env::dispatch_tool</code> is the central routing table — a match on tool
 name. It’s not part of the <code>Hook</code> trait itself (the trait only registers
 schemas). The runtime calls <code>dispatch_tool</code> when an agent produces a tool call.
 Dispatch enforces scoping before routing.</p>
-<h2 id="alternatives-8"><a class="header" href="#alternatives-8">Alternatives</a></h2>
+<h2 id="alternatives-7"><a class="header" href="#alternatives-7">Alternatives</a></h2>
 <p><strong>Separate traits per concern.</strong> One trait for prompt building, one for tools,
 one for events. Rejected because they always compose together and the single
 trait is simpler to implement and reason about.</p>
 <p><strong>Closure-based hooks.</strong> Pass lambdas instead of a trait. Rejected because the
 hook needs shared state (skill registry, MCP connections, memory) that closures
 make awkward.</p>
-<h2 id="unresolved-questions-8"><a class="header" href="#unresolved-questions-8">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-7"><a class="header" href="#unresolved-questions-7">Unresolved Questions</a></h2>
 <ul>
 <li>Should <code>on_build_agent</code> be async to support hooks that need I/O during agent
 construction?</li>
 <li>Should <code>preprocess</code> support returning multiple messages (e.g. for multi-skill
 invocation)?</li>
-</ul>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="0078---compact-session"><a class="header" href="#0078---compact-session">0078 - Compact Session</a></h1>
-<ul>
-<li>Feature Name: Compact Session Interface</li>
-<li>Start Date: 2026-03-25</li>
-<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/78">#78</a></li>
-<li>Crates: core, daemon</li>
-</ul>
-<h2 id="summary-9"><a class="header" href="#summary-9">Summary</a></h2>
-<p>Expose session compaction as a protocol operation so clients can request a
-concise context summary on demand, enabling cross-agent context handoff with
-custom @-mention logic.</p>
-<h2 id="motivation-9"><a class="header" href="#motivation-9">Motivation</a></h2>
-<p>When a user @-mentions a different agent mid-conversation, the client needs to
-hand off context. The naive approaches don’t work:</p>
-<ul>
-<li><strong>Raw history</strong> includes irrelevant tool results, thinking tokens, and the
-previous agent’s system prompt — expensive and noisy.</li>
-<li><strong>No context</strong> means the target agent flies blind.</li>
-</ul>
-<p>Compact produces a focused briefing: the LLM summarizes the conversation into
-essential context. The target agent gets its own system prompt (warm in token
-cache) plus the compact summary plus the user’s query — high quality context,
-minimal tokens.</p>
-<p>The key insight: <strong>this belongs in the protocol, not the client.</strong> The daemon
-already has the session history and the LLM connection. The client just needs
-to say “compact session N” and get a summary back. But the <strong>mention logic
-itself stays in the client</strong> — the daemon doesn’t know about @-mentions, UI
-conventions, or which agent to route to. The client decides when and why to
-compact; the daemon does the summarization.</p>
-<h2 id="design-9"><a class="header" href="#design-9">Design</a></h2>
-<p>A <code>Compact</code> message is added to the protobuf protocol:</p>
-<ul>
-<li><strong>Request:</strong> <code>CompactRequest { session: u64 }</code> — client asks the daemon to
-compact a specific session.</li>
-<li><strong>Response:</strong> <code>CompactResponse { summary: string }</code> — the daemon returns the
-summarized context.</li>
-</ul>
-<p>The <code>Server</code> trait gains a <code>compact_session</code> method. The daemon implementation
-delegates to <code>Agent::compact()</code>, which sends the session history to the LLM
-with a compaction prompt that preserves identity and profile information.</p>
-<h3 id="what-the-daemon-does"><a class="header" href="#what-the-daemon-does">What the daemon does</a></h3>
-<ul>
-<li>Accepts the compact request via the protocol.</li>
-<li>Loads the session history.</li>
-<li>Calls the agent’s compact method (LLM summarization).</li>
-<li>Returns the summary string.</li>
-</ul>
-<h3 id="what-the-client-does"><a class="header" href="#what-the-client-does">What the client does</a></h3>
-<ul>
-<li>Detects @-mentions (its own UI logic).</li>
-<li>Requests compact of the current session.</li>
-<li>Creates or selects the target agent’s session.</li>
-<li>Sends the compact summary + user query to the target agent.</li>
-</ul>
-<h3 id="context-selection-alternatives"><a class="header" href="#context-selection-alternatives">Context selection alternatives</a></h3>
-<p>If compact is too slow for the use case:</p>
-<ul>
-<li><strong>BM25</strong> — already in the codebase for memory recall. Keyword-match messages
-against the query.</li>
-<li><strong>Last N messages</strong> — simplest. Often sufficient for short conversations.</li>
-</ul>
-<p>These are client-side decisions. The compact interface doesn’t preclude them.</p>
-<h2 id="alternatives-9"><a class="header" href="#alternatives-9">Alternatives</a></h2>
-<p><strong>Client-side compaction.</strong> The client could do its own summarization, but it
-would need LLM access and session history — duplicating what the daemon already
-has.</p>
-<p><strong>Automatic compaction on mention.</strong> The daemon could detect @-mentions and
-compact automatically. Rejected because mention syntax is a client concern —
-different clients have different conventions.</p>
-<h2 id="unresolved-questions-9"><a class="header" href="#unresolved-questions-9">Unresolved Questions</a></h2>
-<ul>
-<li>Should compact accept parameters (max tokens, focus query) to guide
-summarization?</li>
-<li>Should the daemon cache compact results for repeated handoffs within the same
-conversation?</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="0080---cron"><a class="header" href="#0080---cron">0080 - Cron</a></h1>
@@ -1223,17 +1061,17 @@ conversation?</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/80">#80</a></li>
 <li>Crates: daemon</li>
 </ul>
-<h2 id="summary-10"><a class="header" href="#summary-10">Summary</a></h2>
+<h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
 <p>A daemon-level cron system that triggers skills into sessions on a schedule,
 replacing the previous per-agent heartbeat mechanism.</p>
-<h2 id="motivation-10"><a class="header" href="#motivation-10">Motivation</a></h2>
+<h2 id="motivation-8"><a class="header" href="#motivation-8">Motivation</a></h2>
 <p>Agents need periodic behavior — checking feeds, running maintenance, sending
 reminders. The original approach was a per-agent heartbeat config, but this was
 dead code and wrong-shaped: heartbeats are uniform intervals, while scheduled
 tasks need cron-style flexibility (every Monday at 9am, every 2 hours, etc.).</p>
 <p>The session already carries the agent and sender. A cron entry only needs to
 know which skill to fire and which session to fire it into.</p>
-<h2 id="design-10"><a class="header" href="#design-10">Design</a></h2>
+<h2 id="design-8"><a class="header" href="#design-8">Design</a></h2>
 <p>A cron entry triggers a skill into a session on a schedule.</p>
 <h3 id="data-model"><a class="header" href="#data-model">Data model</a></h3>
 <pre><code class="language-toml">[[cron]]
@@ -1280,14 +1118,14 @@ output goes to session history only.</p>
 <p>Crons are process-lifetime, not session-lifetime. They survive runtime reloads,
 fire via the daemon event channel, and the runtime has no notion of time-based
 scheduling. This is a daemon concern.</p>
-<h2 id="alternatives-10"><a class="header" href="#alternatives-10">Alternatives</a></h2>
+<h2 id="alternatives-8"><a class="header" href="#alternatives-8">Alternatives</a></h2>
 <p><strong>Per-agent heartbeat config.</strong> The original approach. Rejected because it
 coupled scheduling to agent definition, couldn’t express cron-style schedules,
 and was dead code.</p>
 <p><strong>Client-side polling.</strong> A client can send messages on its own timer. This works
 but requires the client to be running. Daemon crons fire regardless of client
 state.</p>
-<h2 id="unresolved-questions-10"><a class="header" href="#unresolved-questions-10">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-8"><a class="header" href="#unresolved-questions-8">Unresolved Questions</a></h2>
 <ul>
 <li>Should crons support arguments beyond the skill name?</li>
 <li>Should there be a max cron count to prevent resource exhaustion?</li>
@@ -1300,11 +1138,11 @@ state.</p>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/pull/82">#82</a></li>
 <li>Crates: runtime, core</li>
 </ul>
-<h2 id="summary-11"><a class="header" href="#summary-11">Summary</a></h2>
+<h2 id="summary-9"><a class="header" href="#summary-9">Summary</a></h2>
 <p>A whitelist-based scoping system that restricts what an agent can access: tools,
 skills, MCP servers, and delegation targets. Enforced at dispatch time and
 advertised in the system prompt. This is a security boundary, not a hint.</p>
-<h2 id="motivation-11"><a class="header" href="#motivation-11">Motivation</a></h2>
+<h2 id="motivation-9"><a class="header" href="#motivation-9">Motivation</a></h2>
 <p>In multi-agent setups, a delegated sub-agent should not have the same
 capabilities as the primary agent. A research agent doesn’t need bash. A
 summarizer doesn’t need to delegate to other agents. Without scoping, every
@@ -1312,7 +1150,7 @@ agent has access to everything — which means a misbehaving or confused agent
 can call tools it was never intended to use.</p>
 <p>Scoping solves this by letting agent configs declare exactly what resources are
 available. The runtime enforces it.</p>
-<h2 id="design-11"><a class="header" href="#design-11">Design</a></h2>
+<h2 id="design-9"><a class="header" href="#design-9">Design</a></h2>
 <h3 id="agentscope"><a class="header" href="#agentscope">AgentScope</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1363,7 +1201,7 @@ layer rejects it.</p>
 <h3 id="default-agent"><a class="header" href="#default-agent">Default agent</a></h3>
 <p>The default agent (primary) has no scope restrictions — empty lists on all
 four dimensions. Scoping is for sub-agents that need constrained access.</p>
-<h2 id="alternatives-11"><a class="header" href="#alternatives-11">Alternatives</a></h2>
+<h2 id="alternatives-9"><a class="header" href="#alternatives-9">Alternatives</a></h2>
 <p><strong>Denylist instead of whitelist.</strong> List what’s forbidden instead of what’s
 allowed. Rejected because allowlists are safer by default — a new tool or
 server is inaccessible until explicitly granted. Denylists require updating
@@ -1372,11 +1210,199 @@ every time a new resource is added.</p>
 don’t enforce at dispatch. Rejected because LLMs don’t reliably follow
 instructions — a determined or confused model will call tools it was told not
 to. Enforcement must be at the dispatch layer.</p>
-<h2 id="unresolved-questions-11"><a class="header" href="#unresolved-questions-11">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-9"><a class="header" href="#unresolved-questions-9">Unresolved Questions</a></h2>
 <ul>
 <li>Should scoping support wildcard patterns (e.g. <code>mcp: search-*</code>)?</li>
 <li>Should scope violations be logged as security events for monitoring?</li>
 </ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="0135---agent-first-protocol"><a class="header" href="#0135---agent-first-protocol">0135 - Agent-First Protocol</a></h1>
+<ul>
+<li>Feature Name: Agent-First Protocol</li>
+<li>Start Date: 2026-04-03</li>
+<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/135">#135</a></li>
+<li>Crates: core, runtime, daemon, cli, gateway</li>
+<li>Supersedes: <a href="rfcs/0064-session.html">0064 (Session)</a>, <a href="rfcs/0078-compact-session.html">0078 (Compact Session)</a></li>
+<li>Updates: <a href="#0018---protocol">0018 (Protocol)</a>, <a href="#0038---memory">0038 (Memory)</a></li>
+</ul>
+<h2 id="summary-10"><a class="header" href="#summary-10">Summary</a></h2>
+<p>Replace session-centric protocol addressing with agent-centric addressing.
+Users talk to agents, not sessions. Introduce guest turns for multi-agent
+conversations and compaction archives as the agent’s long-term memory.</p>
+<h2 id="motivation-10"><a class="header" href="#motivation-10">Motivation</a></h2>
+<p>The original protocol was session-centric: clients managed session IDs to kill,
+reply, compact, and route messages. This leaked an implementation detail (the
+session ID) into every client and forced multi-agent interaction into either
+permanent agent switching or invisible delegation.</p>
+<p>Problems with the session model:</p>
+<ol>
+<li>
+<p><strong>Session IDs leak everywhere.</strong> Every client (CLI, Telegram, WeChat, IDE)
+must track session IDs to route replies, kill conversations, and handle
+ask_user prompts. If a client loses the ID, the conversation is orphaned.</p>
+</li>
+<li>
+<p><strong>Multi-agent is invisible.</strong> When agent A delegates to agent B, the result
+comes back as a tool result string. The user hears A’s summary of B’s
+answer, never B’s actual voice. There’s no multi-agent conversation.</p>
+</li>
+<li>
+<p><strong>Session ≠ conversation.</strong> “Session” conflated device connections (CWD,
+transport state) with agent memory (message history, compaction). These are
+different lifecycles — connections are ephemeral, conversations persist.</p>
+</li>
+</ol>
+<h2 id="design-10"><a class="header" href="#design-10">Design</a></h2>
+<h3 id="core-model"><a class="header" href="#core-model">Core model</a></h3>
+<p>Each agent has <strong>one continuous conversation</strong> per user. Conversations are
+keyed by <code>(agent, sender)</code> — no session IDs in the protocol.</p>
+<pre><code>Client: StreamMsg { agent: "crab", content: "hello", sender: "user" }
+Daemon: resolves (crab, user) → internal conversation, runs agent, streams response
+</code></pre>
+<h3 id="conversation-vs-session"><a class="header" href="#conversation-vs-session">Conversation vs session</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th>Session</th><th>Conversation</th></tr>
+</thead>
+<tbody>
+<tr><td>What</td><td>Device ↔ daemon connection</td><td>Agent’s memory with a user</td></tr>
+<tr><td>Key</td><td>connection/device ID</td><td>(agent, sender)</td></tr>
+<tr><td>Lifetime</td><td>ephemeral</td><td>persistent</td></tr>
+<tr><td>State</td><td>CWD, transport</td><td>messages, title, JSONL, archives</td></tr>
+</tbody>
+</table>
+</div>
+<p>Sessions are daemon-internal. Conversations are the protocol-visible abstraction.</p>
+<h3 id="protocol-changes"><a class="header" href="#protocol-changes">Protocol changes</a></h3>
+<p>Client messages address conversations by <code>(agent, sender)</code>:</p>
+<pre><code class="language-protobuf">message StreamMsg {
+  string agent = 1;
+  string content = 2;
+  optional string sender = 4;
+  optional string cwd = 5;
+  optional string guest = 6;  // guest turn
+}
+
+message KillMsg {
+  string agent = 1;
+  string sender = 2;
+}
+
+message ReplyToAsk {
+  string agent = 1;
+  string sender = 2;
+  string content = 3;
+}
+
+message CompactMsg {
+  string agent = 1;
+  string sender = 2;
+}
+</code></pre>
+<p>Removed from the protocol: <code>session</code> (u64 ID), <code>new_chat</code>, <code>resume_file</code>.</p>
+<p>Server responses no longer include session IDs:</p>
+<pre><code class="language-protobuf">message StreamStart {
+  string agent = 1;  // no session field
+}
+</code></pre>
+<h3 id="guest-turns"><a class="header" href="#guest-turns">Guest turns</a></h3>
+<p>The <code>guest</code> field on <code>StreamMsg</code> enables multi-agent conversations. When set,
+the daemon runs the guest agent against the primary agent’s conversation
+history — text-only, no tool dispatch.</p>
+<p>Flow:</p>
+<ol>
+<li>Client sends <code>StreamMsg { agent: "twin", content: "question", guest: "crab" }</code></li>
+<li>Daemon finds twin’s conversation</li>
+<li>Adds user message to twin’s history</li>
+<li>Injects guest framing (auto-injected system message)</li>
+<li>Runs crab against twin’s history with crab’s system prompt (no tools)</li>
+<li>Tags response with <code>agent: "crab"</code></li>
+<li>Appends to twin’s history</li>
+</ol>
+<p>The guest’s response appears as a first-class message in the conversation,
+attributed to the guest. No delegation, no tool results, no paraphrasing.</p>
+<h3 id="bidirectional-framing"><a class="header" href="#bidirectional-framing">Bidirectional framing</a></h3>
+<p>Both guest and primary need context about multi-agent conversation:</p>
+<ul>
+<li><strong>Guest framing</strong> (injected when a guest runs): “You are joining a
+conversation as a guest. Messages wrapped in <code>&lt;from agent="..."&gt;</code> tags are from other
+agents.”</li>
+<li><strong>Primary framing</strong> (injected when the primary runs and guest messages exist
+in history): “Messages wrapped in <code>&lt;from agent="..."&gt;</code> tags are from guest agents.
+Continue responding as yourself.”</li>
+</ul>
+<p>Both are <code>auto_injected</code> — stripped before each run, re-injected fresh. Zero
+accumulation.</p>
+<h3 id="message-attribution"><a class="header" href="#message-attribution">Message attribution</a></h3>
+<p>The <code>Message</code> struct gains an <code>agent</code> field:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[serde(default, skip_serializing_if = "String::is_empty")]
+pub agent: String,
+<span class="boring">}</span></code></pre>
+<p>Empty = the conversation’s primary agent. Non-empty = a guest. When building
+LLM requests, assistant messages with non-empty <code>agent</code> are prefixed with
+<code>&lt;from agent="..."&gt;</code> XML tags so every agent can distinguish speakers.</p>
+<p><code>Message::with_agent_tag()</code> handles the prefixing — one function, used by
+both <code>build_request</code> and <code>guest_stream_to</code>.</p>
+<h3 id="compaction-as-memory"><a class="header" href="#compaction-as-memory">Compaction as memory</a></h3>
+<p>Compaction markers become archive boundaries. Each compact marker stores a
+title (first sentence of the summary, max 60 chars) and a timestamp:</p>
+<pre><code class="language-json">{"compact":"Summary of pricing discussion...","title":"Pricing analysis for solo dev tools.","archived_at":"2026-04-03T10:00:00Z"}
+</code></pre>
+<p>The conversation is continuous — compaction doesn’t create a new conversation,
+it archives a segment of the existing one. Archived segments are browsable
+via <code>Conversation::load_archives()</code> and available to the recall tool as
+long-term memory.</p>
+<pre><code>Crab's memory:
+├── [active] Current conversation
+├── "Pricing analysis for solo dev tools." — 2 days ago
+├── "Auth module refactor plan." — 5 days ago
+└── "HN competitor signal analysis." — last week
+</code></pre>
+<h3 id="what-dies"><a class="header" href="#what-dies">What dies</a></h3>
+<ul>
+<li><strong>Session IDs in the protocol</strong> — replaced by (agent, sender)</li>
+<li><strong><code>new_chat</code></strong> — the conversation is continuous, compaction handles the window</li>
+<li><strong><code>resume_file</code></strong> — one conversation per (agent, user), always active</li>
+<li><strong>Client-side @mention logic</strong> (<a href="rfcs/0078-compact-session.html">0078</a>) — guest turns
+handle it daemon-side</li>
+<li><strong>Session forking</strong> — agents are the abstraction, not sessions</li>
+</ul>
+<h2 id="supersedes"><a class="header" href="#supersedes">Supersedes</a></h2>
+<h3 id="0064---session"><a class="header" href="#0064---session">0064 - Session</a></h3>
+<p>The session model is replaced by conversations. The JSONL file format is
+preserved (backward compatible with added <code>title</code> and <code>archived_at</code> fields on
+compact markers, and <code>agent</code> field on messages). The <code>Session</code> struct is renamed
+to <code>Conversation</code>. Session IDs are removed from the protocol.</p>
+<h3 id="0078---compact-session"><a class="header" href="#0078---compact-session">0078 - Compact Session</a></h3>
+<p>The compact-then-handoff pattern for @mentions is replaced by guest turns.
+The daemon handles multi-agent conversation natively — no client-side compact
+logic needed.</p>
+<h2 id="updates"><a class="header" href="#updates">Updates</a></h2>
+<h3 id="0018---protocol-1"><a class="header" href="#0018---protocol-1">0018 - Protocol</a></h3>
+<p>Session-addressed messages are replaced with (agent, sender) addressing.
+<code>StreamMsg</code> and <code>SendMsg</code> gain a <code>guest</code> field. <code>SessionInfo</code> becomes
+<code>ActiveConversationInfo</code>. See protocol changes section above.</p>
+<h3 id="0038---memory-1"><a class="header" href="#0038---memory-1">0038 - Memory</a></h3>
+<p>Compaction archives become the primary long-term memory mechanism. The
+recall tool searches across archived segments. See <a href="https://github.com/crabtalk/crabtalk/issues/101">#101 (revised)</a> for
+the pluggable memory provider aligned with this model.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="superseded-rfcs"><a class="header" href="#superseded-rfcs">Superseded RFCs</a></h1>
+<p>RFCs that have been replaced by newer designs. Kept for historical reference.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>RFC</th><th>Title</th><th>Superseded by</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="rfcs/0064-session.html">0064</a></td><td>Session</td><td><a href="#0135---agent-first-protocol">0135 - Agent-First Protocol</a></td></tr>
+<tr><td><a href="rfcs/0078-compact-session.html">0078</a></td><td>Compact Session</td><td><a href="#0135---agent-first-protocol">0135 - Agent-First Protocol</a></td></tr>
+</tbody>
+</table>
+</div>
 
                     </main>
 
@@ -1413,7 +1439,7 @@ to. Enforcement must be at the dispatch layer.</p>
         <script src="searcher-c2a407aa.js"></script>
 
         <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
+        <script src="highlight-defcc054.js"></script>
         <script src="book-a0b12cfe.js"></script>
 
         <!-- Custom JS scripts -->
