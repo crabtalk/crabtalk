@@ -23,7 +23,7 @@ name = "codec"
 harness = false
 
 [[bench]]
-name = "session"
+name = "conversation"
 harness = false
 
 [[bench]]

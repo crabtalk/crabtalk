@@ -1,10 +1,10 @@
-//! Runtime — agent registry, session management, and hook orchestration.
+//! Runtime — agent registry, conversation management, and hook orchestration.
 //!
-//! [`Runtime`] holds agents as immutable definitions and sessions as
-//! per-session `Arc<Mutex<Session>>` containers. Tool schemas are registered
+//! [`Runtime`] holds agents as immutable definitions and conversations as
+//! per-conversation `Arc<Mutex<Conversation>>` containers. Tool schemas are registered
 //! once at startup via `hook.on_register_tools()`. Execution methods
-//! (`send_to`, `stream_to`) take a session ID, lock the session, clone the
-//! agent, and run with the session's history.
+//! (`send_to`, `stream_to`) take a conversation ID, lock the conversation, clone the
+//! agent, and run with the conversation's history.
 
 use crate::{
     Agent, AgentBuilder, AgentConfig, AgentEvent, AgentResponse, AgentStopReason,
@@ -26,21 +26,21 @@ use std::{
 use tokio::sync::{Mutex, RwLock, mpsc};
 
 pub mod hook;
-pub mod session;
+pub mod conversation;
 
-pub use session::Session;
+pub use conversation::Conversation;
 
-/// The crabtalk runtime — agent registry, session store, and hook orchestration.
+/// The crabtalk runtime — agent registry, conversation store, and hook orchestration.
 ///
-/// Agents are stored as plain immutable values. Sessions own conversation
-/// history behind per-session `Arc<Mutex<Session>>`. The sessions map uses
+/// Agents are stored as plain immutable values. Conversations own conversation
+/// history behind per-conversation `Arc<Mutex<Conversation>>`. The conversations map uses
 /// `RwLock` for concurrent access without requiring `&mut self`.
 pub struct Runtime<M: Model, H: Hook> {
     pub model: M,
     pub hook: H,
     agents: BTreeMap<String, Agent<M>>,
-    sessions: RwLock<BTreeMap<u64, Arc<Mutex<Session>>>>,
-    next_session_id: AtomicU64,
+    conversations: RwLock<BTreeMap<u64, Arc<Mutex<Conversation>>>>,
+    next_conversation_id: AtomicU64,
     pub tools: ToolRegistry,
     tool_tx: Option<ToolSender>,
 }
@@ -58,8 +58,8 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             model,
             hook,
             agents: BTreeMap::new(),
-            sessions: RwLock::new(BTreeMap::new()),
-            next_session_id: AtomicU64::new(1),
+            conversations: RwLock::new(BTreeMap::new()),
+            next_conversation_id: AtomicU64::new(1),
             tools,
             tool_tx,
         }
@@ -100,151 +100,151 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         self.agents.get(name)
     }
 
-    // --- Session management ---
+    // --- Conversation management ---
 
-    /// Get or create a session for the given (agent, created_by) identity.
+    /// Get or create a conversation for the given (agent, created_by) identity.
     ///
-    /// 1. Check in-memory sessions for a match → return existing ID.
-    /// 2. Check disk for a persisted session file → load context, return ID.
-    /// 3. Neither → create a new session with a fresh file.
-    pub async fn get_or_create_session(&self, agent: &str, created_by: &str) -> Result<u64> {
+    /// 1. Check in-memory conversations for a match -> return existing ID.
+    /// 2. Check disk for a persisted conversation file -> load context, return ID.
+    /// 3. Neither -> create a new conversation with a fresh file.
+    pub async fn get_or_create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.agents.contains_key(agent) {
             bail!("agent '{agent}' not registered");
         }
 
         // 1. In-memory lookup.
         {
-            let sessions = self.sessions.read().await;
-            for (id, session_mutex) in sessions.iter() {
-                let s = session_mutex.lock().await;
-                if s.agent == agent && s.created_by == created_by {
+            let conversations = self.conversations.read().await;
+            for (id, conversation_mutex) in conversations.iter() {
+                let c = conversation_mutex.lock().await;
+                if c.agent == agent && c.created_by == created_by {
                     return Ok(*id);
                 }
             }
         }
 
-        // 2. Disk lookup — find latest session file for this identity.
+        // 2. Disk lookup — find latest conversation file for this identity.
         if let Some(path) =
-            session::find_latest_session(&crate::paths::SESSIONS_DIR, agent, created_by)
-            && let Ok((meta, messages)) = Session::load_context(&path)
+            conversation::find_latest_conversation(&crate::paths::CONVERSATIONS_DIR, agent, created_by)
+            && let Ok((meta, messages)) = Conversation::load_context(&path)
         {
-            let id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
-            let mut session = Session::new(id, agent, created_by);
-            session.history = messages;
-            session.title = meta.title;
-            session.uptime_secs = meta.uptime_secs;
-            session.file_path = Some(path);
-            self.sessions
+            let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
+            let mut conversation = Conversation::new(id, agent, created_by);
+            conversation.history = messages;
+            conversation.title = meta.title;
+            conversation.uptime_secs = meta.uptime_secs;
+            conversation.file_path = Some(path);
+            self.conversations
                 .write()
                 .await
-                .insert(id, Arc::new(Mutex::new(session)));
+                .insert(id, Arc::new(Mutex::new(conversation)));
             return Ok(id);
         }
 
         // 3. Create new.
-        self.create_session(agent, created_by).await
+        self.create_conversation(agent, created_by).await
     }
 
-    /// Create a new session for the given agent. Returns the session ID.
+    /// Create a new conversation for the given agent. Returns the conversation ID.
     ///
     /// The JSONL file is not created here — it is deferred until the first
-    /// message is persisted via [`Session::ensure_file`], avoiding ghost
-    /// session files from connections that drop before any exchange.
-    pub async fn create_session(&self, agent: &str, created_by: &str) -> Result<u64> {
+    /// message is persisted via [`Conversation::ensure_file`], avoiding ghost
+    /// conversation files from connections that drop before any exchange.
+    pub async fn create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.agents.contains_key(agent) {
             bail!("agent '{agent}' not registered");
         }
-        let id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
-        let session = Session::new(id, agent, created_by);
-        self.sessions
+        let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
+        let conversation = Conversation::new(id, agent, created_by);
+        self.conversations
             .write()
             .await
-            .insert(id, Arc::new(Mutex::new(session)));
+            .insert(id, Arc::new(Mutex::new(conversation)));
         Ok(id)
     }
 
-    /// Load a specific session from a file path. Returns the session ID.
-    pub async fn load_specific_session(&self, file_path: &std::path::Path) -> Result<u64> {
-        let (meta, messages) = Session::load_context(file_path)?;
+    /// Load a specific conversation from a file path. Returns the conversation ID.
+    pub async fn load_specific_conversation(&self, file_path: &std::path::Path) -> Result<u64> {
+        let (meta, messages) = Conversation::load_context(file_path)?;
         if !self.agents.contains_key(&meta.agent) {
             bail!("agent '{}' not registered", meta.agent);
         }
-        let id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
-        let mut session = Session::new(id, &meta.agent, &meta.created_by);
-        session.history = messages;
-        session.title = meta.title;
-        session.uptime_secs = meta.uptime_secs;
-        session.file_path = Some(file_path.to_path_buf());
-        self.sessions
+        let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
+        let mut conversation = Conversation::new(id, &meta.agent, &meta.created_by);
+        conversation.history = messages;
+        conversation.title = meta.title;
+        conversation.uptime_secs = meta.uptime_secs;
+        conversation.file_path = Some(file_path.to_path_buf());
+        self.conversations
             .write()
             .await
-            .insert(id, Arc::new(Mutex::new(session)));
+            .insert(id, Arc::new(Mutex::new(conversation)));
         Ok(id)
     }
 
-    /// Close (remove) a session by ID. Returns true if it existed.
-    pub async fn close_session(&self, id: u64) -> bool {
-        self.sessions.write().await.remove(&id).is_some()
+    /// Close (remove) a conversation by ID. Returns true if it existed.
+    pub async fn close_conversation(&self, id: u64) -> bool {
+        self.conversations.write().await.remove(&id).is_some()
     }
 
-    /// Get a session mutex by ID.
-    pub async fn session(&self, id: u64) -> Option<Arc<Mutex<Session>>> {
-        self.sessions.read().await.get(&id).cloned()
+    /// Get a conversation mutex by ID.
+    pub async fn conversation(&self, id: u64) -> Option<Arc<Mutex<Conversation>>> {
+        self.conversations.read().await.get(&id).cloned()
     }
 
-    /// Get all session mutexes (for iteration/listing).
-    pub async fn sessions(&self) -> Vec<Arc<Mutex<Session>>> {
-        self.sessions.read().await.values().cloned().collect()
+    /// Get all conversation mutexes (for iteration/listing).
+    pub async fn conversations(&self) -> Vec<Arc<Mutex<Conversation>>> {
+        self.conversations.read().await.values().cloned().collect()
     }
 
-    /// Number of open sessions (created and not yet killed).
-    pub async fn session_count(&self) -> usize {
-        self.sessions.read().await.len()
+    /// Number of open conversations (created and not yet killed).
+    pub async fn conversation_count(&self) -> usize {
+        self.conversations.read().await.len()
     }
 
-    /// Compact a session's history into a concise summary.
+    /// Compact a conversation's history into a concise summary.
     ///
     /// Clones history to release the lock before the LLM call.
-    /// Returns `None` if session/agent not found, history empty, or LLM fails.
-    pub async fn compact_session(&self, session_id: u64) -> Option<String> {
+    /// Returns `None` if conversation/agent not found, history empty, or LLM fails.
+    pub async fn compact_conversation(&self, conversation_id: u64) -> Option<String> {
         let (agent_name, history) = {
-            let session_mutex = self.sessions.read().await.get(&session_id)?.clone();
-            let session = session_mutex.lock().await;
-            if session.history.is_empty() {
+            let conversation_mutex = self.conversations.read().await.get(&conversation_id)?.clone();
+            let conversation = conversation_mutex.lock().await;
+            if conversation.history.is_empty() {
                 return None;
             }
-            (session.agent.clone(), session.history.clone())
+            (conversation.agent.clone(), conversation.history.clone())
         };
         self.agents.get(&agent_name)?.compact(&history).await
     }
 
-    /// Move all sessions from this runtime into `dest`.
+    /// Move all conversations from this runtime into `dest`.
     ///
-    /// Used during daemon reload to preserve gateway sessions. The `dest`
+    /// Used during daemon reload to preserve gateway conversations. The `dest`
     /// runtime must not yet be shared (call before wrapping in `Arc`).
-    pub async fn transfer_sessions<M2: Model, H2: Hook>(&self, dest: &mut Runtime<M2, H2>) {
-        let sessions = self.sessions.read().await;
-        let dest_sessions = dest.sessions.get_mut();
-        for (id, session) in sessions.iter() {
-            dest_sessions.insert(*id, session.clone());
+    pub async fn transfer_conversations<M2: Model, H2: Hook>(&self, dest: &mut Runtime<M2, H2>) {
+        let conversations = self.conversations.read().await;
+        let dest_conversations = dest.conversations.get_mut();
+        for (id, conversation) in conversations.iter() {
+            dest_conversations.insert(*id, conversation.clone());
         }
-        let next = self.next_session_id.load(Ordering::Relaxed);
-        dest.next_session_id.store(next, Ordering::Relaxed);
+        let next = self.next_conversation_id.load(Ordering::Relaxed);
+        dest.next_conversation_id.store(next, Ordering::Relaxed);
     }
 
     /// Spawn a background task to generate a conversation title from the
     /// first user+assistant exchange. Non-blocking — the main flow continues.
-    fn spawn_title_generation(&self, _session_id: u64, session_mutex: Arc<Mutex<Session>>) {
+    fn spawn_title_generation(&self, _conversation_id: u64, conversation_mutex: Arc<Mutex<Conversation>>) {
         let model = self.model.clone();
         tokio::spawn(async move {
             let (user_msg, assistant_msg) = {
-                let session = session_mutex.lock().await;
-                let user = session
+                let conversation = conversation_mutex.lock().await;
+                let user = conversation
                     .history
                     .iter()
                     .find(|m| m.role == crate::model::Role::User && !m.auto_injected)
                     .map(|m| m.content.clone());
-                let assistant = session
+                let assistant = conversation
                     .history
                     .iter()
                     .find(|m| m.role == crate::model::Role::Assistant)
@@ -275,9 +275,9 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                     if let Some(title) = response.content() {
                         let title = title.trim().trim_matches('"').to_string();
                         if !title.is_empty() {
-                            let mut session = session_mutex.lock().await;
-                            if session.title.is_empty() {
-                                session.set_title(&title);
+                            let mut conversation = conversation_mutex.lock().await;
+                            if conversation.title.is_empty() {
+                                conversation.set_title(&title);
                             }
                         }
                     }
@@ -293,59 +293,59 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
 
     /// Push the user message, strip old auto-injected messages, and inject
     /// fresh ones via `on_before_run`. Returns the agent name.
-    fn prepare_history(&self, session: &mut Session, content: &str, sender: &str) -> String {
-        let content = self.hook.preprocess(&session.agent, content);
+    fn prepare_history(&self, conversation: &mut Conversation, content: &str, sender: &str) -> String {
+        let content = self.hook.preprocess(&conversation.agent, content);
         if sender.is_empty() {
-            session.history.push(Message::user(&content));
+            conversation.history.push(Message::user(&content));
         } else {
-            session
+            conversation
                 .history
                 .push(Message::user_with_sender(&content, sender));
         }
 
         // Strip previous auto-injected messages to avoid accumulation.
-        session.history.retain(|m| !m.auto_injected);
+        conversation.history.retain(|m| !m.auto_injected);
 
-        let agent_name = session.agent.clone();
+        let agent_name = conversation.agent.clone();
         let recall_msgs = self
             .hook
-            .on_before_run(&agent_name, session.id, &session.history);
+            .on_before_run(&agent_name, conversation.id, &conversation.history);
         if !recall_msgs.is_empty() {
-            let insert_pos = session.history.len().saturating_sub(1);
+            let insert_pos = conversation.history.len().saturating_sub(1);
             for (i, msg) in recall_msgs.into_iter().enumerate() {
-                session.history.insert(insert_pos + i, msg);
+                conversation.history.insert(insert_pos + i, msg);
             }
         }
         agent_name
     }
 
-    /// Send a message to a session and run to completion.
+    /// Send a message to a conversation and run to completion.
     pub async fn send_to(
         &self,
-        session_id: u64,
+        conversation_id: u64,
         content: &str,
         sender: &str,
     ) -> Result<AgentResponse> {
-        let session_mutex = self
-            .sessions
+        let conversation_mutex = self
+            .conversations
             .read()
             .await
-            .get(&session_id)
+            .get(&conversation_id)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("session {session_id} not found"))?;
+            .ok_or_else(|| anyhow::anyhow!("conversation {conversation_id} not found"))?;
 
-        let mut session = session_mutex.lock().await;
-        let pre_run_len = session.history.len();
-        let agent_name = self.prepare_history(&mut session, content, sender);
+        let mut conversation = conversation_mutex.lock().await;
+        let pre_run_len = conversation.history.len();
+        let agent_name = self.prepare_history(&mut conversation, content, sender);
         let agent_ref = self
             .agents
-            .get(&session.agent)
-            .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", session.agent))?;
+            .get(&conversation.agent)
+            .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", conversation.agent))?;
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let run_start = std::time::Instant::now();
-        let response = agent_ref.run(&mut session.history, tx, None).await;
-        session.uptime_secs += run_start.elapsed().as_secs();
+        let response = agent_ref.run(&mut conversation.history, tx, None).await;
+        conversation.uptime_secs += run_start.elapsed().as_secs();
 
         // Drain events, stash compact summary if one occurred.
         let mut compact_summary: Option<String> = None;
@@ -353,50 +353,50 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             if let AgentEvent::Compact { ref summary } = event {
                 compact_summary = Some(summary.clone());
             }
-            self.hook.on_event(&agent_name, session_id, &event);
+            self.hook.on_event(&agent_name, conversation_id, &event);
         }
 
-        // Create the JSONL file on first persist (deferred from create_session).
-        session.ensure_file();
+        // Create the JSONL file on first persist (deferred from create_conversation).
+        conversation.ensure_file();
 
         // Append-only persistence.
         if let Some(summary) = compact_summary {
             // Compaction happened: append compact marker + post-compact messages.
-            session.append_compact(&summary);
+            conversation.append_compact(&summary);
             // history[0] is the summary-as-user-message; skip it (compact line serves that role).
-            if session.history.len() > 1 {
-                session.append_messages(&session.history[1..]);
+            if conversation.history.len() > 1 {
+                conversation.append_messages(&conversation.history[1..]);
             }
         } else {
             // No compaction: append new messages since pre_run.
-            session.append_messages(&session.history[pre_run_len..]);
+            conversation.append_messages(&conversation.history[pre_run_len..]);
         }
 
         // Persist updated uptime to meta line.
-        session.rewrite_meta();
+        conversation.rewrite_meta();
 
         // Generate title in background if this is the first exchange.
-        if session.title.is_empty() && session.history.len() >= 2 {
-            self.spawn_title_generation(session_id, session_mutex.clone());
+        if conversation.title.is_empty() && conversation.history.len() >= 2 {
+            self.spawn_title_generation(conversation_id, conversation_mutex.clone());
         }
         Ok(response)
     }
 
-    /// Send a message to a session and stream response events.
+    /// Send a message to a conversation and stream response events.
     pub fn stream_to(
         &self,
-        session_id: u64,
+        conversation_id: u64,
         content: &str,
         sender: &str,
     ) -> impl Stream<Item = AgentEvent> + '_ {
         let content = content.to_owned();
         let sender = sender.to_owned();
         stream! {
-            let session_mutex = match self
-                .sessions
+            let conversation_mutex = match self
+                .conversations
                 .read()
                 .await
-                .get(&session_id)
+                .get(&conversation_id)
                 .cloned()
             {
                 Some(m) => m,
@@ -405,7 +405,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                         final_response: None,
                         iterations: 0,
                         stop_reason: AgentStopReason::Error(
-                            format!("session {session_id} not found"),
+                            format!("conversation {conversation_id} not found"),
                         ),
                         steps: vec![],
                         // No model involved in pre-run errors.
@@ -416,17 +416,17 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                 }
             };
 
-            let mut session = session_mutex.lock().await;
-            let pre_run_len = session.history.len();
-            let agent_name = self.prepare_history(&mut session, &content, &sender);
-            let agent_ref = match self.agents.get(&session.agent) {
+            let mut conversation = conversation_mutex.lock().await;
+            let pre_run_len = conversation.history.len();
+            let agent_name = self.prepare_history(&mut conversation, &content, &sender);
+            let agent_ref = match self.agents.get(&conversation.agent) {
                 Some(a) => a,
                 None => {
                     let resp = AgentResponse {
                         final_response: None,
                         iterations: 0,
                         stop_reason: AgentStopReason::Error(
-                            format!("agent '{}' not registered", session.agent),
+                            format!("agent '{}' not registered", conversation.agent),
                         ),
                         steps: vec![],
                         // No model involved in pre-run errors.
@@ -441,12 +441,12 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             let mut compact_summary: Option<String> = None;
             let mut done_event: Option<AgentEvent> = None;
             {
-                let mut event_stream = std::pin::pin!(agent_ref.run_stream(&mut session.history, Some(session_id)));
+                let mut event_stream = std::pin::pin!(agent_ref.run_stream(&mut conversation.history, Some(conversation_id)));
                 while let Some(event) = event_stream.next().await {
                     if let AgentEvent::Compact { ref summary } = event {
                         compact_summary = Some(summary.clone());
                     }
-                    self.hook.on_event(&agent_name, session_id, &event);
+                    self.hook.on_event(&agent_name, conversation_id, &event);
                     // Hold back Done — yield it after persistence.
                     if matches!(event, AgentEvent::Done(_)) {
                         done_event = Some(event);
@@ -455,24 +455,24 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                     }
                 }
             }
-            // Borrow on session.history is released. Persist now.
-            session.uptime_secs += run_start.elapsed().as_secs();
-            // Create the JSONL file on first persist (deferred from create_session).
-            session.ensure_file();
+            // Borrow on conversation.history is released. Persist now.
+            conversation.uptime_secs += run_start.elapsed().as_secs();
+            // Create the JSONL file on first persist (deferred from create_conversation).
+            conversation.ensure_file();
             if let Some(summary) = compact_summary {
-                session.append_compact(&summary);
-                if session.history.len() > 1 {
-                    session.append_messages(&session.history[1..]);
+                conversation.append_compact(&summary);
+                if conversation.history.len() > 1 {
+                    conversation.append_messages(&conversation.history[1..]);
                 }
             } else {
-                session.append_messages(&session.history[pre_run_len..]);
+                conversation.append_messages(&conversation.history[pre_run_len..]);
             }
             // Persist updated uptime to meta line.
-            session.rewrite_meta();
+            conversation.rewrite_meta();
 
             // Generate title in background if this is the first exchange.
-            if session.title.is_empty() && session.history.len() >= 2 {
-                self.spawn_title_generation(session_id, session_mutex.clone());
+            if conversation.title.is_empty() && conversation.history.len() >= 2 {
+                self.spawn_title_generation(conversation_id, conversation_mutex.clone());
             }
             // Now yield Done.
             if let Some(event) = done_event {

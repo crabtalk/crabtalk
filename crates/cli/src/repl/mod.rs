@@ -54,7 +54,7 @@ impl ChatRepl {
 
     /// Resume a specific session file in the interactive REPL.
     pub async fn resume(&mut self, path: PathBuf) -> Result<()> {
-        let title = wcore::Session::load_context(&path)
+        let title = wcore::Conversation::load_context(&path)
             .ok()
             .map(|(meta, _)| meta.title)
             .unwrap_or_default();
@@ -66,8 +66,8 @@ impl ChatRepl {
     pub async fn run(&mut self) -> Result<()> {
         let os_user = std::env::var("USER").unwrap_or_else(|_| "user".into());
         let chat_title =
-            wcore::find_latest_session(&wcore::paths::SESSIONS_DIR, &self.agent, &os_user)
-                .and_then(|path| wcore::Session::load_context(&path).ok())
+            wcore::find_latest_conversation(&wcore::paths::CONVERSATIONS_DIR, &self.agent, &os_user)
+                .and_then(|path| wcore::Conversation::load_context(&path).ok())
                 .map(|(meta, _)| meta.title)
                 .unwrap_or_default();
         self.run_inner(chat_title, None).await
@@ -187,7 +187,7 @@ struct App {
     model_name: Option<String>,
     /// Active ask-user modal (if any).
     ask_state: Option<AskState>,
-    /// Session ID for the pending ask reply.
+    /// Conversation ID for the pending ask reply.
     ask_session: Option<u64>,
 }
 
@@ -244,10 +244,10 @@ async fn run_event_loop(
                         app.scroll = 0;
                         // Pick up title once (daemon generates it after first exchange).
                         if app.chat_title.is_empty()
-                            && let Some(path) = wcore::find_latest_session(
-                                &wcore::paths::SESSIONS_DIR, &app.agent, &app.os_user,
+                            && let Some(path) = wcore::find_latest_conversation(
+                                &wcore::paths::CONVERSATIONS_DIR, &app.agent, &app.os_user,
                             )
-                            && let Ok((meta, _)) = wcore::Session::load_context(&path)
+                            && let Ok((meta, _)) = wcore::Conversation::load_context(&path)
                             && !meta.title.is_empty()
                         {
                             app.chat_title = meta.title;
@@ -351,7 +351,7 @@ async fn run_event_loop(
                                                 && let Ok(Some(path)) = console.run(runner).await
                                             {
                                                 // Load title from the resumed session.
-                                                if let Ok((meta, _)) = wcore::Session::load_context(&path) {
+                                                if let Ok((meta, _)) = wcore::Conversation::load_context(&path) {
                                                     if !meta.title.is_empty() {
                                                         app.chat_title.clone_from(&meta.title);
                                                     }

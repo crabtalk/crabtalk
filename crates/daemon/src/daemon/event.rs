@@ -86,7 +86,7 @@ impl<H: Host + 'static> Daemon<H> {
                     &req.args,
                     &req.agent,
                     &req.sender,
-                    req.session_id,
+                    req.conversation_id,
                 )
                 .await;
             let _ = req.reply.send(result);

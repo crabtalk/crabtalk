@@ -92,7 +92,7 @@ impl<M: Model> Agent<M> {
     pub async fn step(
         &self,
         history: &mut Vec<Message>,
-        session_id: Option<u64>,
+        conversation_id: Option<u64>,
     ) -> Result<AgentStep> {
         let request = self.build_request(history);
         let response = self.model.send(&request).await?;
@@ -111,7 +111,7 @@ impl<M: Model> Agent<M> {
                         &tc.function.name,
                         &tc.function.arguments,
                         &sender,
-                        session_id,
+                        conversation_id,
                     )
                     .await;
                 let msg = Message::tool(&result, tc.id.clone(), &tc.function.name);
@@ -136,7 +136,7 @@ impl<M: Model> Agent<M> {
         name: &str,
         args: &str,
         sender: &str,
-        session_id: Option<u64>,
+        conversation_id: Option<u64>,
     ) -> String {
         let Some(tx) = &self.tool_tx else {
             return format!("tool '{name}' called but no tool sender configured");
@@ -149,7 +149,7 @@ impl<M: Model> Agent<M> {
             reply: reply_tx,
             task_id: None,
             sender: sender.into(),
-            session_id,
+            conversation_id,
         };
         if tx.send(req).is_err() {
             return format!("tool channel closed while calling '{name}'");
@@ -176,9 +176,9 @@ impl<M: Model> Agent<M> {
         &self,
         history: &mut Vec<Message>,
         events: mpsc::UnboundedSender<AgentEvent>,
-        session_id: Option<u64>,
+        conversation_id: Option<u64>,
     ) -> AgentResponse {
-        let mut stream = std::pin::pin!(self.run_stream(history, session_id));
+        let mut stream = std::pin::pin!(self.run_stream(history, conversation_id));
         let mut response = None;
         while let Some(event) = stream.next().await {
             if let AgentEvent::Done(ref resp) = event {
@@ -204,7 +204,7 @@ impl<M: Model> Agent<M> {
     pub fn run_stream<'a>(
         &'a self,
         history: &'a mut Vec<Message>,
-        session_id: Option<u64>,
+        conversation_id: Option<u64>,
     ) -> impl Stream<Item = AgentEvent> + 'a {
         stream! {
             let mut steps = Vec::new();
@@ -324,7 +324,7 @@ impl<M: Model> Agent<M> {
                     for tc in &tool_calls {
                         let tool_start = std::time::Instant::now();
                         let result = self
-                            .dispatch_tool(&tc.function.name, &tc.function.arguments, &sender, session_id)
+                            .dispatch_tool(&tc.function.name, &tc.function.arguments, &sender, conversation_id)
                             .await;
                         let duration_ms = tool_start.elapsed().as_millis() as u64;
                         let msg = Message::tool(&result, tc.id.clone(), &tc.function.name);

@@ -70,7 +70,7 @@ impl Daemon<DaemonHost> {
             DaemonHost {
                 event_tx,
                 pending_asks: Arc::new(Mutex::new(std::collections::HashMap::new())),
-                session_cwds: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                conversation_cwds: Arc::new(Mutex::new(std::collections::HashMap::new())),
                 events_tx,
             }
         })

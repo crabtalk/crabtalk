@@ -5,7 +5,7 @@ pub mod host;
 pub mod mcp;
 pub mod memory;
 pub mod os;
-pub mod session;
+pub mod conversation;
 pub mod skill;
 pub mod task;
 

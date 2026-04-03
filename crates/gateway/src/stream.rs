@@ -11,7 +11,7 @@ pub struct StreamAccumulator {
     text: String,
     /// Current tool call status line (e.g., "[calling bash, read...]").
     tool_line: Option<String>,
-    /// Session ID from StreamStart.
+    /// Conversation ID from StreamStart.
     pub session: Option<u64>,
     /// Captured error, if any.
     error: Option<String>,

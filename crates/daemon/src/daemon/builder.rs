@@ -88,7 +88,7 @@ impl<H: Host + 'static> Daemon<H> {
             Self::build_runtime(&config, &self.config_dir, &self.event_tx, host).await?;
         {
             let old_runtime = self.runtime.read().await;
-            (**old_runtime).transfer_sessions(&mut new_runtime).await;
+            (**old_runtime).transfer_conversations(&mut new_runtime).await;
         }
         *self.runtime.write().await = Arc::new(new_runtime);
         tracing::info!("daemon reloaded");

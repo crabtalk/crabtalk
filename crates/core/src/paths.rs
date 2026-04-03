@@ -36,8 +36,8 @@ pub const PACKAGES_DIR: &str = "packages";
 pub const AGENTS_DIR: &str = "local/agents";
 /// Skills subdirectory.
 pub const SKILLS_DIR: &str = "local/skills";
-/// Persisted session history directory (`~/.crabtalk/sessions/`).
-pub static SESSIONS_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("sessions"));
+/// Persisted conversation history directory (`~/.crabtalk/sessions/`).
+pub static CONVERSATIONS_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("sessions"));
 
 /// OAuth token storage directory (`~/.crabtalk/tokens/`).
 pub static TOKENS_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("tokens"));

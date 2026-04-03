@@ -20,37 +20,37 @@ const ASK_USER_TIMEOUT: Duration = Duration::from_secs(300);
 pub struct DaemonHost {
     /// Event channel for task delegation.
     pub(crate) event_tx: DaemonEventSender,
-    /// Pending `ask_user` oneshots, keyed by session_id.
+    /// Pending `ask_user` oneshots, keyed by conversation_id.
     pub(crate) pending_asks: Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>,
-    /// Per-session working directory overrides.
-    pub(crate) session_cwds: Arc<Mutex<HashMap<u64, PathBuf>>>,
+    /// Per-conversation working directory overrides.
+    pub(crate) conversation_cwds: Arc<Mutex<HashMap<u64, PathBuf>>>,
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
 }
 
 impl Host for DaemonHost {
-    async fn dispatch_ask_user(&self, args: &str, session_id: Option<u64>) -> String {
+    async fn dispatch_ask_user(&self, args: &str, conversation_id: Option<u64>) -> String {
         let input: runtime::ask_user::AskUser = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
 
-        let session_id = match session_id {
+        let conversation_id = match conversation_id {
             Some(id) => id,
             None => return "ask_user is only available in streaming mode".to_owned(),
         };
 
         let (tx, rx) = oneshot::channel();
-        self.pending_asks.lock().await.insert(session_id, tx);
+        self.pending_asks.lock().await.insert(conversation_id, tx);
 
         match tokio::time::timeout(ASK_USER_TIMEOUT, rx).await {
             Ok(Ok(reply)) => reply,
             Ok(Err(_)) => {
-                self.pending_asks.lock().await.remove(&session_id);
+                self.pending_asks.lock().await.remove(&conversation_id);
                 "ask_user cancelled: reply channel closed".to_owned()
             }
             Err(_) => {
-                self.pending_asks.lock().await.remove(&session_id);
+                self.pending_asks.lock().await.remove(&conversation_id);
                 let headers: Vec<&str> =
                     input.questions.iter().map(|q| q.header.as_str()).collect();
                 format!(
@@ -90,14 +90,14 @@ impl Host for DaemonHost {
         serde_json::to_string(&results).unwrap_or_else(|e| format!("serialization error: {e}"))
     }
 
-    fn session_cwd(&self, session_id: u64) -> Option<PathBuf> {
-        self.session_cwds
+    fn conversation_cwd(&self, conversation_id: u64) -> Option<PathBuf> {
+        self.conversation_cwds
             .try_lock()
             .ok()
-            .and_then(|m| m.get(&session_id).cloned())
+            .and_then(|m| m.get(&conversation_id).cloned())
     }
 
-    fn on_agent_event(&self, agent: &str, session_id: u64, event: &AgentEvent) {
+    fn on_agent_event(&self, agent: &str, conversation_id: u64, event: &AgentEvent) {
         let (kind, content) = match event {
             AgentEvent::TextDelta(text) => {
                 tracing::trace!(%agent, text_len = text.len(), "agent text delta");
@@ -154,7 +154,7 @@ impl Host for DaemonHost {
         };
         let _ = self.events_tx.send(AgentEventMsg {
             agent: agent.to_string(),
-            session: session_id,
+            session: conversation_id,
             kind: kind.into(),
             content,
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -174,13 +174,13 @@ impl Host for DaemonHost {
         Ok(false)
     }
 
-    async fn set_session_cwd(&self, session: u64, cwd: std::path::PathBuf) {
-        self.session_cwds.lock().await.insert(session, cwd);
+    async fn set_conversation_cwd(&self, conversation: u64, cwd: std::path::PathBuf) {
+        self.conversation_cwds.lock().await.insert(conversation, cwd);
     }
 
-    async fn clear_session_state(&self, session: u64) {
-        self.pending_asks.lock().await.remove(&session);
-        self.session_cwds.lock().await.remove(&session);
+    async fn clear_conversation_state(&self, conversation: u64) {
+        self.pending_asks.lock().await.remove(&conversation);
+        self.conversation_cwds.lock().await.remove(&conversation);
     }
 
     fn subscribe_events(&self) -> Option<broadcast::Receiver<AgentEventMsg>> {
@@ -217,12 +217,12 @@ fn spawn_agent_task(
 
         let mut result_content: Option<String> = None;
         let mut error_msg: Option<String> = None;
-        let mut session_id: Option<u64> = None;
+        let mut conversation_id: Option<u64> = None;
 
         while let Some(msg) = reply_rx.recv().await {
             match msg.msg {
                 Some(server_message::Msg::Response(resp)) => {
-                    session_id = Some(resp.session);
+                    conversation_id = Some(resp.session);
                     result_content = Some(resp.content);
                 }
                 Some(server_message::Msg::Error(err)) => {
@@ -232,7 +232,7 @@ fn spawn_agent_task(
             }
         }
 
-        if let Some(sid) = session_id {
+        if let Some(sid) = conversation_id {
             // Capacity 1: receiver is dropped immediately, so the first
             // send() in handle_message returns Err and the loop exits.
             let (reply_tx, _) = mpsc::channel(1);

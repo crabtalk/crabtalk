@@ -1,7 +1,7 @@
 //! Host — trait for server-specific tool dispatch.
 //!
 //! The runtime crate defines this trait. The daemon implements it to provide
-//! `ask_user`, `delegate`, and per-session CWD resolution. Embedded users
+//! `ask_user`, `delegate`, and per-conversation CWD resolution. Embedded users
 //! get [`NoHost`] with no-op defaults.
 
 use std::path::PathBuf;
@@ -12,9 +12,9 @@ pub trait Host: Send + Sync + Clone {
     fn dispatch_ask_user(
         &self,
         args: &str,
-        session_id: Option<u64>,
+        conversation_id: Option<u64>,
     ) -> impl std::future::Future<Output = String> + Send {
-        let _ = (args, session_id);
+        let _ = (args, conversation_id);
         async { "ask_user is not available in this runtime mode".to_owned() }
     }
 
@@ -28,15 +28,15 @@ pub trait Host: Send + Sync + Clone {
         async { "delegate is not available in this runtime mode".to_owned() }
     }
 
-    /// Resolve the working directory for a session.
+    /// Resolve the working directory for a conversation.
     /// Returns `None` to fall back to the runtime's base cwd.
-    fn session_cwd(&self, _session_id: u64) -> Option<PathBuf> {
+    fn conversation_cwd(&self, _conversation_id: u64) -> Option<PathBuf> {
         None
     }
 
     /// Called when an agent event occurs. The daemon uses this to broadcast
     /// protobuf events to console subscribers. Default: no-op.
-    fn on_agent_event(&self, _agent: &str, _session_id: u64, _event: &wcore::AgentEvent) {}
+    fn on_agent_event(&self, _agent: &str, _conversation_id: u64, _event: &wcore::AgentEvent) {}
 
     /// Deliver a user reply to a pending `ask_user` tool call.
     /// Returns `true` if a pending ask was found and resolved.
@@ -48,17 +48,17 @@ pub trait Host: Send + Sync + Clone {
         async { Ok(false) }
     }
 
-    /// Set the working directory override for a session.
-    fn set_session_cwd(
+    /// Set the working directory override for a conversation.
+    fn set_conversation_cwd(
         &self,
-        _session: u64,
+        _conversation: u64,
         _cwd: PathBuf,
     ) -> impl std::future::Future<Output = ()> + Send {
         async {}
     }
 
-    /// Clear all per-session state (pending asks, CWD overrides).
-    fn clear_session_state(&self, _session: u64) -> impl std::future::Future<Output = ()> + Send {
+    /// Clear all per-conversation state (pending asks, CWD overrides).
+    fn clear_conversation_state(&self, _conversation: u64) -> impl std::future::Future<Output = ()> + Send {
         async {}
     }
 
@@ -77,7 +77,7 @@ pub trait Host: Send + Sync + Clone {
         name: &str,
         _args: &str,
         _agent: &str,
-        _session_id: Option<u64>,
+        _conversation_id: Option<u64>,
     ) -> impl std::future::Future<Output = String> + Send {
         async move { format!("tool not available: {name}") }
     }

@@ -1,4 +1,4 @@
-//! Session browser — identity list and conversation drill-down.
+//! Conversation browser — identity list and conversation drill-down.
 
 use crate::tui::border_focused;
 use ratatui::{
@@ -11,9 +11,9 @@ use ratatui::{
 use std::collections::BTreeMap;
 use wcore::protocol::message::{ConversationInfo, SessionInfo};
 
-/// Which view the Sessions tab is showing.
+/// Which view the Conversations tab is showing.
 #[derive(Clone)]
-pub(super) enum SessionView {
+pub(super) enum ConversationView {
     /// Top-level identity list.
     Identities {
         entries: Vec<IdentityEntry>,
@@ -28,7 +28,7 @@ pub(super) enum SessionView {
     },
 }
 
-impl Default for SessionView {
+impl Default for ConversationView {
     fn default() -> Self {
         Self::Identities {
             entries: Vec::new(),
@@ -57,16 +57,16 @@ pub(super) struct ConversationEntry {
     pub message_count: Option<u64>,
     /// Uptime in seconds (from daemon).
     pub alive_secs: Option<u64>,
-    /// Daemon session ID (for correlating with live events).
-    pub session_id: Option<u64>,
+    /// Daemon conversation ID (for correlating with live events).
+    pub conversation_id: Option<u64>,
 }
 
-impl SessionView {
+impl ConversationView {
     /// Refresh identity list from daemon data.
     pub fn refresh_identities(
         &mut self,
         conversations: &[ConversationInfo],
-        daemon_sessions: &[SessionInfo],
+        daemon_conversations: &[SessionInfo],
     ) {
         let mut data: BTreeMap<(String, String), (usize, String, u64, u64)> = BTreeMap::new();
 
@@ -85,8 +85,8 @@ impl SessionView {
             entry.3 += c.message_count;
         }
 
-        // Merge live daemon session data.
-        for ds in daemon_sessions {
+        // Merge live daemon conversation data.
+        for ds in daemon_conversations {
             let key = (ds.agent.clone(), ds.created_by.clone());
             let entry = data.entry(key).or_insert((0, String::new(), 0, 0));
             entry.1 = "Today".to_string();
@@ -124,7 +124,11 @@ impl SessionView {
     }
 
     /// Enter the selected identity to show its conversations.
-    pub fn enter(&mut self, conversations: &[ConversationInfo], daemon_sessions: &[SessionInfo]) {
+    pub fn enter(
+        &mut self,
+        conversations: &[ConversationInfo],
+        daemon_conversations: &[SessionInfo],
+    ) {
         if let Self::Identities { entries, selected } = self
             && let Some(entry) = entries.get(*selected)
         {
@@ -136,12 +140,12 @@ impl SessionView {
                     file_path: c.file_path.clone(),
                     message_count: Some(c.message_count),
                     alive_secs: Some(c.alive_secs),
-                    session_id: None,
+                    conversation_id: None,
                 })
                 .collect();
 
-            // Merge live stats from daemon sessions.
-            for ds in daemon_sessions {
+            // Merge live stats from daemon conversations.
+            for ds in daemon_conversations {
                 if ds.agent == entry.agent && ds.created_by == entry.sender {
                     let title_slug = wcore::sender_slug(&ds.title);
                     if let Some(conv) = conv_entries.iter_mut().find(|c| {
@@ -153,7 +157,7 @@ impl SessionView {
                     }) {
                         conv.message_count = Some(ds.message_count);
                         conv.alive_secs = Some(ds.alive_secs);
-                        conv.session_id = Some(ds.id);
+                        conv.conversation_id = Some(ds.id);
                     }
                 }
             }
@@ -168,13 +172,13 @@ impl SessionView {
     }
 
     /// Update live stats from daemon data without resetting selection.
-    /// Only overlays live session info — does not touch base counts from
+    /// Only overlays live conversation info — does not touch base counts from
     /// the last `refresh_identities` call.
-    pub fn merge_daemon_data(&mut self, daemon_sessions: &[SessionInfo]) {
+    pub fn merge_daemon_data(&mut self, daemon_conversations: &[SessionInfo]) {
         match self {
             Self::Identities { entries, .. } => {
                 for e in entries.iter_mut() {
-                    for ds in daemon_sessions {
+                    for ds in daemon_conversations {
                         if ds.agent == e.agent && ds.created_by == e.sender {
                             e.message_count = e.message_count.max(ds.message_count);
                             e.alive_secs = e.alive_secs.max(ds.alive_secs);
@@ -192,9 +196,9 @@ impl SessionView {
                 for c in entries.iter_mut() {
                     c.message_count = None;
                     c.alive_secs = None;
-                    c.session_id = None;
+                    c.conversation_id = None;
                 }
-                for ds in daemon_sessions {
+                for ds in daemon_conversations {
                     if ds.agent.as_str() == agent.as_str()
                         && ds.created_by.as_str() == sender.as_str()
                     {
@@ -208,7 +212,7 @@ impl SessionView {
                         }) {
                             conv.message_count = Some(ds.message_count);
                             conv.alive_secs = Some(ds.alive_secs);
-                            conv.session_id = Some(ds.id);
+                            conv.conversation_id = Some(ds.id);
                         }
                     }
                 }
@@ -251,9 +255,13 @@ impl SessionView {
     }
 
     /// Go back to identity list.
-    pub fn back(&mut self, conversations: &[ConversationInfo], daemon_sessions: &[SessionInfo]) {
+    pub fn back(
+        &mut self,
+        conversations: &[ConversationInfo],
+        daemon_conversations: &[SessionInfo],
+    ) {
         if matches!(self, Self::Conversations { .. }) {
-            self.refresh_identities(conversations, daemon_sessions);
+            self.refresh_identities(conversations, daemon_conversations);
         }
     }
 
@@ -285,12 +293,12 @@ impl SessionView {
 
 // ── Rendering ────────────────────────────────────────────────────────
 
-pub(super) fn render_session_view(frame: &mut Frame, view: &SessionView, area: Rect) {
+pub(super) fn render_conversation_view(frame: &mut Frame, view: &ConversationView, area: Rect) {
     match view {
-        SessionView::Identities { entries, selected } => {
+        ConversationView::Identities { entries, selected } => {
             render_identities(frame, entries, *selected, area);
         }
-        SessionView::Conversations {
+        ConversationView::Conversations {
             agent,
             sender,
             entries,
@@ -303,13 +311,13 @@ pub(super) fn render_session_view(frame: &mut Frame, view: &SessionView, area: R
 
 fn render_identities(frame: &mut Frame, entries: &[IdentityEntry], selected: usize, area: Rect) {
     let block = Block::default()
-        .title(" Sessions ")
+        .title(" Conversations ")
         .borders(Borders::ALL)
         .border_style(border_focused());
 
     if entries.is_empty() {
         frame.render_widget(
-            Paragraph::new("  No sessions found. Start a conversation first.").block(block),
+            Paragraph::new("  No conversations found. Start a conversation first.").block(block),
             area,
         );
         return;
@@ -332,12 +340,12 @@ fn render_identities(frame: &mut Frame, entries: &[IdentityEntry], selected: usi
         let msgs = if e.message_count > 0 {
             e.message_count.to_string()
         } else {
-            "—".to_string()
+            "---".to_string()
         };
         let uptime = if e.alive_secs > 0 {
             crate::tui::format_duration(e.alive_secs)
         } else {
-            "—".to_string()
+            "---".to_string()
         };
         let text = format!(
             "{marker}{:<24} {:<8} {:<8} {:<14} {:<10}",
@@ -366,7 +374,7 @@ fn render_conversations(
     selected: usize,
     area: Rect,
 ) {
-    let title = format!(" {sender}({agent}) — {} conversations ", entries.len());
+    let title = format!(" {sender}({agent}) --- {} conversations ", entries.len());
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
@@ -384,7 +392,7 @@ fn render_conversations(
     let mut lines = vec![Line::from(vec![Span::styled(
         format!(
             "  {:<14} {:<26} {:<8} {:<8} {:<10}",
-            "LAST ACTIVE", "TITLE", "MSGS", "SID", "UPTIME"
+            "LAST ACTIVE", "TITLE", "MSGS", "CID", "UPTIME"
         ),
         Style::default()
             .fg(Color::White)
@@ -402,18 +410,18 @@ fn render_conversations(
         let msgs = e
             .message_count
             .map(|n| n.to_string())
-            .unwrap_or_else(|| "—".to_string());
-        let sid = e
-            .session_id
+            .unwrap_or_else(|| "---".to_string());
+        let cid = e
+            .conversation_id
             .map(|id| id.to_string())
-            .unwrap_or_else(|| "—".to_string());
+            .unwrap_or_else(|| "---".to_string());
         let uptime = e
             .alive_secs
             .map(crate::tui::format_duration)
-            .unwrap_or_else(|| "—".to_string());
+            .unwrap_or_else(|| "---".to_string());
         let text = format!(
             "{marker}{:<14} {:<26} {:<8} {:<8} {:<10}",
-            e.date, title_display, msgs, sid, uptime
+            e.date, title_display, msgs, cid, uptime
         );
         let style = if is_selected {
             Style::default()

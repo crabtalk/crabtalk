@@ -28,7 +28,7 @@ pub trait Hook: Send + Sync {
     /// Use for logging, metrics, persistence, or forwarding.
     ///
     /// Default: no-op.
-    fn on_event(&self, _agent: &str, _session_id: u64, _event: &AgentEvent) {}
+    fn on_event(&self, _agent: &str, _conversation_id: u64, _event: &AgentEvent) {}
 
     /// Called by `Runtime::new()` to register tool schemas into the registry.
     ///
@@ -52,13 +52,13 @@ pub trait Hook: Send + Sync {
 
     /// Called by Runtime before each agent run (send_to / stream_to).
     ///
-    /// Receives the agent name, session ID, and conversation history
+    /// Receives the agent name, conversation ID, and conversation history
     /// (including the latest user message). Returns messages to inject
     /// before the user message for additional context (e.g. memory,
     /// per-session environment).
     ///
     /// Default: no injection.
-    fn on_before_run(&self, _agent: &str, _session_id: u64, _history: &[Message]) -> Vec<Message> {
+    fn on_before_run(&self, _agent: &str, _conversation_id: u64, _history: &[Message]) -> Vec<Message> {
         Vec::new()
     }
 }

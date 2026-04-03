@@ -54,11 +54,11 @@ pub trait Server: Sync {
     /// Handle `Ping` — keepalive.
     fn ping(&self) -> impl std::future::Future<Output = Result<()>> + Send;
 
-    /// Handle `Sessions` — list active sessions.
-    fn list_sessions(&self) -> impl std::future::Future<Output = Result<Vec<SessionInfo>>> + Send;
+    /// Handle `Sessions` — list active conversations.
+    fn list_conversations_active(&self) -> impl std::future::Future<Output = Result<Vec<SessionInfo>>> + Send;
 
-    /// Handle `Kill` — close a session by ID.
-    fn kill_session(&self, session: u64) -> impl std::future::Future<Output = Result<bool>> + Send;
+    /// Handle `Kill` — close a conversation by ID.
+    fn kill_conversation(&self, session: u64) -> impl std::future::Future<Output = Result<bool>> + Send;
 
     /// Handle `SubscribeEvents` — stream agent events.
     fn subscribe_events(&self) -> impl Stream<Item = Result<AgentEventMsg>> + Send;
@@ -81,8 +81,8 @@ pub trait Server: Sync {
     /// Handle `ListCrons` — return all cron entries.
     fn list_crons(&self) -> impl std::future::Future<Output = Result<CronList>> + Send;
 
-    /// Handle `Compact` — compact a session's history into a summary.
-    fn compact_session(
+    /// Handle `Compact` — compact a conversation's history into a summary.
+    fn compact_conversation(
         &self,
         session: u64,
     ) -> impl std::future::Future<Output = Result<String>> + Send;
@@ -250,7 +250,7 @@ pub trait Server: Sync {
                     };
                 }
                 client_message::Msg::Sessions(_) => {
-                    yield match self.list_sessions().await {
+                    yield match self.list_conversations_active().await {
                         Ok(sessions) => ServerMessage {
                             msg: Some(server_message::Msg::Sessions(SessionList { sessions })),
                         },
@@ -258,7 +258,7 @@ pub trait Server: Sync {
                     };
                 }
                 client_message::Msg::Kill(kill_msg) => {
-                    yield match self.kill_session(kill_msg.session).await {
+                    yield match self.kill_conversation(kill_msg.session).await {
                         Ok(true) => server_pong(),
                         Ok(false) => server_error(
                             404,
@@ -321,7 +321,7 @@ pub trait Server: Sync {
                     };
                 }
                 client_message::Msg::Compact(req) => {
-                    yield match self.compact_session(req.session).await {
+                    yield match self.compact_conversation(req.session).await {
                         Ok(summary) => ServerMessage {
                             msg: Some(server_message::Msg::Compact(CompactResponse { summary })),
                         },

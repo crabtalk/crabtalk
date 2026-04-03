@@ -30,23 +30,23 @@ impl<H: Host + 'static> Server for Daemon<H> {
         let sender = req.sender.as_deref().unwrap_or("");
         let created_by = if sender.is_empty() { "user" } else { sender };
         let cwd = req.cwd.map(std::path::PathBuf::from);
-        let session_id = match req.session {
+        let conversation_id = match req.session {
             Some(id) => id,
             None => {
                 let id = if let Some(ref file) = req.resume_file {
-                    rt.load_specific_session(std::path::Path::new(file)).await?
+                    rt.load_specific_conversation(std::path::Path::new(file)).await?
                 } else if req.new_chat {
-                    rt.create_session(&req.agent, created_by).await?
+                    rt.create_conversation(&req.agent, created_by).await?
                 } else {
-                    rt.get_or_create_session(&req.agent, created_by).await?
+                    rt.get_or_create_conversation(&req.agent, created_by).await?
                 };
                 if let Some(ref cwd) = cwd {
-                    rt.hook.host.set_session_cwd(id, cwd.clone()).await;
+                    rt.hook.host.set_conversation_cwd(id, cwd.clone()).await;
                 }
                 id
             }
         };
-        let response = rt.send_to(session_id, &req.content, sender).await?;
+        let response = rt.send_to(conversation_id, &req.content, sender).await?;
         let provider = rt
             .model
             .provider_name_for(&response.model)
@@ -54,7 +54,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
         Ok(SendResponse {
             agent: req.agent,
             content: response.final_response.unwrap_or_default(),
-            session: session_id,
+            session: conversation_id,
             provider,
             model: response.model,
             usage: Some(sum_usage(&response.steps)),
@@ -76,26 +76,26 @@ impl<H: Host + 'static> Server for Daemon<H> {
         async_stream::try_stream! {
             let rt: Arc<_> = runtime.read().await.clone();
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
-            let session_id = match req_session {
+            let conversation_id = match req_session {
                 Some(id) => id,
                 None => {
                     let id = if let Some(ref file) = resume_file {
-                        rt.load_specific_session(std::path::Path::new(file)).await?
+                        rt.load_specific_conversation(std::path::Path::new(file)).await?
                     } else if new_chat {
-                        rt.create_session(&agent, created_by.as_str()).await?
+                        rt.create_conversation(&agent, created_by.as_str()).await?
                     } else {
-                        rt.get_or_create_session(&agent, created_by.as_str()).await?
+                        rt.get_or_create_conversation(&agent, created_by.as_str()).await?
                     };
                     if let Some(ref cwd) = cwd {
-                        rt.hook.host.set_session_cwd(id, cwd.clone()).await;
+                        rt.hook.host.set_conversation_cwd(id, cwd.clone()).await;
                     }
                     id
                 }
             };
 
-            yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: agent.clone(), session: session_id })) };
+            yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: agent.clone(), session: conversation_id })) };
 
-            let stream = rt.stream_to(session_id, &content, &sender);
+            let stream = rt.stream_to(conversation_id, &content, &sender);
             pin_mut!(stream);
             while let Some(event) = stream.next().await {
                 match event {
@@ -184,40 +184,40 @@ impl<H: Host + 'static> Server for Daemon<H> {
         }
     }
 
-    async fn compact_session(&self, session: u64) -> Result<String> {
+    async fn compact_conversation(&self, session: u64) -> Result<String> {
         let rt = self.runtime.read().await.clone();
-        rt.compact_session(session)
+        rt.compact_conversation(session)
             .await
-            .ok_or_else(|| anyhow::anyhow!("compact failed for session {session}"))
+            .ok_or_else(|| anyhow::anyhow!("compact failed for conversation {session}"))
     }
 
     async fn ping(&self) -> Result<()> {
         Ok(())
     }
 
-    async fn list_sessions(&self) -> Result<Vec<SessionInfo>> {
+    async fn list_conversations_active(&self) -> Result<Vec<SessionInfo>> {
         let rt = self.runtime.read().await.clone();
-        let sessions = rt.sessions().await;
-        let mut infos = Vec::with_capacity(sessions.len());
-        for s in sessions {
-            let s = s.lock().await;
+        let conversations = rt.conversations().await;
+        let mut infos = Vec::with_capacity(conversations.len());
+        for c in conversations {
+            let c = c.lock().await;
             infos.push(SessionInfo {
-                id: s.id,
-                agent: s.agent.to_string(),
-                created_by: s.created_by.to_string(),
-                message_count: s.history.len() as u64,
-                alive_secs: s.uptime_secs,
+                id: c.id,
+                agent: c.agent.to_string(),
+                created_by: c.created_by.to_string(),
+                message_count: c.history.len() as u64,
+                alive_secs: c.uptime_secs,
                 active: false,
-                title: s.title.clone(),
+                title: c.title.clone(),
             });
         }
         Ok(infos)
     }
 
-    async fn kill_session(&self, session: u64) -> Result<bool> {
+    async fn kill_conversation(&self, session: u64) -> Result<bool> {
         let rt = self.runtime.read().await.clone();
-        rt.hook.host.clear_session_state(session).await;
-        Ok(rt.close_session(session).await)
+        rt.hook.host.clear_conversation_state(session).await;
+        Ok(rt.close_conversation(session).await)
     }
 
     fn subscribe_events(&self) -> impl futures_core::Stream<Item = Result<AgentEventMsg>> + Send {
@@ -243,7 +243,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
 
     async fn get_stats(&self) -> Result<DaemonStats> {
         let rt = self.runtime.read().await.clone();
-        let active = rt.session_count().await;
+        let active = rt.conversation_count().await;
         let agents = rt.agents().len() as u32;
         let uptime = self.started_at.elapsed().as_secs();
         let active_model = rt.model.active_model_name().unwrap_or_default();
@@ -258,8 +258,8 @@ impl<H: Host + 'static> Server for Daemon<H> {
     async fn create_cron(&self, req: CreateCronMsg) -> Result<CronInfo> {
         // Validate the target session exists.
         let rt = self.runtime.read().await.clone();
-        if rt.session(req.session).await.is_none() {
-            anyhow::bail!("session {} not found", req.session);
+        if rt.conversation(req.session).await.is_none() {
+            anyhow::bail!("conversation {} not found", req.session);
         }
         let entry = CronEntry {
             id: 0, // assigned by store
@@ -296,7 +296,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
         if rt.hook.host.reply_to_ask(session, content).await? {
             return Ok(());
         }
-        anyhow::bail!("no pending ask_user for session {session}")
+        anyhow::bail!("no pending ask_user for conversation {session}")
     }
 
     async fn list_agents(&self) -> Result<Vec<AgentInfo>> {
@@ -530,9 +530,9 @@ impl<H: Host + 'static> Server for Daemon<H> {
 
     async fn get_conversation_history(&self, file_path: String) -> Result<ConversationHistory> {
         let path = std::path::PathBuf::from(&file_path);
-        anyhow::ensure!(path.exists(), "session file not found: {file_path}");
+        anyhow::ensure!(path.exists(), "conversation file not found: {file_path}");
         let (meta, messages) =
-            tokio::task::spawn_blocking(move || wcore::Session::load_context(&path))
+            tokio::task::spawn_blocking(move || wcore::Conversation::load_context(&path))
                 .await
                 .context("load_context task panicked")??;
         Ok(ConversationHistory {
@@ -559,7 +559,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
 
     async fn delete_conversation(&self, file_path: String) -> Result<()> {
         let path = std::path::Path::new(&file_path);
-        anyhow::ensure!(path.exists(), "session file not found: {file_path}");
+        anyhow::ensure!(path.exists(), "conversation file not found: {file_path}");
         std::fs::remove_file(path).with_context(|| format!("failed to delete {file_path}"))?;
         Ok(())
     }

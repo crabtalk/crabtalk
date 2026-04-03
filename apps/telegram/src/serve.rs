@@ -84,7 +84,7 @@ async fn spawn_telegram(
 /// Per-chat stream state, tracked while a stream is in flight.
 struct ChatStream {
     handle: tokio::task::JoinHandle<StreamResult>,
-    session_id: Option<u64>,
+    conversation_id: Option<u64>,
     reply_tx: mpsc::UnboundedSender<String>,
 }
 
@@ -94,11 +94,11 @@ impl ChatStream {
     }
 }
 
-/// Reap a finished ChatStream, extracting the session_id on success.
+/// Reap a finished ChatStream, extracting the conversation_id on success.
 async fn reap_chat(chat: ChatStream) -> Option<u64> {
     match chat.handle.await {
-        Ok(StreamResult::Ok { session_id }) => Some(session_id),
-        _ => chat.session_id,
+        Ok(StreamResult::Ok { conversation_id }) => Some(conversation_id),
+        _ => chat.conversation_id,
     }
 }
 
@@ -196,10 +196,10 @@ async fn telegram_loop(
                 )
                 .await;
 
-                // Handle session retry on error.
+                // Handle conversation retry on error.
                 match result {
-                    StreamResult::SessionError if session.is_some() => {
-                        tracing::warn!(agent = %&agent, chat_id, "session error, retrying");
+                    StreamResult::ConversationError if session.is_some() => {
+                        tracing::warn!(agent = %&agent, chat_id, "conversation error, retrying");
                         let (_retry_tx, retry_rx) = mpsc::unbounded_channel();
                         tg_stream(
                             &bot,
@@ -224,7 +224,7 @@ async fn telegram_loop(
             chat_id,
             ChatStream {
                 handle,
-                session_id: session,
+                conversation_id: session,
                 reply_tx,
             },
         );
@@ -405,7 +405,7 @@ async fn tg_stream(
             tracing::warn!(agent, "failed to send error to chat: {e}");
         }
         return if session.is_some() {
-            StreamResult::SessionError
+            StreamResult::ConversationError
         } else {
             StreamResult::Failed
         };
@@ -435,7 +435,7 @@ async fn tg_stream(
     }
 
     match acc.session {
-        Some(session_id) => StreamResult::Ok { session_id },
+        Some(conversation_id) => StreamResult::Ok { conversation_id },
         None => StreamResult::Failed,
     }
 }

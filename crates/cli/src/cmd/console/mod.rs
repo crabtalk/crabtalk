@@ -1,4 +1,4 @@
-//! Interactive TUI for managing sessions.
+//! Interactive TUI for managing conversations.
 
 use crate::repl::runner::Runner;
 use crate::tui;
@@ -14,18 +14,18 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Tabs},
 };
-use sessions::{SessionView, render_session_view};
+use conversations::{ConversationView, render_conversation_view};
 use std::collections::VecDeque;
 use tokio::sync::mpsc;
 use wcore::protocol::api::Client;
 use wcore::protocol::message::AgentEventMsg;
 
 mod events;
-mod sessions;
+mod conversations;
 
 use events::render_events;
 
-/// Interactive console for sessions.
+/// Interactive console for conversations.
 #[derive(Args, Debug)]
 pub struct Console;
 
@@ -51,20 +51,20 @@ impl Console {
         let mut terminal = tui::setup()?;
 
         // Fetch initial data from daemon.
-        let daemon_sessions = runner.list_sessions().await.unwrap_or_default();
+        let daemon_conversations = runner.list_active_conversations().await.unwrap_or_default();
         let conversations = runner
             .list_conversations(String::new(), String::new())
             .await
             .unwrap_or_default();
-        let mut session_view = SessionView::default();
-        session_view.refresh_identities(&conversations, &daemon_sessions);
+        let mut conversation_view = ConversationView::default();
+        conversation_view.refresh_identities(&conversations, &daemon_conversations);
 
         let mut state = ConsoleState {
             status: String::from("Ready"),
             runner,
-            tab: Tab::Sessions,
-            session_view,
-            daemon_sessions,
+            tab: Tab::Conversations,
+            conversation_view,
+            daemon_conversations,
             events: VecDeque::new(),
             event_rx,
             event_scroll: 0,
@@ -99,11 +99,11 @@ impl Console {
                 if idle_ticks >= 8 {
                     idle_ticks = 0;
                     let timeout = std::time::Duration::from_millis(500);
-                    if let Ok(Ok(sessions)) =
-                        tokio::time::timeout(timeout, state.runner.list_sessions()).await
+                    if let Ok(Ok(conversations)) =
+                        tokio::time::timeout(timeout, state.runner.list_active_conversations()).await
                     {
-                        state.daemon_sessions = sessions;
-                        state.session_view.merge_daemon_data(&state.daemon_sessions);
+                        state.daemon_conversations = conversations;
+                        state.conversation_view.merge_daemon_data(&state.daemon_conversations);
                     }
                 }
             }
@@ -118,7 +118,7 @@ impl Console {
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
-    Sessions,
+    Conversations,
     Events,
 }
 
@@ -126,8 +126,8 @@ pub(crate) struct ConsoleState {
     pub(crate) status: String,
     pub(crate) runner: Runner,
     tab: Tab,
-    session_view: SessionView,
-    daemon_sessions: Vec<wcore::protocol::message::SessionInfo>,
+    conversation_view: ConversationView,
+    daemon_conversations: Vec<wcore::protocol::message::SessionInfo>,
     events: VecDeque<EventEntry>,
     event_rx: mpsc::UnboundedReceiver<AgentEventMsg>,
     event_scroll: usize,
@@ -148,13 +148,13 @@ async fn handle_key(
         KeyCode::Char('q') => return Ok(Some(None)),
         KeyCode::Tab => {
             state.tab = match state.tab {
-                Tab::Sessions => Tab::Events,
-                Tab::Events => Tab::Sessions,
+                Tab::Conversations => Tab::Events,
+                Tab::Events => Tab::Conversations,
             };
         }
         _ => match state.tab {
-            Tab::Sessions => {
-                if let Some(path) = handle_sessions_key(key.code, state).await {
+            Tab::Conversations => {
+                if let Some(path) = handle_conversations_key(key.code, state).await {
                     return Ok(Some(Some(path)));
                 }
             }
@@ -164,31 +164,31 @@ async fn handle_key(
     Ok(None)
 }
 
-async fn handle_sessions_key(
+async fn handle_conversations_key(
     code: KeyCode,
     state: &mut ConsoleState,
 ) -> Option<std::path::PathBuf> {
     match code {
         KeyCode::Up | KeyCode::Char('k') => {
-            state.session_view.move_up();
+            state.conversation_view.move_up();
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            state.session_view.move_down();
+            state.conversation_view.move_down();
         }
         KeyCode::Enter => {
             // In conversation view: select and return the file path to resume.
-            if let Some(path) = state.session_view.selected_file() {
+            if let Some(path) = state.conversation_view.selected_file() {
                 return Some(path);
             }
             // In identity view: drill down — fetch conversations for the selected identity.
-            if let Some((agent, sender)) = state.session_view.selected_identity() {
+            if let Some((agent, sender)) = state.conversation_view.selected_identity() {
                 let agent = agent.to_string();
                 let sender = sender.to_string();
                 let timeout = std::time::Duration::from_millis(500);
                 if let Ok(Ok(sessions)) =
-                    tokio::time::timeout(timeout, state.runner.list_sessions()).await
+                    tokio::time::timeout(timeout, state.runner.list_active_conversations()).await
                 {
-                    state.daemon_sessions = sessions;
+                    state.daemon_conversations = sessions;
                 }
                 let conversations = tokio::time::timeout(
                     timeout,
@@ -201,20 +201,20 @@ async fn handle_sessions_key(
                 .and_then(|r| r.ok())
                 .unwrap_or_default();
                 state
-                    .session_view
-                    .enter(&conversations, &state.daemon_sessions);
+                    .conversation_view
+                    .enter(&conversations, &state.daemon_conversations);
             }
         }
         KeyCode::Char('d') => {
             // Delete the selected conversation.
-            if let Some(path) = state.session_view.selected_file() {
+            if let Some(path) = state.conversation_view.selected_file() {
                 let _ = state
                     .runner
                     .delete_conversation(path.to_string_lossy().into_owned())
                     .await;
                 state.status = "Deleted".into();
                 // Refresh the conversation list.
-                if let Some((agent, sender)) = state.session_view.current_identity() {
+                if let Some((agent, sender)) = state.conversation_view.current_identity() {
                     let timeout = std::time::Duration::from_millis(500);
                     let conversations = tokio::time::timeout(
                         timeout,
@@ -227,8 +227,8 @@ async fn handle_sessions_key(
                     .and_then(|r| r.ok())
                     .unwrap_or_default();
                     state
-                        .session_view
-                        .enter(&conversations, &state.daemon_sessions);
+                        .conversation_view
+                        .enter(&conversations, &state.daemon_conversations);
                 }
             }
         }
@@ -245,15 +245,15 @@ async fn handle_sessions_key(
             .and_then(|r| r.ok())
             .unwrap_or_default();
             state
-                .session_view
-                .back(&conversations, &state.daemon_sessions);
+                .conversation_view
+                .back(&conversations, &state.daemon_conversations);
         }
         KeyCode::Char('r') => {
             let timeout = std::time::Duration::from_millis(500);
             if let Ok(Ok(sessions)) =
-                tokio::time::timeout(timeout, state.runner.list_sessions()).await
+                tokio::time::timeout(timeout, state.runner.list_active_conversations()).await
             {
-                state.daemon_sessions = sessions;
+                state.daemon_conversations = sessions;
             }
             let conversations = tokio::time::timeout(
                 timeout,
@@ -266,8 +266,8 @@ async fn handle_sessions_key(
             .and_then(|r| r.ok())
             .unwrap_or_default();
             state
-                .session_view
-                .refresh_identities(&conversations, &state.daemon_sessions);
+                .conversation_view
+                .refresh_identities(&conversations, &state.daemon_conversations);
             state.status = String::from("Refreshed");
         }
         _ => {}
@@ -291,7 +291,7 @@ fn handle_events_key(code: KeyCode, state: &mut ConsoleState) {
 
 // ── Render ──────────────────────────────────────────────────────────
 
-const TAB_TITLES: &[&str] = &["Sessions", "Events"];
+const TAB_TITLES: &[&str] = &["Conversations", "Events"];
 
 fn render(frame: &mut Frame, state: &ConsoleState) {
     let chunks = Layout::default()
@@ -304,7 +304,7 @@ fn render(frame: &mut Frame, state: &ConsoleState) {
 
     // Tab bar
     let tab_idx = match state.tab {
-        Tab::Sessions => 0,
+        Tab::Conversations => 0,
         Tab::Events => 1,
     };
     let tabs = Tabs::new(TAB_TITLES.iter().map(|t| Line::from(*t)))
@@ -319,7 +319,7 @@ fn render(frame: &mut Frame, state: &ConsoleState) {
 
     // Content
     match state.tab {
-        Tab::Sessions => render_session_view(frame, &state.session_view, chunks[1]),
+        Tab::Conversations => render_conversation_view(frame, &state.conversation_view, chunks[1]),
         Tab::Events => {
             let events: Vec<&EventEntry> = state.events.iter().collect();
             render_events(frame, &events, state.event_scroll, chunks[1]);
@@ -334,8 +334,8 @@ fn render_help_bar(frame: &mut Frame, state: &ConsoleState, area: Rect) {
     let key_style = Style::default().fg(Color::Cyan);
     let mut spans = vec![Span::styled(" j/k ", key_style), Span::raw("Navigate  ")];
 
-    if state.tab == Tab::Sessions {
-        let in_conversations = matches!(state.session_view, SessionView::Conversations { .. });
+    if state.tab == Tab::Conversations {
+        let in_conversations = matches!(state.conversation_view, ConversationView::Conversations { .. });
         if in_conversations {
             spans.extend([Span::styled("Esc ", key_style), Span::raw("Back  ")]);
         } else {

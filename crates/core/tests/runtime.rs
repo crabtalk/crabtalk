@@ -1,9 +1,9 @@
-//! Tests for Runtime — agent registry, session management, and execution.
+//! Tests for Runtime — agent registry, conversation management, and execution.
 //!
 //! Uses the `()` Hook (no-op) and TestModel.
 //!
-//! Note: session operations write to ~/.crabtalk/sessions/ via the global
-//! SESSIONS_DIR path. This is a known limitation — the LazyLock global
+//! Note: conversation operations write to ~/.crabtalk/sessions/ via the global
+//! CONVERSATIONS_DIR path. This is a known limitation — the LazyLock global
 //! cannot be overridden per-test. The files are tiny JSONL and harmless.
 
 use crabtalk_core::{
@@ -66,88 +66,97 @@ async fn register_and_unregister_tool() {
     assert!(!runtime.tools.remove("bash"));
 }
 
-// --- Session management ---
+// --- Conversation management ---
 
 #[tokio::test]
-async fn create_session_requires_registered_agent() {
+async fn create_conversation_requires_registered_agent() {
     let model = TestModel::with_chunks(vec![]);
     let runtime = Runtime::new(model, (), None).await;
     let err = runtime
-        .create_session("nonexistent", "user")
+        .create_conversation("nonexistent", "user")
         .await
         .unwrap_err();
     assert!(err.to_string().contains("not registered"));
 }
 
 #[tokio::test]
-async fn create_and_close_session() {
+async fn create_and_close_conversation() {
     let model = TestModel::with_chunks(vec![]);
     let mut runtime = Runtime::new(model, (), None).await;
     runtime.add_agent(AgentConfig::new("crab"));
 
-    let id = runtime.create_session("crab", "user").await.unwrap();
-    assert!(runtime.session(id).await.is_some());
+    let id = runtime.create_conversation("crab", "user").await.unwrap();
+    assert!(runtime.conversation(id).await.is_some());
 
-    assert!(runtime.close_session(id).await);
-    assert!(runtime.session(id).await.is_none());
-    assert!(!runtime.close_session(id).await);
+    assert!(runtime.close_conversation(id).await);
+    assert!(runtime.conversation(id).await.is_none());
+    assert!(!runtime.close_conversation(id).await);
 }
 
 #[tokio::test]
-async fn sessions_lists_all() {
+async fn conversations_lists_all() {
     let model = TestModel::with_chunks(vec![]);
     let mut runtime = Runtime::new(model, (), None).await;
     runtime.add_agent(AgentConfig::new("crab"));
 
-    runtime.create_session("crab", "test-a").await.unwrap();
-    runtime.create_session("crab", "test-b").await.unwrap();
+    runtime
+        .create_conversation("crab", "test-a")
+        .await
+        .unwrap();
+    runtime
+        .create_conversation("crab", "test-b")
+        .await
+        .unwrap();
 
-    let sessions = runtime.sessions().await;
-    assert_eq!(sessions.len(), 2);
+    let conversations = runtime.conversations().await;
+    assert_eq!(conversations.len(), 2);
 }
 
 #[tokio::test]
-async fn get_or_create_session_returns_existing() {
+async fn get_or_create_conversation_returns_existing() {
     let model = TestModel::with_chunks(vec![]);
     let mut runtime = Runtime::new(model, (), None).await;
     runtime.add_agent(AgentConfig::new("crab"));
 
     let id1 = runtime
-        .get_or_create_session("crab", "test-same")
+        .get_or_create_conversation("crab", "test-same")
         .await
         .unwrap();
     let id2 = runtime
-        .get_or_create_session("crab", "test-same")
+        .get_or_create_conversation("crab", "test-same")
         .await
         .unwrap();
-    // Should return same in-memory session
+    // Should return same in-memory conversation
     assert_eq!(id1, id2);
 }
 
 #[tokio::test]
-async fn get_or_create_session_rejects_unknown_agent() {
+async fn get_or_create_conversation_rejects_unknown_agent() {
     let model = TestModel::with_chunks(vec![]);
     let runtime = Runtime::new(model, (), None).await;
     let err = runtime
-        .get_or_create_session("ghost", "user")
+        .get_or_create_conversation("ghost", "user")
         .await
         .unwrap_err();
     assert!(err.to_string().contains("not registered"));
 }
 
 #[tokio::test]
-async fn transfer_sessions_moves_all() {
+async fn transfer_conversations_moves_all() {
     let model = TestModel::with_chunks(vec![]);
     let mut runtime1 = Runtime::new(model.clone(), (), None).await;
     runtime1.add_agent(AgentConfig::new("crab"));
-    let id = runtime1.create_session("crab", "test-xfer").await.unwrap();
+    let id = runtime1
+        .create_conversation("crab", "test-xfer")
+        .await
+        .unwrap();
 
     let mut runtime2 = Runtime::new(model, (), None).await;
     runtime2.add_agent(AgentConfig::new("crab"));
-    runtime1.transfer_sessions(&mut runtime2).await;
+    runtime1.transfer_conversations(&mut runtime2).await;
 
-    // Session should exist in runtime2
-    assert!(runtime2.session(id).await.is_some());
+    // Conversation should exist in runtime2
+    assert!(runtime2.conversation(id).await.is_some());
 }
 
 // --- Execution ---
@@ -158,15 +167,18 @@ async fn send_to_returns_response() {
     let mut runtime = Runtime::new(model, (), None).await;
     runtime.add_agent(AgentConfig::new("crab"));
 
-    let session_id = runtime.create_session("crab", "test-send").await.unwrap();
-    let response = runtime.send_to(session_id, "hi", "").await.unwrap();
+    let conversation_id = runtime
+        .create_conversation("crab", "test-send")
+        .await
+        .unwrap();
+    let response = runtime.send_to(conversation_id, "hi", "").await.unwrap();
 
     assert_eq!(response.stop_reason, AgentStopReason::TextResponse);
     assert_eq!(response.final_response.as_deref(), Some("hello back"));
 }
 
 #[tokio::test]
-async fn send_to_nonexistent_session_errors() {
+async fn send_to_nonexistent_conversation_errors() {
     let model = TestModel::with_chunks(vec![]);
     let runtime = Runtime::new(model, (), None).await;
     let err = runtime.send_to(999, "hi", "").await.unwrap_err();
@@ -182,17 +194,23 @@ async fn send_to_appends_to_history() {
     let mut runtime = Runtime::new(model, (), None).await;
     runtime.add_agent(AgentConfig::new("crab"));
 
-    let session_id = runtime
-        .create_session("crab", "test-history")
+    let conversation_id = runtime
+        .create_conversation("crab", "test-history")
         .await
         .unwrap();
-    runtime.send_to(session_id, "hello", "").await.unwrap();
-    runtime.send_to(session_id, "again", "").await.unwrap();
+    runtime
+        .send_to(conversation_id, "hello", "")
+        .await
+        .unwrap();
+    runtime
+        .send_to(conversation_id, "again", "")
+        .await
+        .unwrap();
 
-    let session_mutex = runtime.session(session_id).await.unwrap();
-    let session = session_mutex.lock().await;
+    let conversation_mutex = runtime.conversation(conversation_id).await.unwrap();
+    let conversation = conversation_mutex.lock().await;
     // history: user1 + assistant1 + user2 + assistant2
-    assert_eq!(session.history.len(), 4);
+    assert_eq!(conversation.history.len(), 4);
 }
 
 #[tokio::test]
@@ -201,10 +219,13 @@ async fn stream_to_yields_correct_content() {
     let mut runtime = Runtime::new(model, (), None).await;
     runtime.add_agent(AgentConfig::new("crab"));
 
-    let session_id = runtime.create_session("crab", "test-stream").await.unwrap();
+    let conversation_id = runtime
+        .create_conversation("crab", "test-stream")
+        .await
+        .unwrap();
 
     let mut events = Vec::new();
-    let mut stream = std::pin::pin!(runtime.stream_to(session_id, "hi", ""));
+    let mut stream = std::pin::pin!(runtime.stream_to(conversation_id, "hi", ""));
     while let Some(event) = stream.next().await {
         events.push(event);
     }
@@ -228,13 +249,13 @@ async fn stream_to_yields_correct_content() {
     }
 
     // Verify history was persisted
-    let session_mutex = runtime.session(session_id).await.unwrap();
-    let session = session_mutex.lock().await;
-    assert_eq!(session.history.len(), 2); // user + assistant
+    let conversation_mutex = runtime.conversation(conversation_id).await.unwrap();
+    let conversation = conversation_mutex.lock().await;
+    assert_eq!(conversation.history.len(), 2); // user + assistant
 }
 
 #[tokio::test]
-async fn stream_to_nonexistent_session_yields_error() {
+async fn stream_to_nonexistent_conversation_yields_error() {
     let model = TestModel::with_chunks(vec![]);
     let runtime = Runtime::new(model, (), None).await;
 

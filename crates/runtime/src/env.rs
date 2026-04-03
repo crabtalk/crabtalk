@@ -215,7 +215,7 @@ impl<H: Host> Env<H> {
         args: &str,
         agent: &str,
         sender: &str,
-        session_id: Option<u64>,
+        conversation_id: Option<u64>,
     ) -> String {
         // Dispatch enforcement: reject tools not in the agent's whitelist.
         if let Some(scope) = self.scopes.get(agent)
@@ -230,16 +230,16 @@ impl<H: Host> Env<H> {
             "bash" if sender.contains(':') => {
                 "bash is only available in the command line interface".to_owned()
             }
-            "bash" => self.dispatch_bash(args, session_id).await,
+            "bash" => self.dispatch_bash(args, conversation_id).await,
             "recall" => self.dispatch_recall(args).await,
             "remember" => self.dispatch_remember(args).await,
             "memory" => self.dispatch_memory(args).await,
             "forget" => self.dispatch_forget(args).await,
             "delegate" => self.dispatch_delegate(args, agent).await,
-            "ask_user" => self.host.dispatch_ask_user(args, session_id).await,
+            "ask_user" => self.host.dispatch_ask_user(args, conversation_id).await,
             name => {
                 self.host
-                    .dispatch_custom_tool(name, args, agent, session_id)
+                    .dispatch_custom_tool(name, args, agent, conversation_id)
                     .await
             }
         }
@@ -310,7 +310,7 @@ impl<H: Host + 'static> Hook for Env<H> {
         self.resolve_slash_skill(agent, content)
     }
 
-    fn on_before_run(&self, agent: &str, session_id: u64, history: &[Message]) -> Vec<Message> {
+    fn on_before_run(&self, agent: &str, conversation_id: u64, history: &[Message]) -> Vec<Message> {
         let mut messages = Vec::new();
         let has_members = self
             .scopes
@@ -331,7 +331,7 @@ impl<H: Host + 'static> Hook for Env<H> {
         }
         let cwd = self
             .host
-            .session_cwd(session_id)
+            .conversation_cwd(conversation_id)
             .unwrap_or_else(|| self.cwd.clone());
         let mut cwd_msg = Message::user(format!(
             "<environment>\nworking_directory: {}\n</environment>",
@@ -358,8 +358,8 @@ impl<H: Host + 'static> Hook for Env<H> {
         }
     }
 
-    fn on_event(&self, agent: &str, session_id: u64, event: &AgentEvent) {
-        self.host.on_agent_event(agent, session_id, event);
+    fn on_event(&self, agent: &str, conversation_id: u64, event: &AgentEvent) {
+        self.host.on_agent_event(agent, conversation_id, event);
     }
 }
 

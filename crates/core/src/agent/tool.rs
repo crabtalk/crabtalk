@@ -31,11 +31,11 @@ pub struct ToolRequest {
     /// Set by the daemon when dispatching task-bound tool calls.
     pub task_id: Option<u64>,
     /// Sender identity of the user who triggered this agent run.
-    /// Empty for local/owner sessions.
+    /// Empty for local/owner conversations.
     pub sender: String,
-    /// Session ID of the calling session, if running within a session.
+    /// Conversation ID, if running within a conversation.
     /// Set by the runtime; the agent passes it through as an opaque value.
-    pub session_id: Option<u64>,
+    pub conversation_id: Option<u64>,
 }
 
 /// Schema-only registry of named tools.

@@ -25,8 +25,8 @@ pub type KnownBots = Arc<RwLock<HashSet<String>>>;
 
 /// Result of a streaming request to the daemon.
 pub enum StreamResult {
-    Ok { session_id: u64 },
-    SessionError,
+    Ok { conversation_id: u64 },
+    ConversationError,
     Failed,
 }
 

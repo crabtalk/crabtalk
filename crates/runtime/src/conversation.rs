@@ -1,4 +1,4 @@
-//! Session history persistence — reading JSONL files from `~/.crabtalk/sessions/`.
+//! Conversation history persistence — reading JSONL files from `~/.crabtalk/sessions/`.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -9,19 +9,19 @@ use std::{
 };
 use wcore::model::Message;
 
-/// Session metadata (first line of a JSONL session file).
+/// Conversation metadata (first line of a JSONL conversation file).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionMeta {
+pub struct ConversationMeta {
     pub agent: String,
     pub created_by: String,
     pub created_at: String,
 }
 
-/// List all persisted sessions. Returns `(filename_stem, meta)` pairs.
-pub fn list_sessions(sessions_dir: &Path) -> Result<Vec<(String, SessionMeta)>> {
+/// List all persisted conversations. Returns `(filename_stem, meta)` pairs.
+pub fn list_conversations(conversations_dir: &Path) -> Result<Vec<(String, ConversationMeta)>> {
     let mut results = Vec::new();
 
-    let entries = match fs::read_dir(sessions_dir) {
+    let entries = match fs::read_dir(conversations_dir) {
         Ok(e) => e,
         Err(_) => return Ok(results),
     };
@@ -46,18 +46,19 @@ pub fn list_sessions(sessions_dir: &Path) -> Result<Vec<(String, SessionMeta)>> 
     Ok(results)
 }
 
-/// Load a full session from disk: metadata + all messages.
-pub fn load_session(path: &Path) -> Result<(SessionMeta, Vec<Message>)> {
-    let file =
-        fs::File::open(path).with_context(|| format!("open session file: {}", path.display()))?;
+/// Load a full conversation from disk: metadata + all messages.
+pub fn load_conversation(path: &Path) -> Result<(ConversationMeta, Vec<Message>)> {
+    let file = fs::File::open(path)
+        .with_context(|| format!("open conversation file: {}", path.display()))?;
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
 
     let meta_line = lines
         .next()
-        .ok_or_else(|| anyhow::anyhow!("empty session file"))?
+        .ok_or_else(|| anyhow::anyhow!("empty conversation file"))?
         .context("read meta line")?;
-    let meta: SessionMeta = serde_json::from_str(&meta_line).context("parse session meta")?;
+    let meta: ConversationMeta =
+        serde_json::from_str(&meta_line).context("parse conversation meta")?;
 
     let mut messages = Vec::new();
     for line in lines {
@@ -72,8 +73,8 @@ pub fn load_session(path: &Path) -> Result<(SessionMeta, Vec<Message>)> {
     Ok((meta, messages))
 }
 
-/// Read just the metadata (first line) from a session file.
-fn read_meta(path: &Path) -> Result<SessionMeta> {
+/// Read just the metadata (first line) from a conversation file.
+fn read_meta(path: &Path) -> Result<ConversationMeta> {
     let file = fs::File::open(path)?;
     let mut reader = BufReader::new(file);
     let mut line = String::new();

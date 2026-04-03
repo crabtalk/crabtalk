@@ -67,7 +67,7 @@ async fn spawn_wechat(
 /// Per-chat stream state.
 struct ChatStream {
     handle: tokio::task::JoinHandle<StreamResult>,
-    session_id: Option<u64>,
+    conversation_id: Option<u64>,
     reply_tx: mpsc::UnboundedSender<String>,
 }
 
@@ -79,8 +79,8 @@ impl ChatStream {
 
 async fn reap_chat(chat: ChatStream) -> Option<u64> {
     match chat.handle.await {
-        Ok(StreamResult::Ok { session_id }) => Some(session_id),
-        _ => chat.session_id,
+        Ok(StreamResult::Ok { conversation_id }) => Some(conversation_id),
+        _ => chat.conversation_id,
     }
 }
 
@@ -165,8 +165,8 @@ async fn wechat_loop(
                 .await;
 
                 match result {
-                    StreamResult::SessionError if session.is_some() => {
-                        tracing::warn!(agent = %&agent, chat_id, "session error, retrying");
+                    StreamResult::ConversationError if session.is_some() => {
+                        tracing::warn!(agent = %&agent, chat_id, "conversation error, retrying");
                         let (_retry_tx, retry_rx) = mpsc::unbounded_channel();
                         wx_stream(
                             &http,
@@ -193,7 +193,7 @@ async fn wechat_loop(
             chat_id,
             ChatStream {
                 handle,
-                session_id: session,
+                conversation_id: session,
                 reply_tx,
             },
         );
@@ -299,7 +299,7 @@ async fn wx_stream(
                     .await;
         }
         return if session.is_some() {
-            StreamResult::SessionError
+            StreamResult::ConversationError
         } else {
             StreamResult::Failed
         };
@@ -330,12 +330,12 @@ async fn wx_stream(
     }
 
     match acc.session {
-        Some(session_id) => {
-            tracing::info!(agent, chat_id, session_id, "stream completed");
-            StreamResult::Ok { session_id }
+        Some(conversation_id) => {
+            tracing::info!(agent, chat_id, conversation_id, "stream completed");
+            StreamResult::Ok { conversation_id }
         }
         None => {
-            tracing::warn!(agent, chat_id, "stream completed without session");
+            tracing::warn!(agent, chat_id, "stream completed without conversation");
             StreamResult::Failed
         }
     }

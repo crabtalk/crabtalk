@@ -28,17 +28,17 @@ pub fn tools() -> Vec<Tool> {
 
 impl<H: Host> Env<H> {
     /// Dispatch a `bash` tool call — run a command directly.
-    pub async fn dispatch_bash(&self, args: &str, session_id: Option<u64>) -> String {
+    pub async fn dispatch_bash(&self, args: &str, conversation_id: Option<u64>) -> String {
         let input: Bash = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
-        let session_cwd = if let Some(id) = session_id {
-            self.host.session_cwd(id)
+        let conversation_cwd = if let Some(id) = conversation_id {
+            self.host.conversation_cwd(id)
         } else {
             None
         };
-        let cwd = session_cwd.as_deref().unwrap_or(&self.cwd);
+        let cwd = conversation_cwd.as_deref().unwrap_or(&self.cwd);
 
         let mut cmd = tokio::process::Command::new("bash");
         cmd.args(["-c", &input.command])

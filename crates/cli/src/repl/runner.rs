@@ -179,13 +179,13 @@ impl Runner {
                     }) if matches!(&e.event, Some(stream_event::Event::End(end)) if end.error.is_empty())
                 ))
             })
-            .scan(0u64, |session_id, result| {
+            .scan(0u64, |conversation_id, result| {
                 let chunk = match result {
                     Ok(ServerMessage {
                         msg: Some(server_message::Msg::Stream(e)),
                     }) => match &e.event {
                         Some(stream_event::Event::Start(s)) => {
-                            *session_id = s.session;
+                            *conversation_id = s.session;
                             None
                         }
                         Some(stream_event::Event::Chunk(c)) => {
@@ -210,7 +210,7 @@ impl Runner {
                         }
                         Some(stream_event::Event::AskUser(ask)) => Some(Ok(OutputChunk::AskUser {
                             questions: ask.questions.clone(),
-                            session: *session_id,
+                            session: *conversation_id,
                         })),
                         Some(stream_event::Event::End(end)) if !end.error.is_empty() => {
                             Some(Err(anyhow::anyhow!("{}", end.error)))
@@ -233,8 +233,8 @@ impl Runner {
             .filter_map(std::future::ready)
     }
 
-    /// List active sessions on the daemon.
-    pub async fn list_sessions(&mut self) -> Result<Vec<SessionInfo>> {
+    /// List active conversations on the daemon.
+    pub async fn list_active_conversations(&mut self) -> Result<Vec<SessionInfo>> {
         let msg = ClientMessage {
             msg: Some(client_message::Msg::Sessions(Default::default())),
         };
@@ -251,8 +251,8 @@ impl Runner {
         }
     }
 
-    /// Kill (close) a session by ID. Returns true if it existed.
-    pub async fn kill_session(&mut self, session: u64) -> Result<bool> {
+    /// Kill (close) a conversation by ID. Returns true if it existed.
+    pub async fn kill_conversation(&mut self, session: u64) -> Result<bool> {
         let msg = ClientMessage {
             msg: Some(client_message::Msg::Kill(KillMsg { session })),
         };
