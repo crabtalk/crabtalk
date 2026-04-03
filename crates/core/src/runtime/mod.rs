@@ -590,13 +590,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             if !guest_agent.config.system_prompt.is_empty() {
                 messages.push(Message::system(&guest_agent.config.system_prompt));
             }
-            // Prefix guest-attributed messages for speaker disambiguation.
-            messages.extend(conversation.history.iter().cloned().map(|mut m| {
-                if m.role == crate::model::Role::Assistant && !m.agent.is_empty() {
-                    m.content = format!("[{}]: {}", m.agent, m.content);
-                }
-                m
-            }));
+            messages.extend(conversation.history.iter().map(|m| m.with_agent_prefix()));
 
             let request = crate::model::Request::new(model_name.clone())
                 .with_messages(messages)
@@ -633,22 +627,15 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
                 }
             }
 
-            // Append the guest's response to the conversation history.
+            // Append the guest's response to the conversation history, tagged.
             let reasoning = if reasoning.is_empty() {
                 None
             } else {
                 Some(reasoning)
             };
-            conversation
-                .history
-                .push(Message::assistant(&response_content, reasoning, None));
-
-            // Tag the guest's response with the guest agent name.
-            if let Some(last) = conversation.history.last_mut() {
-                if last.role == crate::model::Role::Assistant {
-                    last.agent = guest.clone();
-                }
-            }
+            let mut response_msg = Message::assistant(&response_content, reasoning, None);
+            response_msg.agent = guest.clone();
+            conversation.history.push(response_msg);
 
             // Persist.
             conversation.uptime_secs += run_start.elapsed().as_secs();

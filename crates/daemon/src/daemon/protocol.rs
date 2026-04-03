@@ -142,7 +142,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
                             .provider_name_for(&resp.model)
                             .unwrap_or_default();
                         yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd {
-                            agent: agent.clone(),
+                            agent: responding_agent.clone(),
                             error,
                             provider,
                             model: resp.model,
@@ -153,7 +153,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
                 }
             }
             yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd {
-                agent: agent.clone(),
+                agent: responding_agent.clone(),
                 error: String::new(),
                 provider: String::new(),
                 model: String::new(),

@@ -72,14 +72,7 @@ impl<M: Model> Agent<M> {
         if !self.config.system_prompt.is_empty() {
             messages.push(Message::system(&self.config.system_prompt));
         }
-        // Prefix assistant messages from guest agents with [agent_name] so the
-        // LLM can distinguish speakers in multi-agent conversations.
-        messages.extend(history.iter().cloned().map(|mut m| {
-            if m.role == Role::Assistant && !m.agent.is_empty() {
-                m.content = format!("[{}]: {}", m.agent, m.content);
-            }
-            m
-        }));
+        messages.extend(history.iter().map(|m| m.with_agent_prefix()));
 
         let mut request = Request::new(model_name)
             .with_messages(messages)
