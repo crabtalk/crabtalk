@@ -10,16 +10,14 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: Linux
     steps:
       - uses: actions/checkout@v4
-
       - uses: peaceiris/actions-mdbook@v2
         with:
           mdbook-version: "latest"
 
       - run: mdbook build docs
-
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
