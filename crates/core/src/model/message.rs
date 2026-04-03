@@ -123,10 +123,7 @@ impl Message {
     pub fn with_agent_tag(&self) -> Self {
         if self.role == Role::Assistant && !self.agent.is_empty() {
             let mut m = self.clone();
-            m.content = format!(
-                "<from agent=\"{}\">\n{}\n</from>",
-                self.agent, self.content
-            );
+            m.content = format!("<from agent=\"{}\">\n{}\n</from>", self.agent, self.content);
             m
         } else {
             self.clone()
