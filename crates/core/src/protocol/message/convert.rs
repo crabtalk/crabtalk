@@ -2,9 +2,9 @@
 
 use crate::config::ApiStandard;
 use crate::protocol::proto::{
-    AgentEventMsg, ClientMessage, ConversationHistory, HubEvent, ProviderKind, ReplyToAsk, SendMsg,
-    SendResponse, ServerMessage, StreamEvent, StreamMsg, client_message, hub_event, server_message,
-    stream_event,
+    AgentEventMsg, ClientMessage, ConversationHistory, PluginEvent, ProviderKind, ReplyToAsk,
+    SendMsg, SendResponse, ServerMessage, StreamEvent, StreamMsg, client_message, plugin_event,
+    server_message, stream_event,
 };
 
 // ── ClientMessage constructors ───────────────────────────────────
@@ -59,10 +59,10 @@ impl From<AgentEventMsg> for ServerMessage {
     }
 }
 
-impl From<HubEvent> for ServerMessage {
-    fn from(e: HubEvent) -> Self {
+impl From<PluginEvent> for ServerMessage {
+    fn from(e: PluginEvent) -> Self {
         Self {
-            msg: Some(server_message::Msg::HubEvent(e)),
+            msg: Some(server_message::Msg::PluginEvent(e)),
         }
     }
 }
@@ -136,12 +136,12 @@ impl From<ProviderKind> for ApiStandard {
     }
 }
 
-impl TryFrom<ServerMessage> for hub_event::Event {
+impl TryFrom<ServerMessage> for plugin_event::Event {
     type Error = anyhow::Error;
     fn try_from(msg: ServerMessage) -> anyhow::Result<Self> {
         match msg.msg {
-            Some(server_message::Msg::HubEvent(e)) => {
-                e.event.ok_or_else(|| anyhow::anyhow!("empty hub event"))
+            Some(server_message::Msg::PluginEvent(e)) => {
+                e.event.ok_or_else(|| anyhow::anyhow!("empty plugin event"))
             }
             _ => Err(error_or_unexpected(msg)),
         }

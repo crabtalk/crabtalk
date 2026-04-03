@@ -32,18 +32,18 @@ message ClientMessage {
     CreateAgentMsg create_agent = 17;
     UpdateAgentMsg update_agent = 18;
     DeleteAgentMsg delete_agent = 19;
-    // Hub / packages
-    InstallPackageMsg install_package = 20;
-    UninstallPackageMsg uninstall_package = 21;
-    ListPackagesMsg list_packages = 22;
+    // Plugins
+    InstallPluginMsg install_plugin = 20;
+    UninstallPluginMsg uninstall_plugin = 21;
+    ListPluginsMsg list_plugins = 22;
     // Skills
     ListSkillsMsg list_skills = 23;
     // Enable/disable
     SetEnabledMsg set_enabled = 35;
     // Models
     ListModelsMsg list_models = 36;
-    // Hub search
-    SearchHubMsg search_hub = 37;
+    // Plugin search
+    SearchPluginsMsg search_plugins = 37;
     // Conversation history
     GetConversationHistoryMsg get_conversation_history = 38;
     // Delete conversation
@@ -141,24 +141,24 @@ message DeleteAgentMsg {
 
 message ListProvidersMsg {}
 
-message InstallPackageMsg {
-  string package = 1;
+message InstallPluginMsg {
+  string plugin = 1;
   string branch = 2;
   string path = 3;
   bool force = 4;
 }
 
-message UninstallPackageMsg {
-  string package = 1;
+message UninstallPluginMsg {
+  string plugin = 1;
 }
 
-message ListPackagesMsg {}
+message ListPluginsMsg {}
 
 message ListSkillsMsg {}
 
 message ListModelsMsg {}
 
-message SearchHubMsg {
+message SearchPluginsMsg {
   string query = 1;
 }
 
@@ -177,7 +177,7 @@ message ConversationHistory {
   string agent = 3;
 }
 
-message HubPackageInfo {
+message PluginInfo {
   string name = 1;
   string description = 2;
   uint32 skill_count = 3;
@@ -186,8 +186,8 @@ message HubPackageInfo {
   string repository = 6;
 }
 
-message HubPackageList {
-  repeated HubPackageInfo packages = 1;
+message PluginSearchList {
+  repeated PluginInfo plugins = 1;
 }
 
 enum ResourceKind {
@@ -200,7 +200,7 @@ enum ResourceKind {
 enum SourceKind {
   SOURCE_KIND_UNKNOWN = 0;
   LOCAL = 1;
-  PACKAGE = 2;
+  PLUGIN = 2;
   EXTERNAL = 3;
 }
 
@@ -272,15 +272,15 @@ message ServerMessage {
     // Agent
     AgentInfo agent_info = 11;
     AgentList agent_list = 12;
-    // Hub / packages
-    HubEvent hub_event = 13;
-    PackageList package_list = 14;
+    // Plugins
+    PluginEvent plugin_event = 13;
+    PluginList plugin_list = 14;
     // Skills
     SkillList skill_list = 15;
     // Models
     ModelList model_list = 22;
-    // Hub search
-    HubPackageList hub_package_list = 23;
+    // Plugin search
+    PluginSearchList plugin_search_list = 23;
     // Conversation history
     ConversationHistory conversation_history = 24;
     // Services
@@ -479,13 +479,8 @@ message ProviderList {
   repeated ProviderInfo providers = 1;
 }
 
-message PackageInfo {
-  string name = 1;
-  string description = 2;
-}
-
-message PackageList {
-  repeated PackageInfo packages = 1;
+message PluginList {
+  repeated PluginInfo plugins = 1;
 }
 
 message ServiceLogOutput {
@@ -584,29 +579,29 @@ message ProviderPresetList {
   repeated ProviderPresetInfo presets = 1;
 }
 
-// ── Hub Events ──────────────────────────────────────────────────
+// ── Plugin Events ───────────────────────────────────────────────
 
-message HubEvent {
+message PluginEvent {
   oneof event {
-    HubStep step = 1;
-    HubWarning warning = 2;
-    HubSetupOutput setup_output = 3;
-    HubDone done = 4;
+    PluginStep step = 1;
+    PluginWarning warning = 2;
+    PluginSetupOutput setup_output = 3;
+    PluginDone done = 4;
   }
 }
 
-message HubStep {
+message PluginStep {
   string message = 1;
 }
 
-message HubWarning {
+message PluginWarning {
   string message = 1;
 }
 
-message HubSetupOutput {
+message PluginSetupOutput {
   string content = 1;
 }
 
-message HubDone {
+message PluginDone {
   string error = 1;
 }
