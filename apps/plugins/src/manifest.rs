@@ -1,4 +1,4 @@
-//! Crabtalk hub manifest.
+//! Crabtalk plugin manifest.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -28,10 +28,10 @@ pub struct Manifest {
 pub struct Package {
     /// Package name.
     pub name: String,
-    /// Package description (for hub display).
+    /// Package description.
     #[serde(default)]
     pub description: String,
-    /// Logo URL (for hub display).
+    /// Logo URL.
     #[serde(default)]
     pub logo: String,
     /// Source repository URL.
@@ -40,7 +40,7 @@ pub struct Package {
     /// Branch to clone (defaults to the repo's default branch).
     #[serde(default)]
     pub branch: Option<String>,
-    /// Searchable keywords (for hub discovery).
+    /// Searchable keywords.
     #[serde(default)]
     pub keywords: Vec<String>,
     /// Setup configuration (run after install).
@@ -48,7 +48,7 @@ pub struct Package {
     pub setup: Option<Setup>,
 }
 
-/// An MCP server resource in a hub manifest.
+/// An MCP server resource in a plugin manifest.
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub struct McpResource {
@@ -120,7 +120,7 @@ pub struct AgentResource {
     pub mcps: Vec<String>,
 }
 
-/// Command service metadata for hub registration.
+/// Command service metadata for plugin registration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandConfig {
     /// Human-readable description.

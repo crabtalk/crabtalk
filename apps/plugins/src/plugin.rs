@@ -1,6 +1,6 @@
-//! Crabtalk hub package install/uninstall operations.
+//! Crabtalk plugin install/uninstall operations.
 //!
-//! Install copies a manifest to `packages/scope/name.toml` and clones the
+//! Install copies a manifest to `plugins/name.toml` and clones the
 //! source repo to `.cache/repos/{slug}`. Skills and agents are discovered
 //! from the cached repo by convention on daemon reload.
 
@@ -9,29 +9,28 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use wcore::paths::CONFIG_DIR;
 
-/// Remote URL of the crabtalk hub repository.
-pub const CRABTALK_HUB: &str = "https://github.com/crabtalk/hub";
+/// Remote URL of the crabtalk plugins registry.
+pub const PLUGINS_REGISTRY: &str = "https://github.com/crabtalk/plugins";
 
-/// Install a hub package.
+/// Install a plugin.
 ///
-/// Syncs the hub repo, copies the manifest to `packages/scope/name.toml`,
+/// Syncs the plugin registry, copies the manifest to `plugins/name.toml`,
 /// and clones the source repo to `.cache/repos/{slug}/`. Runs setup
 /// script if configured.
 pub async fn install(
-    package: &str,
+    plugin: &str,
     branch: Option<&str>,
     path: Option<&Path>,
     force: bool,
     on_step: impl Fn(&str),
     on_output: impl Fn(&str),
 ) -> Result<()> {
-    let (scope, name) = parse_package(package)?;
+    let name = validate_name(plugin)?;
 
     // Check if already installed.
     if !force {
         let manifest_path = CONFIG_DIR
-            .join(wcore::paths::PACKAGES_DIR)
-            .join(scope)
+            .join(wcore::paths::PLUGINS_DIR)
             .join(format!("{name}.toml"));
         if manifest_path.exists() {
             on_step("already installed, use --force to overwrite");
@@ -39,25 +38,25 @@ pub async fn install(
         }
     }
 
-    // Resolve the hub directory — use a local path or sync from remote.
-    let hub_dir = if let Some(p) = path {
-        anyhow::ensure!(p.exists(), "hub path {} does not exist", p.display());
+    // Resolve the registry directory — use a local path or sync from remote.
+    let registry_dir = if let Some(p) = path {
+        anyhow::ensure!(p.exists(), "plugin path {} does not exist", p.display());
         p.to_path_buf()
     } else {
-        on_step("syncing hub…");
-        let dir = CONFIG_DIR.join("hub");
-        git_sync(CRABTALK_HUB, &dir, branch)
+        on_step("syncing plugin registry…");
+        let dir = CONFIG_DIR.join("plugins-registry");
+        git_sync(PLUGINS_REGISTRY, &dir, branch)
             .await
-            .context("failed to sync hub repo")?;
+            .context("failed to sync plugin registry")?;
         dir
     };
 
-    // Read the manifest from the hub directory.
-    let manifest = read_manifest_from(&hub_dir, scope, name)?;
-    let manifest_src = hub_dir.join(scope).join(format!("{name}.toml"));
+    // Read the manifest from the registry directory.
+    let manifest = read_manifest_from(&registry_dir, name)?;
+    let manifest_src = registry_dir.join(format!("{name}.toml"));
 
-    // Clone the source repo if the package has resources that live in
-    // the repo (setup scripts, agents, or skills). Packages that only
+    // Clone the source repo if the plugin has resources that live in
+    // the repo (setup scripts, agents, or skills). Plugins that only
     // declare MCPs or commands don't need the repo — MCPs connect
     // directly and commands are installed via `cargo install`.
     let mcp_only =
@@ -136,14 +135,13 @@ pub async fn install(
         install_commands(&manifest, &on_step).await?;
     }
 
-    // Copy manifest to packages/scope/name.toml — done last so a failed
-    // setup doesn't leave a half-installed package that blocks re-install.
+    // Copy manifest to plugins/name.toml — done last so a failed
+    // setup doesn't leave a half-installed plugin that blocks re-install.
     on_step("installing manifest…");
-    let packages_dir = CONFIG_DIR.join(wcore::paths::PACKAGES_DIR);
-    let scope_dir = packages_dir.join(scope);
-    std::fs::create_dir_all(&scope_dir)
-        .with_context(|| format!("failed to create {}", scope_dir.display()))?;
-    let manifest_dst = scope_dir.join(format!("{name}.toml"));
+    let plugins_dir = CONFIG_DIR.join(wcore::paths::PLUGINS_DIR);
+    std::fs::create_dir_all(&plugins_dir)
+        .with_context(|| format!("failed to create {}", plugins_dir.display()))?;
+    let manifest_dst = plugins_dir.join(format!("{name}.toml"));
     std::fs::copy(&manifest_src, &manifest_dst).with_context(|| {
         format!(
             "failed to copy manifest {} → {}",
@@ -155,15 +153,15 @@ pub async fn install(
     Ok(())
 }
 
-/// Uninstall a hub package.
+/// Uninstall a plugin.
 ///
-/// Deletes the manifest from `packages/scope/name.toml` and optionally
+/// Deletes the manifest from `plugins/name.toml` and optionally
 /// prunes the cached source repo.
-pub async fn uninstall(package: &str, on_step: impl Fn(&str)) -> Result<()> {
-    let (scope, name) = parse_package(package)?;
+pub async fn uninstall(plugin: &str, on_step: impl Fn(&str)) -> Result<()> {
+    let name = validate_name(plugin)?;
 
     // Read manifest before deleting (need repository URL for cache cleanup).
-    let manifest = read_manifest(scope, name).ok();
+    let manifest = read_manifest(name).ok();
 
     // Uninstall command crates (best-effort — don't fail if already removed).
     if let Some(ref manifest) = manifest
@@ -179,28 +177,17 @@ pub async fn uninstall(package: &str, on_step: impl Fn(&str)) -> Result<()> {
         }
     }
 
-    // Delete manifest from packages/.
+    // Delete manifest from plugins/.
     on_step("removing manifest…");
     let manifest_path = CONFIG_DIR
-        .join(wcore::paths::PACKAGES_DIR)
-        .join(scope)
+        .join(wcore::paths::PLUGINS_DIR)
         .join(format!("{name}.toml"));
     if manifest_path.exists() {
         std::fs::remove_file(&manifest_path)
             .with_context(|| format!("failed to remove {}", manifest_path.display()))?;
     }
 
-    // Clean up empty scope directory.
-    let scope_dir = CONFIG_DIR.join(wcore::paths::PACKAGES_DIR).join(scope);
-    if scope_dir.exists()
-        && std::fs::read_dir(&scope_dir)
-            .map(|mut d| d.next().is_none())
-            .unwrap_or(false)
-    {
-        let _ = std::fs::remove_dir(&scope_dir);
-    }
-
-    // Prune cached repo if no other package references it.
+    // Prune cached repo if no other plugin references it.
     if let Some(manifest) = manifest
         && !manifest.package.repository.is_empty()
     {
@@ -268,119 +255,100 @@ pub async fn git_sync(url: &str, dest: &Path, branch: Option<&str>) -> Result<()
     Ok(())
 }
 
-/// Info about a hub package returned by [`search_hub`].
-pub struct HubPackageEntry {
-    /// Package identifier (`scope/name`).
+/// Info about a plugin returned by [`search`].
+pub struct PluginEntry {
+    /// Plugin name.
     pub name: String,
     /// Human-readable description.
     pub description: String,
-    /// Number of skills in the package.
+    /// Number of skills in the plugin.
     pub skill_count: u32,
-    /// Number of MCP servers in the package.
+    /// Number of MCP servers in the plugin.
     pub mcp_count: u32,
-    /// Whether the package is installed locally.
+    /// Whether the plugin is installed locally.
     pub installed: bool,
     /// Source repository URL.
     pub repository: String,
 }
 
-/// Search the hub for packages matching the query.
+/// Search the plugin registry for plugins matching the query.
 ///
-/// Syncs the hub repo, scans all `.toml` manifests, and returns matching
-/// packages. An empty query returns all packages.
-pub async fn search_hub(query: &str) -> Result<Vec<HubPackageEntry>> {
-    let hub_dir = CONFIG_DIR.join("hub");
-    git_sync(CRABTALK_HUB, &hub_dir, None)
+/// Syncs the registry repo, scans all `.toml` manifests, and returns
+/// matching plugins. An empty query returns all plugins.
+pub async fn search(query: &str) -> Result<Vec<PluginEntry>> {
+    let registry_dir = CONFIG_DIR.join("plugins-registry");
+    git_sync(PLUGINS_REGISTRY, &registry_dir, None)
         .await
-        .context("failed to sync hub repo")?;
+        .context("failed to sync plugin registry")?;
 
-    let packages_dir = CONFIG_DIR.join(wcore::paths::PACKAGES_DIR);
+    let plugins_dir = CONFIG_DIR.join(wcore::paths::PLUGINS_DIR);
     let query_lower = query.to_lowercase();
     let mut results = Vec::new();
 
-    // Scan scope directories in the hub.
-    let Ok(scopes) = std::fs::read_dir(&hub_dir) else {
+    // Scan .toml manifests in the registry.
+    let Ok(entries) = std::fs::read_dir(&registry_dir) else {
         return Ok(results);
     };
-    for scope_entry in scopes.flatten() {
-        let scope_path = scope_entry.path();
-        if !scope_path.is_dir() {
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
             continue;
         }
-        let scope = scope_entry.file_name().to_string_lossy().to_string();
-        if scope.starts_with('.') {
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-
-        let Ok(manifests) = std::fs::read_dir(&scope_path) else {
+        let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
-        for manifest_entry in manifests.flatten() {
-            let path = manifest_entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+        let Ok(manifest) = toml::from_str::<manifest::Manifest>(&content) else {
+            continue;
+        };
+
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_string();
+
+        // Filter by query (match name, description, or keywords).
+        if !query_lower.is_empty() {
+            let matches = name.to_lowercase().contains(&query_lower)
+                || manifest
+                    .package
+                    .description
+                    .to_lowercase()
+                    .contains(&query_lower)
+                || manifest
+                    .package
+                    .keywords
+                    .iter()
+                    .any(|k| k.to_lowercase().contains(&query_lower));
+            if !matches {
                 continue;
             }
-            let Ok(content) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let Ok(manifest) = toml::from_str::<manifest::Manifest>(&content) else {
-                continue;
-            };
-
-            let pkg_name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or_default();
-            let full_name = format!("{scope}/{pkg_name}");
-
-            // Filter by query (match name, description, or keywords).
-            if !query_lower.is_empty() {
-                let matches = full_name.to_lowercase().contains(&query_lower)
-                    || manifest
-                        .package
-                        .description
-                        .to_lowercase()
-                        .contains(&query_lower)
-                    || manifest
-                        .package
-                        .keywords
-                        .iter()
-                        .any(|k| k.to_lowercase().contains(&query_lower));
-                if !matches {
-                    continue;
-                }
-            }
-
-            let installed = packages_dir
-                .join(&scope)
-                .join(format!("{pkg_name}.toml"))
-                .exists();
-
-            let mcp_count = manifest.mcps.len() as u32;
-            results.push(HubPackageEntry {
-                name: full_name,
-                description: manifest.package.description,
-                skill_count: 0,
-                mcp_count,
-                installed,
-                repository: manifest.package.repository,
-            });
         }
+
+        let installed = plugins_dir.join(format!("{name}.toml")).exists();
+        let mcp_count = manifest.mcps.len() as u32;
+        results.push(PluginEntry {
+            name,
+            description: manifest.package.description,
+            skill_count: 0,
+            mcp_count,
+            installed,
+            repository: manifest.package.repository,
+        });
     }
 
     results.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(results)
 }
 
-/// Parse a `scope/name` package string into `(scope, name)`.
-pub fn parse_package(package: &str) -> Result<(&str, &str)> {
-    let mut parts = package.splitn(2, '/');
-    let scope = parts.next().filter(|s| !s.is_empty());
-    let name = parts.next().filter(|s| !s.is_empty());
-    match (scope, name) {
-        (Some(s), Some(n)) => Ok((s, n)),
-        _ => anyhow::bail!("package must be in `scope/name` format, got: {package}"),
-    }
+/// Validate a plugin name is non-empty.
+fn validate_name(plugin: &str) -> Result<&str> {
+    let name = plugin.trim();
+    anyhow::ensure!(!name.is_empty(), "plugin name cannot be empty");
+    Ok(name)
 }
 
 /// Install command crates from a manifest via `cargo install`.
@@ -449,14 +417,14 @@ fn which(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Read and deserialize a manifest from the default hub directory.
-pub fn read_manifest(scope: &str, name: &str) -> Result<manifest::Manifest> {
-    read_manifest_from(&CONFIG_DIR.join("hub"), scope, name)
+/// Read and deserialize a manifest from the default plugin registry directory.
+pub fn read_manifest(name: &str) -> Result<manifest::Manifest> {
+    read_manifest_from(&CONFIG_DIR.join("plugins-registry"), name)
 }
 
-/// Read and deserialize a manifest from a given hub directory.
-pub fn read_manifest_from(hub_dir: &Path, scope: &str, name: &str) -> Result<manifest::Manifest> {
-    let path = hub_dir.join(scope).join(format!("{name}.toml"));
+/// Read and deserialize a manifest from a given directory.
+pub fn read_manifest_from(dir: &Path, name: &str) -> Result<manifest::Manifest> {
+    let path = dir.join(format!("{name}.toml"));
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("cannot read manifest at {}", path.display()))?;
     toml::from_str(&content).with_context(|| format!("invalid manifest at {}", path.display()))

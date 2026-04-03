@@ -1,6 +1,6 @@
 [package]
-name = "crabhub"
-description = "Hub package management for Crabtalk"
+name = "crabtalk-plugins"
+description = "Plugin management for Crabtalk"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

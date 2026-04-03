@@ -11,7 +11,7 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-crabhub.workspace = true
+crabtalk-plugins.workspace = true
 crabtalk-command.workspace = true
 model.workspace = true
 runtime.workspace = true

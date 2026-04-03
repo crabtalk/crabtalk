@@ -11,7 +11,7 @@ repository = "https://github.com/crabtalk/crabtalk"
 keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
-crabhub = { path = "apps/hub", package = "crabhub", version = "0.0.18" }
+crabtalk-plugins = { path = "apps/plugins", version = "0.0.18" }
 crabtalk-telegram = { path = "apps/telegram", version = "0.0.18" }
 crabtalk-wechat = { path = "apps/wechat", version = "0.0.18" }
 gateway = { path = "crates/gateway", package = "crabtalk-gateway", version = "0.0.18" }

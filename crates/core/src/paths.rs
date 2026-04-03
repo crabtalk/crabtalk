@@ -30,8 +30,8 @@ pub static LOGS_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("logs"
 pub const CONFIG_FILE: &str = "config.toml";
 /// Local package directory (user's own skills, agents, MCPs).
 pub const LOCAL_DIR: &str = "local";
-/// Hub-installed package manifests directory.
-pub const PACKAGES_DIR: &str = "packages";
+/// Installed plugin manifests directory.
+pub const PLUGINS_DIR: &str = "plugins";
 /// Agents subdirectory (contains *.md files).
 pub const AGENTS_DIR: &str = "local/agents";
 /// Skills subdirectory.

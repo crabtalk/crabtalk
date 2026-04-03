@@ -6,7 +6,7 @@
 
 use crate::{
     AgentConfig, McpServerConfig,
-    paths::{AGENTS_DIR, LOCAL_DIR, PACKAGES_DIR, SKILLS_DIR},
+    paths::{AGENTS_DIR, LOCAL_DIR, PLUGINS_DIR, SKILLS_DIR},
 };
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ use std::{
 // ── Manifest types ──────────────────────────────────────────────────
 
 /// Package manifest format shared by `local/CrabTalk.toml` and
-/// `packages/scope/name.toml`. Same shape as hub manifests.
+/// `plugins/name.toml`. Same shape as plugin manifests.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ManifestConfig {
     /// Package metadata (optional for local manifest).
@@ -97,9 +97,9 @@ pub struct ResolvedManifest {
     pub skill_dirs: Vec<PathBuf>,
     /// Agent directories to scan (local first, then packages).
     pub agent_dirs: Vec<PathBuf>,
-    /// Package identifier → skill directory for resolving qualified skill
-    /// references (e.g. `"crabtalk/gstack"` → repo skill dir).
-    pub package_skill_dirs: BTreeMap<String, PathBuf>,
+    /// Plugin name → skill directory for resolving qualified skill
+    /// references (e.g. `"playwright"` → repo skill dir).
+    pub plugin_skill_dirs: BTreeMap<String, PathBuf>,
     /// Items disabled by the user (from local manifest).
     pub disabled: DisabledItems,
 }
@@ -107,9 +107,9 @@ pub struct ResolvedManifest {
 /// Resolve all manifests into a single merged view.
 ///
 /// Loads `local/CrabTalk.toml` first (highest priority), then scans
-/// `packages/*/*.toml`. For each package with a `repository` field, resolves
+/// `plugins/*.toml`. For each plugin with a `repository` field, resolves
 /// skill and agent directories from `.cache/repos/{slug}/`. Local always wins
-/// on name conflicts; between packages, first alphabetically wins.
+/// on name conflicts; between plugins, first alphabetically wins.
 ///
 /// Returns the resolved manifest and a list of conflict warnings (if any).
 pub fn resolve_manifests(config_dir: &Path) -> (ResolvedManifest, Vec<String>) {
@@ -133,30 +133,16 @@ pub fn resolve_manifests(config_dir: &Path) -> (ResolvedManifest, Vec<String>) {
         merge_manifest(&mut resolved, &manifest, "local", &mut warnings);
     }
 
-    // Scan packages/*/*.toml (sorted for deterministic order).
-    let packages_dir = config_dir.join(PACKAGES_DIR);
-    if let Ok(scopes) = std::fs::read_dir(&packages_dir) {
-        let mut scope_entries: Vec<_> = scopes.flatten().collect();
-        scope_entries.sort_by_key(|e| e.file_name());
+    // Scan plugins/*.toml (sorted for deterministic order).
+    let plugins_dir = config_dir.join(PLUGINS_DIR);
+    if let Ok(entries) = std::fs::read_dir(&plugins_dir) {
+        let mut plugin_entries: Vec<_> = entries.flatten().collect();
+        plugin_entries.sort_by_key(|e| e.file_name());
 
-        for scope_entry in scope_entries {
-            let scope_path = scope_entry.path();
-            if !scope_path.is_dir() {
-                if scope_path.extension().is_some_and(|e| e == "toml") {
-                    load_package_manifest(config_dir, &scope_path, &mut resolved, &mut warnings);
-                }
-                continue;
-            }
-            if let Ok(packages) = std::fs::read_dir(&scope_path) {
-                let mut pkg_entries: Vec<_> = packages.flatten().collect();
-                pkg_entries.sort_by_key(|e| e.file_name());
-
-                for pkg_entry in pkg_entries {
-                    let pkg_path = pkg_entry.path();
-                    if pkg_path.extension().is_some_and(|e| e == "toml") {
-                        load_package_manifest(config_dir, &pkg_path, &mut resolved, &mut warnings);
-                    }
-                }
+        for entry in plugin_entries {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "toml") {
+                load_plugin_manifest(config_dir, &path, &mut resolved, &mut warnings);
             }
         }
     }
@@ -174,15 +160,15 @@ pub fn resolve_manifests(config_dir: &Path) -> (ResolvedManifest, Vec<String>) {
     (resolved, warnings)
 }
 
-/// Load a single package manifest and merge it into the resolved state.
-fn load_package_manifest(
+/// Load a single plugin manifest and merge it into the resolved state.
+fn load_plugin_manifest(
     config_dir: &Path,
     path: &Path,
     resolved: &mut ResolvedManifest,
     warnings: &mut Vec<String>,
 ) {
     let source = path
-        .strip_prefix(config_dir.join(PACKAGES_DIR))
+        .strip_prefix(config_dir.join(PLUGINS_DIR))
         .unwrap_or(path)
         .to_string_lossy()
         .into_owned();
@@ -191,13 +177,13 @@ fn load_package_manifest(
         Ok(Some(m)) => m,
         Ok(None) => return,
         Err(e) => {
-            tracing::warn!("failed to load package manifest {}: {e}", path.display());
+            tracing::warn!("failed to load plugin manifest {}: {e}", path.display());
             return;
         }
     };
 
-    // Derive package identifier by stripping the .toml extension.
-    let package_id = source.strip_suffix(".toml").unwrap_or(&source).to_owned();
+    // Derive plugin identifier by stripping the .toml extension.
+    let plugin_id = source.strip_suffix(".toml").unwrap_or(&source).to_owned();
 
     // Resolve cached repo dirs for skills/agents.
     if let Some(ref pkg) = manifest.package
@@ -209,8 +195,8 @@ fn load_package_manifest(
             // Push repo root — skills are discovered recursively by SKILL.md.
             resolved.skill_dirs.push(repo_dir.clone());
             resolved
-                .package_skill_dirs
-                .insert(package_id, repo_dir.clone());
+                .plugin_skill_dirs
+                .insert(plugin_id, repo_dir.clone());
             let agents = repo_dir.join("agents");
             if agents.exists() && agents.is_dir() {
                 resolved.agent_dirs.push(agents);

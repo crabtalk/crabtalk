@@ -478,18 +478,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabhub"
-version = "0.0.18"
-dependencies = [
- "anyhow",
- "crabtalk-core",
- "serde",
- "tokio",
- "toml",
- "toml_edit",
-]
-
-[[package]]
 name = "crabllm-core"
 version = "0.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -524,10 +512,10 @@ dependencies = [
  "chrono",
  "clap",
  "console",
- "crabhub",
  "crabtalk-command",
  "crabtalk-core",
  "crabtalk-daemon",
+ "crabtalk-plugins",
  "crabtalk-runtime",
  "crabtalk-transport",
  "crossterm 0.28.1",
@@ -619,10 +607,10 @@ dependencies = [
  "anyhow",
  "async-stream",
  "chrono",
- "crabhub",
  "crabtalk-command",
  "crabtalk-core",
  "crabtalk-model",
+ "crabtalk-plugins",
  "crabtalk-runtime",
  "crabtalk-transport",
  "cron",
@@ -692,6 +680,18 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "crabtalk-plugins"
+version = "0.0.18"
+dependencies = [
+ "anyhow",
+ "crabtalk-core",
+ "serde",
+ "tokio",
+ "toml",
+ "toml_edit",
 ]
 
 [[package]]
