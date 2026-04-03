@@ -28,7 +28,7 @@ use tokio::sync::{Mutex, RwLock, mpsc};
 pub mod conversation;
 pub mod hook;
 
-pub use conversation::{ArchiveSegment, Conversation};
+pub use conversation::Conversation;
 
 /// The crabtalk runtime — agent registry, conversation store, and hook orchestration.
 ///

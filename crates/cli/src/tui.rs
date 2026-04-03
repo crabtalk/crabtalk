@@ -34,7 +34,7 @@ pub fn run_app<S>(
 /// Run a TUI application, returning the final state on exit.
 ///
 /// Same as [`run_app`] but hands the state back to the caller so it can
-/// inspect flags set during the session (e.g. `pending_login`).
+/// inspect flags set during the run (e.g. `pending_login`).
 pub fn run_app_with_state<S>(
     init: impl FnOnce() -> Result<S>,
     draw: impl Fn(&mut ratatui::Frame, &S),

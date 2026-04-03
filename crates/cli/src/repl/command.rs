@@ -40,7 +40,7 @@ pub enum SlashResult {
     Exit,
     /// Clear context and start a new conversation.
     Clear,
-    /// Open the session console.
+    /// Open the conversation console.
     Resume,
 }
 
@@ -62,7 +62,7 @@ pub async fn handle_slash(line: &str) -> Result<SlashResult> {
             println!("  /clear   — start a new conversation");
             println!("  /exit    — exit the REPL");
             println!("  /help    — show this help");
-            println!("  /resume  — open session console");
+            println!("  /resume  — open conversation console");
             println!("  /<skill> — run a skill");
         }
         "resume" => return Ok(SlashResult::Resume),

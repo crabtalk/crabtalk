@@ -188,10 +188,10 @@ async fn handle_conversations_key(
                 let agent = agent.to_string();
                 let sender = sender.to_string();
                 let timeout = std::time::Duration::from_millis(500);
-                if let Ok(Ok(sessions)) =
+                if let Ok(Ok(active)) =
                     tokio::time::timeout(timeout, state.runner.list_active_conversations()).await
                 {
-                    state.daemon_conversations = sessions;
+                    state.daemon_conversations = active;
                 }
                 let conversations = tokio::time::timeout(
                     timeout,

@@ -52,7 +52,7 @@ impl ChatRepl {
         })
     }
 
-    /// Resume a specific session file in the interactive REPL.
+    /// Resume a specific conversation file in the interactive REPL.
     pub async fn resume(&mut self, _path: PathBuf) -> Result<()> {
         // Resume is no longer supported in the new protocol — conversations
         // are continuous per (agent, sender). Just start the normal REPL.

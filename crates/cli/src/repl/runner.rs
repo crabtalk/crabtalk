@@ -147,7 +147,7 @@ impl Runner {
 
     /// Stream a response, yielding typed output chunks.
     ///
-    /// If `cwd` is `Some`, the agent session uses that directory for tool
+    /// If `cwd` is `Some`, the agent conversation uses that directory for tool
     /// execution instead of the process's current working directory.
     pub fn stream<'a>(
         &'a mut self,
