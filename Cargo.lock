@@ -505,7 +505,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -537,7 +537,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-bench"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "crabtalk-core",
  "crabtalk-runtime",
@@ -551,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-command"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "axum",
@@ -568,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-command-codegen"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -578,7 +578,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-core"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-daemon"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-gateway"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "crabtalk-core",
@@ -642,7 +642,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-model"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -661,7 +661,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-outlook"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "axum",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-plugins"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "crabtalk-core",
@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-runtime"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "chrono",
@@ -714,7 +714,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-search"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "axum",
@@ -740,7 +740,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-telegram"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "clap",
@@ -758,7 +758,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-transport"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -770,7 +770,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-wechat"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "anyhow",
  "base64",
