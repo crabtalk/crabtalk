@@ -4,6 +4,7 @@
 pub mod config;
 pub mod cron;
 pub mod daemon;
+pub mod event_bus;
 pub mod hook;
 
 pub use config::DaemonConfig;
