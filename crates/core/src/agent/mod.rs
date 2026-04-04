@@ -219,7 +219,8 @@ impl<M: Model> Agent<M> {
                     rx.has_changed().ok()?.then(|| rx.borrow_and_update().clone())?
                 });
                 if let Some(content) = steer_content {
-                    history.push(Message::user(&content));
+                    let sender = last_sender(history);
+                    history.push(Message::user_with_sender(&content, &sender));
                     yield AgentEvent::UserSteered { content };
                 }
 
