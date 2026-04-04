@@ -37,8 +37,8 @@ pub struct AgentConfig {
     /// Maximum iterations before stopping.
     #[serde(default = "default_max_iterations")]
     pub max_iterations: usize,
-    /// Controls which tool the model calls.
-    #[serde(skip)]
+    /// Controls which tool the model calls. Defaults to `Auto`.
+    #[serde(default)]
     pub tool_choice: ToolChoice,
     /// Whether to enable thinking/reasoning mode.
     #[serde(default)]

@@ -184,6 +184,7 @@ async fn wx_stream(
         sender: Some(sender.to_string()),
         cwd: None,
         guest: None,
+        tool_choice: None,
     });
     let mut server_rx = client.send(client_msg).await;
     let mut acc = StreamAccumulator::new();

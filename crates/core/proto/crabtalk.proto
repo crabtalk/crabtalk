@@ -78,6 +78,7 @@ message SendMsg {
   optional string sender = 4;
   optional string cwd = 5;
   optional string guest = 6;
+  optional string tool_choice = 7;
 }
 
 message StreamMsg {
@@ -86,6 +87,7 @@ message StreamMsg {
   optional string sender = 4;
   optional string cwd = 5;
   optional string guest = 6;
+  optional string tool_choice = 7;
 }
 
 message Ping {}

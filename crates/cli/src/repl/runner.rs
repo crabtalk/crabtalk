@@ -170,6 +170,7 @@ impl Runner {
                 sender,
                 cwd,
                 guest: None,
+                tool_choice: None,
             }))
             .take_while(|r| {
                 std::future::ready(!matches!(

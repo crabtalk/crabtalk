@@ -40,7 +40,12 @@ impl<H: Host + 'static> Server for Daemon<H> {
                 .set_conversation_cwd(conversation_id, cwd.clone())
                 .await;
         }
-        let response = rt.send_to(conversation_id, &req.content, sender).await?;
+        let tool_choice = req
+            .tool_choice
+            .map(|s| wcore::model::ToolChoice::from(s.as_str()));
+        let response = rt
+            .send_to(conversation_id, &req.content, sender, tool_choice)
+            .await?;
         let provider = rt
             .model
             .provider_name_for(&response.model)
@@ -64,6 +69,9 @@ impl<H: Host + 'static> Server for Daemon<H> {
         let sender = req.sender.unwrap_or_default();
         let cwd = req.cwd.map(std::path::PathBuf::from);
         let guest = req.guest.unwrap_or_default();
+        let tool_choice = req
+            .tool_choice
+            .map(|s| wcore::model::ToolChoice::from(s.as_str()));
         async_stream::try_stream! {
             let rt: Arc<_> = runtime.read().await.clone();
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
@@ -76,7 +84,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
             yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.clone() })) };
 
             let stream: std::pin::Pin<Box<dyn futures_core::Stream<Item = wcore::AgentEvent> + Send + '_>> = if guest.is_empty() {
-                Box::pin(rt.stream_to(conversation_id, &content, &sender))
+                Box::pin(rt.stream_to(conversation_id, &content, &sender, tool_choice))
             } else {
                 Box::pin(rt.guest_stream_to(conversation_id, &content, &sender, &guest))
             };

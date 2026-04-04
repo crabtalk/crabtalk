@@ -9,7 +9,7 @@
 use crate::{
     Agent, AgentBuilder, AgentConfig, AgentEvent, AgentResponse, AgentStopReason,
     agent::tool::{ToolRegistry, ToolSender},
-    model::{Message, Model},
+    model::{Message, Model, ToolChoice},
     runtime::hook::Hook,
 };
 use anyhow::{Result, bail};
@@ -372,6 +372,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         conversation_id: u64,
         content: &str,
         sender: &str,
+        tool_choice: Option<ToolChoice>,
     ) -> Result<AgentResponse> {
         let conversation_mutex = self
             .conversations
@@ -391,7 +392,9 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let run_start = std::time::Instant::now();
-        let response = agent_ref.run(&mut conversation.history, tx, None).await;
+        let response = agent_ref
+            .run(&mut conversation.history, tx, None, tool_choice)
+            .await;
         conversation.uptime_secs += run_start.elapsed().as_secs();
 
         // Drain events, stash compact summary if one occurred.
@@ -435,6 +438,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         conversation_id: u64,
         content: &str,
         sender: &str,
+        tool_choice: Option<ToolChoice>,
     ) -> impl Stream<Item = AgentEvent> + '_ {
         let content = content.to_owned();
         let sender = sender.to_owned();
@@ -490,7 +494,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             let mut compact_summary: Option<String> = None;
             let mut done_event: Option<AgentEvent> = None;
             {
-                let mut event_stream = std::pin::pin!(agent_ref.run_stream(&mut conversation.history, Some(conversation_id), Some(steer_rx)));
+                let mut event_stream = std::pin::pin!(agent_ref.run_stream(&mut conversation.history, Some(conversation_id), Some(steer_rx), tool_choice));
                 while let Some(event) = event_stream.next().await {
                     if let AgentEvent::Compact { ref summary } = event {
                         compact_summary = Some(summary.clone());

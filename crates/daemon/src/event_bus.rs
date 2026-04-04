@@ -117,6 +117,7 @@ impl EventBus {
             sender: Some(format!("event:{}", sub.source)),
             cwd: None,
             guest: None,
+            tool_choice: None,
         });
         let _ = self.event_tx.send(DaemonEvent::Message {
             msg,

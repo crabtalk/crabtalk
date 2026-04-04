@@ -165,7 +165,10 @@ async fn send_to_returns_response() {
         .create_conversation("crab", "test-send")
         .await
         .unwrap();
-    let response = runtime.send_to(conversation_id, "hi", "").await.unwrap();
+    let response = runtime
+        .send_to(conversation_id, "hi", "", None)
+        .await
+        .unwrap();
 
     assert_eq!(response.stop_reason, AgentStopReason::TextResponse);
     assert_eq!(response.final_response.as_deref(), Some("hello back"));
@@ -175,7 +178,7 @@ async fn send_to_returns_response() {
 async fn send_to_nonexistent_conversation_errors() {
     let model = TestModel::with_chunks(vec![]);
     let runtime = Runtime::new(model, (), None).await;
-    let err = runtime.send_to(999, "hi", "").await.unwrap_err();
+    let err = runtime.send_to(999, "hi", "", None).await.unwrap_err();
     assert!(err.to_string().contains("not found"));
 }
 
@@ -192,8 +195,14 @@ async fn send_to_appends_to_history() {
         .create_conversation("crab", "test-history")
         .await
         .unwrap();
-    runtime.send_to(conversation_id, "hello", "").await.unwrap();
-    runtime.send_to(conversation_id, "again", "").await.unwrap();
+    runtime
+        .send_to(conversation_id, "hello", "", None)
+        .await
+        .unwrap();
+    runtime
+        .send_to(conversation_id, "again", "", None)
+        .await
+        .unwrap();
 
     let conversation_mutex = runtime.conversation(conversation_id).await.unwrap();
     let conversation = conversation_mutex.lock().await;
@@ -213,7 +222,7 @@ async fn stream_to_yields_correct_content() {
         .unwrap();
 
     let mut events = Vec::new();
-    let mut stream = std::pin::pin!(runtime.stream_to(conversation_id, "hi", ""));
+    let mut stream = std::pin::pin!(runtime.stream_to(conversation_id, "hi", "", None));
     while let Some(event) = stream.next().await {
         events.push(event);
     }
@@ -248,7 +257,7 @@ async fn stream_to_nonexistent_conversation_yields_error() {
     let runtime = Runtime::new(model, (), None).await;
 
     let mut events = Vec::new();
-    let mut stream = std::pin::pin!(runtime.stream_to(999, "hi", ""));
+    let mut stream = std::pin::pin!(runtime.stream_to(999, "hi", "", None));
     while let Some(event) = stream.next().await {
         events.push(event);
     }

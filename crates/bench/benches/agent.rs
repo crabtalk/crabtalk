@@ -69,7 +69,7 @@ fn bench_agent_no_tools(c: &mut Criterion) {
             },
             |(agent, mut history)| {
                 rt.block_on(async {
-                    let mut stream = pin!(agent.run_stream(&mut history, None, None));
+                    let mut stream = pin!(agent.run_stream(&mut history, None, None, None));
                     while stream.next().await.is_some() {}
                 });
             },
@@ -105,7 +105,7 @@ fn bench_agent_with_tools(c: &mut Criterion) {
                             let _ = req.reply.send("ok".into());
                         }
                     });
-                    let mut stream = pin!(agent.run_stream(&mut history, None, None));
+                    let mut stream = pin!(agent.run_stream(&mut history, None, None, None));
                     while stream.next().await.is_some() {}
                     handler.abort();
                 });

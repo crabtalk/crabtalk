@@ -244,6 +244,7 @@ async fn run_cron_timer(
             sender: Some(entry.sender.clone()),
             cwd: None,
             guest: None,
+            tool_choice: None,
         });
         let _ = event_tx.send(DaemonEvent::Message {
             msg,

@@ -171,7 +171,7 @@ async fn run_stream_text_response() {
     let mut history = vec![Message::user("hi")];
 
     let mut events: Vec<AgentEvent> = Vec::new();
-    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None));
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
     while let Some(event) = stream.next().await {
         events.push(event);
     }
@@ -215,7 +215,7 @@ async fn run_stream_tool_call_then_text() {
 
     let mut history = vec![Message::user("question")];
     let mut events: Vec<AgentEvent> = Vec::new();
-    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None));
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
     while let Some(event) = stream.next().await {
         events.push(event);
     }
@@ -301,7 +301,7 @@ async fn run_stream_multiple_tool_calls_in_one_step() {
 
     let mut history = vec![Message::user("multi")];
     let mut events: Vec<AgentEvent> = Vec::new();
-    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None));
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
     while let Some(event) = stream.next().await {
         events.push(event);
     }
@@ -348,7 +348,7 @@ async fn run_stream_max_iterations() {
 
     let mut history = vec![Message::user("loop")];
     let mut events: Vec<AgentEvent> = Vec::new();
-    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None));
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
     while let Some(event) = stream.next().await {
         events.push(event);
     }
@@ -375,7 +375,7 @@ async fn run_stream_no_content_no_tools_stops_with_no_action() {
     let mut history = vec![Message::user("hi")];
 
     let mut events: Vec<AgentEvent> = Vec::new();
-    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None));
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
     while let Some(event) = stream.next().await {
         events.push(event);
     }
@@ -394,7 +394,7 @@ async fn run_stream_error_in_stream() {
     let mut history = vec![Message::user("hi")];
 
     let mut events: Vec<AgentEvent> = Vec::new();
-    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None));
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
     while let Some(event) = stream.next().await {
         events.push(event);
     }
@@ -433,7 +433,7 @@ async fn run_stream_thinking_delta() {
     let mut history = vec![Message::user("think")];
 
     let mut events: Vec<AgentEvent> = Vec::new();
-    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None));
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
     while let Some(event) = stream.next().await {
         events.push(event);
     }
@@ -457,7 +457,7 @@ async fn run_forwards_events_through_channel() {
     let mut history = vec![Message::user("hi")];
     let (tx, mut rx) = mpsc::unbounded_channel();
 
-    let response = agent.run(&mut history, tx, None).await;
+    let response = agent.run(&mut history, tx, None, None).await;
     assert_eq!(response.stop_reason, AgentStopReason::TextResponse);
     assert_eq!(response.final_response.as_deref(), Some("done"));
 

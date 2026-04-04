@@ -9,7 +9,7 @@
 
 use crate::model::{
     Choice, CompletionMeta, Delta, Message, MessageBuilder, Model, Request, Response, Role, Tool,
-    Usage,
+    ToolChoice, Usage,
 };
 use anyhow::Result;
 use async_stream::stream;
@@ -65,7 +65,14 @@ impl<M: Model> Agent<M> {
     }
 
     /// Build a request from config state (system prompt + history + tool schemas).
-    fn build_request(&self, history: &[Message]) -> Request {
+    ///
+    /// If `tool_choice_override` is provided, it takes precedence over the
+    /// agent config's `tool_choice`.
+    fn build_request(
+        &self,
+        history: &[Message],
+        tool_choice_override: Option<&ToolChoice>,
+    ) -> Request {
         let model_name = self.model_name();
 
         let mut messages = Vec::with_capacity(1 + history.len());
@@ -74,9 +81,12 @@ impl<M: Model> Agent<M> {
         }
         messages.extend(history.iter().map(|m| m.with_agent_tag()));
 
+        let tool_choice = tool_choice_override
+            .cloned()
+            .unwrap_or_else(|| self.config.tool_choice.clone());
         let mut request = Request::new(model_name)
             .with_messages(messages)
-            .with_tool_choice(self.config.tool_choice.clone())
+            .with_tool_choice(tool_choice)
             .with_think(self.config.thinking);
         if !self.tools.is_empty() {
             request = request.with_tools(self.tools.clone());
@@ -94,7 +104,7 @@ impl<M: Model> Agent<M> {
         history: &mut Vec<Message>,
         conversation_id: Option<u64>,
     ) -> Result<AgentStep> {
-        let request = self.build_request(history);
+        let request = self.build_request(history, None);
         let response = self.model.send(&request).await?;
         let tool_calls = response.tool_calls().unwrap_or_default().to_vec();
 
@@ -177,8 +187,10 @@ impl<M: Model> Agent<M> {
         history: &mut Vec<Message>,
         events: mpsc::UnboundedSender<AgentEvent>,
         conversation_id: Option<u64>,
+        tool_choice: Option<ToolChoice>,
     ) -> AgentResponse {
-        let mut stream = std::pin::pin!(self.run_stream(history, conversation_id, None));
+        let mut stream =
+            std::pin::pin!(self.run_stream(history, conversation_id, None, tool_choice));
         let mut response = None;
         while let Some(event) = stream.next().await {
             if let AgentEvent::Done(ref resp) = event {
@@ -206,6 +218,7 @@ impl<M: Model> Agent<M> {
         history: &'a mut Vec<Message>,
         conversation_id: Option<u64>,
         mut steer_rx: Option<watch::Receiver<Option<String>>>,
+        tool_choice: Option<ToolChoice>,
     ) -> impl Stream<Item = AgentEvent> + 'a {
         stream! {
             let mut steps = Vec::new();
@@ -224,7 +237,7 @@ impl<M: Model> Agent<M> {
                     yield AgentEvent::UserSteered { content };
                 }
 
-                let request = self.build_request(history);
+                let request = self.build_request(history, tool_choice.as_ref());
 
                 // Stream from the model, yielding text deltas as they arrive.
                 let mut builder = MessageBuilder::new(Role::Assistant);
