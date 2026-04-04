@@ -200,9 +200,9 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
     /// model call). Returns an error if no stream is active for the conversation.
     pub async fn steer(&self, conversation_id: u64, content: String) -> Result<()> {
         let senders = self.steering.read().await;
-        let tx = senders
-            .get(&conversation_id)
-            .ok_or_else(|| anyhow::anyhow!("no active stream for conversation {conversation_id}"))?;
+        let tx = senders.get(&conversation_id).ok_or_else(|| {
+            anyhow::anyhow!("no active stream for conversation {conversation_id}")
+        })?;
         tx.send(Some(content))
             .map_err(|_| anyhow::anyhow!("steering channel closed"))?;
         Ok(())
