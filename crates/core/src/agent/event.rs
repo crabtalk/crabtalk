@@ -67,6 +67,19 @@ pub struct AgentResponse {
     pub model: String,
 }
 
+impl AgentResponse {
+    /// Shorthand for a pre-run error (no steps, no model involved).
+    pub fn error(msg: impl Into<String>) -> Self {
+        Self {
+            steps: vec![],
+            final_response: None,
+            iterations: 0,
+            stop_reason: AgentStopReason::Error(msg.into()),
+            model: String::new(),
+        }
+    }
+}
+
 /// Why the agent stopped executing.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentStopReason {

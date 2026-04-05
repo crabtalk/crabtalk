@@ -39,6 +39,8 @@ pub struct Runtime<M: Model, H: Hook> {
     pub model: M,
     pub hook: H,
     agents: BTreeMap<String, Agent<M>>,
+    /// Ephemeral agents created by delegate, invisible to client APIs.
+    ephemeral_agents: RwLock<BTreeMap<String, Agent<M>>>,
     conversations: RwLock<BTreeMap<u64, Arc<Mutex<Conversation>>>>,
     next_conversation_id: AtomicU64,
     pub tools: ToolRegistry,
@@ -60,6 +62,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             model,
             hook,
             agents: BTreeMap::new(),
+            ephemeral_agents: RwLock::new(BTreeMap::new()),
             conversations: RwLock::new(BTreeMap::new()),
             next_conversation_id: AtomicU64::new(1),
             tools,
@@ -75,6 +78,12 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
     /// Calls `hook.on_build_agent(config)` to enrich the config, then builds
     /// the agent with a filtered schema snapshot and the runtime's `tool_tx`.
     pub fn add_agent(&mut self, config: AgentConfig) {
+        let (name, agent) = self.build_agent(config);
+        self.agents.insert(name, agent);
+    }
+
+    /// Build an agent from config. Returns (name, agent).
+    fn build_agent(&self, config: AgentConfig) -> (String, Agent<M>) {
         let config = self.hook.on_build_agent(config);
         let name = config.name.clone();
         let tools = self.tools.filtered_snapshot(&config.tools);
@@ -84,8 +93,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         if let Some(tx) = &self.tool_tx {
             builder = builder.tool_tx(tx.clone());
         }
-        let agent = builder.build();
-        self.agents.insert(name, agent);
+        (name, builder.build())
     }
 
     /// Get a registered agent's config by name (cloned).
@@ -103,6 +111,34 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         self.agents.get(name)
     }
 
+    // --- Ephemeral agents ---
+
+    /// Register an ephemeral agent (delegate-created, invisible to clients).
+    pub async fn add_ephemeral(&self, config: AgentConfig) {
+        let (name, agent) = self.build_agent(config);
+        self.ephemeral_agents.write().await.insert(name, agent);
+    }
+
+    /// Remove an ephemeral agent by name.
+    pub async fn remove_ephemeral(&self, name: &str) {
+        self.ephemeral_agents.write().await.remove(name);
+    }
+
+    /// Resolve an agent by name: persistent first, then ephemeral. Returns a
+    /// clone so no lock is held during the (potentially long) agent run.
+    async fn resolve_agent(&self, name: &str) -> Option<Agent<M>> {
+        if let Some(a) = self.agents.get(name) {
+            return Some(a.clone());
+        }
+        self.ephemeral_agents.read().await.get(name).cloned()
+    }
+
+    /// Check if an agent exists in either the persistent or ephemeral store.
+    async fn has_agent(&self, name: &str) -> bool {
+        self.agents.contains_key(name)
+            || self.ephemeral_agents.read().await.contains_key(name)
+    }
+
     // --- Conversation management ---
 
     /// Get or create a conversation for the given (agent, created_by) identity.
@@ -111,7 +147,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
     /// 2. Check disk for a persisted conversation file -> load context, return ID.
     /// 3. Neither -> create a new conversation with a fresh file.
     pub async fn get_or_create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
-        if !self.agents.contains_key(agent) {
+        if !self.has_agent(agent).await {
             bail!("agent '{agent}' not registered");
         }
 
@@ -156,7 +192,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
     /// message is persisted via [`Conversation::ensure_file`], avoiding ghost
     /// conversation files from connections that drop before any exchange.
     pub async fn create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
-        if !self.agents.contains_key(agent) {
+        if !self.has_agent(agent).await {
             bail!("agent '{agent}' not registered");
         }
         let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
@@ -171,7 +207,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
     /// Load a specific conversation from a file path. Returns the conversation ID.
     pub async fn load_specific_conversation(&self, file_path: &std::path::Path) -> Result<u64> {
         let (meta, messages) = Conversation::load_context(file_path)?;
-        if !self.agents.contains_key(&meta.agent) {
+        if !self.has_agent(&meta.agent).await {
             bail!("agent '{}' not registered", meta.agent);
         }
         let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
@@ -253,7 +289,11 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             }
             (conversation.agent.clone(), conversation.history.clone())
         };
-        self.agents.get(&agent_name)?.compact(&history).await
+        if let Some(a) = self.agents.get(&agent_name) {
+            return a.compact(&history).await;
+        }
+        let a = self.ephemeral_agents.read().await.get(&agent_name).cloned()?;
+        a.compact(&history).await
     }
 
     /// Move all conversations from this runtime into `dest`.
@@ -385,14 +425,16 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         let mut conversation = conversation_mutex.lock().await;
         let pre_run_len = conversation.history.len();
         let agent_name = self.prepare_history(&mut conversation, content, sender);
-        let agent_ref = self
-            .agents
-            .get(&conversation.agent)
-            .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", conversation.agent))?;
+        let agent = self
+            .resolve_agent(&conversation.agent)
+            .await
+            .ok_or_else(|| {
+                anyhow::anyhow!("agent '{}' not registered", conversation.agent)
+            })?;
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let run_start = std::time::Instant::now();
-        let response = agent_ref
+        let response = agent
             .run(&mut conversation.history, tx, None, tool_choice)
             .await;
         conversation.uptime_secs += run_start.elapsed().as_secs();
@@ -443,49 +485,27 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         let content = content.to_owned();
         let sender = sender.to_owned();
         stream! {
-            let conversation_mutex = match self
+            let Some(conversation_mutex) = self
                 .conversations
                 .read()
                 .await
                 .get(&conversation_id)
                 .cloned()
-            {
-                Some(m) => m,
-                None => {
-                    let resp = AgentResponse {
-                        final_response: None,
-                        iterations: 0,
-                        stop_reason: AgentStopReason::Error(
-                            format!("conversation {conversation_id} not found"),
-                        ),
-                        steps: vec![],
-                        // No model involved in pre-run errors.
-                        model: String::new(),
-                    };
-                    yield AgentEvent::Done(resp);
-                    return;
-                }
+            else {
+                yield AgentEvent::Done(AgentResponse::error(
+                    format!("conversation {conversation_id} not found"),
+                ));
+                return;
             };
 
             let mut conversation = conversation_mutex.lock().await;
             let pre_run_len = conversation.history.len();
             let agent_name = self.prepare_history(&mut conversation, &content, &sender);
-            let agent_ref = match self.agents.get(&conversation.agent) {
-                Some(a) => a,
-                None => {
-                    let resp = AgentResponse {
-                        final_response: None,
-                        iterations: 0,
-                        stop_reason: AgentStopReason::Error(
-                            format!("agent '{}' not registered", conversation.agent),
-                        ),
-                        steps: vec![],
-                        // No model involved in pre-run errors.
-                        model: String::new(),
-                    };
-                    yield AgentEvent::Done(resp);
-                    return;
-                }
+            let Some(agent) = self.resolve_agent(&conversation.agent).await else {
+                yield AgentEvent::Done(AgentResponse::error(
+                    format!("agent '{}' not registered", conversation.agent),
+                ));
+                return;
             };
 
             let run_start = std::time::Instant::now();
@@ -494,7 +514,7 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
             let mut compact_summary: Option<String> = None;
             let mut done_event: Option<AgentEvent> = None;
             {
-                let mut event_stream = std::pin::pin!(agent_ref.run_stream(&mut conversation.history, Some(conversation_id), Some(steer_rx), tool_choice));
+                let mut event_stream = std::pin::pin!(agent.run_stream(&mut conversation.history, Some(conversation_id), Some(steer_rx), tool_choice));
                 while let Some(event) = event_stream.next().await {
                     if let AgentEvent::Compact { ref summary } = event {
                         compact_summary = Some(summary.clone());
@@ -553,42 +573,24 @@ impl<M: Model + Send + Sync + Clone + 'static, H: Hook + 'static> Runtime<M, H> 
         let guest = guest.to_owned();
         stream! {
             // Validate guest agent exists.
-            let guest_agent = match self.agents.get(&guest) {
-                Some(a) => a,
-                None => {
-                    yield AgentEvent::Done(AgentResponse {
-                        final_response: None,
-                        iterations: 0,
-                        stop_reason: AgentStopReason::Error(
-                            format!("guest agent '{guest}' not registered"),
-                        ),
-                        steps: vec![],
-                        model: String::new(),
-                    });
-                    return;
-                }
+            let Some(guest_agent) = self.resolve_agent(&guest).await else {
+                yield AgentEvent::Done(AgentResponse::error(
+                    format!("guest agent '{guest}' not registered"),
+                ));
+                return;
             };
 
-            let conversation_mutex = match self
+            let Some(conversation_mutex) = self
                 .conversations
                 .read()
                 .await
                 .get(&conversation_id)
                 .cloned()
-            {
-                Some(m) => m,
-                None => {
-                    yield AgentEvent::Done(AgentResponse {
-                        final_response: None,
-                        iterations: 0,
-                        stop_reason: AgentStopReason::Error(
-                            format!("conversation {conversation_id} not found"),
-                        ),
-                        steps: vec![],
-                        model: String::new(),
-                    });
-                    return;
-                }
+            else {
+                yield AgentEvent::Done(AgentResponse::error(
+                    format!("conversation {conversation_id} not found"),
+                ));
+                return;
             };
 
             let mut conversation = conversation_mutex.lock().await;

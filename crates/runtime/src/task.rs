@@ -21,10 +21,15 @@ pub struct Delegate {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct DelegateTask {
-    /// Target agent name.
+    /// Target agent name. Auto-generated if empty and system_prompt is set.
+    #[serde(default)]
     pub agent: String,
     /// Message/instruction for the target agent.
     pub message: String,
+    /// System prompt for an ephemeral agent. When set, creates a temporary
+    /// agent with this prompt instead of targeting a pre-registered agent.
+    #[serde(default)]
+    pub system_prompt: Option<String>,
     /// Working directory for this task. Defaults to the parent's CWD.
     #[serde(default)]
     pub cwd: Option<String>,

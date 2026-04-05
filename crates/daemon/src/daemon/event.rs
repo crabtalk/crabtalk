@@ -10,9 +10,9 @@
 use crate::daemon::Daemon;
 use futures_util::{StreamExt, pin_mut};
 use runtime::host::Host;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use wcore::{
-    ToolRequest,
+    AgentConfig, ToolRequest,
     protocol::{
         api::Server,
         message::{ClientMessage, ServerMessage},
@@ -38,6 +38,13 @@ pub enum DaemonEvent {
         /// JSON payload delivered as message content to target agents.
         payload: String,
     },
+    /// Register an ephemeral agent for delegate dispatch.
+    AddEphemeral {
+        config: AgentConfig,
+        reply: oneshot::Sender<()>,
+    },
+    /// Remove an ephemeral agent after delegate completion.
+    RemoveEphemeral { name: String },
     /// Graceful shutdown request.
     Shutdown,
 }
@@ -59,6 +66,15 @@ impl<H: Host + 'static> Daemon<H> {
                 DaemonEvent::ToolCall(req) => self.handle_tool_call(req),
                 DaemonEvent::PublishEvent { source, payload } => {
                     self.events.lock().await.publish(&source, &payload);
+                }
+                DaemonEvent::AddEphemeral { config, reply } => {
+                    let rt = self.runtime.read().await.clone();
+                    rt.add_ephemeral(config).await;
+                    let _ = reply.send(());
+                }
+                DaemonEvent::RemoveEphemeral { name } => {
+                    let rt = self.runtime.read().await.clone();
+                    rt.remove_ephemeral(&name).await;
                 }
                 DaemonEvent::Shutdown => {
                     tracing::info!("event loop shutting down");

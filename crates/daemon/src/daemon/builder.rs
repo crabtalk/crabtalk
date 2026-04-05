@@ -211,15 +211,6 @@ fn load_agents<H: Host + 'static>(
     crab_config.system_prompt = SYSTEM_AGENT.to_owned();
     runtime.add_agent(crab_config.clone());
 
-    // Built-in worker agent — ephemeral delegate target, no pre-configuration needed.
-    let mut worker_config = AgentConfig::new("worker");
-    worker_config.system_prompt =
-        "You are a worker agent. Complete the task described in the user message. \
-         Be concise and focused."
-            .to_owned();
-    worker_config.thinking = crab_config.thinking;
-    runtime.add_agent(worker_config);
-
     // Sub-agents from manifests.
     for (name, agent_config) in &manifest.agents {
         if name == wcore::paths::DEFAULT_AGENT {

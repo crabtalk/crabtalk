@@ -76,27 +76,61 @@ impl Host for DaemonHost {
             Err(e) => return format!("invalid arguments: {e}"),
         };
 
+        // Register ephemeral agents and resolve agent names.
+        let mut ephemeral_names = Vec::new();
         let mut tasks = Vec::with_capacity(input.tasks.len());
         for task in input.tasks {
+            let agent_name = if let Some(prompt) = task.system_prompt {
+                let name = if task.agent.is_empty() {
+                    ephemeral_agent_name()
+                } else {
+                    task.agent
+                };
+                let mut config = wcore::AgentConfig::new(&name);
+                config.system_prompt = prompt;
+                let (tx, rx) = oneshot::channel();
+                let _ = self.event_tx.send(DaemonEvent::AddEphemeral {
+                    config,
+                    reply: tx,
+                });
+                let _ = rx.await;
+                ephemeral_names.push(name.clone());
+                name
+            } else {
+                task.agent
+            };
+
             let sender = delegate_sender();
             let handle = spawn_agent_task(
-                task.agent.clone(),
+                agent_name.clone(),
                 task.message,
                 task.cwd,
                 sender.clone(),
                 self.event_tx.clone(),
             );
-            tasks.push((task.agent, sender, handle));
+            tasks.push((agent_name, sender, handle));
         }
 
         if input.background {
-            let results: Vec<_> = tasks
-                .into_iter()
-                .map(|(agent, sender, _handle)| {
-                    serde_json::json!({ "agent": agent, "task_id": sender })
-                })
-                .collect();
-            return serde_json::to_string(&results)
+            let mut json_results = Vec::with_capacity(tasks.len());
+            let mut handles = Vec::with_capacity(tasks.len());
+            for (agent, sender, handle) in tasks {
+                json_results.push(serde_json::json!({ "agent": agent, "task_id": sender }));
+                handles.push(handle);
+            }
+            // Spawn cleanup that waits for all delegates to finish.
+            if !ephemeral_names.is_empty() {
+                let event_tx = self.event_tx.clone();
+                tokio::spawn(async move {
+                    for h in handles {
+                        let _ = h.await;
+                    }
+                    for name in ephemeral_names {
+                        let _ = event_tx.send(DaemonEvent::RemoveEphemeral { name });
+                    }
+                });
+            }
+            return serde_json::to_string(&json_results)
                 .unwrap_or_else(|e| format!("serialization error: {e}"));
         }
 
@@ -111,6 +145,13 @@ impl Host for DaemonHost {
                 "result": result,
                 "error": error,
             }));
+        }
+
+        // Clean up ephemeral agents after foreground tasks complete.
+        for name in ephemeral_names {
+            let _ = self
+                .event_tx
+                .send(DaemonEvent::RemoveEphemeral { name });
         }
 
         serde_json::to_string(&results).unwrap_or_else(|e| format!("serialization error: {e}"))
@@ -239,6 +280,13 @@ fn delegate_sender() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("delegate:{id}")
+}
+
+/// Generate a unique ephemeral agent name.
+fn ephemeral_agent_name() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("_ephemeral:{id}")
 }
 
 /// Spawn an agent task via the event channel and collect its response.

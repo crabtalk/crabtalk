@@ -55,6 +55,17 @@ pub struct Agent<M: Model> {
     tool_tx: Option<ToolSender>,
 }
 
+impl<M: Model + Clone> Clone for Agent<M> {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            model: self.model.clone(),
+            tools: self.tools.clone(),
+            tool_tx: self.tool_tx.clone(),
+        }
+    }
+}
+
 impl<M: Model> Agent<M> {
     /// Resolve the model name: explicit config override, or the active model.
     fn model_name(&self) -> String {
