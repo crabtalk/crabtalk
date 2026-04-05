@@ -44,6 +44,9 @@ pub struct DisabledItems {
     pub mcps: Vec<String>,
     #[serde(default)]
     pub skills: Vec<String>,
+    /// External skill sources to skip entirely (e.g. `"claude"` skips `~/.claude/skills/`).
+    #[serde(default)]
+    pub external: Vec<String>,
 }
 
 /// Package metadata in a manifest.
@@ -240,6 +243,31 @@ fn merge_manifest(
             resolved.agents.insert(name.clone(), agent.clone());
         }
     }
+}
+
+/// Derive the external source name from a skill directory path.
+///
+/// For `~/.claude/skills` the source name is `"claude"` (the parent
+/// directory name with the leading `.` stripped). Returns `None` for
+/// paths that don't match the `~/.<name>/skills` pattern.
+pub fn external_source_name(path: &Path) -> Option<&str> {
+    path.components()
+        .rev()
+        .nth(1)
+        .and_then(|c| c.as_os_str().to_str())
+        .and_then(|s| s.strip_prefix('.'))
+}
+
+/// Remove external skill directories whose source name appears in `disabled`.
+pub fn filter_disabled_external(skill_dirs: &mut Vec<PathBuf>, disabled: &[String]) {
+    if disabled.is_empty() {
+        return;
+    }
+    skill_dirs.retain(|dir| {
+        external_source_name(dir)
+            .map(|name| !disabled.iter().any(|d| d == name))
+            .unwrap_or(true)
+    });
 }
 
 // ── Skill conflict detection ────────────────────────────────────────

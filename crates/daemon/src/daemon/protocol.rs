@@ -426,8 +426,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
                 .join(wcore::paths::AGENTS_DIR)
                 .join(format!("{name}.md"));
             if prompt_file.exists() {
-                std::fs::remove_file(&prompt_file)
-                    .context("failed to remove agent prompt file")?;
+                std::fs::remove_file(&prompt_file).context("failed to remove agent prompt file")?;
             }
             self.reload().await?;
         }
@@ -917,13 +916,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
             } else if let Some(pkg_id) = dir_to_pkg.get(dir) {
                 (pkg_id.clone(), SourceKind::Plugin)
             } else {
-                let name = dir
-                    .components()
-                    .rev()
-                    .nth(1)
-                    .and_then(|c| c.as_os_str().to_str())
-                    .and_then(|s| s.strip_prefix('.'))
-                    .unwrap_or("external");
+                let name = wcore::external_source_name(dir).unwrap_or("external");
                 (name.to_string(), SourceKind::External)
             };
 
@@ -931,12 +924,14 @@ impl<H: Host + 'static> Server for Daemon<H> {
                 if !seen.insert(name.clone()) {
                     continue;
                 }
-                let enabled = !manifest.disabled.skills.contains(&name);
+                let enabled = !manifest.disabled.skills.contains(&name)
+                    && (source_kind != SourceKind::External
+                        || !manifest.disabled.external.contains(&source));
                 skills.push(SkillInfo {
                     name,
                     enabled,
                     source: source.clone(),
-                    source_kind: source_kind.into(),
+                    source_kind: source_kind as i32,
                 });
             }
         }
@@ -1001,6 +996,7 @@ impl<H: Host + 'static> Server for Daemon<H> {
             ResourceKind::Provider => "providers",
             ResourceKind::Mcp => "mcps",
             ResourceKind::Skill => "skills",
+            ResourceKind::ExternalSource => "external",
             ResourceKind::Unknown => anyhow::bail!("unknown resource kind"),
         };
         if disabled.get(key).is_none() {
@@ -1182,6 +1178,7 @@ impl<H: Host + 'static> Daemon<H> {
         let config = self.load_config()?;
         let (mut manifest, warnings) = wcore::resolve_manifests(&self.config_dir);
         manifest.disabled = config.disabled;
+        wcore::filter_disabled_external(&mut manifest.skill_dirs, &manifest.disabled.external);
         Ok((manifest, warnings))
     }
 

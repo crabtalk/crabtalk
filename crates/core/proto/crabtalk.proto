@@ -238,6 +238,7 @@ enum ResourceKind {
   PROVIDER = 1;
   MCP = 2;
   SKILL = 3;
+  EXTERNAL_SOURCE = 4;
 }
 
 enum SourceKind {

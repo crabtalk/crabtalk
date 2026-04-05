@@ -18,8 +18,8 @@ pub use agent::{
 };
 pub use config::{
     ApiStandard, ManifestConfig, McpServerConfig, PackageMeta, ProviderDef, ResolvedManifest,
-    Setup, check_skill_conflicts, load_agents_dir, load_agents_dirs, repo_slug, resolve_manifests,
-    scan_skill_names,
+    Setup, check_skill_conflicts, external_source_name, filter_disabled_external, load_agents_dir,
+    load_agents_dirs, repo_slug, resolve_manifests, scan_skill_names,
 };
 pub use runtime::{
     Conversation, Runtime, conversation::find_latest_conversation, conversation::sender_slug,

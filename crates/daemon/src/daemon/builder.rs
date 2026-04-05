@@ -107,6 +107,7 @@ impl<H: Host + 'static> Daemon<H> {
     ) -> Result<Runtime<ProviderRegistry, Env<H>>> {
         let (mut manifest, _warnings) = resolve_manifests(config_dir);
         manifest.disabled = config.disabled.clone();
+        wcore::filter_disabled_external(&mut manifest.skill_dirs, &manifest.disabled.external);
         let manager = build_providers(config, &manifest.disabled)?;
         let hook = build_env(config, config_dir, &manifest, host).await?;
         let tool_tx = build_tool_sender(event_tx);
