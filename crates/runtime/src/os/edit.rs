@@ -21,8 +21,7 @@ pub struct Edit {
 }
 
 impl ToolDescription for Edit {
-    const DESCRIPTION: &'static str =
-        "Replace an exact string in a file. Fails if the string is not found or appears more than once.";
+    const DESCRIPTION: &'static str = "Replace an exact string in a file. Fails if the string is not found or appears more than once.";
 }
 
 pub fn tools() -> Vec<Tool> {
@@ -30,11 +29,7 @@ pub fn tools() -> Vec<Tool> {
 }
 
 impl<H: Host> Env<H> {
-    pub async fn dispatch_edit(
-        &self,
-        args: &str,
-        conversation_id: Option<u64>,
-    ) -> String {
+    pub async fn dispatch_edit(&self, args: &str, conversation_id: Option<u64>) -> String {
         let input: Edit = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),

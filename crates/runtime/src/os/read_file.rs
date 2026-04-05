@@ -37,11 +37,7 @@ pub fn tools() -> Vec<Tool> {
 }
 
 impl<H: Host> Env<H> {
-    pub async fn dispatch_read_file(
-        &self,
-        args: &str,
-        conversation_id: Option<u64>,
-    ) -> String {
+    pub async fn dispatch_read_file(&self, args: &str, conversation_id: Option<u64>) -> String {
         let input: ReadFile = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
