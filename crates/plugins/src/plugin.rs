@@ -44,7 +44,7 @@ pub async fn install(
         p.to_path_buf()
     } else {
         on_step("syncing plugin registry…");
-        let dir = CONFIG_DIR.join("plugins-registry");
+        let dir = CONFIG_DIR.join("registry");
         git_sync(PLUGINS_REGISTRY, &dir, branch)
             .await
             .context("failed to sync plugin registry")?;
@@ -276,7 +276,7 @@ pub struct PluginEntry {
 /// Syncs the registry repo, scans all `.toml` manifests, and returns
 /// matching plugins. An empty query returns all plugins.
 pub async fn search(query: &str) -> Result<Vec<PluginEntry>> {
-    let registry_dir = CONFIG_DIR.join("plugins-registry");
+    let registry_dir = CONFIG_DIR.join("registry");
     git_sync(PLUGINS_REGISTRY, &registry_dir, None)
         .await
         .context("failed to sync plugin registry")?;
@@ -419,7 +419,7 @@ fn which(name: &str) -> Option<PathBuf> {
 
 /// Read and deserialize a manifest from the default plugin registry directory.
 pub fn read_manifest(name: &str) -> Result<manifest::Manifest> {
-    read_manifest_from(&CONFIG_DIR.join("plugins-registry"), name)
+    read_manifest_from(&CONFIG_DIR.join("registry"), name)
 }
 
 /// Read and deserialize a manifest from a given directory.

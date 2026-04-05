@@ -45,7 +45,7 @@ pub fn scaffold_config_dir(config_dir: &Path) -> Result<()> {
 /// `local/CrabTalk.toml`.
 ///
 /// Phase 4: Renames `packages/` → `plugins/` (flattening scope dirs),
-/// renames `hub/` → `plugins-registry/`.
+/// renames `hub/` → `registry/`.
 ///
 /// Each step is a no-op if already migrated. Errors are logged, not fatal.
 fn migrate_layout(config_dir: &Path) {
@@ -127,14 +127,14 @@ fn migrate_layout(config_dir: &Path) {
         tracing::info!("migrated packages/ → plugins/");
     }
 
-    // Phase 4: rename hub/ → plugins-registry/
+    // Phase 4: rename hub/ → registry/
     let old_hub = config_dir.join("hub");
-    let new_registry = config_dir.join("plugins-registry");
+    let new_registry = config_dir.join("registry");
     if old_hub.exists() && old_hub.is_dir() && !new_registry.exists() {
         if let Err(e) = std::fs::rename(&old_hub, &new_registry) {
-            tracing::warn!("failed to rename hub/ → plugins-registry/: {e}");
+            tracing::warn!("failed to rename hub/ → registry/: {e}");
         } else {
-            tracing::info!("migrated hub/ → plugins-registry/");
+            tracing::info!("migrated hub/ → registry/");
         }
     }
 }
