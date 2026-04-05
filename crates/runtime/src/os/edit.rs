@@ -8,7 +8,7 @@ use wcore::{
     model::Tool,
 };
 
-use crate::os::read_file::MAX_FILE_SIZE;
+use crate::os::read::MAX_FILE_SIZE;
 
 #[derive(Deserialize, JsonSchema)]
 pub struct Edit {

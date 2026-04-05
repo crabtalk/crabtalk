@@ -43,7 +43,7 @@ This is an inclusive whitelist, not a denylist.
 When an agent has any scoping (non-empty skills, mcps, or members), the runtime
 computes a tool whitelist during `on_build_agent`:
 
-1. Start with `BASE_TOOLS`: `bash`, `ask_user`, `read_file`, `edit` — always
+1. Start with `BASE_TOOLS`: `bash`, `ask_user`, `read`, `edit` — always
    available.
 2. If memory is enabled: add `recall`, `remember`, `memory`, `forget`.
 3. If skills list is non-empty: add `skill` tool.
@@ -87,7 +87,7 @@ layer rejects it.
 
 Not all base tools are available to all senders. `bash` is blocked for
 non-CLI senders (gateway agents from Telegram, WeChat, etc.) because it
-grants arbitrary shell access. `read_file` and `edit` have no sender
+grants arbitrary shell access. `read` and `edit` have no sender
 restriction — they are read-only or scoped mutations that are safe for
 gateway agents. See [#67](https://github.com/crabtalk/crabtalk/issues/67).
 

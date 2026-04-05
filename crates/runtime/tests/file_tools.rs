@@ -1,4 +1,4 @@
-//! Tests for read_file and edit tools.
+//! Tests for read and edit tools.
 
 use crabtalk_runtime::{Env, NoHost, SkillHandler, mcp::McpHandler};
 
@@ -8,17 +8,17 @@ async fn test_env(cwd: std::path::PathBuf) -> Env<NoHost> {
     Env::new(skills, mcp, cwd, None, NoHost)
 }
 
-// --- read_file ---
+// --- read ---
 
 #[tokio::test]
-async fn read_file_basic() {
+async fn read_basic() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("hello.txt");
     std::fs::write(&file, "line one\nline two\nline three\n").unwrap();
 
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = format!(r#"{{"path":"{}"}}"#, file.display());
-    let result = hook.dispatch_read_file(&args, None).await;
+    let result = hook.dispatch_read(&args, None).await;
 
     assert!(result.contains("1\tline one"));
     assert!(result.contains("2\tline two"));
@@ -27,7 +27,7 @@ async fn read_file_basic() {
 }
 
 #[tokio::test]
-async fn read_file_offset_limit() {
+async fn read_offset_limit() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("lines.txt");
     let content: String = (1..=100).map(|i| format!("line {i}\n")).collect();
@@ -35,7 +35,7 @@ async fn read_file_offset_limit() {
 
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = format!(r#"{{"path":"{}","offset":10,"limit":5}}"#, file.display());
-    let result = hook.dispatch_read_file(&args, None).await;
+    let result = hook.dispatch_read(&args, None).await;
 
     assert!(result.contains("10\tline 10"));
     assert!(result.contains("14\tline 14"));
@@ -45,42 +45,42 @@ async fn read_file_offset_limit() {
 }
 
 #[tokio::test]
-async fn read_file_missing() {
+async fn read_missing() {
     let dir = tempfile::tempdir().unwrap();
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = r#"{"path":"/nonexistent/file.txt"}"#;
-    let result = hook.dispatch_read_file(args, None).await;
+    let result = hook.dispatch_read(args, None).await;
 
     assert!(result.contains("error reading"));
 }
 
 #[tokio::test]
-async fn read_file_offset_past_end() {
+async fn read_offset_past_end() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("short.txt");
     std::fs::write(&file, "one\ntwo\n").unwrap();
 
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = format!(r#"{{"path":"{}","offset":999}}"#, file.display());
-    let result = hook.dispatch_read_file(&args, None).await;
+    let result = hook.dispatch_read(&args, None).await;
 
     assert!(result.contains("past end of file"));
 }
 
 #[tokio::test]
-async fn read_file_relative_path() {
+async fn read_relative_path() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("rel.txt"), "content\n").unwrap();
 
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = r#"{"path":"rel.txt"}"#;
-    let result = hook.dispatch_read_file(args, None).await;
+    let result = hook.dispatch_read(args, None).await;
 
     assert!(result.contains("1\tcontent"));
 }
 
 #[tokio::test]
-async fn read_file_large_file_rejected() {
+async fn read_large_file_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("big.bin");
     // Create a file that exceeds MAX_FILE_SIZE by writing sparse content.
@@ -89,7 +89,7 @@ async fn read_file_large_file_rejected() {
 
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = format!(r#"{{"path":"{}"}}"#, file.display());
-    let result = hook.dispatch_read_file(&args, None).await;
+    let result = hook.dispatch_read(&args, None).await;
 
     assert!(result.contains("file is too large"));
 }
@@ -198,10 +198,10 @@ async fn file_tools_no_sender_restriction() {
     let config = wcore::AgentConfig::new("agent");
     hook.register_scope("agent".to_owned(), &config);
 
-    // read_file works for gateway senders.
+    // read works for gateway senders.
     let args = format!(r#"{{"path":"{}"}}"#, file.display());
     let result = hook
-        .dispatch_tool("read_file", &args, "agent", "gateway:telegram", None)
+        .dispatch_tool("read", &args, "agent", "gateway:telegram", None)
         .await;
     assert!(result.contains("1\ttest content"));
 

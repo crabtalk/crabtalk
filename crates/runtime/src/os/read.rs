@@ -1,4 +1,4 @@
-//! read_file tool — paginated file reading with line numbers.
+//! read tool — paginated file reading with line numbers.
 
 use crate::{Env, host::Host};
 use schemars::JsonSchema;
@@ -16,7 +16,7 @@ const DEFAULT_LIMIT: usize = 2000;
 pub const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024;
 
 #[derive(Deserialize, JsonSchema)]
-pub struct ReadFile {
+pub struct Read {
     /// Absolute or relative file path to read.
     pub path: String,
     /// Line number to start reading from (1-based). Defaults to 1.
@@ -27,18 +27,18 @@ pub struct ReadFile {
     pub limit: Option<usize>,
 }
 
-impl ToolDescription for ReadFile {
+impl ToolDescription for Read {
     const DESCRIPTION: &'static str =
         "Read a file with line numbers. Supports offset/limit for pagination.";
 }
 
 pub fn tools() -> Vec<Tool> {
-    vec![ReadFile::as_tool()]
+    vec![Read::as_tool()]
 }
 
 impl<H: Host> Env<H> {
-    pub async fn dispatch_read_file(&self, args: &str, conversation_id: Option<u64>) -> String {
-        let input: ReadFile = match serde_json::from_str(args) {
+    pub async fn dispatch_read(&self, args: &str, conversation_id: Option<u64>) -> String {
+        let input: Read = match serde_json::from_str(args) {
             Ok(v) => v,
             Err(e) => return format!("invalid arguments: {e}"),
         };
