@@ -43,7 +43,8 @@ This is an inclusive whitelist, not a denylist.
 When an agent has any scoping (non-empty skills, mcps, or members), the runtime
 computes a tool whitelist during `on_build_agent`:
 
-1. Start with `BASE_TOOLS`: `bash`, `ask_user` — always available.
+1. Start with `BASE_TOOLS`: `bash`, `ask_user`, `read_file`, `edit` — always
+   available.
 2. If memory is enabled: add `recall`, `remember`, `memory`, `forget`.
 3. If skills list is non-empty: add `skill` tool.
 4. If mcps list is non-empty: add `mcp` tool.
@@ -81,6 +82,24 @@ Scoping is enforced at four dispatch points:
 Enforcement happens at runtime, not just at prompt time. Even if the LLM
 ignores the `<scope>` block and tries to call a restricted tool, the dispatch
 layer rejects it.
+
+### Sender restrictions
+
+Not all base tools are available to all senders. `bash` is blocked for
+non-CLI senders (gateway agents from Telegram, WeChat, etc.) because it
+grants arbitrary shell access. `read_file` and `edit` have no sender
+restriction — they are read-only or scoped mutations that are safe for
+gateway agents. See [#67](https://github.com/crabtalk/crabtalk/issues/67).
+
+### Delegate CWD isolation
+
+When delegating parallel tasks, the orchestrating agent can assign each
+sub-agent a separate working directory via the `cwd` field on `DelegateTask`.
+Tools resolve relative paths against the conversation CWD, so isolated CWDs
+prevent concurrent sub-agents from trampling each other's files. The `edit`
+tool's unique-match requirement provides a second layer: if another agent
+changed the file between read and edit, `old_string` won't match and the
+edit fails — optimistic concurrency without locks.
 
 ### Default agent
 
