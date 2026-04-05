@@ -169,11 +169,13 @@ message GetAgentMsg {
 message CreateAgentMsg {
   string name = 1;
   string config = 2;
+  string prompt = 3;
 }
 
 message UpdateAgentMsg {
   string name = 1;
   string config = 2;
+  string prompt = 3;
 }
 
 message DeleteAgentMsg {

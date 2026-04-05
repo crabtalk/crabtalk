@@ -160,11 +160,12 @@ pub trait Client: Send {
         }
     }
 
-    /// Create an agent from JSON config.
+    /// Create an agent from JSON config and system prompt.
     fn create_agent(
         &mut self,
         name: String,
         config: String,
+        prompt: String,
     ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send {
         async move {
             match self
@@ -172,6 +173,7 @@ pub trait Client: Send {
                     msg: Some(client_message::Msg::CreateAgent(CreateAgentMsg {
                         name,
                         config,
+                        prompt,
                     })),
                 })
                 .await?
@@ -189,11 +191,12 @@ pub trait Client: Send {
         }
     }
 
-    /// Update an agent from JSON config.
+    /// Update an agent from JSON config and optional system prompt.
     fn update_agent(
         &mut self,
         name: String,
         config: String,
+        prompt: String,
     ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send {
         async move {
             match self
@@ -201,6 +204,7 @@ pub trait Client: Send {
                     msg: Some(client_message::Msg::UpdateAgent(UpdateAgentMsg {
                         name,
                         config,
+                        prompt,
                     })),
                 })
                 .await?

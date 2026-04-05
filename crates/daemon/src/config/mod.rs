@@ -33,10 +33,6 @@ pub struct DaemonConfig {
     /// System configuration (tasks + memory).
     #[serde(default)]
     pub system: SystemConfig,
-    /// **Deprecated**: Agent configs migrated to `local/CrabTalk.toml`.
-    /// Kept for backwards compatibility during migration.
-    #[serde(default)]
-    pub agents: BTreeMap<String, AgentConfig>,
     /// Environment variables passed to all MCP server processes at spawn time.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
@@ -56,9 +52,6 @@ impl DaemonConfig {
         });
         if !config.mcps.is_empty() {
             tracing::warn!("[mcps] in config.toml is deprecated — move to local/CrabTalk.toml");
-        }
-        if !config.agents.is_empty() {
-            tracing::warn!("[agents] in config.toml is deprecated — move to local/CrabTalk.toml");
         }
         validate_providers(&config.provider)?;
         Ok(config)

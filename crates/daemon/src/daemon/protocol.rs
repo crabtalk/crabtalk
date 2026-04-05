@@ -378,13 +378,23 @@ impl<H: Host + 'static> Server for Daemon<H> {
     }
 
     async fn create_agent(&self, req: CreateAgentMsg) -> Result<AgentInfo> {
+        validate_agent_name(&req.name)?;
         self.write_agent_to_manifest(&req.name, &req.config, true)?;
+        self.write_agent_prompt(&req.name, &req.prompt)?;
         self.reload().await?;
         self.get_agent(req.name).await
     }
 
     async fn update_agent(&self, req: UpdateAgentMsg) -> Result<AgentInfo> {
-        self.write_agent_to_manifest(&req.name, &req.config, false)?;
+        validate_agent_name(&req.name)?;
+        if req.name == wcore::paths::DEFAULT_AGENT {
+            self.write_system_crab_config(&req.config)?;
+        } else {
+            self.write_agent_to_manifest(&req.name, &req.config, false)?;
+        }
+        if !req.prompt.is_empty() {
+            self.write_agent_prompt(&req.name, &req.prompt)?;
+        }
         self.reload().await?;
         self.get_agent(req.name).await
     }
@@ -1183,8 +1193,7 @@ impl<H: Host + 'static> Daemon<H> {
     /// Write an agent config into the local manifest `[agents.<name>]`.
     ///
     /// If `expect_new` is true, fails when the agent already exists in the
-    /// manifest. If false, fails when it does not exist. The check and write
-    /// happen in the same synchronous block with no yield points.
+    /// manifest. If false, upserts (creates or overwrites).
     fn write_agent_to_manifest(
         &self,
         name: &str,
@@ -1220,12 +1229,8 @@ impl<H: Host + 'static> Daemon<H> {
             .as_table_mut()
             .context("[agents] is not a table")?;
 
-        let exists = agents.contains_key(name);
-        if expect_new && exists {
+        if expect_new && agents.contains_key(name) {
             anyhow::bail!("agent '{name}' already exists in local manifest");
-        }
-        if !expect_new && !exists {
-            anyhow::bail!("agent '{name}' not found in local manifest");
         }
 
         // Insert the agent as a sub-table.
@@ -1241,6 +1246,64 @@ impl<H: Host + 'static> Daemon<H> {
             .context("failed to write local manifest")?;
         Ok(())
     }
+
+    /// Write an agent's system prompt to `local/agents/{name}.md`.
+    fn write_agent_prompt(&self, name: &str, prompt: &str) -> Result<()> {
+        let agents_dir = self.config_dir.join(wcore::paths::AGENTS_DIR);
+        std::fs::create_dir_all(&agents_dir).context("failed to create agents directory")?;
+        std::fs::write(agents_dir.join(format!("{name}.md")), prompt)
+            .context("failed to write agent prompt file")?;
+        Ok(())
+    }
+
+    /// Write config into `[system.crab]` in `config.toml`.
+    fn write_system_crab_config(&self, config_json: &str) -> Result<()> {
+        use toml_edit::DocumentMut;
+
+        let config: wcore::AgentConfig =
+            serde_json::from_str(config_json).context("invalid AgentConfig JSON")?;
+        let toml_value = toml::to_string(&config).context("failed to serialize agent to TOML")?;
+        let agent_doc: DocumentMut = toml_value.parse().context("failed to parse agent TOML")?;
+
+        let config_path = self.config_dir.join(wcore::paths::CONFIG_FILE);
+        let mut doc: DocumentMut = if config_path.exists() {
+            std::fs::read_to_string(&config_path)
+                .context("failed to read config.toml")?
+                .parse()
+                .context("failed to parse config.toml")?
+        } else {
+            DocumentMut::default()
+        };
+
+        // Ensure [system] table exists.
+        if doc.get("system").is_none() {
+            doc.insert("system", toml_edit::Item::Table(toml_edit::Table::new()));
+        }
+        let system = doc["system"]
+            .as_table_mut()
+            .context("[system] is not a table")?;
+
+        // Build and insert [system.crab] sub-table.
+        let mut crab_table = toml_edit::Table::new();
+        for (key, value) in agent_doc.as_table().iter() {
+            crab_table.insert(key, value.clone());
+        }
+        system.insert("crab", toml_edit::Item::Table(crab_table));
+
+        std::fs::write(&config_path, doc.to_string())
+            .context("failed to write config.toml")?;
+        Ok(())
+    }
+}
+
+/// Reject agent names that could escape the agents directory.
+fn validate_agent_name(name: &str) -> Result<()> {
+    anyhow::ensure!(!name.is_empty(), "agent name cannot be empty");
+    anyhow::ensure!(
+        !name.contains('/') && !name.contains('\\') && !name.contains(".."),
+        "agent name '{name}' contains invalid characters"
+    );
+    Ok(())
 }
 
 fn plugin_step(message: &str) -> PluginEvent {

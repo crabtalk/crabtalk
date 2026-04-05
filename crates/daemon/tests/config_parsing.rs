@@ -7,7 +7,6 @@ fn empty_config() {
     let config = DaemonConfig::from_toml("").unwrap();
     assert!(config.provider.is_empty());
     assert!(config.mcps.is_empty());
-    assert!(config.agents.is_empty());
     assert!(config.env.is_empty());
 }
 
@@ -79,12 +78,11 @@ command = "my-mcp-server"
 }
 
 #[test]
-fn deprecated_agents_still_parsed() {
+fn unknown_agents_section_ignored() {
     let toml = r#"
 [agents.helper]
 description = "A helper agent"
 "#;
-    let config = DaemonConfig::from_toml(toml).unwrap();
-    let agent = &config.agents["helper"];
-    assert_eq!(agent.description, "A helper agent");
+    // [agents] is no longer a known field — TOML parser ignores it.
+    DaemonConfig::from_toml(toml).unwrap();
 }
