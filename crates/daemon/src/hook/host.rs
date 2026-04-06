@@ -163,14 +163,18 @@ impl Host for DaemonHost {
 
     fn on_agent_event(&self, agent: &str, conversation_id: u64, event: &AgentEvent) {
         let (kind, content) = match event {
+            AgentEvent::TextStart => (AgentEventKind::TextStart, String::new()),
             AgentEvent::TextDelta(text) => {
                 tracing::trace!(%agent, text_len = text.len(), "agent text delta");
                 (AgentEventKind::TextDelta, text.clone())
             }
+            AgentEvent::TextEnd => (AgentEventKind::TextEnd, String::new()),
+            AgentEvent::ThinkingStart => (AgentEventKind::ThinkingStart, String::new()),
             AgentEvent::ThinkingDelta(text) => {
                 tracing::trace!(%agent, text_len = text.len(), "agent thinking delta");
                 (AgentEventKind::ThinkingDelta, text.clone())
             }
+            AgentEvent::ThinkingEnd => (AgentEventKind::ThinkingEnd, String::new()),
             AgentEvent::ToolCallsBegin(_) => return,
             AgentEvent::ToolCallsStart(calls) => {
                 tracing::debug!(%agent, count = calls.len(), "agent tool calls");

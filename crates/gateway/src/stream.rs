@@ -71,6 +71,12 @@ impl StreamAccumulator {
                 self.pending_questions = Some(ask.questions.clone());
             }
             Some(stream_event::Event::UserSteered(_)) => {}
+            Some(
+                stream_event::Event::TextStart(_)
+                | stream_event::Event::TextEnd(_)
+                | stream_event::Event::ThinkingStart(_)
+                | stream_event::Event::ThinkingEnd(_),
+            ) => {}
             None => {}
         }
     }

@@ -19,8 +19,9 @@ use wcore::protocol::{
         ProtoProviderKind, ProviderInfo, ProviderPresetInfo, PublishEventMsg, ResourceKind,
         SendMsg, SendResponse, SkillInfo, SourceKind, SteerSessionMsg, StreamChunk, StreamEnd,
         StreamEvent, StreamMsg, StreamStart, StreamThinking, SubscribeEventMsg, SubscriptionInfo,
-        SubscriptionList, TokenUsage, ToolCallInfo, ToolResultEvent, ToolStartEvent,
-        ToolsCompleteEvent, UpdateAgentMsg, UserSteeredEvent, plugin_event, stream_event,
+        SubscriptionList, TextEndEvent, TextStartEvent, ThinkingEndEvent, ThinkingStartEvent,
+        TokenUsage, ToolCallInfo, ToolResultEvent, ToolStartEvent, ToolsCompleteEvent,
+        UpdateAgentMsg, UserSteeredEvent, plugin_event, stream_event,
     },
 };
 use wcore::{AgentEvent, AgentStep};
@@ -91,11 +92,23 @@ impl<H: Host + 'static> Server for Daemon<H> {
             pin_mut!(stream);
             while let Some(event) = stream.next().await {
                 match event {
+                    AgentEvent::TextStart => {
+                        yield StreamEvent { event: Some(stream_event::Event::TextStart(TextStartEvent { agent: responding_agent.clone() })) };
+                    }
                     AgentEvent::TextDelta(text) => {
                         yield StreamEvent { event: Some(stream_event::Event::Chunk(StreamChunk { content: text })) };
                     }
+                    AgentEvent::TextEnd => {
+                        yield StreamEvent { event: Some(stream_event::Event::TextEnd(TextEndEvent { agent: responding_agent.clone() })) };
+                    }
+                    AgentEvent::ThinkingStart => {
+                        yield StreamEvent { event: Some(stream_event::Event::ThinkingStart(ThinkingStartEvent { agent: responding_agent.clone() })) };
+                    }
                     AgentEvent::ThinkingDelta(text) => {
                         yield StreamEvent { event: Some(stream_event::Event::Thinking(StreamThinking { content: text })) };
+                    }
+                    AgentEvent::ThinkingEnd => {
+                        yield StreamEvent { event: Some(stream_event::Event::ThinkingEnd(ThinkingEndEvent { agent: responding_agent.clone() })) };
                     }
                     AgentEvent::ToolCallsBegin(calls) => {
                         yield StreamEvent { event: Some(stream_event::Event::ToolStart(ToolStartEvent {

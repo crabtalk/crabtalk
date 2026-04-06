@@ -258,15 +258,40 @@ impl<M: Model> Agent<M> {
                 let mut stream_error = None;
                 let mut tool_begin_emitted = false;
 
+                // Tracks the currently open text/thinking segment so we can
+                // bracket deltas with explicit Start/End events. Only one
+                // segment is open at a time — type transitions emit the
+                // closing event for the previous segment first.
+                #[derive(PartialEq)]
+                enum OpenSegment { None, Text, Thinking }
+                let mut open = OpenSegment::None;
+
                 {
                     let mut chunk_stream = std::pin::pin!(self.model.stream(request));
                     while let Some(result) = chunk_stream.next().await {
                         match result {
                             Ok(chunk) => {
+                                // Process text portion. Match existing behavior:
+                                // emit TextDelta even when the slice is empty.
                                 if let Some(text) = chunk.content() {
+                                    if open != OpenSegment::Text {
+                                        if open == OpenSegment::Thinking {
+                                            yield AgentEvent::ThinkingEnd;
+                                        }
+                                        yield AgentEvent::TextStart;
+                                        open = OpenSegment::Text;
+                                    }
                                     yield AgentEvent::TextDelta(text.to_owned());
                                 }
+                                // Process reasoning portion. Same atomic-flip logic.
                                 if let Some(reason) = chunk.reasoning_content() {
+                                    if open != OpenSegment::Thinking {
+                                        if open == OpenSegment::Text {
+                                            yield AgentEvent::TextEnd;
+                                        }
+                                        yield AgentEvent::ThinkingStart;
+                                        open = OpenSegment::Thinking;
+                                    }
                                     yield AgentEvent::ThinkingDelta(reason.to_owned());
                                 }
                                 if let Some(r) = chunk.reason() {
@@ -294,6 +319,12 @@ impl<M: Model> Agent<M> {
                                 break;
                             }
                         }
+                    }
+                    // Close whatever segment is still open at end of stream.
+                    match open {
+                        OpenSegment::Text => yield AgentEvent::TextEnd,
+                        OpenSegment::Thinking => yield AgentEvent::ThinkingEnd,
+                        OpenSegment::None => {}
                     }
                 }
                 if let Some(e) = stream_error {
@@ -382,9 +413,11 @@ impl<M: Model> Agent<M> {
                     if let Some(summary) = self.compact(history).await {
                         yield AgentEvent::Compact { summary: summary.clone() };
                         *history = vec![Message::user(&summary)];
+                        yield AgentEvent::TextStart;
                         yield AgentEvent::TextDelta(
                             "\n[context compacted]\n".to_owned(),
                         );
+                        yield AgentEvent::TextEnd;
                     }
                     continue;
                 }

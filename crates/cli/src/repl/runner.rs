@@ -218,6 +218,16 @@ impl Runner {
                             Some(Err(anyhow::anyhow!("{}", end.error)))
                         }
                         Some(stream_event::Event::End(_)) => None,
+                        // Phase 2 will use these boundary events to drive
+                        // explicit segment open/close in the REPL renderer.
+                        // For now they're inert — text/thinking still come
+                        // through Chunk/Thinking deltas.
+                        Some(
+                            stream_event::Event::TextStart(_)
+                            | stream_event::Event::TextEnd(_)
+                            | stream_event::Event::ThinkingStart(_)
+                            | stream_event::Event::ThinkingEnd(_),
+                        ) => None,
                         None => None,
                     },
                     Ok(ServerMessage {

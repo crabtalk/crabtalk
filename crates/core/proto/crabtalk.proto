@@ -390,7 +390,24 @@ message StreamEvent {
     StreamEnd end = 7;
     AskUserEvent ask_user = 8;
     UserSteeredEvent user_steered = 9;
+    TextStartEvent text_start = 10;
+    TextEndEvent text_end = 11;
+    ThinkingStartEvent thinking_start = 12;
+    ThinkingEndEvent thinking_end = 13;
   }
+}
+
+message TextStartEvent {
+  string agent = 1;
+}
+message TextEndEvent {
+  string agent = 1;
+}
+message ThinkingStartEvent {
+  string agent = 1;
+}
+message ThinkingEndEvent {
+  string agent = 1;
 }
 
 message StreamStart {
@@ -477,6 +494,10 @@ enum AgentEventKind {
   TOOL_RESULT = 3;
   TOOLS_COMPLETE = 4;
   DONE = 5;
+  TEXT_START = 6;
+  TEXT_END = 7;
+  THINKING_START = 8;
+  THINKING_END = 9;
 }
 
 message AgentEventMsg {

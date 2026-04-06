@@ -12,12 +12,27 @@ use crate::model::{Message, Response, ToolCall};
 ///
 /// Yielded by `Agent::run_stream()` or emitted via `Hook::on_event()`
 /// for real-time status reporting to clients.
+///
+/// Text and thinking deltas are bracketed by explicit
+/// `TextStart`/`TextEnd` and `ThinkingStart`/`ThinkingEnd` markers so
+/// clients can render coherent segments without inferring boundaries
+/// from neighboring events. Only one segment is open at a time —
+/// transitions emit the closing event of the previous segment before
+/// the opening of the next.
 #[derive(Debug, Clone)]
 pub enum AgentEvent {
+    /// A text segment is starting; subsequent `TextDelta`s belong to it.
+    TextStart,
     /// Text content delta from the model.
     TextDelta(String),
+    /// The current text segment has ended.
+    TextEnd,
+    /// A thinking segment is starting; subsequent `ThinkingDelta`s belong to it.
+    ThinkingStart,
     /// Thinking/reasoning content delta from the model.
     ThinkingDelta(String),
+    /// The current thinking segment has ended.
+    ThinkingEnd,
     /// Early notification: model is generating tool calls (names only, args incomplete).
     ToolCallsBegin(Vec<ToolCall>),
     /// Model is calling tools (with the complete tool calls).

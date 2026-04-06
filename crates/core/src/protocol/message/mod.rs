@@ -18,7 +18,8 @@ pub use crate::protocol::proto::{
     ServiceLogsMsg, SetActiveModelMsg, SetEnabledMsg, SetLocalMcpsMsg, SetProviderMsg, SkillInfo,
     SkillList, StartServiceMsg, SteerSessionMsg, StopServiceMsg, StreamChunk, StreamEnd,
     StreamEvent, StreamMsg, StreamStart, StreamThinking, SubscribeEventMsg, SubscribeEvents,
-    SubscriptionInfo, SubscriptionList, TokenUsage, ToolCallInfo, ToolResultEvent, ToolStartEvent,
+    SubscriptionInfo, SubscriptionList, TextEndEvent, TextStartEvent, ThinkingEndEvent,
+    ThinkingStartEvent, TokenUsage, ToolCallInfo, ToolResultEvent, ToolStartEvent,
     ToolsCompleteEvent, UninstallPluginMsg, UnsubscribeEventMsg, UpdateAgentMsg, UserSteeredEvent,
 };
 pub use crate::protocol::proto::{

@@ -448,6 +448,218 @@ async fn run_stream_thinking_delta() {
     assert_eq!(thinking, vec!["thinking..."]);
 }
 
+// --- segment boundary tests ---
+
+/// Reduce a sequence of events to just the boundary/delta markers, dropping
+/// the actual content. Useful for asserting bracket structure.
+fn boundary_shape(events: &[AgentEvent]) -> Vec<&'static str> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::TextStart => Some("TextStart"),
+            AgentEvent::TextDelta(_) => Some("TextDelta"),
+            AgentEvent::TextEnd => Some("TextEnd"),
+            AgentEvent::ThinkingStart => Some("ThinkingStart"),
+            AgentEvent::ThinkingDelta(_) => Some("ThinkingDelta"),
+            AgentEvent::ThinkingEnd => Some("ThinkingEnd"),
+            AgentEvent::ToolCallsBegin(_) => Some("ToolCallsBegin"),
+            AgentEvent::ToolCallsStart(_) => Some("ToolCallsStart"),
+            AgentEvent::ToolCallsComplete => Some("ToolCallsComplete"),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn run_stream_text_segment_is_bracketed() {
+    let model = TestModel::with_chunks(vec![text_chunks("hi")]);
+    let agent = build_agent_no_tools(model);
+    let mut history = vec![Message::user("ping")];
+
+    let mut events: Vec<AgentEvent> = Vec::new();
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    let shape = boundary_shape(&events);
+    // text_chunks("hi") emits two char deltas — exactly one TextStart and
+    // one TextEnd should bracket all of them.
+    let starts = shape.iter().filter(|s| **s == "TextStart").count();
+    let ends = shape.iter().filter(|s| **s == "TextEnd").count();
+    assert_eq!(starts, 1, "expected exactly one TextStart, got {shape:?}");
+    assert_eq!(ends, 1, "expected exactly one TextEnd, got {shape:?}");
+    // First boundary marker is TextStart, last is TextEnd.
+    assert_eq!(shape.first(), Some(&"TextStart"));
+    assert_eq!(shape.last(), Some(&"TextEnd"));
+}
+
+#[tokio::test]
+async fn run_stream_thinking_then_text_brackets_atomically() {
+    // Chunk 1: reasoning only.
+    // Chunk 2: text only.
+    // The transition from thinking to text MUST emit ThinkingEnd before TextStart.
+    let chunks = vec![
+        StreamChunk {
+            choices: vec![Choice {
+                delta: Delta {
+                    reasoning_content: Some("plan".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        StreamChunk::text("answer".into()),
+        StreamChunk {
+            choices: vec![Choice {
+                finish_reason: Some(FinishReason::Stop),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    ];
+    let model = TestModel::with_chunks(vec![chunks]);
+    let agent = build_agent_no_tools(model);
+    let mut history = vec![Message::user("think")];
+
+    let mut events: Vec<AgentEvent> = Vec::new();
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    let shape = boundary_shape(&events);
+    assert_eq!(
+        shape,
+        vec![
+            "ThinkingStart",
+            "ThinkingDelta",
+            "ThinkingEnd",
+            "TextStart",
+            "TextDelta",
+            "TextEnd",
+        ],
+        "expected clean atomic flip from thinking to text",
+    );
+}
+
+#[tokio::test]
+async fn run_stream_chunk_with_both_text_and_reasoning_does_not_overlap() {
+    // A single chunk carrying both text and reasoning. The current
+    // processing order is text first, then reasoning, so the expected
+    // shape is TextStart/TextDelta/TextEnd then ThinkingStart/ThinkingDelta.
+    // The key invariant: never two segments open simultaneously.
+    let chunks = vec![
+        StreamChunk {
+            choices: vec![Choice {
+                delta: Delta {
+                    content: Some("a".into()),
+                    reasoning_content: Some("b".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        StreamChunk {
+            choices: vec![Choice {
+                finish_reason: Some(FinishReason::Stop),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    ];
+    let model = TestModel::with_chunks(vec![chunks]);
+    let agent = build_agent_no_tools(model);
+    let mut history = vec![Message::user("hi")];
+
+    let mut events: Vec<AgentEvent> = Vec::new();
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    // Walk the boundary events and assert at most one segment open at a time.
+    let mut open_text = false;
+    let mut open_thinking = false;
+    for e in &events {
+        match e {
+            AgentEvent::TextStart => {
+                assert!(!open_text, "TextStart while text already open");
+                assert!(!open_thinking, "TextStart while thinking still open");
+                open_text = true;
+            }
+            AgentEvent::TextEnd => {
+                assert!(open_text, "TextEnd without TextStart");
+                open_text = false;
+            }
+            AgentEvent::ThinkingStart => {
+                assert!(!open_thinking, "ThinkingStart while thinking already open");
+                assert!(!open_text, "ThinkingStart while text still open");
+                open_thinking = true;
+            }
+            AgentEvent::ThinkingEnd => {
+                assert!(open_thinking, "ThinkingEnd without ThinkingStart");
+                open_thinking = false;
+            }
+            _ => {}
+        }
+    }
+    assert!(!open_text, "text segment left open at end");
+    assert!(!open_thinking, "thinking segment left open at end");
+}
+
+#[tokio::test]
+async fn run_stream_text_then_tools_closes_text_before_tools() {
+    // Text in first iteration, then tools fired in second iteration.
+    let calls = vec![make_tool_call("recall", r#"{"q":"x"}"#)];
+    let model = TestModel::with_chunks(vec![tool_chunks(calls), text_chunks("ok")]);
+
+    let (tool_tx, mut tool_rx) = mpsc::unbounded_channel();
+    let agent = AgentBuilder::new(model)
+        .config(AgentConfig::new("test-agent"))
+        .tool_tx(tool_tx)
+        .build();
+    tokio::spawn(async move {
+        while let Some(req) = tool_rx.recv().await {
+            let _ = req.reply.send("out".into());
+        }
+    });
+
+    let mut history = vec![Message::user("q")];
+    let mut events: Vec<AgentEvent> = Vec::new();
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    // Assert: every TextStart has a matching TextEnd before any ToolCallsStart
+    // that follows it.
+    let shape = boundary_shape(&events);
+    let mut text_open = false;
+    for marker in &shape {
+        match *marker {
+            "TextStart" => {
+                assert!(!text_open, "nested TextStart in {shape:?}");
+                text_open = true;
+            }
+            "TextEnd" => {
+                assert!(text_open, "TextEnd without TextStart in {shape:?}");
+                text_open = false;
+            }
+            "ToolCallsStart" => {
+                assert!(
+                    !text_open,
+                    "ToolCallsStart while text segment open in {shape:?}"
+                );
+            }
+            _ => {}
+        }
+    }
+    assert!(!text_open, "text segment left open at end");
+}
+
 // --- run() tests ---
 
 #[tokio::test]
