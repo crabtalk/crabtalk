@@ -26,9 +26,12 @@ crabtalk-command-codegen = { path = "crates/command-codegen", version = "0.0.19"
 woutlook = { path = "plugins/outlook", package = "crabtalk-outlook", version = "0.0.19", default-features = false }
 wsearch = { path = "plugins/search", package = "crabtalk-search", version = "0.0.19", default-features = false }
 
-# crabllm
-crabllm-core = "0.0.12"
-crabllm-provider = "0.0.12"
+# crabllm — temporarily pinned to local checkout on the
+# `refactor/42-provider-trait` branch (crabllm#43) while we validate the
+# new Provider trait API downstream. Revert to a versioned crates.io dep
+# once #43 merges and crabllm publishes 0.0.13.
+crabllm-core = { path = "../crabllm/crates/core" }
+crabllm-provider = { path = "../crabllm/crates/provider" }
 
 # bench
 criterion = { version = "0.5", features = ["html_reports"] }
