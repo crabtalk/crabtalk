@@ -1,8 +1,8 @@
 //! `ProviderRegistry` — concurrent-safe named provider registry with model
-//! routing and active-provider swapping.
+//! routing.
 
 use crate::{Provider, ProviderDef, build_provider};
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use async_stream::try_stream;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -13,8 +13,6 @@ use wcore::model::{Model, Response, StreamChunk, default_context_limit};
 /// Manages a set of named providers with an active selection.
 ///
 /// All methods that read or mutate the inner state acquire the `RwLock`.
-/// `active()` returns a clone of the current `Provider` — callers do not
-/// hold the lock while performing LLM calls.
 pub struct ProviderRegistry {
     inner: Arc<RwLock<Inner>>,
 }
@@ -30,19 +28,10 @@ struct Inner {
     client: reqwest::Client,
 }
 
-/// Info about a single provider entry returned by `list()`.
-#[derive(Debug, Clone)]
-pub struct ProviderEntry {
-    /// Provider model name (key).
-    pub name: String,
-    /// Whether this is the active provider.
-    pub active: bool,
-}
-
 impl ProviderRegistry {
     /// Create an empty manager with the given active model name.
     ///
-    /// Use `add_provider()` or `add_model()` to populate.
+    /// Use `add_def()` or `from_providers()` to populate.
     pub fn new(active: impl Into<String>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(Inner {
@@ -67,16 +56,6 @@ impl ProviderRegistry {
             registry.add_def(name, def)?;
         }
         Ok(registry)
-    }
-
-    /// Add a pre-built provider directly (e.g. local models from registry).
-    pub fn add_provider(&self, name: impl Into<String>, provider: Provider) -> Result<()> {
-        let mut inner = self
-            .inner
-            .write()
-            .map_err(|_| anyhow!("provider lock poisoned"))?;
-        inner.providers.insert(name.into(), provider);
-        Ok(())
     }
 
     /// Add all models from a provider definition. Builds a `Provider` per model.
@@ -110,20 +89,6 @@ impl ProviderRegistry {
             .and_then(|inner| inner.provider_names.get(model).cloned())
     }
 
-    /// Get a clone of the active provider.
-    pub fn active(&self) -> Result<Provider> {
-        let inner = self
-            .inner
-            .read()
-            .map_err(|_| anyhow!("provider lock poisoned"))?;
-        inner.providers.get(&inner.active).cloned().ok_or_else(|| {
-            anyhow!(
-                "active model '{}' not found in registry — its provider may be disabled",
-                inner.active
-            )
-        })
-    }
-
     /// Get the model name of the active provider (also its key).
     pub fn active_model_name(&self) -> Result<String> {
         let inner = self
@@ -131,52 +96,6 @@ impl ProviderRegistry {
             .read()
             .map_err(|_| anyhow!("provider lock poisoned"))?;
         Ok(inner.active.clone())
-    }
-
-    /// Switch to a different provider by model name. Returns an error if the
-    /// name is not found.
-    pub fn switch(&self, model: &str) -> Result<()> {
-        let mut inner = self
-            .inner
-            .write()
-            .map_err(|_| anyhow!("provider lock poisoned"))?;
-        if !inner.providers.contains_key(model) {
-            bail!("provider '{}' not found", model);
-        }
-        inner.active = model.to_owned();
-        Ok(())
-    }
-
-    /// Remove a provider by model name. Fails if the provider is currently
-    /// active.
-    pub fn remove(&self, model: &str) -> Result<()> {
-        let mut inner = self
-            .inner
-            .write()
-            .map_err(|_| anyhow!("provider lock poisoned"))?;
-        if inner.active == model {
-            bail!("cannot remove the active provider '{}'", model);
-        }
-        if inner.providers.remove(model).is_none() {
-            bail!("provider '{}' not found", model);
-        }
-        Ok(())
-    }
-
-    /// List all providers with their active status.
-    pub fn list(&self) -> Result<Vec<ProviderEntry>> {
-        let inner = self
-            .inner
-            .read()
-            .map_err(|_| anyhow!("provider lock poisoned"))?;
-        Ok(inner
-            .providers
-            .keys()
-            .map(|name| ProviderEntry {
-                name: name.clone(),
-                active: *name == inner.active,
-            })
-            .collect())
     }
 
     /// Look up a provider by model name. Returns a clone so callers don't
