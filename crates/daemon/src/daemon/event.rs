@@ -8,6 +8,7 @@
 //! no tool name matching happens here.
 
 use crate::daemon::Daemon;
+use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
 use runtime::host::Host;
 use tokio::sync::{mpsc, oneshot};
@@ -54,7 +55,7 @@ pub type DaemonEventSender = mpsc::UnboundedSender<DaemonEvent>;
 
 // ── Event dispatch ───────────────────────────────────────────────────
 
-impl<H: Host + 'static> Daemon<H> {
+impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
     /// Process events until [`DaemonEvent::Shutdown`] is received.
     ///
     /// Spawns a task for each event to avoid blocking on LLM calls.

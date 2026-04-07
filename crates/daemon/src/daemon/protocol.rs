@@ -2,6 +2,7 @@
 
 use crate::{cron::CronEntry, daemon::Daemon, event_bus::EventSubscription};
 use anyhow::{Context, Result};
+use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
 use runtime::host::Host;
 use std::sync::Arc;
@@ -26,7 +27,7 @@ use wcore::protocol::{
 };
 use wcore::{AgentEvent, AgentStep};
 
-impl<H: Host + 'static> Server for Daemon<H> {
+impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
@@ -1177,7 +1178,7 @@ fn find_binary(name: &str) -> Result<std::path::PathBuf> {
     anyhow::bail!("binary '{name}' not found in PATH or ~/.cargo/bin")
 }
 
-impl<H: Host + 'static> Daemon<H> {
+impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
     /// Load the current `DaemonConfig` from disk.
     fn load_config(&self) -> Result<crate::DaemonConfig> {
         crate::DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))

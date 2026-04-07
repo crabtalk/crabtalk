@@ -6,6 +6,7 @@ use crate::{
     daemon::event::{DaemonEvent, DaemonEventSender},
 };
 use anyhow::Result;
+use crabllm_core::Provider;
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
 use runtime::{Env, SkillHandler, host::Host, mcp::McpHandler, memory::Memory};
 use std::{
@@ -21,7 +22,26 @@ use wcore::{AgentConfig, Runtime, ToolRequest, model::Model};
 /// registry implements `crabllm_core::Provider` via model-name routing;
 /// `Retrying` adds the exponential-backoff loop and per-call timeout that
 /// the daemon expects from a production deployment.
-pub(crate) type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
+///
+/// Exposed (pub) so downstream consumers can name the type explicitly,
+/// e.g. `Daemon<DefaultProvider, MyHost>` or as a bound for helper
+/// functions that thread P through without caring what it is.
+pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
+
+/// Closure that builds a `Model<P>` from a `DaemonConfig`. Stored on
+/// `Daemon` so `reload()` can call it with the freshly-loaded config.
+/// `Arc<dyn Fn>` so `Daemon` remains `Clone` regardless of concrete P.
+pub type BuildProvider<P> =
+    Arc<dyn Fn(&DaemonConfig) -> Result<wcore::model::Model<P>> + Send + Sync>;
+
+/// Construct the default `Model<DefaultProvider>` from a config.
+///
+/// This is the function the `Daemon::start` convenience path uses. Apple
+/// app and other library consumers supply their own closure with a
+/// different return type.
+pub fn build_default_provider(config: &DaemonConfig) -> Result<Model<DefaultProvider>> {
+    build_providers(config)
+}
 
 /// Resolve qualified plugin references in an agent's skill list.
 fn resolve_plugin_skills(skills: &mut Vec<String>, plugin_skill_dirs: &BTreeMap<String, PathBuf>) {
@@ -51,17 +71,19 @@ fn resolve_plugin_skills(skills: &mut Vec<String>, plugin_skill_dirs: &BTreeMap<
 
 const SYSTEM_AGENT: &str = runtime::memory::DEFAULT_SOUL;
 
-impl<H: Host + 'static> Daemon<H> {
+impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
     /// Build a fully-configured [`Daemon`] from the given config, config
-    /// directory, event sender, and backend.
+    /// directory, event sender, backend, and provider-builder closure.
     pub(crate) async fn build(
         config: &DaemonConfig,
         config_dir: &Path,
         event_tx: DaemonEventSender,
         shutdown_tx: broadcast::Sender<()>,
         host: H,
+        build_provider: BuildProvider<P>,
     ) -> Result<Self> {
-        let runtime = Self::build_runtime(config, config_dir, &event_tx, host).await?;
+        let runtime =
+            Self::build_runtime(config, config_dir, &event_tx, host, &build_provider).await?;
         let cron_store = crate::cron::CronStore::load(
             config_dir.join("crons.toml"),
             event_tx.clone(),
@@ -79,21 +101,30 @@ impl<H: Host + 'static> Daemon<H> {
             started_at: std::time::Instant::now(),
             crons,
             events,
+            build_provider,
         })
     }
 
     /// Rebuild the runtime from disk and swap it in atomically.
     ///
     /// Clones the backend from the current runtime so shared state
-    /// (channels, pending asks) is preserved across reloads.
+    /// (channels, pending asks) is preserved across reloads. The
+    /// provider-builder closure stored on `Daemon` is re-run with the
+    /// fresh config to construct the new `Model<P>`.
     pub async fn reload(&self) -> Result<()> {
         let config = DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
         let host = {
             let old_rt = self.runtime.read().await;
             old_rt.hook.host.clone()
         };
-        let mut new_runtime =
-            Self::build_runtime(&config, &self.config_dir, &self.event_tx, host).await?;
+        let mut new_runtime = Self::build_runtime(
+            &config,
+            &self.config_dir,
+            &self.event_tx,
+            host,
+            &self.build_provider,
+        )
+        .await?;
         {
             let old_runtime = self.runtime.read().await;
             (**old_runtime)
@@ -105,17 +136,19 @@ impl<H: Host + 'static> Daemon<H> {
         Ok(())
     }
 
-    /// Construct a fresh [`Runtime`] from config with the given backend.
+    /// Construct a fresh [`Runtime`] from config with the given backend
+    /// and provider builder.
     async fn build_runtime(
         config: &DaemonConfig,
         config_dir: &Path,
         event_tx: &DaemonEventSender,
         host: H,
-    ) -> Result<Runtime<DefaultProvider, Env<H>>> {
+        build_provider: &BuildProvider<P>,
+    ) -> Result<Runtime<P, Env<H>>> {
         let (mut manifest, _warnings) = resolve_manifests(config_dir);
         manifest.disabled = config.disabled.clone();
         wcore::filter_disabled_external(&mut manifest.skill_dirs, &manifest.disabled.external);
-        let model = build_providers(config, &manifest.disabled)?;
+        let model = build_provider(config)?;
         let hook = build_env(config, config_dir, &manifest, host).await?;
         let tool_tx = build_tool_sender(event_tx);
         let mut runtime = Runtime::new(model, hook, Some(tool_tx)).await;
@@ -128,16 +161,13 @@ impl<H: Host + 'static> Daemon<H> {
 /// providers. Returns the registry wrapped in `Retrying` (for retry +
 /// timeout) and then in `Model<P>` so the caller can hand it directly to
 /// `Runtime::new`.
-fn build_providers(
-    config: &DaemonConfig,
-    disabled: &wcore::config::DisabledItems,
-) -> Result<Model<DefaultProvider>> {
+fn build_providers(config: &DaemonConfig) -> Result<Model<DefaultProvider>> {
     // Filter out disabled providers and convert from BTreeMap to HashMap
     // (crabllm's `from_provider_configs` takes a HashMap).
     let providers: HashMap<String, _> = config
         .provider
         .iter()
-        .filter(|(name, _)| !disabled.providers.contains(name))
+        .filter(|(name, _)| !config.disabled.providers.contains(name))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     let provider_count = providers.len();
@@ -207,8 +237,8 @@ fn build_tool_sender(event_tx: &DaemonEventSender) -> wcore::ToolSender {
 }
 
 /// Load agents and add them to the runtime.
-fn load_agents<H: Host + 'static>(
-    runtime: &mut Runtime<DefaultProvider, Env<H>>,
+fn load_agents<P: Provider + 'static, H: Host + 'static>(
+    runtime: &mut Runtime<P, Env<H>>,
     config: &DaemonConfig,
     manifest: &ResolvedManifest,
 ) -> Result<()> {
