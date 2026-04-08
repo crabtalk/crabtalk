@@ -57,10 +57,7 @@ impl<P: Provider + 'static> Model<P> {
     /// Sets `stream: Some(false)` on the request and formats provider errors
     /// through `format_provider_error` so the root cause surfaces in the
     /// anyhow Display chain.
-    pub async fn send_ct(
-        &self,
-        request: ChatCompletionRequest,
-    ) -> Result<ChatCompletionResponse> {
+    pub async fn send_ct(&self, request: ChatCompletionRequest) -> Result<ChatCompletionResponse> {
         let mut req = request;
         req.stream = Some(false);
         let model_label = req.model.clone();

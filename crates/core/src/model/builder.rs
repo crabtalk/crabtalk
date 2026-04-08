@@ -84,7 +84,10 @@ impl MessageBuilder {
     /// Merge one `ToolCallDelta` fragment into the accumulating tool call
     /// at its index. See module docs for the overwrite/append rules.
     fn merge_tool_call(&mut self, delta: &ToolCallDelta) {
-        let entry = self.calls.entry(delta.index).or_insert_with(empty_tool_call);
+        let entry = self
+            .calls
+            .entry(delta.index)
+            .or_insert_with(empty_tool_call);
         entry.index = Some(delta.index);
         if let Some(id) = &delta.id
             && !id.is_empty()

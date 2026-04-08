@@ -312,10 +312,7 @@ fn builder_empty_content_without_tool_calls_builds_empty_string() {
     let b = MessageBuilder::new(Role::Assistant);
     let msg = b.build();
     // Empty assistant with no tool calls → explicit empty string, not None.
-    assert_eq!(
-        msg.content,
-        Some(serde_json::Value::String(String::new())),
-    );
+    assert_eq!(msg.content, Some(serde_json::Value::String(String::new())),);
     assert!(msg.tool_calls.is_none());
 }
 

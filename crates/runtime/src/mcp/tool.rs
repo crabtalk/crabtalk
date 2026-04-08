@@ -68,7 +68,9 @@ impl<H: Host> Env<H> {
             .iter()
             .filter(|t| {
                 if let Some(ref allowed) = allowed_tools
-                    && !allowed.iter().any(|a| a.as_str() == t.function.name.as_str())
+                    && !allowed
+                        .iter()
+                        .any(|a| a.as_str() == t.function.name.as_str())
                 {
                     return false;
                 }
