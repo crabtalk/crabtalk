@@ -9,6 +9,7 @@ use crate::{host::Host, mcp::McpHandler, memory::Memory, os, skill, skill::Skill
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    sync::RwLock,
 };
 use wcore::{AgentConfig, AgentEvent, Hook, ToolRegistry, model::HistoryEntry};
 
@@ -41,8 +42,11 @@ pub struct Env<H: Host = crate::NoHost> {
     pub(crate) mcp: McpHandler,
     pub(crate) cwd: PathBuf,
     pub(crate) memory: Option<Memory>,
-    pub(crate) scopes: BTreeMap<String, AgentScope>,
-    pub(crate) agent_descriptions: BTreeMap<String, String>,
+    /// Per-agent dispatch scopes. Behind a sync `RwLock` so agent CRUD can
+    /// mutate in place through `&self`. Critical sections are lookups or
+    /// single inserts/removes — never held across an `.await`.
+    pub(crate) scopes: RwLock<BTreeMap<String, AgentScope>>,
+    pub(crate) agent_descriptions: RwLock<BTreeMap<String, String>>,
     /// Host providing server-specific functionality.
     pub host: H,
 }
@@ -61,8 +65,8 @@ impl<H: Host> Env<H> {
             mcp,
             cwd,
             memory,
-            scopes: BTreeMap::new(),
-            agent_descriptions: BTreeMap::new(),
+            scopes: RwLock::new(BTreeMap::new()),
+            agent_descriptions: RwLock::new(BTreeMap::new()),
             host,
         }
     }
@@ -78,12 +82,14 @@ impl<H: Host> Env<H> {
     }
 
     /// Register an agent's scope for dispatch enforcement.
-    pub fn register_scope(&mut self, name: String, config: &AgentConfig) {
+    pub fn register_scope(&self, name: String, config: &AgentConfig) {
         if name != wcore::paths::DEFAULT_AGENT && !config.description.is_empty() {
             self.agent_descriptions
+                .write()
+                .expect("agent_descriptions lock poisoned")
                 .insert(name.clone(), config.description.clone());
         }
-        self.scopes.insert(
+        self.scopes.write().expect("scopes lock poisoned").insert(
             name,
             AgentScope {
                 tools: config.tools.clone(),
@@ -92,6 +98,20 @@ impl<H: Host> Env<H> {
                 mcps: config.mcps.clone(),
             },
         );
+    }
+
+    /// Drop an agent's scope entry. Used by agent CRUD when an agent is
+    /// deleted — keeps `scopes` and `agent_descriptions` consistent with the
+    /// runtime's live agent registry so stale dispatch rules don't linger.
+    pub fn unregister_scope(&self, name: &str) {
+        self.scopes
+            .write()
+            .expect("scopes lock poisoned")
+            .remove(name);
+        self.agent_descriptions
+            .write()
+            .expect("agent_descriptions lock poisoned")
+            .remove(name);
     }
 
     /// Apply scoped tool whitelist and scope prompt for sub-agents.
@@ -158,11 +178,14 @@ impl<H: Host> Env<H> {
         }
 
         // Enforce skill scope.
-        if let Some(scope) = self.scopes.get(agent)
-            && !scope.skills.is_empty()
-            && !scope.skills.iter().any(|s| s == name)
         {
-            return content.to_owned();
+            let scopes = self.scopes.read().expect("scopes lock poisoned");
+            if let Some(scope) = scopes.get(agent)
+                && !scope.skills.is_empty()
+                && !scope.skills.iter().any(|s| s == name)
+            {
+                return content.to_owned();
+            }
         }
 
         // Try to load the skill from disk.
@@ -194,15 +217,18 @@ impl<H: Host> Env<H> {
             return Err("no tasks provided".to_owned());
         }
         // Enforce members scope for all target agents.
-        if let Some(scope) = self.scopes.get(agent)
-            && !scope.members.is_empty()
         {
-            for task in &input.tasks {
-                if !scope.members.iter().any(|m| m == &task.agent) {
-                    return Err(format!(
-                        "agent '{}' is not in your members list",
-                        task.agent
-                    ));
+            let scopes = self.scopes.read().expect("scopes lock poisoned");
+            if let Some(scope) = scopes.get(agent)
+                && !scope.members.is_empty()
+            {
+                for task in &input.tasks {
+                    if !scope.members.iter().any(|m| m == &task.agent) {
+                        return Err(format!(
+                            "agent '{}' is not in your members list",
+                            task.agent
+                        ));
+                    }
                 }
             }
         }
@@ -219,11 +245,14 @@ impl<H: Host> Env<H> {
         conversation_id: Option<u64>,
     ) -> Result<String, String> {
         // Dispatch enforcement: reject tools not in the agent's whitelist.
-        if let Some(scope) = self.scopes.get(agent)
-            && !scope.tools.is_empty()
-            && !scope.tools.iter().any(|t| t.as_str() == name)
         {
-            return Err(format!("tool not available: {name}"));
+            let scopes = self.scopes.read().expect("scopes lock poisoned");
+            if let Some(scope) = scopes.get(agent)
+                && !scope.tools.is_empty()
+                && !scope.tools.iter().any(|t| t.as_str() == name)
+            {
+                return Err(format!("tool not available: {name}"));
+            }
         }
         match name {
             "mcp" => self.dispatch_mcp(args, agent).await,
@@ -322,15 +351,23 @@ impl<H: Host + 'static> Hook for Env<H> {
         let mut entries = Vec::new();
         let has_members = self
             .scopes
+            .read()
+            .expect("scopes lock poisoned")
             .get(agent)
             .is_some_and(|s| !s.members.is_empty());
-        if has_members && !self.agent_descriptions.is_empty() {
-            let mut block = String::from("<agents>\n");
-            for (name, desc) in &self.agent_descriptions {
-                block.push_str(&format!("- {name}: {desc}\n"));
+        if has_members {
+            let descriptions = self
+                .agent_descriptions
+                .read()
+                .expect("agent_descriptions lock poisoned");
+            if !descriptions.is_empty() {
+                let mut block = String::from("<agents>\n");
+                for (name, desc) in descriptions.iter() {
+                    block.push_str(&format!("- {name}: {desc}\n"));
+                }
+                block.push_str("</agents>");
+                entries.push(HistoryEntry::user(block).auto_injected());
             }
-            block.push_str("</agents>");
-            entries.push(HistoryEntry::user(block).auto_injected());
         }
         if let Some(ref mem) = self.memory {
             entries.extend(mem.before_run(history));

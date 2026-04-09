@@ -13,7 +13,7 @@ async fn test_hook() -> Env<NoHost> {
 
 #[tokio::test]
 async fn tool_whitelist_rejects_unlisted() {
-    let mut hook = test_hook().await;
+    let hook = test_hook().await;
     let mut config = AgentConfig::new("restricted");
     config.tools = vec!["bash".to_owned()];
     hook.register_scope("restricted".to_owned(), &config);
@@ -27,7 +27,7 @@ async fn tool_whitelist_rejects_unlisted() {
 
 #[tokio::test]
 async fn empty_whitelist_allows_all() {
-    let mut hook = test_hook().await;
+    let hook = test_hook().await;
     let config = AgentConfig::new("open");
     hook.register_scope("open".to_owned(), &config);
 
@@ -43,7 +43,7 @@ async fn empty_whitelist_allows_all() {
 
 #[tokio::test]
 async fn delegate_member_scope_rejects_unlisted_agent() {
-    let mut hook = test_hook().await;
+    let hook = test_hook().await;
     let mut config = AgentConfig::new("caller");
     config.members = vec!["agent-a".to_owned()];
     hook.register_scope("caller".to_owned(), &config);
@@ -58,7 +58,7 @@ async fn delegate_member_scope_rejects_unlisted_agent() {
 
 #[tokio::test]
 async fn delegate_member_scope_allows_listed_agent() {
-    let mut hook = test_hook().await;
+    let hook = test_hook().await;
     let mut config = AgentConfig::new("caller");
     config.members = vec!["agent-a".to_owned()];
     hook.register_scope("caller".to_owned(), &config);

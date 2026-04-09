@@ -27,15 +27,21 @@ impl<H: Host> Env<H> {
 
         let bridge = self.mcp.bridge().await;
 
-        // Resolve allowed tools from agent's MCP scope.
-        let allowed_tools: Option<Vec<String>> = if let Some(scope) = self.scopes.get(agent)
-            && !scope.mcps.is_empty()
-        {
+        // Resolve allowed tools from agent's MCP scope. Snapshot the scope
+        // entry so we don't hold the scopes lock across the bridge await.
+        let scoped_mcps: Option<Vec<String>> = self
+            .scopes
+            .read()
+            .expect("scopes lock poisoned")
+            .get(agent)
+            .filter(|s| !s.mcps.is_empty())
+            .map(|s| s.mcps.clone());
+        let allowed_tools: Option<Vec<String>> = if let Some(mcps) = scoped_mcps {
             let servers = bridge.list_servers().await;
             Some(
                 servers
                     .into_iter()
-                    .filter(|(name, _)| scope.mcps.iter().any(|m| m == name.as_str()))
+                    .filter(|(name, _)| mcps.iter().any(|m| m == name.as_str()))
                     .flat_map(|(_, tools)| tools)
                     .collect(),
             )

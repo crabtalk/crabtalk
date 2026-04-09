@@ -395,7 +395,7 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
         validate_agent_name(&req.name)?;
         self.write_agent_to_manifest(&req.name, &req.config, true)?;
         self.write_agent_prompt(&req.name, &req.prompt)?;
-        self.reload().await?;
+        self.register_agent_from_disk(&req.name).await?;
         self.get_agent(req.name).await
     }
 
@@ -409,7 +409,7 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
         if !req.prompt.is_empty() {
             self.write_agent_prompt(&req.name, &req.prompt)?;
         }
-        self.reload().await?;
+        self.register_agent_from_disk(&req.name).await?;
         self.get_agent(req.name).await
     }
 
@@ -442,7 +442,11 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
             if prompt_file.exists() {
                 std::fs::remove_file(&prompt_file).context("failed to remove agent prompt file")?;
             }
-            self.reload().await?;
+            // Targeted in-memory removal — keeps ephemeral agents and
+            // in-flight conversations alive, unlike a full reload().
+            let rt = self.runtime.read().await.clone();
+            rt.remove_agent(&name);
+            rt.hook.unregister_scope(&name);
         }
         Ok(removed)
     }
@@ -1205,6 +1209,24 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
         manifest.disabled = config.disabled;
         wcore::filter_disabled_external(&mut manifest.skill_dirs, &manifest.disabled.external);
         Ok((manifest, warnings))
+    }
+
+    /// Load a single agent's config from disk and upsert it into the live
+    /// runtime. Used by `create_agent` and `update_agent` after they've
+    /// written manifest/prompt files. Avoids a full `reload()` — the
+    /// runtime's other state (provider, skills, MCP, memory, ephemeral
+    /// agents, in-flight conversations) is preserved.
+    async fn register_agent_from_disk(&self, name: &str) -> Result<()> {
+        let config = self.load_config()?;
+        let (manifest, _warnings) = self.resolve_manifests()?;
+        let agent_config =
+            crate::daemon::builder::build_single_agent_config(name, &config, &manifest)?;
+        let rt = self.runtime.read().await.clone();
+        // `upsert_agent` returns the post-`on_build_agent` config so the
+        // dispatch scope matches the form actually stored in the registry.
+        let registered = rt.upsert_agent(agent_config);
+        rt.hook.register_scope(name.to_owned(), &registered);
+        Ok(())
     }
 
     /// Look up a command service by name from installed plugin manifests.

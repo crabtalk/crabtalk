@@ -194,7 +194,7 @@ async fn file_tools_no_sender_restriction() {
     let file = dir.path().join("gateway.txt");
     std::fs::write(&file, "test content\n").unwrap();
 
-    let mut hook = test_env(dir.path().to_path_buf()).await;
+    let hook = test_env(dir.path().to_path_buf()).await;
     let config = wcore::AgentConfig::new("agent");
     hook.register_scope("agent".to_owned(), &config);
 

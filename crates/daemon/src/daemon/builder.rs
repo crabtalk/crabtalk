@@ -44,7 +44,10 @@ pub fn build_default_provider(config: &DaemonConfig) -> Result<Model<DefaultProv
 }
 
 /// Resolve qualified plugin references in an agent's skill list.
-fn resolve_plugin_skills(skills: &mut Vec<String>, plugin_skill_dirs: &BTreeMap<String, PathBuf>) {
+pub(crate) fn resolve_plugin_skills(
+    skills: &mut Vec<String>,
+    plugin_skill_dirs: &BTreeMap<String, PathBuf>,
+) {
     let mut resolved = Vec::new();
     for entry in skills.drain(..) {
         if entry.contains('/') {
@@ -69,7 +72,58 @@ fn resolve_plugin_skills(skills: &mut Vec<String>, plugin_skill_dirs: &BTreeMap<
     *skills = resolved;
 }
 
-const SYSTEM_AGENT: &str = runtime::memory::DEFAULT_SOUL;
+pub(crate) const SYSTEM_AGENT: &str = runtime::memory::DEFAULT_SOUL;
+
+/// Build the `AgentConfig` for a single named agent — the same shape that
+/// [`load_agents`] produces at startup. Used by agent CRUD for targeted
+/// in-memory updates that skip a full runtime rebuild.
+///
+/// Returns `Err` if the agent has no manifest entry or no prompt file
+/// (except for `DEFAULT_AGENT`, which sources its prompt from the
+/// `SYSTEM_AGENT` constant and its config from `[system.crab]`).
+pub(crate) fn build_single_agent_config(
+    name: &str,
+    config: &DaemonConfig,
+    manifest: &ResolvedManifest,
+) -> Result<AgentConfig> {
+    let default_model = config
+        .system
+        .crab
+        .model
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("system.crab.model is required in config.toml"))?;
+
+    if name == wcore::paths::DEFAULT_AGENT {
+        let mut crab = config.system.crab.clone();
+        crab.name = wcore::paths::DEFAULT_AGENT.to_owned();
+        crab.system_prompt = SYSTEM_AGENT.to_owned();
+        if crab.model.is_none() {
+            crab.model = Some(default_model);
+        }
+        return Ok(crab);
+    }
+
+    let agent_config = manifest
+        .agents
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("agent '{name}' not found in manifest"))?;
+
+    let prompts = crate::config::load_agents_dirs(&manifest.agent_dirs)?;
+    let prompt = prompts
+        .into_iter()
+        .find(|(stem, _)| stem == name)
+        .map(|(_, content)| content)
+        .ok_or_else(|| anyhow::anyhow!("agent '{name}' has no prompt file"))?;
+
+    let mut agent = agent_config.clone();
+    agent.name = name.to_owned();
+    agent.system_prompt = prompt;
+    if agent.model.is_none() {
+        agent.model = Some(default_model);
+    }
+    resolve_plugin_skills(&mut agent.skills, &manifest.plugin_skill_dirs);
+    Ok(agent)
+}
 
 impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
     /// Build a fully-configured [`Daemon`] from the given config, config

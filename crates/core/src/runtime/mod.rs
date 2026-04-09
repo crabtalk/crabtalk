@@ -20,7 +20,7 @@ use futures_util::StreamExt;
 use std::{
     collections::BTreeMap,
     sync::{
-        Arc,
+        Arc, RwLock as StdRwLock,
         atomic::{AtomicU64, Ordering},
     },
 };
@@ -41,7 +41,11 @@ pub use conversation::Conversation;
 pub struct Runtime<P: Provider + 'static, H: Hook> {
     pub model: Model<P>,
     pub hook: H,
-    agents: BTreeMap<String, Agent<P>>,
+    /// Registered persistent agents, behind a sync `RwLock` so CRUD can
+    /// mutate in place without requiring `&mut Runtime`. Critical sections
+    /// are short (lookup, insert, remove) and never hold the guard across
+    /// an `.await`.
+    agents: StdRwLock<BTreeMap<String, Agent<P>>>,
     /// Ephemeral agents created by delegate, invisible to client APIs.
     ephemeral_agents: RwLock<BTreeMap<String, Agent<P>>>,
     conversations: RwLock<BTreeMap<u64, Arc<Mutex<Conversation>>>>,
@@ -64,7 +68,7 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
         Self {
             model,
             hook,
-            agents: BTreeMap::new(),
+            agents: StdRwLock::new(BTreeMap::new()),
             ephemeral_agents: RwLock::new(BTreeMap::new()),
             conversations: RwLock::new(BTreeMap::new()),
             next_conversation_id: AtomicU64::new(1),
@@ -80,9 +84,34 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
     ///
     /// Calls `hook.on_build_agent(config)` to enrich the config, then builds
     /// the agent with a filtered schema snapshot and the runtime's `tool_tx`.
-    pub fn add_agent(&mut self, config: AgentConfig) {
+    /// If an agent with the same name already exists it is replaced.
+    pub fn add_agent(&self, config: AgentConfig) {
+        let _ = self.upsert_agent(config);
+    }
+
+    /// Insert-or-replace an agent and return the post-`on_build_agent`
+    /// config — the form actually stored in the registry. CRUD call sites
+    /// use the returned config to register a matching dispatch scope
+    /// without a second lookup (and without a TOCTOU window against a
+    /// concurrent `remove_agent`).
+    pub fn upsert_agent(&self, config: AgentConfig) -> AgentConfig {
         let (name, agent) = self.build_agent(config);
-        self.agents.insert(name, agent);
+        let registered = agent.config.clone();
+        self.agents
+            .write()
+            .expect("agents lock poisoned")
+            .insert(name, agent);
+        registered
+    }
+
+    /// Remove a persistent agent by name. Returns `true` if an entry was
+    /// removed. Ephemeral agents are not affected.
+    pub fn remove_agent(&self, name: &str) -> bool {
+        self.agents
+            .write()
+            .expect("agents lock poisoned")
+            .remove(name)
+            .is_some()
     }
 
     /// Build an agent from config. Returns (name, agent).
@@ -101,17 +130,21 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
 
     /// Get a registered agent's config by name (cloned).
     pub fn agent(&self, name: &str) -> Option<AgentConfig> {
-        self.agents.get(name).map(|a| a.config.clone())
+        self.agents
+            .read()
+            .expect("agents lock poisoned")
+            .get(name)
+            .map(|a| a.config.clone())
     }
 
     /// Get all registered agent configs (cloned, alphabetical order).
     pub fn agents(&self) -> Vec<AgentConfig> {
-        self.agents.values().map(|a| a.config.clone()).collect()
-    }
-
-    /// Get a reference to an agent by name.
-    pub fn get_agent(&self, name: &str) -> Option<&Agent<P>> {
-        self.agents.get(name)
+        self.agents
+            .read()
+            .expect("agents lock poisoned")
+            .values()
+            .map(|a| a.config.clone())
+            .collect()
     }
 
     // --- Ephemeral agents ---
@@ -130,15 +163,32 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
     /// Resolve an agent by name: persistent first, then ephemeral. Returns a
     /// clone so no lock is held during the (potentially long) agent run.
     async fn resolve_agent(&self, name: &str) -> Option<Agent<P>> {
-        if let Some(a) = self.agents.get(name) {
-            return Some(a.clone());
+        // Snapshot into a local so the sync guard is dropped before any
+        // `.await` below — read guards aren't `Send`.
+        let persistent = self
+            .agents
+            .read()
+            .expect("agents lock poisoned")
+            .get(name)
+            .cloned();
+        if persistent.is_some() {
+            return persistent;
         }
         self.ephemeral_agents.read().await.get(name).cloned()
     }
 
     /// Check if an agent exists in either the persistent or ephemeral store.
     async fn has_agent(&self, name: &str) -> bool {
-        self.agents.contains_key(name) || self.ephemeral_agents.read().await.contains_key(name)
+        // Scope the sync guard so it drops before the ephemeral `.await`.
+        let has_persistent = self
+            .agents
+            .read()
+            .expect("agents lock poisoned")
+            .contains_key(name);
+        if has_persistent {
+            return true;
+        }
+        self.ephemeral_agents.read().await.contains_key(name)
     }
 
     // --- Conversation management ---
@@ -291,7 +341,15 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
             }
             (conversation.agent.clone(), conversation.history.clone())
         };
-        if let Some(a) = self.agents.get(&agent_name) {
+        // Snapshot first so the sync read guard drops before any `.await`
+        // below — read guards aren't `Send`.
+        let persistent = self
+            .agents
+            .read()
+            .expect("agents lock poisoned")
+            .get(&agent_name)
+            .cloned();
+        if let Some(a) = persistent {
             return a.compact(&history).await;
         }
         let a = self
@@ -336,6 +394,8 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
         let model = self.model.clone();
         let model_name = self
             .agents
+            .read()
+            .expect("agents lock poisoned")
             .get(agent_name)
             .and_then(|a| a.config.model.clone())
             .unwrap_or_default();

@@ -29,11 +29,14 @@ impl<H: Host> Env<H> {
         let name = &input.name;
 
         // Enforce skill scope.
-        if let Some(scope) = self.scopes.get(agent)
-            && !scope.skills.is_empty()
-            && !scope.skills.iter().any(|s| s == name)
         {
-            return Err(format!("skill not available: {name}"));
+            let scopes = self.scopes.read().expect("scopes lock poisoned");
+            if let Some(scope) = scopes.get(agent)
+                && !scope.skills.is_empty()
+                && !scope.skills.iter().any(|s| s == name)
+            {
+                return Err(format!("skill not available: {name}"));
+            }
         }
 
         // Guard against path traversal.
@@ -60,18 +63,23 @@ impl<H: Host> Env<H> {
             }
         }
 
-        // No exact match — fuzzy search / list all.
+        // No exact match — fuzzy search / list all. Snapshot the allowed
+        // skill list so we don't hold the scopes lock across the registry
+        // lock acquisition below.
         let query = name.to_lowercase();
-        let allowed = self.scopes.get(agent).map(|s| &s.skills);
+        let allowed: Vec<String> = self
+            .scopes
+            .read()
+            .expect("scopes lock poisoned")
+            .get(agent)
+            .map(|s| s.skills.clone())
+            .unwrap_or_default();
         let registry = self.skills.registry.lock().await;
         let matches: Vec<String> = registry
             .skills
             .iter()
             .filter(|s| {
-                if let Some(allowed) = allowed
-                    && !allowed.is_empty()
-                    && !allowed.iter().any(|a| a == s.name.as_str())
-                {
+                if !allowed.is_empty() && !allowed.iter().any(|a| a == s.name.as_str()) {
                     return false;
                 }
                 query.is_empty()
