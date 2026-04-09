@@ -188,8 +188,8 @@ impl<H: Host> Env<H> {
 
     /// Validate member scope and delegate to the bridge.
     async fn dispatch_delegate(&self, args: &str, agent: &str) -> Result<String, String> {
-        let input: crate::task::Delegate = serde_json::from_str(args)
-            .map_err(|e| format!("invalid arguments: {e}"))?;
+        let input: crate::task::Delegate =
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
         if input.tasks.is_empty() {
             return Err("no tasks provided".to_owned());
         }
@@ -199,7 +199,10 @@ impl<H: Host> Env<H> {
         {
             for task in &input.tasks {
                 if !scope.members.iter().any(|m| m == &task.agent) {
-                    return Err(format!("agent '{}' is not in your members list", task.agent));
+                    return Err(format!(
+                        "agent '{}' is not in your members list",
+                        task.agent
+                    ));
                 }
             }
         }

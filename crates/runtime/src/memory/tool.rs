@@ -65,29 +65,29 @@ pub fn tools() -> Vec<Tool> {
 
 impl<H: Host> Env<H> {
     pub async fn dispatch_recall(&self, args: &str) -> Result<String, String> {
-        let input: Recall = serde_json::from_str(args)
-            .map_err(|e| format!("invalid arguments: {e}"))?;
+        let input: Recall =
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
         let mem = self.memory.as_ref().ok_or("memory not available")?;
         Ok(mem.recall(&input.query, input.limit.unwrap_or(5)))
     }
 
     pub async fn dispatch_remember(&self, args: &str) -> Result<String, String> {
-        let input: Remember = serde_json::from_str(args)
-            .map_err(|e| format!("invalid arguments: {e}"))?;
+        let input: Remember =
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
         let mem = self.memory.as_ref().ok_or("memory not available")?;
         Ok(mem.remember(input.name, input.description, input.content))
     }
 
     pub async fn dispatch_forget(&self, args: &str) -> Result<String, String> {
-        let input: Forget = serde_json::from_str(args)
-            .map_err(|e| format!("invalid arguments: {e}"))?;
+        let input: Forget =
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
         let mem = self.memory.as_ref().ok_or("memory not available")?;
         Ok(mem.forget(&input.name))
     }
 
     pub async fn dispatch_memory(&self, args: &str) -> Result<String, String> {
-        let input: MemoryTool = serde_json::from_str(args)
-            .map_err(|e| format!("invalid arguments: {e}"))?;
+        let input: MemoryTool =
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
         let mem = self.memory.as_ref().ok_or("memory not available")?;
         Ok(mem.write_index(&input.content))
     }

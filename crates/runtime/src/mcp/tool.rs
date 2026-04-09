@@ -22,8 +22,8 @@ impl ToolDescription for Mcp {
 
 impl<H: Host> Env<H> {
     pub async fn dispatch_mcp(&self, args: &str, agent: &str) -> Result<String, String> {
-        let input: Mcp = serde_json::from_str(args)
-            .map_err(|e| format!("invalid arguments: {e}"))?;
+        let input: Mcp =
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 
         let bridge = self.mcp.bridge().await;
 

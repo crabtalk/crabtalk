@@ -49,11 +49,11 @@ impl Host for DaemonHost {
         args: &str,
         conversation_id: Option<u64>,
     ) -> Result<String, String> {
-        let input: runtime::ask_user::AskUser = serde_json::from_str(args)
-            .map_err(|e| format!("invalid arguments: {e}"))?;
+        let input: runtime::ask_user::AskUser =
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 
-        let conversation_id = conversation_id
-            .ok_or("ask_user is only available in streaming mode")?;
+        let conversation_id =
+            conversation_id.ok_or("ask_user is only available in streaming mode")?;
 
         let (tx, rx) = oneshot::channel();
         self.pending_asks.lock().await.insert(conversation_id, tx);
@@ -78,8 +78,8 @@ impl Host for DaemonHost {
     }
 
     async fn dispatch_delegate(&self, args: &str, _agent: &str) -> Result<String, String> {
-        let input: runtime::task::Delegate = serde_json::from_str(args)
-            .map_err(|e| format!("invalid arguments: {e}"))?;
+        let input: runtime::task::Delegate =
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 
         // Register ephemeral agents and resolve agent names.
         let mut ephemeral_names = Vec::new();

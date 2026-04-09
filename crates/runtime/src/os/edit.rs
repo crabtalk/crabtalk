@@ -34,8 +34,8 @@ impl<H: Host> Env<H> {
         args: &str,
         conversation_id: Option<u64>,
     ) -> Result<String, String> {
-        let input: Edit = serde_json::from_str(args)
-            .map_err(|e| format!("invalid arguments: {e}"))?;
+        let input: Edit =
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 
         if input.old_string.is_empty() {
             return Err("old_string must not be empty".to_owned());
@@ -77,7 +77,9 @@ impl<H: Host> Env<H> {
             return Err("old_string not found".to_owned());
         }
         if count > 1 {
-            return Err(format!("old_string is not unique, found {count} occurrences"));
+            return Err(format!(
+                "old_string is not unique, found {count} occurrences"
+            ));
         }
 
         let new_content = content.replacen(&input.old_string, &input.new_string, 1);

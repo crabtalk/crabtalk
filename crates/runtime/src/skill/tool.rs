@@ -24,8 +24,8 @@ pub fn tools() -> Vec<Tool> {
 
 impl<H: Host> Env<H> {
     pub async fn dispatch_skill(&self, args: &str, agent: &str) -> Result<String, String> {
-        let input: Skill = serde_json::from_str(args)
-            .map_err(|e| format!("invalid arguments: {e}"))?;
+        let input: Skill =
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
         let name = &input.name;
 
         // Enforce skill scope.

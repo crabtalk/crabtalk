@@ -42,8 +42,8 @@ impl<H: Host> Env<H> {
         args: &str,
         conversation_id: Option<u64>,
     ) -> Result<String, String> {
-        let input: Read = serde_json::from_str(args)
-            .map_err(|e| format!("invalid arguments: {e}"))?;
+        let input: Read =
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 
         let conversation_cwd = if let Some(id) = conversation_id {
             self.host.conversation_cwd(id)

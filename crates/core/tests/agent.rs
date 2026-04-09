@@ -140,7 +140,10 @@ async fn run_stream_surfaces_handler_error_end_to_end() {
     assert_eq!(tool_results.len(), 1);
     match tool_results[0] {
         AgentEvent::ToolResult { output, .. } => {
-            assert_eq!(output.as_ref().err().map(String::as_str), Some("bash blew up"));
+            assert_eq!(
+                output.as_ref().err().map(String::as_str),
+                Some("bash blew up")
+            );
         }
         _ => unreachable!(),
     }

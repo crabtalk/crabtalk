@@ -195,11 +195,8 @@ impl<P: Provider + 'static> Agent<P> {
             }))
             .await;
             for (tc, result) in tool_calls.iter().zip(outputs) {
-                let entry = HistoryEntry::tool(
-                    tool_output_text(&result),
-                    tc.id.clone(),
-                    &tc.function.name,
-                );
+                let entry =
+                    HistoryEntry::tool(tool_output_text(&result), tc.id.clone(), &tc.function.name);
                 history.push(entry.clone());
                 tool_results.push(entry);
             }
