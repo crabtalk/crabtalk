@@ -8,7 +8,7 @@
 use crate::{host::Host, mcp::McpHandler, memory::Memory, os, skill, skill::SkillHandler};
 use std::{
     collections::BTreeMap,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{Arc, RwLock},
 };
 use wcore::{AgentConfig, AgentEvent, Hook, Storage, ToolRegistry, model::HistoryEntry};
@@ -398,7 +398,7 @@ impl<H: Host + 'static, S: Storage + 'static> Hook for Env<H, S> {
             ))
             .auto_injected(),
         );
-        if let Some(instructions) = discover_instructions(&cwd) {
+        if let Some(instructions) = self.host.discover_instructions(&cwd) {
             entries.push(
                 HistoryEntry::user(format!("<instructions>\n{instructions}\n</instructions>"))
                     .auto_injected(),
@@ -435,42 +435,4 @@ impl<H: Host + 'static, S: Storage + 'static> Hook for Env<H, S> {
     fn on_event(&self, agent: &str, conversation_id: u64, event: &AgentEvent) {
         self.host.on_agent_event(agent, conversation_id, event);
     }
-}
-
-/// Collect layered `Crab.md` instructions: global (`~/.crabtalk/Crab.md`)
-/// first, then any `Crab.md` files found walking up from `cwd` (root-first,
-/// project-last so project instructions take precedence).
-fn discover_instructions(cwd: &Path) -> Option<String> {
-    let config_dir = &*wcore::paths::CONFIG_DIR;
-    let mut layers = Vec::new();
-
-    // Global instructions from config dir.
-    let global = config_dir.join("Crab.md");
-    if let Ok(content) = std::fs::read_to_string(&global) {
-        layers.push(content);
-    }
-
-    // Walk up from CWD collecting project Crab.md files.
-    let mut found = Vec::new();
-    let mut dir = cwd;
-    loop {
-        let candidate = dir.join("Crab.md");
-        if candidate.is_file()
-            && !candidate.starts_with(config_dir)
-            && let Ok(content) = std::fs::read_to_string(&candidate)
-        {
-            found.push(content);
-        }
-        match dir.parent() {
-            Some(p) => dir = p,
-            None => break,
-        }
-    }
-    found.reverse();
-    layers.extend(found);
-
-    if layers.is_empty() {
-        return None;
-    }
-    Some(layers.join("\n\n"))
 }

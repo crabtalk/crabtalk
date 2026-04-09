@@ -7,7 +7,7 @@ use crate::daemon::event::{DaemonEvent, DaemonEventSender};
 use runtime::host::Host;
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -324,6 +324,49 @@ impl Host for DaemonHost {
     fn subscribe_events(&self) -> Option<broadcast::Receiver<AgentEventMsg>> {
         Some(self.events_tx.subscribe())
     }
+
+    fn discover_instructions(&self, cwd: &Path) -> Option<String> {
+        discover_instructions(cwd)
+    }
+}
+
+/// Collect layered `Crab.md` instructions: global
+/// (`~/.crabtalk/Crab.md`) first, then any `Crab.md` files found
+/// walking up from `cwd` (root-first, project-last so project
+/// instructions take precedence). Paths under the config dir are
+/// skipped on the walk so a user who runs crabtalk from
+/// `~/.crabtalk/` doesn't double-count the global file.
+fn discover_instructions(cwd: &Path) -> Option<String> {
+    let config_dir = &*wcore::paths::CONFIG_DIR;
+    let mut layers = Vec::new();
+
+    let global = config_dir.join("Crab.md");
+    if let Ok(content) = std::fs::read_to_string(&global) {
+        layers.push(content);
+    }
+
+    let mut found = Vec::new();
+    let mut dir = cwd;
+    loop {
+        let candidate = dir.join("Crab.md");
+        if candidate.is_file()
+            && !candidate.starts_with(config_dir)
+            && let Ok(content) = std::fs::read_to_string(&candidate)
+        {
+            found.push(content);
+        }
+        match dir.parent() {
+            Some(p) => dir = p,
+            None => break,
+        }
+    }
+    found.reverse();
+    layers.extend(found);
+
+    if layers.is_empty() {
+        return None;
+    }
+    Some(layers.join("\n\n"))
 }
 
 /// Generate a unique delegate sender identity.

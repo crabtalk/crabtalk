@@ -1,10 +1,10 @@
 //! Host — trait for server-specific tool dispatch.
 //!
 //! The runtime crate defines this trait. The daemon implements it to provide
-//! `ask_user`, `delegate`, and per-conversation CWD resolution. Embedded users
-//! get [`NoHost`] with no-op defaults.
+//! `ask_user`, `delegate`, per-conversation CWD resolution, and layered
+//! instruction discovery. Embedded users get [`NoHost`] with no-op defaults.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Trait for server-specific tool dispatch that the runtime cannot handle locally.
 pub trait Host: Send + Sync + Clone {
@@ -75,6 +75,19 @@ pub trait Host: Send + Sync + Clone {
     fn subscribe_events(
         &self,
     ) -> Option<tokio::sync::broadcast::Receiver<wcore::protocol::message::AgentEventMsg>> {
+        None
+    }
+
+    /// Collect layered instructions (e.g. `Crab.md` files) for the
+    /// given working directory. Called from `on_before_run` once per
+    /// turn, so hosts can surface per-project or per-workspace
+    /// guidance to the agent without the runtime itself walking the
+    /// filesystem.
+    ///
+    /// Default: `None`. The daemon walks `cwd` upward and merges with
+    /// a global file under `~/.crabtalk/`; embedded users who want the
+    /// same behaviour override this.
+    fn discover_instructions(&self, _cwd: &Path) -> Option<String> {
         None
     }
 
