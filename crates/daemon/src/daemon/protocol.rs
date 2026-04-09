@@ -149,7 +149,9 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
                         }
                     }
                     AgentEvent::ToolResult { call_id, output, duration_ms } => {
-                        yield StreamEvent { event: Some(stream_event::Event::ToolResult(ToolResultEvent { call_id: call_id.to_string(), output, duration_ms })) };
+                        let is_error = output.is_err();
+                        let output = match output { Ok(s) | Err(s) => s };
+                        yield StreamEvent { event: Some(stream_event::Event::ToolResult(ToolResultEvent { call_id: call_id.to_string(), output, duration_ms, is_error })) };
                     }
                     AgentEvent::ToolCallsComplete => {
                         yield StreamEvent { event: Some(stream_event::Event::ToolsComplete(ToolsCompleteEvent {})) };

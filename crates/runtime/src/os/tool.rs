@@ -28,11 +28,17 @@ pub fn tools() -> Vec<Tool> {
 
 impl<H: Host> Env<H> {
     /// Dispatch a `bash` tool call — run a command directly.
-    pub async fn dispatch_bash(&self, args: &str, conversation_id: Option<u64>) -> String {
-        let input: Bash = match serde_json::from_str(args) {
-            Ok(v) => v,
-            Err(e) => return format!("invalid arguments: {e}"),
-        };
+    ///
+    /// A non-zero exit code is *not* an `Err` — the shell ran successfully
+    /// and the JSON payload describes the outcome. Only dispatcher-level
+    /// failures (spawn error, wait error, timeout) become `Err`.
+    pub async fn dispatch_bash(
+        &self,
+        args: &str,
+        conversation_id: Option<u64>,
+    ) -> Result<String, String> {
+        let input: Bash = serde_json::from_str(args)
+            .map_err(|e| format!("invalid arguments: {e}"))?;
         let conversation_cwd = if let Some(id) = conversation_id {
             self.host.conversation_cwd(id)
         } else {
@@ -47,17 +53,14 @@ impl<H: Host> Env<H> {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 
-        let child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => {
-                return serde_json::json!({
-                    "stdout": "",
-                    "stderr": format!("bash failed: {e}"),
-                    "exit_code": -1
-                })
-                .to_string();
-            }
-        };
+        let child = cmd.spawn().map_err(|e| {
+            serde_json::json!({
+                "stdout": "",
+                "stderr": format!("bash failed: {e}"),
+                "exit_code": -1
+            })
+            .to_string()
+        })?;
 
         match tokio::time::timeout(std::time::Duration::from_secs(30), child.wait_with_output())
             .await
@@ -66,25 +69,25 @@ impl<H: Host> Env<H> {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 let exit_code = output.status.code().unwrap_or(-1);
-                serde_json::json!({
+                Ok(serde_json::json!({
                     "stdout": stdout.as_ref(),
                     "stderr": stderr.as_ref(),
                     "exit_code": exit_code
                 })
-                .to_string()
+                .to_string())
             }
-            Ok(Err(e)) => serde_json::json!({
+            Ok(Err(e)) => Err(serde_json::json!({
                 "stdout": "",
                 "stderr": format!("bash failed: {e}"),
                 "exit_code": -1
             })
-            .to_string(),
-            Err(_) => serde_json::json!({
+            .to_string()),
+            Err(_) => Err(serde_json::json!({
                 "stdout": "",
                 "stderr": "bash timed out after 30 seconds",
                 "exit_code": -1
             })
-            .to_string(),
+            .to_string()),
         }
     }
 }

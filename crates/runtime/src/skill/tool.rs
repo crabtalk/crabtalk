@@ -23,11 +23,9 @@ pub fn tools() -> Vec<Tool> {
 }
 
 impl<H: Host> Env<H> {
-    pub async fn dispatch_skill(&self, args: &str, agent: &str) -> String {
-        let input: Skill = match serde_json::from_str(args) {
-            Ok(v) => v,
-            Err(e) => return format!("invalid arguments: {e}"),
-        };
+    pub async fn dispatch_skill(&self, args: &str, agent: &str) -> Result<String, String> {
+        let input: Skill = serde_json::from_str(args)
+            .map_err(|e| format!("invalid arguments: {e}"))?;
         let name = &input.name;
 
         // Enforce skill scope.
@@ -35,12 +33,12 @@ impl<H: Host> Env<H> {
             && !scope.skills.is_empty()
             && !scope.skills.iter().any(|s| s == name)
         {
-            return format!("skill not available: {name}");
+            return Err(format!("skill not available: {name}"));
         }
 
         // Guard against path traversal.
         if name.contains("..") || name.contains('/') || name.contains('\\') {
-            return format!("invalid skill name: {name}");
+            return Err(format!("invalid skill name: {name}"));
         }
 
         // Try exact load from each skill directory.
@@ -54,9 +52,9 @@ impl<H: Host> Env<H> {
                             let body = skill.body.clone();
                             self.skills.registry.lock().await.upsert(skill);
                             let dir_path = skill_dir.display();
-                            format!("{body}\n\nSkill directory: {dir_path}")
+                            Ok(format!("{body}\n\nSkill directory: {dir_path}"))
                         }
-                        Err(e) => format!("failed to parse skill: {e}"),
+                        Err(e) => Err(format!("failed to parse skill: {e}")),
                     };
                 }
             }
@@ -83,10 +81,12 @@ impl<H: Host> Env<H> {
             .map(|s| format!("{}: {}", s.name, s.description))
             .collect();
 
+        // Empty discovery is not a failure — the caller asked "what matches?"
+        // and got "nothing". Return Ok so the UI doesn't flag it as an error.
         if matches.is_empty() {
-            "no skills found".to_owned()
+            Ok("no skills found".to_owned())
         } else {
-            matches.join("\n")
+            Ok(matches.join("\n"))
         }
     }
 }

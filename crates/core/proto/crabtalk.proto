@@ -430,6 +430,10 @@ message ToolResultEvent {
   string call_id = 1;
   string output = 2;
   uint64 duration_ms = 3;
+  // True when the dispatcher reported the tool result as an error.
+  // `output` still carries the (error) text so existing clients can
+  // render it; new clients use this flag for structured handling.
+  bool is_error = 4;
 }
 
 message ToolsCompleteEvent {}
@@ -515,6 +519,8 @@ message AgentEventMsg {
   repeated ToolCallInfo tool_calls = 6;
   // - TOOL_RESULT: tool output (may be truncated for size)
   string tool_output = 7;
+  // - TOOL_RESULT: true when the dispatcher reported the tool as errored.
+  bool tool_is_error = 8;
 }
 
 message ActiveConversationList {

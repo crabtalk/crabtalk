@@ -29,17 +29,19 @@ pub fn tools() -> Vec<Tool> {
 }
 
 impl<H: Host> Env<H> {
-    pub async fn dispatch_edit(&self, args: &str, conversation_id: Option<u64>) -> String {
-        let input: Edit = match serde_json::from_str(args) {
-            Ok(v) => v,
-            Err(e) => return format!("invalid arguments: {e}"),
-        };
+    pub async fn dispatch_edit(
+        &self,
+        args: &str,
+        conversation_id: Option<u64>,
+    ) -> Result<String, String> {
+        let input: Edit = serde_json::from_str(args)
+            .map_err(|e| format!("invalid arguments: {e}"))?;
 
         if input.old_string.is_empty() {
-            return "old_string must not be empty".to_owned();
+            return Err("old_string must not be empty".to_owned());
         }
         if input.old_string == input.new_string {
-            return "old_string and new_string are identical".to_owned();
+            return Err("old_string and new_string are identical".to_owned());
         }
 
         let conversation_cwd = if let Some(id) = conversation_id {
@@ -57,34 +59,31 @@ impl<H: Host> Env<H> {
 
         match std::fs::metadata(&path) {
             Ok(m) if m.len() > MAX_FILE_SIZE => {
-                return format!(
+                return Err(format!(
                     "file is too large ({} bytes, max {})",
                     m.len(),
                     MAX_FILE_SIZE
-                );
+                ));
             }
-            Err(e) => return format!("error reading {}: {e}", path.display()),
+            Err(e) => return Err(format!("error reading {}: {e}", path.display())),
             _ => {}
         }
 
-        let content = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(e) => return format!("error reading {}: {e}", path.display()),
-        };
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("error reading {}: {e}", path.display()))?;
 
         let count = content.matches(&input.old_string).count();
         if count == 0 {
-            return "old_string not found".to_owned();
+            return Err("old_string not found".to_owned());
         }
         if count > 1 {
-            return format!("old_string is not unique, found {count} occurrences");
+            return Err(format!("old_string is not unique, found {count} occurrences"));
         }
 
         let new_content = content.replacen(&input.old_string, &input.new_string, 1);
-        if let Err(e) = std::fs::write(&path, &new_content) {
-            return format!("error writing {}: {e}", path.display());
-        }
+        std::fs::write(&path, &new_content)
+            .map_err(|e| format!("error writing {}: {e}", path.display()))?;
 
-        "ok".to_owned()
+        Ok("ok".to_owned())
     }
 }

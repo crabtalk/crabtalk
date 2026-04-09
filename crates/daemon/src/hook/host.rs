@@ -44,44 +44,42 @@ pub struct DaemonHost {
 }
 
 impl Host for DaemonHost {
-    async fn dispatch_ask_user(&self, args: &str, conversation_id: Option<u64>) -> String {
-        let input: runtime::ask_user::AskUser = match serde_json::from_str(args) {
-            Ok(v) => v,
-            Err(e) => return format!("invalid arguments: {e}"),
-        };
+    async fn dispatch_ask_user(
+        &self,
+        args: &str,
+        conversation_id: Option<u64>,
+    ) -> Result<String, String> {
+        let input: runtime::ask_user::AskUser = serde_json::from_str(args)
+            .map_err(|e| format!("invalid arguments: {e}"))?;
 
-        let conversation_id = match conversation_id {
-            Some(id) => id,
-            None => return "ask_user is only available in streaming mode".to_owned(),
-        };
+        let conversation_id = conversation_id
+            .ok_or("ask_user is only available in streaming mode")?;
 
         let (tx, rx) = oneshot::channel();
         self.pending_asks.lock().await.insert(conversation_id, tx);
 
         match tokio::time::timeout(ASK_USER_TIMEOUT, rx).await {
-            Ok(Ok(reply)) => reply,
+            Ok(Ok(reply)) => Ok(reply),
             Ok(Err(_)) => {
                 self.pending_asks.lock().await.remove(&conversation_id);
-                "ask_user cancelled: reply channel closed".to_owned()
+                Err("ask_user cancelled: reply channel closed".to_owned())
             }
             Err(_) => {
                 self.pending_asks.lock().await.remove(&conversation_id);
                 let headers: Vec<&str> =
                     input.questions.iter().map(|q| q.header.as_str()).collect();
-                format!(
+                Err(format!(
                     "ask_user timed out after {}s: no reply received for: {}",
                     ASK_USER_TIMEOUT.as_secs(),
                     headers.join("; "),
-                )
+                ))
             }
         }
     }
 
-    async fn dispatch_delegate(&self, args: &str, _agent: &str) -> String {
-        let input: runtime::task::Delegate = match serde_json::from_str(args) {
-            Ok(v) => v,
-            Err(e) => return format!("invalid arguments: {e}"),
-        };
+    async fn dispatch_delegate(&self, args: &str, _agent: &str) -> Result<String, String> {
+        let input: runtime::task::Delegate = serde_json::from_str(args)
+            .map_err(|e| format!("invalid arguments: {e}"))?;
 
         // Register ephemeral agents and resolve agent names.
         let mut ephemeral_names = Vec::new();
@@ -137,7 +135,7 @@ impl Host for DaemonHost {
                 });
             }
             return serde_json::to_string(&json_results)
-                .unwrap_or_else(|e| format!("serialization error: {e}"));
+                .map_err(|e| format!("serialization error: {e}"));
         }
 
         let mut results = Vec::with_capacity(tasks.len());
@@ -158,7 +156,7 @@ impl Host for DaemonHost {
             let _ = self.event_tx.send(DaemonEvent::RemoveEphemeral { name });
         }
 
-        serde_json::to_string(&results).unwrap_or_else(|e| format!("serialization error: {e}"))
+        serde_json::to_string(&results).map_err(|e| format!("serialization error: {e}"))
     }
 
     fn conversation_cwd(&self, conversation_id: u64) -> Option<PathBuf> {
@@ -177,6 +175,7 @@ impl Host for DaemonHost {
             content: String,
             tool_calls: Vec<ToolCallInfo>,
             tool_output: String,
+            tool_is_error: bool,
         }
 
         impl Payload {
@@ -186,6 +185,7 @@ impl Host for DaemonHost {
                     content: String::new(),
                     tool_calls: Vec::new(),
                     tool_output: String::new(),
+                    tool_is_error: false,
                 }
             }
         }
@@ -234,10 +234,15 @@ impl Host for DaemonHost {
                 output,
                 duration_ms,
             } => {
-                tracing::debug!(%agent, %call_id, %duration_ms, "agent tool result");
+                let is_error = output.is_err();
+                let text: &str = match output {
+                    Ok(s) | Err(s) => s,
+                };
+                tracing::debug!(%agent, %call_id, %duration_ms, is_error, "agent tool result");
                 Payload {
                     content: format!("{duration_ms}ms"),
-                    tool_output: truncate_for_broadcast(output, MAX_TOOL_OUTPUT_BROADCAST),
+                    tool_output: truncate_for_broadcast(text, MAX_TOOL_OUTPUT_BROADCAST),
+                    tool_is_error: is_error,
                     ..Payload::of(AgentEventKind::ToolResult)
                 }
             }
@@ -278,6 +283,7 @@ impl Host for DaemonHost {
             timestamp: chrono::Utc::now().to_rfc3339(),
             tool_calls: p.tool_calls,
             tool_output: p.tool_output,
+            tool_is_error: p.tool_is_error,
         });
 
         // Publish agent completion to the event bus.

@@ -9,23 +9,28 @@ use std::path::PathBuf;
 /// Trait for server-specific tool dispatch that the runtime cannot handle locally.
 pub trait Host: Send + Sync + Clone {
     /// Handle `ask_user` — block until user replies.
+    ///
+    /// Returns `Ok` for a normal reply, `Err` for a failure (not available,
+    /// timeout, cancelled, invalid args).
     fn dispatch_ask_user(
         &self,
         args: &str,
         conversation_id: Option<u64>,
-    ) -> impl std::future::Future<Output = String> + Send {
+    ) -> impl std::future::Future<Output = Result<String, String>> + Send {
         let _ = (args, conversation_id);
-        async { "ask_user is not available in this runtime mode".to_owned() }
+        async { Err("ask_user is not available in this runtime mode".to_owned()) }
     }
 
     /// Handle `delegate` — spawn sub-agent tasks.
+    ///
+    /// Returns `Ok` for successful delegation output, `Err` for failure.
     fn dispatch_delegate(
         &self,
         args: &str,
         agent: &str,
-    ) -> impl std::future::Future<Output = String> + Send {
+    ) -> impl std::future::Future<Output = Result<String, String>> + Send {
         let _ = (args, agent);
-        async { "delegate is not available in this runtime mode".to_owned() }
+        async { Err("delegate is not available in this runtime mode".to_owned()) }
     }
 
     /// Resolve the working directory for a conversation.
@@ -75,14 +80,16 @@ pub trait Host: Send + Sync + Clone {
 
     /// Handle a tool call not matched by the built-in dispatch table.
     /// Downstream hosts override this to inject private tools.
+    ///
+    /// Returns `Ok` on success, `Err` for unknown tools or failures.
     fn dispatch_custom_tool(
         &self,
         name: &str,
         _args: &str,
         _agent: &str,
         _conversation_id: Option<u64>,
-    ) -> impl std::future::Future<Output = String> + Send {
-        async move { format!("tool not available: {name}") }
+    ) -> impl std::future::Future<Output = Result<String, String>> + Send {
+        async move { Err(format!("tool not available: {name}")) }
     }
 }
 

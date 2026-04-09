@@ -63,7 +63,7 @@ async fn step_tool_calls_dispatched_and_appended() {
 
     tokio::spawn(async move {
         while let Some(req) = tool_rx.recv().await {
-            let _ = req.reply.send(format!("result for {}", req.name));
+            let _ = req.reply.send(Ok(format!("result for {}", req.name)));
         }
     });
 
@@ -102,6 +102,59 @@ async fn step_send_error_propagates() {
     let mut history = vec![HistoryEntry::user("hi")];
     let result = agent.step(&mut history, None).await;
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn run_stream_surfaces_handler_error_end_to_end() {
+    // A handler that returns `Err(...)` must:
+    //   1. produce an `AgentEvent::ToolResult` whose `output` is `Err`
+    //   2. still land the error text in history so the next model call
+    //      sees it (the wire Message has no is_error flag)
+    let calls = vec![make_tool_call("bash", "{}")];
+    let model = TestProvider::with_chunks(vec![tool_chunks(calls), text_chunks("ack")]);
+
+    let (tool_tx, mut tool_rx) = mpsc::unbounded_channel();
+    let agent = AgentBuilder::new(Model::new(model))
+        .config(AgentConfig::new("test-agent"))
+        .tool_tx(tool_tx)
+        .build();
+
+    tokio::spawn(async move {
+        while let Some(req) = tool_rx.recv().await {
+            let _ = req.reply.send(Err(format!("{} blew up", req.name)));
+        }
+    });
+
+    let mut history = vec![HistoryEntry::user("go")];
+    let mut events: Vec<AgentEvent> = Vec::new();
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+
+    // (1) event carries Err — exactly one ToolResult, output.is_err().
+    let tool_results: Vec<&AgentEvent> = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::ToolResult { .. }))
+        .collect();
+    assert_eq!(tool_results.len(), 1);
+    match tool_results[0] {
+        AgentEvent::ToolResult { output, .. } => {
+            assert_eq!(output.as_ref().err().map(String::as_str), Some("bash blew up"));
+        }
+        _ => unreachable!(),
+    }
+
+    // (2) history preserves the error text for the next model call.
+    if let AgentEvent::Done(resp) = events.last().unwrap() {
+        let tool_entry = resp.steps[0]
+            .tool_results
+            .last()
+            .expect("step has a tool_result entry");
+        assert_eq!(tool_entry.text(), "bash blew up");
+    } else {
+        panic!("last event should be Done");
+    }
 }
 
 // --- run_stream() tests ---
@@ -151,7 +204,7 @@ async fn run_stream_tool_call_then_text() {
 
     tokio::spawn(async move {
         while let Some(req) = tool_rx.recv().await {
-            let _ = req.reply.send("tool output".into());
+            let _ = req.reply.send(Ok("tool output".into()));
         }
     });
 
@@ -237,7 +290,7 @@ async fn run_stream_multiple_tool_calls_in_one_step() {
 
     tokio::spawn(async move {
         while let Some(req) = tool_rx.recv().await {
-            let _ = req.reply.send(format!("result:{}", req.name));
+            let _ = req.reply.send(Ok(format!("result:{}", req.name)));
         }
     });
 
@@ -324,7 +377,7 @@ async fn run_stream_dispatches_tool_calls_concurrently() {
                     _ => 0,
                 };
                 tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
-                let _ = req.reply.send(format!("result:{}", req.name));
+                let _ = req.reply.send(Ok(format!("result:{}", req.name)));
             });
         }
     });
@@ -409,7 +462,7 @@ async fn run_stream_max_iterations() {
 
     tokio::spawn(async move {
         while let Some(req) = tool_rx.recv().await {
-            let _ = req.reply.send("ok".into());
+            let _ = req.reply.send(Ok("ok".into()));
         }
     });
 
@@ -634,7 +687,7 @@ async fn run_stream_text_then_tools_closes_text_before_tools() {
         .build();
     tokio::spawn(async move {
         while let Some(req) = tool_rx.recv().await {
-            let _ = req.reply.send("out".into());
+            let _ = req.reply.send(Ok("out".into()));
         }
     });
 

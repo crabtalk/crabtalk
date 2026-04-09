@@ -18,10 +18,11 @@ async fn tool_whitelist_rejects_unlisted() {
     config.tools = vec!["bash".to_owned()];
     hook.register_scope("restricted".to_owned(), &config);
 
-    let result: String = hook
+    let err = hook
         .dispatch_tool("recall", "{}", "restricted", "", None)
-        .await;
-    assert!(result.contains("tool not available"));
+        .await
+        .unwrap_err();
+    assert!(err.contains("tool not available"));
 }
 
 #[tokio::test]
@@ -30,10 +31,14 @@ async fn empty_whitelist_allows_all() {
     let config = AgentConfig::new("open");
     hook.register_scope("open".to_owned(), &config);
 
-    let result: String = hook
+    // `recall` with no memory configured is now an Err — it used to be a
+    // plain "memory not available" string. The assertion still confirms
+    // the whitelist let it through to the handler.
+    let err = hook
         .dispatch_tool("recall", r#"{"query":"test"}"#, "open", "", None)
-        .await;
-    assert!(result.contains("memory not available"));
+        .await
+        .unwrap_err();
+    assert!(err.contains("memory not available"));
 }
 
 #[tokio::test]
@@ -44,10 +49,11 @@ async fn delegate_member_scope_rejects_unlisted_agent() {
     hook.register_scope("caller".to_owned(), &config);
 
     let args = r#"{"tasks":[{"agent":"agent-b","message":"hello"}]}"#;
-    let result: String = hook
+    let err = hook
         .dispatch_tool("delegate", args, "caller", "", None)
-        .await;
-    assert!(result.contains("not in your members list"));
+        .await
+        .unwrap_err();
+    assert!(err.contains("not in your members list"));
 }
 
 #[tokio::test]
@@ -58,53 +64,63 @@ async fn delegate_member_scope_allows_listed_agent() {
     hook.register_scope("caller".to_owned(), &config);
 
     let args = r#"{"tasks":[{"agent":"agent-a","message":"hello"}]}"#;
-    let result: String = hook
+    // Scope passes, so the call reaches `Host::dispatch_delegate`. NoHost's
+    // default is `Err("delegate is not available in this runtime mode")` —
+    // asserting that exact error proves the scope check was cleared (the
+    // scope rejection would have short-circuited earlier with a different
+    // message).
+    let err = hook
         .dispatch_tool("delegate", args, "caller", "", None)
-        .await;
-    assert!(!result.contains("not in your members list"));
+        .await
+        .unwrap_err();
+    assert_eq!(err, "delegate is not available in this runtime mode");
 }
 
 #[tokio::test]
 async fn delegate_empty_tasks() {
     let hook = test_hook().await;
-    let result: String = hook
+    let err = hook
         .dispatch_tool("delegate", r#"{"tasks":[]}"#, "agent", "", None)
-        .await;
-    assert!(result.contains("no tasks provided"));
+        .await
+        .unwrap_err();
+    assert!(err.contains("no tasks provided"));
 }
 
 #[tokio::test]
 async fn no_bridge_ask_user_default() {
     let hook = test_hook().await;
-    let result: String = hook
+    let err = hook
         .dispatch_tool("ask_user", "{}", "agent", "", None)
-        .await;
-    assert!(result.contains("not available in this runtime mode"));
+        .await
+        .unwrap_err();
+    assert!(err.contains("not available in this runtime mode"));
 }
 
 #[tokio::test]
 async fn no_bridge_delegate_default() {
     let hook = test_hook().await;
     let args = r#"{"tasks":[{"agent":"x","message":"hi"}]}"#;
-    let result: String = hook
+    let err = hook
         .dispatch_tool("delegate", args, "agent", "", None)
-        .await;
-    assert!(result.contains("not available in this runtime mode"));
+        .await
+        .unwrap_err();
+    assert!(err.contains("not available in this runtime mode"));
 }
 
 #[tokio::test]
 async fn unknown_tool_rejected() {
     let hook = test_hook().await;
-    let result: String = hook
+    let err = hook
         .dispatch_tool("nonexistent", "{}", "agent", "", None)
-        .await;
-    assert!(result.contains("tool not available"));
+        .await
+        .unwrap_err();
+    assert!(err.contains("tool not available"));
 }
 
 #[tokio::test]
 async fn bash_rejected_for_gateway_sender() {
     let hook = test_hook().await;
-    let result: String = hook
+    let err = hook
         .dispatch_tool(
             "bash",
             r#"{"command":"echo hi"}"#,
@@ -112,6 +128,7 @@ async fn bash_rejected_for_gateway_sender() {
             "gateway:telegram",
             None,
         )
-        .await;
-    assert!(result.contains("only available in the command line interface"));
+        .await
+        .unwrap_err();
+    assert!(err.contains("only available in the command line interface"));
 }

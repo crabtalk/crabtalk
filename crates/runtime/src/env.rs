@@ -187,13 +187,11 @@ impl<H: Host> Env<H> {
     }
 
     /// Validate member scope and delegate to the bridge.
-    async fn dispatch_delegate(&self, args: &str, agent: &str) -> String {
-        let input: crate::task::Delegate = match serde_json::from_str(args) {
-            Ok(v) => v,
-            Err(e) => return format!("invalid arguments: {e}"),
-        };
+    async fn dispatch_delegate(&self, args: &str, agent: &str) -> Result<String, String> {
+        let input: crate::task::Delegate = serde_json::from_str(args)
+            .map_err(|e| format!("invalid arguments: {e}"))?;
         if input.tasks.is_empty() {
-            return "no tasks provided".to_owned();
+            return Err("no tasks provided".to_owned());
         }
         // Enforce members scope for all target agents.
         if let Some(scope) = self.scopes.get(agent)
@@ -201,7 +199,7 @@ impl<H: Host> Env<H> {
         {
             for task in &input.tasks {
                 if !scope.members.iter().any(|m| m == &task.agent) {
-                    return format!("agent '{}' is not in your members list", task.agent);
+                    return Err(format!("agent '{}' is not in your members list", task.agent));
                 }
             }
         }
@@ -216,19 +214,19 @@ impl<H: Host> Env<H> {
         agent: &str,
         sender: &str,
         conversation_id: Option<u64>,
-    ) -> String {
+    ) -> Result<String, String> {
         // Dispatch enforcement: reject tools not in the agent's whitelist.
         if let Some(scope) = self.scopes.get(agent)
             && !scope.tools.is_empty()
             && !scope.tools.iter().any(|t| t.as_str() == name)
         {
-            return format!("tool not available: {name}");
+            return Err(format!("tool not available: {name}"));
         }
         match name {
             "mcp" => self.dispatch_mcp(args, agent).await,
             "skill" => self.dispatch_skill(args, agent).await,
             "bash" if sender.contains(':') => {
-                "bash is only available in the command line interface".to_owned()
+                Err("bash is only available in the command line interface".to_owned())
             }
             "bash" => self.dispatch_bash(args, conversation_id).await,
             "read" => self.dispatch_read(args, conversation_id).await,

@@ -21,11 +21,9 @@ impl ToolDescription for Mcp {
 }
 
 impl<H: Host> Env<H> {
-    pub async fn dispatch_mcp(&self, args: &str, agent: &str) -> String {
-        let input: Mcp = match serde_json::from_str(args) {
-            Ok(v) => v,
-            Err(e) => return format!("invalid arguments: {e}"),
-        };
+    pub async fn dispatch_mcp(&self, args: &str, agent: &str) -> Result<String, String> {
+        let input: Mcp = serde_json::from_str(args)
+            .map_err(|e| format!("invalid arguments: {e}"))?;
 
         let bridge = self.mcp.bridge().await;
 
@@ -51,7 +49,7 @@ impl<H: Host> Env<H> {
             if let Some(ref allowed) = allowed_tools
                 && !allowed.iter().any(|t| t.as_str() == input.name)
             {
-                return format!("tool not available: {}", input.name);
+                return Err(format!("tool not available: {}", input.name));
             }
 
             let tools = bridge.tools().await;
@@ -90,10 +88,12 @@ impl<H: Host> Env<H> {
             })
             .collect();
 
+        // Empty discovery is not a failure — the caller asked "what matches?"
+        // and got "nothing". Return Ok so the UI doesn't flag it as an error.
         if matches.is_empty() {
-            "no tools found".to_owned()
+            Ok("no tools found".to_owned())
         } else {
-            matches.join("\n")
+            Ok(matches.join("\n"))
         }
     }
 }

@@ -76,7 +76,7 @@ fn bench_agent_with_tools(c: &mut Criterion) {
                 rt.block_on(async {
                     let handler = tokio::spawn(async move {
                         while let Some(req) = tool_rx.recv().await {
-                            let _ = req.reply.send("ok".into());
+                            let _ = req.reply.send(Ok("ok".into()));
                         }
                     });
                     let mut stream = pin!(agent.run_stream(&mut history, None, None, None));

@@ -39,11 +39,17 @@ pub enum AgentEvent {
     /// Model is calling tools (with the complete tool calls).
     ToolCallsStart(Vec<ToolCall>),
     /// A single tool completed execution.
+    ///
+    /// `output` is `Ok` for normal tool output and `Err` for a failure —
+    /// either a dispatch-level error (no sender, channel closed) or a
+    /// handler-reported failure. The inner string carries the text in
+    /// both cases so UIs can render it; the distinction lets clients
+    /// style errors differently and lets agents make retry decisions.
     ToolResult {
         /// The tool call ID this result belongs to.
         call_id: String,
-        /// The output from the tool.
-        output: String,
+        /// Success or error output from the tool.
+        output: Result<String, String>,
         /// Wall-clock duration of the tool dispatch in milliseconds.
         duration_ms: u64,
     },

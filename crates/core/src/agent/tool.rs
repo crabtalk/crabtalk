@@ -3,7 +3,8 @@
 //! [`ToolRegistry`] stores `crabllm_core::Tool` schemas by name — no
 //! handlers, no closures. [`ToolRequest`] and [`ToolSender`] are the
 //! agent-side dispatch primitives: the agent sends a `ToolRequest` per tool
-//! call and awaits a `String` reply.
+//! call and awaits a `Result<String, String>` reply — `Ok` carries normal
+//! output, `Err` carries an error message the UI can render distinctly.
 
 use crabllm_core::{FunctionDef, Tool, ToolType};
 use heck::ToSnakeCase;
@@ -26,8 +27,10 @@ pub struct ToolRequest {
     pub args: String,
     /// Name of the agent that made this call.
     pub agent: String,
-    /// Reply channel — the handler sends the result string here.
-    pub reply: oneshot::Sender<String>,
+    /// Reply channel — the handler sends a `Result<String, String>`:
+    /// `Ok` for normal output, `Err` for an error message the UI can
+    /// render as a failure and the agent can act on for retry decisions.
+    pub reply: oneshot::Sender<Result<String, String>>,
     /// Task ID of the calling task, if running within a task context.
     /// Set by the daemon when dispatching task-bound tool calls.
     pub task_id: Option<u64>,

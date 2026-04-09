@@ -37,11 +37,13 @@ pub fn tools() -> Vec<Tool> {
 }
 
 impl<H: Host> Env<H> {
-    pub async fn dispatch_read(&self, args: &str, conversation_id: Option<u64>) -> String {
-        let input: Read = match serde_json::from_str(args) {
-            Ok(v) => v,
-            Err(e) => return format!("invalid arguments: {e}"),
-        };
+    pub async fn dispatch_read(
+        &self,
+        args: &str,
+        conversation_id: Option<u64>,
+    ) -> Result<String, String> {
+        let input: Read = serde_json::from_str(args)
+            .map_err(|e| format!("invalid arguments: {e}"))?;
 
         let conversation_cwd = if let Some(id) = conversation_id {
             self.host.conversation_cwd(id)
@@ -59,20 +61,18 @@ impl<H: Host> Env<H> {
         // Size guard — refuse to read files that could OOM the process.
         match std::fs::metadata(&path) {
             Ok(m) if m.len() > MAX_FILE_SIZE => {
-                return format!(
+                return Err(format!(
                     "file is too large ({} bytes, max {})",
                     m.len(),
                     MAX_FILE_SIZE
-                );
+                ));
             }
-            Err(e) => return format!("error reading {}: {e}", path.display()),
+            Err(e) => return Err(format!("error reading {}: {e}", path.display())),
             _ => {}
         }
 
-        let content = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(e) => return format!("error reading {}: {e}", path.display()),
-        };
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("error reading {}: {e}", path.display()))?;
 
         let total = content.lines().count();
         let offset = input.offset.unwrap_or(1).max(1);
@@ -80,7 +80,9 @@ impl<H: Host> Env<H> {
         let start = offset - 1; // convert 1-based to 0-based
 
         if start >= total {
-            return format!("--- {total} total lines (offset {offset} is past end of file) ---");
+            return Ok(format!(
+                "--- {total} total lines (offset {offset} is past end of file) ---"
+            ));
         }
 
         let mut buf = String::new();
@@ -101,6 +103,6 @@ impl<H: Host> Env<H> {
             let _ = write!(buf, "\n--- {total} total lines ---");
         }
 
-        buf
+        Ok(buf)
     }
 }

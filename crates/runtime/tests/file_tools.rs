@@ -18,7 +18,7 @@ async fn read_basic() {
 
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = format!(r#"{{"path":"{}"}}"#, file.display());
-    let result = hook.dispatch_read(&args, None).await;
+    let result = hook.dispatch_read(&args, None).await.unwrap();
 
     assert!(result.contains("1\tline one"));
     assert!(result.contains("2\tline two"));
@@ -35,7 +35,7 @@ async fn read_offset_limit() {
 
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = format!(r#"{{"path":"{}","offset":10,"limit":5}}"#, file.display());
-    let result = hook.dispatch_read(&args, None).await;
+    let result = hook.dispatch_read(&args, None).await.unwrap();
 
     assert!(result.contains("10\tline 10"));
     assert!(result.contains("14\tline 14"));
@@ -49,9 +49,9 @@ async fn read_missing() {
     let dir = tempfile::tempdir().unwrap();
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = r#"{"path":"/nonexistent/file.txt"}"#;
-    let result = hook.dispatch_read(args, None).await;
+    let err = hook.dispatch_read(args, None).await.unwrap_err();
 
-    assert!(result.contains("error reading"));
+    assert!(err.contains("error reading"));
 }
 
 #[tokio::test]
@@ -62,7 +62,7 @@ async fn read_offset_past_end() {
 
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = format!(r#"{{"path":"{}","offset":999}}"#, file.display());
-    let result = hook.dispatch_read(&args, None).await;
+    let result = hook.dispatch_read(&args, None).await.unwrap();
 
     assert!(result.contains("past end of file"));
 }
@@ -74,7 +74,7 @@ async fn read_relative_path() {
 
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = r#"{"path":"rel.txt"}"#;
-    let result = hook.dispatch_read(args, None).await;
+    let result = hook.dispatch_read(args, None).await.unwrap();
 
     assert!(result.contains("1\tcontent"));
 }
@@ -89,9 +89,9 @@ async fn read_large_file_rejected() {
 
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = format!(r#"{{"path":"{}"}}"#, file.display());
-    let result = hook.dispatch_read(&args, None).await;
+    let err = hook.dispatch_read(&args, None).await.unwrap_err();
 
-    assert!(result.contains("file is too large"));
+    assert!(err.contains("file is too large"));
 }
 
 // --- edit ---
@@ -107,7 +107,7 @@ async fn edit_basic() {
         r#"{{"path":"{}","old_string":"hello","new_string":"goodbye"}}"#,
         file.display()
     );
-    let result = hook.dispatch_edit(&args, None).await;
+    let result = hook.dispatch_edit(&args, None).await.unwrap();
 
     assert_eq!(result, "ok");
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "goodbye world\n");
@@ -124,9 +124,9 @@ async fn edit_not_found() {
         r#"{{"path":"{}","old_string":"missing","new_string":"x"}}"#,
         file.display()
     );
-    let result = hook.dispatch_edit(&args, None).await;
+    let err = hook.dispatch_edit(&args, None).await.unwrap_err();
 
-    assert_eq!(result, "old_string not found");
+    assert_eq!(err, "old_string not found");
 }
 
 #[tokio::test]
@@ -140,10 +140,10 @@ async fn edit_not_unique() {
         r#"{{"path":"{}","old_string":"aaa","new_string":"ccc"}}"#,
         file.display()
     );
-    let result = hook.dispatch_edit(&args, None).await;
+    let err = hook.dispatch_edit(&args, None).await.unwrap_err();
 
-    assert!(result.contains("not unique"));
-    assert!(result.contains("2 occurrences"));
+    assert!(err.contains("not unique"));
+    assert!(err.contains("2 occurrences"));
 }
 
 #[tokio::test]
@@ -157,9 +157,9 @@ async fn edit_identical_strings() {
         r#"{{"path":"{}","old_string":"hello","new_string":"hello"}}"#,
         file.display()
     );
-    let result = hook.dispatch_edit(&args, None).await;
+    let err = hook.dispatch_edit(&args, None).await.unwrap_err();
 
-    assert!(result.contains("identical"));
+    assert!(err.contains("identical"));
 }
 
 #[tokio::test]
@@ -173,9 +173,9 @@ async fn edit_empty_old_string() {
         r#"{{"path":"{}","old_string":"","new_string":"x"}}"#,
         file.display()
     );
-    let result = hook.dispatch_edit(&args, None).await;
+    let err = hook.dispatch_edit(&args, None).await.unwrap_err();
 
-    assert!(result.contains("must not be empty"));
+    assert!(err.contains("must not be empty"));
 }
 
 #[tokio::test]
@@ -183,9 +183,9 @@ async fn edit_missing_file() {
     let dir = tempfile::tempdir().unwrap();
     let hook = test_env(dir.path().to_path_buf()).await;
     let args = r#"{"path":"/nonexistent/file.txt","old_string":"a","new_string":"b"}"#;
-    let result = hook.dispatch_edit(args, None).await;
+    let err = hook.dispatch_edit(args, None).await.unwrap_err();
 
-    assert!(result.contains("error reading"));
+    assert!(err.contains("error reading"));
 }
 
 #[tokio::test]
@@ -202,7 +202,8 @@ async fn file_tools_no_sender_restriction() {
     let args = format!(r#"{{"path":"{}"}}"#, file.display());
     let result = hook
         .dispatch_tool("read", &args, "agent", "gateway:telegram", None)
-        .await;
+        .await
+        .unwrap();
     assert!(result.contains("1\ttest content"));
 
     // edit works for gateway senders.
@@ -212,11 +213,12 @@ async fn file_tools_no_sender_restriction() {
     );
     let result = hook
         .dispatch_tool("edit", &args, "agent", "gateway:telegram", None)
-        .await;
+        .await
+        .unwrap();
     assert_eq!(result, "ok");
 
     // bash is blocked for gateway senders.
-    let result = hook
+    let err = hook
         .dispatch_tool(
             "bash",
             r#"{"command":"echo hi"}"#,
@@ -224,6 +226,7 @@ async fn file_tools_no_sender_restriction() {
             "gateway:telegram",
             None,
         )
-        .await;
-    assert!(result.contains("only available in the command line interface"));
+        .await
+        .unwrap_err();
+    assert!(err.contains("only available in the command line interface"));
 }

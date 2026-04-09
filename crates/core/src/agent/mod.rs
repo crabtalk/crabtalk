@@ -50,6 +50,17 @@ fn last_sender(history: &[HistoryEntry]) -> String {
         .unwrap_or_default()
 }
 
+/// Borrow the inner string from a tool-dispatch result regardless of
+/// success/error. The LLM wire format (crabllm-core `Message`) has no
+/// `is_error` flag, so the agent collapses both arms to a plain string
+/// when appending to history. UI clients still get the distinction via
+/// `AgentEvent::ToolResult.output`.
+fn tool_output_text(result: &Result<String, String>) -> &str {
+    match result {
+        Ok(s) | Err(s) => s,
+    }
+}
+
 /// An immutable agent definition.
 ///
 /// Generic over `P: crabllm_core::Provider` — holds a `Model<P>` wrapper
@@ -184,7 +195,11 @@ impl<P: Provider + 'static> Agent<P> {
             }))
             .await;
             for (tc, result) in tool_calls.iter().zip(outputs) {
-                let entry = HistoryEntry::tool(&result, tc.id.clone(), &tc.function.name);
+                let entry = HistoryEntry::tool(
+                    tool_output_text(&result),
+                    tc.id.clone(),
+                    &tc.function.name,
+                );
                 history.push(entry.clone());
                 tool_results.push(entry);
             }
@@ -201,17 +216,21 @@ impl<P: Provider + 'static> Agent<P> {
 
     /// Dispatch a single tool call via the tool sender channel.
     ///
-    /// Returns the result string. If no sender is configured, returns an error
-    /// message without panicking.
+    /// Returns `Ok(output)` for normal tool output or `Err(message)` for a
+    /// failure. Dispatch-level problems (no sender, channel closed, reply
+    /// dropped) map to `Err`; the handler's own `Ok`/`Err` verdict is
+    /// forwarded unchanged.
     async fn dispatch_tool(
         &self,
         name: &str,
         args: &str,
         sender: &str,
         conversation_id: Option<u64>,
-    ) -> String {
+    ) -> Result<String, String> {
         let Some(tx) = &self.tool_tx else {
-            return format!("tool '{name}' called but no tool sender configured");
+            return Err(format!(
+                "tool '{name}' called but no tool sender configured"
+            ));
         };
         let (reply_tx, reply_rx) = oneshot::channel();
         let req = ToolRequest {
@@ -224,11 +243,11 @@ impl<P: Provider + 'static> Agent<P> {
             conversation_id,
         };
         if tx.send(req).is_err() {
-            return format!("tool channel closed while calling '{name}'");
+            return Err(format!("tool channel closed while calling '{name}'"));
         }
         reply_rx
             .await
-            .unwrap_or_else(|_| format!("tool '{name}' dropped reply"))
+            .unwrap_or_else(|_| Err(format!("tool '{name}' dropped reply")))
     }
 
     /// Determine the stop reason for a step with no tool calls.
@@ -464,23 +483,28 @@ impl<P: Provider + 'static> Agent<P> {
                         })
                         .collect();
 
-                    let mut buffered: Vec<Option<String>> = vec![None; tool_calls.len()];
+                    let mut buffered: Vec<Option<Result<String, String>>> =
+                        vec![None; tool_calls.len()];
                     while let Some((idx, output, duration_ms)) = pending.next().await {
                         let call_id = tool_calls[idx].id.clone();
-                        // Clone: `buffered[idx]` needs its own copy so history
-                        // can be appended in call order after the drain loop,
-                        // while the event takes the original String.
-                        buffered[idx] = Some(output.clone());
+                        // Clone into the event; the owned Result lands in
+                        // `buffered[idx]` so the drain-loop tail can append
+                        // history entries in original call order.
                         yield AgentEvent::ToolResult {
                             call_id,
-                            output,
+                            output: output.clone(),
                             duration_ms,
                         };
+                        buffered[idx] = Some(output);
                     }
 
                     for (tc, out) in tool_calls.iter().zip(buffered.into_iter()) {
                         let out = out.expect("FuturesUnordered drained every slot");
-                        let entry = HistoryEntry::tool(&out, tc.id.clone(), &tc.function.name);
+                        let entry = HistoryEntry::tool(
+                            tool_output_text(&out),
+                            tc.id.clone(),
+                            &tc.function.name,
+                        );
                         history.push(entry.clone());
                         tool_results.push(entry);
                     }

@@ -147,34 +147,38 @@ impl McpBridge {
     }
 
     /// Call a tool by name, routing to the correct peer.
-    pub async fn call(&self, name: &str, arguments: &str) -> String {
+    ///
+    /// Returns `Ok` on success, `Err` for routing failures, arg parse
+    /// errors, MCP-reported tool errors, or transport failures.
+    pub async fn call(&self, name: &str, arguments: &str) -> Result<String, String> {
         let mut peers = self.peers.lock().await;
         let connected = peers
             .iter_mut()
             .find(|p| p.tools.iter().any(|t| t.as_str() == name));
 
         let Some(connected) = connected else {
-            return format!("mcp tool '{name}' not available");
+            return Err(format!("mcp tool '{name}' not available"));
         };
 
         let args: Option<serde_json::Map<String, serde_json::Value>> = if arguments.is_empty() {
             None
         } else {
-            match serde_json::from_str(arguments) {
-                Ok(v) => Some(v),
-                Err(e) => return format!("invalid tool arguments: {e}"),
-            }
+            Some(
+                serde_json::from_str(arguments)
+                    .map_err(|e| format!("invalid tool arguments: {e}"))?,
+            )
         };
 
         match connected.peer.call_tool(name, args).await {
             Ok(result) => {
+                let text = extract_text(&result.content);
                 if result.is_error == Some(true) {
-                    format!("mcp tool error: {}", extract_text(&result.content))
+                    Err(format!("mcp tool error: {text}"))
                 } else {
-                    extract_text(&result.content)
+                    Ok(text)
                 }
             }
-            Err(e) => format!("mcp call failed: {e}"),
+            Err(e) => Err(format!("mcp call failed: {e}")),
         }
     }
 }
