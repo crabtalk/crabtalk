@@ -22,9 +22,11 @@ pub use config::{
     load_agents_dirs, repo_slug, resolve_manifests, scan_skill_names,
 };
 pub use runtime::{
-    Conversation, Runtime, conversation::find_latest_conversation, conversation::sender_slug,
+    Conversation, Runtime,
+    conversation::{ConversationMeta, find_latest_conversation, sender_slug},
     hook::Hook,
 };
+pub use storage::{MemStorage, Storage};
 
 pub mod agent;
 pub mod config;
@@ -32,4 +34,5 @@ pub mod model;
 pub mod paths;
 pub mod protocol;
 mod runtime;
+pub mod storage;
 pub mod utils;

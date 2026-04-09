@@ -1,12 +1,10 @@
 //! Crabtalk skill handler — initial load through [`Storage`] backends.
 
-use crate::{
-    skill::{SkillRegistry, loader},
-    storage::Storage,
-};
+use crate::skill::{SkillRegistry, loader};
 use anyhow::Result;
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
+use wcore::Storage;
 
 /// A single root the skill handler reads from. `label` is the display path
 /// (used in log messages and the dispatch tool's `Skill directory:`

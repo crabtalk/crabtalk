@@ -1,23 +1,33 @@
-//! Conversation — container with append-only JSONL persistence.
+//! Conversation — data container with per-step Storage persistence.
 //!
-//! Files are organized as `sessions/{agent}_{sender}_{seq}.jsonl`.
-//! After `set_title`, renamed to `{agent}_{sender}_{seq}_{title_slug}.jsonl`.
+//! Each conversation is scoped to a slug (`{agent_slug}_{sender_slug}_{seq}`)
+//! and lays its state out under the runtime [`Storage`] as:
 //!
-//! Append-only. Compact markers (`{"compact":"..."}`) separate archived
-//! history from the working context. Loading reads from the last compact
-//! marker forward.
+//! - `sessions/<slug>/meta` — single [`ConversationMeta`] JSON blob.
+//! - `sessions/<slug>/step-<nnnnnn>` — one key per persisted step
+//!   (message, trace event, or compact marker). `nnnnnn` is a
+//!   zero-padded monotonic counter so `list(prefix)` returns steps in
+//!   insertion order.
+//!
+//! Compact markers double as archive boundaries: [`Conversation::load_context`]
+//! replays from the last compact forward, same semantics as the old
+//! append-only JSONL format.
 
-use crate::{AgentEvent, AgentStep, model::HistoryEntry};
+use crate::{AgentEvent, AgentStep, Storage, model::HistoryEntry};
 use crabllm_core::Usage;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::{self, OpenOptions},
-    io::{BufRead, BufReader, Write},
-    path::{Path, PathBuf},
-    time::Instant,
-};
+use std::time::Instant;
 
-/// Conversation metadata — first line of a JSONL conversation file.
+/// Prefix for all session-related keys.
+const SESSIONS_PREFIX: &str = "sessions/";
+/// Suffix for per-step keys under a session slug.
+const STEP_PREFIX: &str = "step-";
+/// Width of the zero-padded step counter.
+const STEP_WIDTH: usize = 6;
+/// Name of the single meta blob under a session slug.
+const META_KEY: &str = "meta";
+
+/// Conversation metadata — the single `meta` blob for a session slug.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationMeta {
     pub agent: String,
@@ -29,11 +39,10 @@ pub struct ConversationMeta {
     pub uptime_secs: u64,
 }
 
-/// A JSONL line: message, compact marker (archive boundary), or trace event.
-///
-/// Variant order matters: `untagged` tries top-to-bottom. `Compact` and
-/// `Event` are discriminated by required fields (`compact` / `event`) and
-/// fail fast on other shapes, so `Message` (the catch-all) must be last.
+/// One persisted step under `sessions/<slug>/step-<nnnnnn>`. Serialized
+/// as JSON and discriminated by shape: `Compact` and `Event` carry
+/// required tagged fields and fail fast, so `Entry` (the catch-all)
+/// must be last in the `untagged` list.
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum ConversationLine {
@@ -48,11 +57,12 @@ enum ConversationLine {
     Entry(HistoryEntry),
 }
 
-/// A trace entry persisted to the conversation JSONL alongside messages.
+/// A trace entry persisted alongside messages.
 ///
-/// Captures the *how* of agent execution (which tools ran, how long they
-/// took, why the agent stopped, what it cost) — information that doesn't
-/// fit in the message stream itself but is invaluable for debugging.
+/// Captures the *how* of agent execution (which tools ran, how long
+/// they took, why the agent stopped, what it cost) — information that
+/// doesn't fit in the message stream itself but is invaluable for
+/// debugging.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum EventLine {
@@ -176,8 +186,12 @@ pub struct Conversation {
     pub uptime_secs: u64,
     /// When this conversation was loaded/created in this process.
     pub created_at: Instant,
-    /// Path to the JSONL persistence file.
-    pub file_path: Option<PathBuf>,
+    /// Storage slug (`{agent}_{sender}_{seq}`). `None` until the first
+    /// persistence call materializes the session directory.
+    pub slug: Option<String>,
+    /// Monotonic counter for the next `step-<nnnnnn>` key. Recovered
+    /// from `list` on load; incremented in-memory on each append.
+    pub next_step: u64,
 }
 
 impl Conversation {
@@ -191,87 +205,31 @@ impl Conversation {
             title: String::new(),
             uptime_secs: 0,
             created_at: Instant::now(),
-            file_path: None,
+            slug: None,
+            next_step: 1,
         }
     }
 
-    /// Ensure the JSONL file exists, creating it on first call.
-    ///
-    /// No-op if the file was already created or loaded from disk.
-    pub fn ensure_file(&mut self) {
-        if self.file_path.is_some() {
+    /// Ensure a session slug exists, minting one and persisting an
+    /// initial meta blob on first call. No-op if the slug was already
+    /// assigned (e.g. on a load path).
+    pub fn ensure_slug(&mut self, storage: &dyn Storage) {
+        if self.slug.is_some() {
             return;
         }
-        self.init_file(&crate::paths::CONVERSATIONS_DIR);
+        let agent_slug = sender_slug(&self.agent);
+        let sender = sender_slug(&self.created_by);
+        let prefix = format!("{SESSIONS_PREFIX}{agent_slug}_{sender}_");
+        let seq = next_seq(storage, &prefix);
+        let slug = format!("{agent_slug}_{sender}_{seq}");
+        self.slug = Some(slug.clone());
+        self.write_meta(storage);
     }
 
-    /// Initialize a new JSONL file in the flat conversations directory.
-    ///
-    /// Creates `{conversations_dir}/{agent}_{sender}_{seq}.jsonl` with
-    /// seq auto-incremented globally per identity.
-    pub fn init_file(&mut self, conversations_dir: &Path) {
-        let _ = fs::create_dir_all(conversations_dir);
-
-        let slug = sender_slug(&self.created_by);
-        let prefix = format!("{}_{slug}_", self.agent);
-        let seq = next_seq(conversations_dir, &prefix);
-        let filename = format!("{prefix}{seq}.jsonl");
-        let path = conversations_dir.join(filename);
-
-        let meta = ConversationMeta {
-            agent: self.agent.clone(),
-            created_by: self.created_by.clone(),
-            created_at: chrono::Utc::now().to_rfc3339(),
-            title: String::new(),
-            uptime_secs: self.uptime_secs,
-        };
-
-        match OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&path)
-        {
-            Ok(mut f) => {
-                if let Ok(json) = serde_json::to_string(&meta) {
-                    let _ = writeln!(f, "{json}");
-                }
-                self.file_path = Some(path);
-            }
-            Err(e) => tracing::warn!("failed to create conversation file: {e}"),
-        }
-    }
-
-    /// Set the conversation title and rename the file to include the title slug.
-    pub fn set_title(&mut self, title: &str) {
-        self.title = title.to_string();
-
-        let Some(ref old_path) = self.file_path else {
-            return;
-        };
-
-        // Rewrite meta line with the title.
-        self.rewrite_meta();
-
-        // Rename file: insert title slug before `.jsonl`.
-        let title_slug = sender_slug(title);
-        if title_slug.is_empty() {
-            return;
-        }
-        let old_name = old_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let new_name = format!("{old_name}_{title_slug}.jsonl");
-        let new_path = old_path.with_file_name(new_name);
-        if fs::rename(old_path, &new_path).is_ok() {
-            self.file_path = Some(new_path);
-        }
-    }
-
-    /// Rewrite the meta line (first line) of the JSONL file.
-    pub fn rewrite_meta(&self) {
-        let Some(ref path) = self.file_path else {
-            return;
-        };
-        let Ok(content) = fs::read_to_string(path) else {
+    /// Write the meta blob for this conversation (overwrites any
+    /// existing one).
+    pub fn write_meta(&self, storage: &dyn Storage) {
+        let Some(ref slug) = self.slug else {
             return;
         };
         let meta = ConversationMeta {
@@ -281,162 +239,143 @@ impl Conversation {
             title: self.title.clone(),
             uptime_secs: self.uptime_secs,
         };
-        let Ok(meta_json) = serde_json::to_string(&meta) else {
+        let Ok(json) = serde_json::to_vec(&meta) else {
             return;
         };
-        // Replace only the first line.
-        let rest = content.find('\n').map(|i| &content[i..]).unwrap_or("");
-        let new_content = format!("{meta_json}{rest}");
-        let _ = fs::write(path, new_content);
+        if let Err(e) = storage.put(&meta_key(slug), &json) {
+            tracing::warn!("failed to write conversation meta: {e}");
+        }
     }
 
-    /// Append entries to the JSONL file. Skips auto-injected entries.
-    pub fn append_messages(&self, entries: &[HistoryEntry]) {
-        let Some(ref path) = self.file_path else {
-            return;
-        };
-        let mut file = match OpenOptions::new().append(true).open(path) {
-            Ok(f) => f,
-            Err(e) => {
-                tracing::warn!("failed to open conversation file for append: {e}");
-                return;
-            }
-        };
+    /// Alias kept for legacy callers: rewrite meta is exactly
+    /// overwriting the single meta blob.
+    pub fn rewrite_meta(&self, storage: &dyn Storage) {
+        self.write_meta(storage);
+    }
+
+    /// Set the conversation title and rewrite meta. The slug stays
+    /// stable — unlike the old JSONL path, there's no file rename.
+    pub fn set_title(&mut self, storage: &dyn Storage, title: &str) {
+        self.title = title.to_string();
+        self.write_meta(storage);
+    }
+
+    /// Append history entries as individual `step-<nnnnnn>` keys.
+    /// Auto-injected entries are skipped so they don't pollute replay.
+    pub fn append_messages(&mut self, storage: &dyn Storage, entries: &[HistoryEntry]) {
         for entry in entries {
             if entry.auto_injected {
                 continue;
             }
-            if let Ok(json) = serde_json::to_string(entry) {
-                let _ = writeln!(file, "{json}");
-            }
+            self.append_line(storage, ConversationLine::Entry(entry.clone()));
         }
     }
 
-    /// Append trace event entries to the JSONL file.
-    ///
-    /// Events sit alongside messages and compact markers but are skipped
-    /// when reconstructing the LLM working context (see [`Self::load_context`]).
-    ///
-    /// Trace persistence is best-effort: events are buffered for the whole
-    /// run and flushed alongside messages so file order matches chronological
-    /// order. A daemon crash mid-run will lose the trace for that run; the
-    /// messages themselves are likewise only persisted at run end.
-    pub fn append_events(&self, events: &[EventLine]) {
-        if events.is_empty() {
-            return;
-        }
-        let Some(ref path) = self.file_path else {
-            return;
-        };
-        let mut file = match OpenOptions::new().append(true).open(path) {
-            Ok(f) => f,
-            Err(e) => {
-                tracing::warn!("failed to open conversation file for events: {e}");
-                return;
-            }
-        };
+    /// Append trace event entries. Events are persisted alongside
+    /// messages and compact markers but are skipped when reconstructing
+    /// the LLM working context (see [`Self::load_context`]).
+    pub fn append_events(&mut self, storage: &dyn Storage, events: &[EventLine]) {
         for event in events {
-            let line = ConversationLine::Event(event.clone());
-            if let Ok(json) = serde_json::to_string(&line) {
-                let _ = writeln!(file, "{json}");
-            }
+            self.append_line(storage, ConversationLine::Event(event.clone()));
         }
     }
 
-    /// Append a compact marker to the JSONL file.
-    ///
-    /// The marker doubles as an archive boundary: it stores the summary,
-    /// a title derived from the first sentence, and a timestamp.
-    pub fn append_compact(&self, summary: &str) {
-        let Some(ref path) = self.file_path else {
-            return;
-        };
-        let mut file = match OpenOptions::new().append(true).open(path) {
-            Ok(f) => f,
-            Err(e) => {
-                tracing::warn!("failed to open conversation file for compact: {e}");
-                return;
-            }
-        };
+    /// Append a compact marker. The marker doubles as an archive
+    /// boundary: it stores the summary, a short title, and a timestamp.
+    pub fn append_compact(&mut self, storage: &dyn Storage, summary: &str) {
         let line = ConversationLine::Compact {
             compact: summary.to_string(),
             title: compact_title(summary),
             archived_at: chrono::Utc::now().to_rfc3339(),
         };
-        if let Ok(json) = serde_json::to_string(&line) {
-            let _ = writeln!(file, "{json}");
+        self.append_line(storage, line);
+    }
+
+    fn append_line(&mut self, storage: &dyn Storage, line: ConversationLine) {
+        let Some(ref slug) = self.slug else {
+            tracing::warn!("append called on conversation with no slug");
+            return;
+        };
+        let Ok(bytes) = serde_json::to_vec(&line) else {
+            return;
+        };
+        let key = step_key(slug, self.next_step);
+        self.next_step += 1;
+        if let Err(e) = storage.put(&key, &bytes) {
+            tracing::warn!("failed to write conversation step {key}: {e}");
         }
     }
 
-    /// Load the working context from a JSONL conversation file.
-    ///
-    /// Reads from the last `{"compact":"..."}` marker forward. If no compact
-    /// marker exists, loads all entries.
-    pub fn load_context(path: &Path) -> anyhow::Result<(ConversationMeta, Vec<HistoryEntry>)> {
-        let file = fs::File::open(path)?;
-        let reader = BufReader::new(file);
-        let mut lines = reader.lines();
+    /// Load the working context (meta + LLM history) for the given
+    /// session slug. Replay starts from the last compact marker
+    /// forward; if there is no compact marker, all entries are
+    /// returned. Trace events are excluded from the returned history.
+    pub fn load_context(
+        storage: &dyn Storage,
+        slug: &str,
+    ) -> anyhow::Result<(ConversationMeta, Vec<HistoryEntry>)> {
+        let meta_bytes = storage
+            .get(&meta_key(slug))?
+            .ok_or_else(|| anyhow::anyhow!("session {slug} has no meta blob"))?;
+        let meta: ConversationMeta = serde_json::from_slice(&meta_bytes)?;
 
-        let meta_line = lines
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("empty conversation file"))??;
-        let meta: ConversationMeta = serde_json::from_str(&meta_line)?;
+        // `list` returns sorted keys; step_key uses zero-padding so
+        // lexicographic order matches insertion order.
+        let step_prefix = step_prefix(slug);
+        let keys = storage.list(&step_prefix)?;
 
-        let mut all_lines: Vec<String> = Vec::new();
+        // Two-pass: first decode every step and find the last compact
+        // index; second pass folds from there forward.
+        let mut lines: Vec<ConversationLine> = Vec::with_capacity(keys.len());
         let mut last_compact_idx: Option<usize> = None;
-
-        for line in lines {
-            let line = line?;
-            if line.trim().is_empty() {
+        for key in &keys {
+            let Some(bytes) = storage.get(key)? else {
                 continue;
+            };
+            match serde_json::from_slice::<ConversationLine>(&bytes) {
+                Ok(line) => {
+                    if matches!(line, ConversationLine::Compact { .. }) {
+                        last_compact_idx = Some(lines.len());
+                    }
+                    lines.push(line);
+                }
+                Err(e) => tracing::warn!("skipping unparsable step {key}: {e}"),
             }
-            if line.contains("\"compact\"")
-                && let Ok(ConversationLine::Compact { .. }) = serde_json::from_str(&line)
-            {
-                last_compact_idx = Some(all_lines.len());
-            }
-            all_lines.push(line);
         }
 
-        let context_start = last_compact_idx.unwrap_or_default();
-
+        let start = last_compact_idx.unwrap_or(0);
         let mut entries = Vec::new();
-        for (i, line) in all_lines[context_start..].iter().enumerate() {
-            if i == 0
-                && last_compact_idx.is_some()
-                && let Ok(ConversationLine::Compact { compact, .. }) = serde_json::from_str(line)
-            {
-                entries.push(HistoryEntry::user(&compact));
-                continue;
-            }
-            // Skip event traces — they're not part of the LLM working context.
-            match serde_json::from_str::<ConversationLine>(line) {
-                Ok(ConversationLine::Entry(entry)) => entries.push(entry),
-                Ok(ConversationLine::Event(_) | ConversationLine::Compact { .. }) => {}
-                Err(e) => tracing::warn!("skipping unparsable conversation line: {e}"),
+        for (i, line) in lines[start..].iter().enumerate() {
+            match line {
+                ConversationLine::Compact { compact, .. }
+                    if i == 0 && last_compact_idx.is_some() =>
+                {
+                    entries.push(HistoryEntry::user(compact));
+                }
+                ConversationLine::Entry(entry) => entries.push(entry.clone()),
+                // Skip events and subsequent compacts.
+                ConversationLine::Event(_) | ConversationLine::Compact { .. } => {}
             }
         }
 
         Ok((meta, entries))
     }
 
-    /// Load all archive segments from a JSONL conversation file.
-    ///
-    /// Each compact marker in the file becomes an `ArchiveSegment` with
-    /// title, summary, and timestamp. Returns segments in chronological order.
-    pub fn load_archives(path: &Path) -> anyhow::Result<Vec<ArchiveSegment>> {
-        let file = fs::File::open(path)?;
-        let reader = BufReader::new(file);
+    /// Load all archive segments for a session slug. Each compact
+    /// marker becomes an [`ArchiveSegment`] with title, summary, and
+    /// timestamp. Segments come back in chronological order.
+    pub fn load_archives(storage: &dyn Storage, slug: &str) -> anyhow::Result<Vec<ArchiveSegment>> {
+        let keys = storage.list(&step_prefix(slug))?;
         let mut archives = Vec::new();
-
-        for line in reader.lines().skip(1) {
-            let line = line?;
-            if line.contains("\"compact\"")
-                && let Ok(ConversationLine::Compact {
-                    compact,
-                    title,
-                    archived_at,
-                }) = serde_json::from_str(&line)
+        for key in keys {
+            let Some(bytes) = storage.get(&key)? else {
+                continue;
+            };
+            if let Ok(ConversationLine::Compact {
+                compact,
+                title,
+                archived_at,
+            }) = serde_json::from_slice(&bytes)
             {
                 archives.push(ArchiveSegment {
                     title,
@@ -445,72 +384,100 @@ impl Conversation {
                 });
             }
         }
-
         Ok(archives)
     }
 }
 
-/// Find the latest conversation file for an (agent, created_by) identity.
-///
-/// Scans the flat conversations directory for files matching the identity prefix
-/// and returns the one with the highest seq number.
+/// Find the latest session slug for an (agent, created_by) identity,
+/// or `None` if no session exists.
 pub fn find_latest_conversation(
-    conversations_dir: &Path,
+    storage: &dyn Storage,
     agent: &str,
     created_by: &str,
-) -> Option<PathBuf> {
-    let slug = sender_slug(created_by);
-    let prefix = format!("{agent}_{slug}_");
-
-    let mut best: Option<(u32, PathBuf)> = None;
-
-    for entry in fs::read_dir(conversations_dir).ok()?.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
+) -> Option<String> {
+    let agent_slug = sender_slug(agent);
+    let sender = sender_slug(created_by);
+    let prefix = format!("{SESSIONS_PREFIX}{agent_slug}_{sender}_");
+    let keys = storage.list(&prefix).ok()?;
+    let mut best: Option<(u32, String)> = None;
+    for key in keys {
+        // key looks like `sessions/<agent>_<sender>_<seq>/meta` or
+        // `sessions/<agent>_<sender>_<seq>/step-<n>`. Extract the slug
+        // segment between the prefix and the next `/`.
+        let rest = &key[prefix.len()..];
+        let Some(slash) = rest.find('/') else {
             continue;
-        }
-        let name = path.file_name()?.to_str()?;
-        if !name.starts_with(&prefix) || !name.ends_with(".jsonl") {
+        };
+        let seq_str = &rest[..slash];
+        let Ok(seq) = seq_str.parse::<u32>() else {
             continue;
-        }
-        let after_prefix = &name[prefix.len()..];
-        let seq_str = after_prefix.split(|c: char| !c.is_ascii_digit()).next()?;
-        let seq: u32 = seq_str.parse().ok()?;
+        };
+        let slug = format!("{agent_slug}_{sender}_{seq}");
         if best.as_ref().is_none_or(|(best_seq, _)| seq > *best_seq) {
-            best = Some((seq, path));
+            best = Some((seq, slug));
         }
     }
-
-    best.map(|(_, path)| path)
+    best.map(|(_, slug)| slug)
 }
 
-/// Compute the next seq number for a given prefix in a directory.
-fn next_seq(dir: &Path, prefix: &str) -> u32 {
-    let max = fs::read_dir(dir)
-        .ok()
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| {
-            let name = e.file_name();
-            let name = name.to_str()?;
-            if !name.starts_with(prefix) || !name.ends_with(".jsonl") {
-                return None;
-            }
-            let after_prefix = &name[prefix.len()..];
-            let seq_str = after_prefix.split(|c: char| !c.is_ascii_digit()).next()?;
-            seq_str.parse::<u32>().ok()
-        })
-        .max()
-        .unwrap_or(0);
+/// Recover the next `step-<nnnnnn>` counter for a session by finding
+/// the highest existing step key under its prefix. Used on load so
+/// subsequent appends don't collide with persisted steps.
+pub fn next_step_counter(storage: &dyn Storage, slug: &str) -> u64 {
+    let prefix = step_prefix(slug);
+    let keys = storage.list(&prefix).unwrap_or_default();
+    let mut max = 0u64;
+    for key in keys {
+        let suffix = &key[prefix.len()..];
+        if let Ok(n) = suffix.parse::<u64>()
+            && n > max
+        {
+            max = n;
+        }
+    }
     max + 1
 }
 
+/// Next sequence number for session slugs under a given prefix. The
+/// prefix is the full `sessions/<agent>_<sender>_` (trailing
+/// underscore) — we take every key under it, parse the seq segment,
+/// and return `max + 1`.
+fn next_seq(storage: &dyn Storage, prefix: &str) -> u32 {
+    let keys = storage.list(prefix).unwrap_or_default();
+    let mut max = 0u32;
+    for key in keys {
+        let rest = &key[prefix.len()..];
+        let Some(slash) = rest.find('/') else {
+            continue;
+        };
+        if let Ok(seq) = rest[..slash].parse::<u32>()
+            && seq > max
+        {
+            max = seq;
+        }
+    }
+    max + 1
+}
+
+/// Storage key for a session's meta blob.
+fn meta_key(slug: &str) -> String {
+    format!("{SESSIONS_PREFIX}{slug}/{META_KEY}")
+}
+
+/// Prefix for a session's step keys — used with `Storage::list`.
+fn step_prefix(slug: &str) -> String {
+    format!("{SESSIONS_PREFIX}{slug}/{STEP_PREFIX}")
+}
+
+/// Storage key for a specific step under a session.
+fn step_key(slug: &str, step: u64) -> String {
+    format!(
+        "{SESSIONS_PREFIX}{slug}/{STEP_PREFIX}{step:0width$}",
+        width = STEP_WIDTH
+    )
+}
+
 /// Derive a short title from a compact summary.
-///
-/// Takes the first sentence (up to the first `.`, `!`, or `?`) and caps
-/// at 60 characters. Falls back to the first 60 chars if no sentence
-/// boundary is found.
 fn compact_title(summary: &str) -> String {
     let end = summary
         .find(['.', '!', '?'])

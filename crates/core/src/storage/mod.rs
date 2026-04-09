@@ -1,10 +1,12 @@
 //! Pluggable KV storage backend.
 //!
-//! Runtime subsystems (memory, skills, sessions, agents, event bus, cron)
-//! persist state through the [`Storage`] trait instead of reaching for
-//! `std::fs` directly. The runtime crate defines the contract; the daemon
-//! (or any other consumer) provides a concrete implementation — the
-//! default is `daemon::storage::FsStorage`.
+//! Runtime subsystems (memory, skills, sessions, agents, event bus,
+//! cron) and core conversation persistence go through the [`Storage`]
+//! trait instead of reaching for `std::fs` directly. The trait lives
+//! in `crabtalk-core` because both `crabtalk-runtime` and
+//! `wcore::runtime::Conversation` are consumers; the daemon provides
+//! the concrete filesystem implementation
+//! (`crabtalk_daemon::storage::FsStorage`).
 //!
 //! # Shape
 //!

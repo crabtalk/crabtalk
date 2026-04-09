@@ -15,11 +15,10 @@
 //! repos and their agents keep their fs paths.
 
 use anyhow::{Context, Result};
-use runtime::storage::Storage;
 use std::path::Path;
 use toml_edit::{DocumentMut, Item, value};
 use ulid::Ulid;
-use wcore::{ResolvedManifest, paths::LOCAL_DIR};
+use wcore::{ResolvedManifest, Storage, paths::LOCAL_DIR};
 
 /// Ensure every `[agents.<name>]` entry in `local/CrabTalk.toml` has an
 /// `id` field. Missing entries get a fresh ULID; the file is rewritten

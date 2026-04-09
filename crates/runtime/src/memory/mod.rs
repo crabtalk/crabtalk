@@ -10,12 +10,15 @@
 //! Legacy pre-trait installs used `memory/memory.md`, `memory/user.md`,
 //! `memory/facts.toml`; [`Memory::open`] migrates those on first load.
 
-use crate::{config::MemoryConfig, storage::Storage};
+use crate::config::MemoryConfig;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
-use wcore::model::{HistoryEntry, Role};
+use wcore::{
+    Storage,
+    model::{HistoryEntry, Role},
+};
 
 pub mod bm25;
 pub mod entry;

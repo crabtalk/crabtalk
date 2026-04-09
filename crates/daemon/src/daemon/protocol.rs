@@ -661,19 +661,18 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
         agent: String,
         sender: String,
     ) -> Result<Vec<ConversationInfo>> {
-        let sessions_dir = self.config_dir.join("sessions");
-        tokio::task::spawn_blocking(move || scan_conversations_all(&sessions_dir, &agent, &sender))
-            .await
-            .context("conversation scan task panicked")
+        let rt = self.runtime.read().await.clone();
+        Ok(scan_sessions(rt.storage.as_ref(), &agent, &sender))
     }
 
     async fn get_conversation_history(&self, file_path: String) -> Result<ConversationHistory> {
-        let path = std::path::PathBuf::from(&file_path);
-        anyhow::ensure!(path.exists(), "conversation file not found: {file_path}");
-        let (meta, messages) =
-            tokio::task::spawn_blocking(move || wcore::Conversation::load_context(&path))
-                .await
-                .context("load_context task panicked")??;
+        // The protocol still calls this `file_path`, but post-Phase-7
+        // it carries a session slug (e.g. `crab_user_3`). Look it up
+        // through the runtime Storage.
+        let slug = file_path;
+        let rt = self.runtime.read().await.clone();
+        let (meta, messages) = wcore::Conversation::load_context(rt.storage.as_ref(), &slug)
+            .with_context(|| format!("conversation not found: {slug}"))?;
         Ok(ConversationHistory {
             title: meta.title,
             agent: meta.agent,
@@ -694,9 +693,21 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
     }
 
     async fn delete_conversation(&self, file_path: String) -> Result<()> {
-        let path = std::path::Path::new(&file_path);
-        anyhow::ensure!(path.exists(), "conversation file not found: {file_path}");
-        std::fs::remove_file(path).with_context(|| format!("failed to delete {file_path}"))?;
+        let slug = file_path;
+        let rt = self.runtime.read().await.clone();
+        let storage = rt.storage.as_ref();
+        let prefix = format!("sessions/{slug}/");
+        let keys = storage
+            .list(&prefix)
+            .with_context(|| format!("failed to list {prefix}"))?;
+        if keys.is_empty() {
+            anyhow::bail!("conversation not found: {slug}");
+        }
+        for key in keys {
+            storage
+                .delete(&key)
+                .with_context(|| format!("failed to delete {key}"))?;
+        }
         Ok(())
     }
 
@@ -1456,136 +1467,129 @@ fn plugin_output(content: &str) -> PluginEvent {
     }
 }
 
-/// Scan session files and return conversation info.
+/// Scan sessions out of the runtime Storage and return conversation info.
 ///
-/// If `agent` and `sender` are both empty, returns all conversations.
-/// Otherwise, filters to the given identity.
-fn scan_conversations_all(
-    sessions_dir: &std::path::Path,
-    agent: &str,
-    sender: &str,
-) -> Vec<ConversationInfo> {
-    let Ok(entries) = std::fs::read_dir(sessions_dir) else {
+/// If `agent` and `sender` are both empty, returns all conversations;
+/// otherwise filters to the given identity. Session slugs use the
+/// `{agent_slug}_{sender_slug}_{seq}` layout defined in
+/// `wcore::runtime::conversation`, and every session has a `meta` blob
+/// plus zero or more `step-<n>` keys underneath its slug.
+fn scan_sessions(storage: &dyn wcore::Storage, agent: &str, sender: &str) -> Vec<ConversationInfo> {
+    let Ok(keys) = storage.list("sessions/") else {
         return Vec::new();
     };
 
-    let filter_prefix = if !agent.is_empty() && !sender.is_empty() {
-        Some(format!("{}_{}_", agent, wcore::sender_slug(sender)))
-    } else {
+    // Group keys by slug: `sessions/<slug>/...`. For each slug we care
+    // about the meta key (for title + uptime + timestamps) and the
+    // number of step-* keys (approximate message count).
+    use std::collections::BTreeMap;
+    #[derive(Default)]
+    struct SlugState {
+        has_meta: bool,
+        step_count: u64,
+    }
+    let mut slugs: BTreeMap<String, SlugState> = BTreeMap::new();
+    for key in &keys {
+        let rest = &key["sessions/".len()..];
+        let Some(slash) = rest.find('/') else {
+            continue;
+        };
+        let slug = rest[..slash].to_owned();
+        let entry = slugs.entry(slug).or_default();
+        let tail = &rest[slash + 1..];
+        if tail == "meta" {
+            entry.has_meta = true;
+        } else if tail.starts_with("step-") {
+            entry.step_count += 1;
+        }
+    }
+
+    let agent_filter = if agent.is_empty() {
         None
+    } else {
+        Some(wcore::sender_slug(agent))
+    };
+    let sender_filter = if sender.is_empty() {
+        None
+    } else {
+        Some(wcore::sender_slug(sender))
     };
 
-    let today = chrono::Local::now().date_naive();
     let mut results = Vec::new();
-
-    for file in entries.flatten() {
-        let path = file.path();
-        if path.is_dir() {
+    for (slug, state) in slugs {
+        if !state.has_meta {
             continue;
         }
-        let name = file.file_name();
-        let Some(name) = name.to_str() else { continue };
-        if !name.ends_with(".jsonl") {
+        let Some((slug_agent, slug_sender, seq)) = parse_session_slug(&slug) else {
+            continue;
+        };
+        if let Some(ref want) = agent_filter
+            && &slug_agent != want
+        {
             continue;
         }
-
-        if let Some(ref prefix) = filter_prefix
-            && !name.starts_with(prefix)
+        if let Some(ref want) = sender_filter
+            && &slug_sender != want
         {
             continue;
         }
 
-        let Some((file_agent, file_sender, seq, title)) = parse_session_filename(name) else {
+        let meta_key = format!("sessions/{slug}/meta");
+        let Ok(Some(bytes)) = storage.get(&meta_key) else {
+            continue;
+        };
+        let Ok(meta) = serde_json::from_slice::<wcore::ConversationMeta>(&bytes) else {
             continue;
         };
 
-        if filter_prefix.is_none() && !agent.is_empty() && file_agent != agent {
-            continue;
-        }
-
-        let mtime = file
-            .metadata()
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        let (alive_secs, message_count) = read_session_file_stats(&path);
-        let date = mtime_to_label(mtime, today);
-
-        results.push((
-            mtime,
-            ConversationInfo {
-                agent: file_agent,
-                sender: file_sender,
-                seq,
-                title,
-                file_path: path.to_string_lossy().into_owned(),
-                message_count,
-                alive_secs,
-                date,
-            },
-        ));
+        results.push(ConversationInfo {
+            agent: meta.agent,
+            sender: meta.created_by,
+            seq,
+            title: meta.title,
+            file_path: slug.clone(),
+            message_count: state.step_count,
+            alive_secs: meta.uptime_secs,
+            date: created_date_label(&meta.created_at),
+        });
     }
 
-    // Sort by mtime descending (most recently active first).
-    results.sort_by(|a, b| b.0.cmp(&a.0));
-    results.into_iter().map(|(_, info)| info).collect()
+    // Stable ordering: highest seq first within each identity, then
+    // alphabetical. Clients can re-sort if they need mtime semantics.
+    results.sort_by(|a, b| b.seq.cmp(&a.seq).then_with(|| a.agent.cmp(&b.agent)));
+    results
 }
 
-/// Parse a session filename into (agent, sender, seq, title).
-///
-/// Format: `{agent}_{sender}_{seq}[_{title}].jsonl`
-fn parse_session_filename(name: &str) -> Option<(String, String, u32, String)> {
-    let stem = name.strip_suffix(".jsonl")?;
-    let parts: Vec<&str> = stem.split('_').collect();
+/// Parse a session slug `{agent}_{sender}_{seq}` back into components.
+/// Post-Phase-7 slugs no longer carry a title suffix; any trailing
+/// segments after the numeric seq are treated as sender continuation
+/// before the seq (title lived in a filename before and now lives in
+/// the meta blob).
+fn parse_session_slug(slug: &str) -> Option<(String, String, u32)> {
+    let parts: Vec<&str> = slug.split('_').collect();
     if parts.len() < 3 {
         return None;
     }
-    // Find the first numeric part after position 1 (that's the seq).
-    for i in 2..parts.len() {
-        if !parts[i].is_empty() && parts[i].chars().all(|c| c.is_ascii_digit()) {
-            let agent = parts[0].to_string();
-            let sender = parts[1..i].join("_");
-            let seq: u32 = parts[i].parse().ok()?;
-            let title = if i + 1 < parts.len() {
-                parts[i + 1..].join("_")
-            } else {
-                String::new()
-            };
-            return Some((agent, sender, seq, title));
-        }
+    // Seq is the last numeric segment; everything before part 0 is the
+    // agent, the middle is the sender.
+    let last = parts.len() - 1;
+    if !parts[last].chars().all(|c| c.is_ascii_digit()) || parts[last].is_empty() {
+        return None;
     }
-    None
+    let seq: u32 = parts[last].parse().ok()?;
+    let agent = parts[0].to_string();
+    let sender = parts[1..last].join("_");
+    Some((agent, sender, seq))
 }
 
-/// Read uptime_secs from meta line and count message lines.
-fn read_session_file_stats(path: &std::path::Path) -> (u64, u64) {
-    use std::io::{BufRead, BufReader};
-
-    let Ok(file) = std::fs::File::open(path) else {
-        return (0, 0);
+/// Convert a RFC3339 meta `created_at` string into a human-readable
+/// label (Today / Yesterday / YYYY-MM-DD). Empty on parse failure.
+fn created_date_label(created_at: &str) -> String {
+    let Ok(ts) = chrono::DateTime::parse_from_rfc3339(created_at) else {
+        return String::new();
     };
-    let reader = BufReader::new(file);
-    let mut lines = reader.lines();
-
-    let uptime = lines
-        .next()
-        .and_then(|l| l.ok())
-        .and_then(|l| {
-            let v: serde_json::Value = serde_json::from_str(&l).ok()?;
-            v.get("uptime_secs")?.as_u64()
-        })
-        .unwrap_or(0);
-
-    let msg_count = lines
-        .map_while(|l| l.ok())
-        .filter(|l| !l.trim().is_empty() && !l.contains("\"compact\""))
-        .count() as u64;
-
-    (uptime, msg_count)
-}
-
-/// Convert a file mtime to a human-readable date label.
-fn mtime_to_label(mtime: std::time::SystemTime, today: chrono::NaiveDate) -> String {
-    let date = chrono::DateTime::<chrono::Local>::from(mtime).date_naive();
+    let today = chrono::Local::now().date_naive();
+    let date = ts.with_timezone(&chrono::Local).date_naive();
     if date == today {
         "Today".to_string()
     } else if date == today - chrono::Duration::days(1) {

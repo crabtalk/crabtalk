@@ -1,13 +1,13 @@
 //! `std::fs`-backed [`Storage`] implementation.
 
 use anyhow::{Context, Result};
-use runtime::storage::Storage;
 use std::{
     fs,
     io::ErrorKind,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+use wcore::Storage;
 
 /// Filesystem key/value store rooted at a single directory. Keys are
 /// flat `/`-separated strings that map 1:1 to relative paths under

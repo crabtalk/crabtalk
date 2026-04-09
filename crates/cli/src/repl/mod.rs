@@ -61,16 +61,11 @@ impl ChatRepl {
 
     /// Run the full-screen interactive REPL loop.
     pub async fn run(&mut self) -> Result<()> {
-        let os_user = std::env::var("USER").unwrap_or_else(|_| "user".into());
-        let chat_title = wcore::find_latest_conversation(
-            &wcore::paths::CONVERSATIONS_DIR,
-            &self.agent,
-            &os_user,
-        )
-        .and_then(|path| wcore::Conversation::load_context(&path).ok())
-        .map(|(meta, _)| meta.title)
-        .unwrap_or_default();
-        self.run_inner(chat_title).await
+        // Sessions now live inside the daemon's Storage; the CLI can't
+        // poke at them directly anymore. Start with an empty title —
+        // the daemon publishes the generated title via stream events
+        // after the first exchange.
+        self.run_inner(String::new()).await
     }
 
     async fn run_inner(&mut self, chat_title: String) -> Result<()> {
@@ -241,16 +236,9 @@ async fn run_event_loop(
                         chunk_rx = None;
                         app.streaming = false;
                         app.scroll = 0;
-                        // Pick up title once (daemon generates it after first exchange).
-                        if app.chat_title.is_empty()
-                            && let Some(path) = wcore::find_latest_conversation(
-                                &wcore::paths::CONVERSATIONS_DIR, &app.agent, &app.os_user,
-                            )
-                            && let Ok((meta, _)) = wcore::Conversation::load_context(&path)
-                            && !meta.title.is_empty()
-                        {
-                            app.chat_title = meta.title;
-                        }
+                        // Title is populated by the daemon through the
+                        // stream event protocol — there's no longer a
+                        // local file to poll.
                         // Send queued message if any.
                         if let Some(msg) = app.message_queue.pop_front() {
                             chunk_rx = Some(start_stream(app, &msg));

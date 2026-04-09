@@ -211,8 +211,9 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
         wcore::filter_disabled_external(&mut manifest.skill_dirs, &manifest.disabled.external);
         let model = build_provider(config)?;
         let hook = build_env(config, config_dir, &manifest, host).await?;
+        let storage = hook.storage().clone();
         let tool_tx = build_tool_sender(event_tx);
-        let mut runtime = Runtime::new(model, hook, Some(tool_tx)).await;
+        let mut runtime = Runtime::new(model, hook, Some(tool_tx), storage).await;
         load_agents(&mut runtime, config_dir, config, &manifest)?;
         Ok(runtime)
     }

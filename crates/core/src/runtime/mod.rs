@@ -7,7 +7,7 @@
 //! agent, and run with the conversation's history.
 
 use crate::{
-    Agent, AgentBuilder, AgentConfig, AgentEvent, AgentResponse, AgentStopReason,
+    Agent, AgentBuilder, AgentConfig, AgentEvent, AgentResponse, AgentStopReason, Storage,
     agent::tool::{ToolRegistry, ToolSender},
     model::{HistoryEntry, Model},
     runtime::hook::Hook,
@@ -41,6 +41,9 @@ pub use conversation::Conversation;
 pub struct Runtime<P: Provider + 'static, H: Hook> {
     pub model: Model<P>,
     pub hook: H,
+    /// Shared persistence backend — conversations, agents, sessions, and
+    /// subsystem state all route their reads and writes through here.
+    pub storage: Arc<dyn Storage>,
     /// Registered persistent agents, behind a sync `RwLock` so CRUD can
     /// mutate in place without requiring `&mut Runtime`. Critical sections
     /// are short (lookup, insert, remove) and never hold the guard across
@@ -57,17 +60,24 @@ pub struct Runtime<P: Provider + 'static, H: Hook> {
 }
 
 impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
-    /// Create a new runtime with the given model and hook backend.
+    /// Create a new runtime with the given model, hook backend, and
+    /// persistence store.
     ///
     /// Calls `hook.on_register_tools()` to populate the schema registry.
-    /// Pass `tool_tx` to enable tool dispatch from agents; `None` means agents
-    /// have no tool dispatch (e.g. CLI without a daemon).
-    pub async fn new(model: Model<P>, hook: H, tool_tx: Option<ToolSender>) -> Self {
+    /// Pass `tool_tx` to enable tool dispatch from agents; `None` means
+    /// agents have no tool dispatch (e.g. CLI without a daemon).
+    pub async fn new(
+        model: Model<P>,
+        hook: H,
+        tool_tx: Option<ToolSender>,
+        storage: Arc<dyn Storage>,
+    ) -> Self {
         let mut tools = ToolRegistry::new();
         hook.on_register_tools(&mut tools).await;
         Self {
             model,
             hook,
+            storage,
             agents: StdRwLock::new(BTreeMap::new()),
             ephemeral_agents: RwLock::new(BTreeMap::new()),
             conversations: RwLock::new(BTreeMap::new()),
@@ -196,8 +206,8 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
     /// Get or create a conversation for the given (agent, created_by) identity.
     ///
     /// 1. Check in-memory conversations for a match -> return existing ID.
-    /// 2. Check disk for a persisted conversation file -> load context, return ID.
-    /// 3. Neither -> create a new conversation with a fresh file.
+    /// 2. Check Storage for a persisted session slug -> load context, return ID.
+    /// 3. Neither -> create a new conversation with a deferred slug.
     pub async fn get_or_create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.has_agent(agent).await {
             bail!("agent '{agent}' not registered");
@@ -214,19 +224,19 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
             }
         }
 
-        // 2. Disk lookup — find latest conversation file for this identity.
-        if let Some(path) = conversation::find_latest_conversation(
-            &crate::paths::CONVERSATIONS_DIR,
-            agent,
-            created_by,
-        ) && let Ok((meta, messages)) = Conversation::load_context(&path)
+        // 2. Storage lookup — find latest session slug for this identity.
+        if let Some(slug) =
+            conversation::find_latest_conversation(self.storage.as_ref(), agent, created_by)
+            && let Ok((meta, messages)) = Conversation::load_context(self.storage.as_ref(), &slug)
         {
             let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
             let mut conversation = Conversation::new(id, agent, created_by);
             conversation.history = messages;
             conversation.title = meta.title;
             conversation.uptime_secs = meta.uptime_secs;
-            conversation.file_path = Some(path);
+            conversation.slug = Some(slug.clone());
+            // Recover the next step counter from the highest existing step.
+            conversation.next_step = conversation::next_step_counter(self.storage.as_ref(), &slug);
             self.conversations
                 .write()
                 .await
@@ -256,9 +266,10 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
         Ok(id)
     }
 
-    /// Load a specific conversation from a file path. Returns the conversation ID.
-    pub async fn load_specific_conversation(&self, file_path: &std::path::Path) -> Result<u64> {
-        let (meta, messages) = Conversation::load_context(file_path)?;
+    /// Load a specific conversation by its session slug. Returns the
+    /// conversation ID.
+    pub async fn load_specific_conversation(&self, slug: &str) -> Result<u64> {
+        let (meta, messages) = Conversation::load_context(self.storage.as_ref(), slug)?;
         if !self.has_agent(&meta.agent).await {
             bail!("agent '{}' not registered", meta.agent);
         }
@@ -267,7 +278,8 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
         conversation.history = messages;
         conversation.title = meta.title;
         conversation.uptime_secs = meta.uptime_secs;
-        conversation.file_path = Some(file_path.to_path_buf());
+        conversation.slug = Some(slug.to_owned());
+        conversation.next_step = conversation::next_step_counter(self.storage.as_ref(), slug);
         self.conversations
             .write()
             .await
@@ -392,6 +404,7 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
         conversation_mutex: Arc<Mutex<Conversation>>,
     ) {
         let model = self.model.clone();
+        let storage = self.storage.clone();
         let model_name = self
             .agents
             .read()
@@ -458,7 +471,7 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
                         if !title.is_empty() {
                             let mut conversation = conversation_mutex.lock().await;
                             if conversation.title.is_empty() {
-                                conversation.set_title(&title);
+                                conversation.set_title(storage.as_ref(), &title);
                             }
                         }
                     }
@@ -545,24 +558,26 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
             self.hook.on_event(&agent_name, conversation_id, &event);
         }
 
-        // Create the JSONL file on first persist (deferred from create_conversation).
-        conversation.ensure_file();
+        // Ensure a session slug exists on the first persist.
+        conversation.ensure_slug(self.storage.as_ref());
 
-        // Append-only persistence.
+        // Per-step persistence.
         if let Some(summary) = compact_summary {
             // Compaction happened: append compact marker + post-compact messages.
-            conversation.append_compact(&summary);
+            conversation.append_compact(self.storage.as_ref(), &summary);
             // history[0] is the summary-as-user-message; skip it (compact line serves that role).
             if conversation.history.len() > 1 {
-                conversation.append_messages(&conversation.history[1..]);
+                let tail = conversation.history[1..].to_vec();
+                conversation.append_messages(self.storage.as_ref(), &tail);
             }
         } else {
             // No compaction: append new messages since pre_run.
-            conversation.append_messages(&conversation.history[pre_run_len..]);
+            let new_entries = conversation.history[pre_run_len..].to_vec();
+            conversation.append_messages(self.storage.as_ref(), &new_entries);
         }
 
-        // Persist updated uptime to meta line.
-        conversation.rewrite_meta();
+        // Persist updated uptime to meta blob.
+        conversation.rewrite_meta(self.storage.as_ref());
 
         // Generate title in background if this is the first exchange.
         if conversation.title.is_empty() && conversation.history.len() >= 2 {
@@ -636,19 +651,21 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
             // Borrow on conversation.history is released. Clean up steering and persist.
             self.steering.write().await.remove(&conversation_id);
             conversation.uptime_secs += run_start.elapsed().as_secs();
-            // Create the JSONL file on first persist (deferred from create_conversation).
-            conversation.ensure_file();
+            // Ensure a session slug exists on the first persist.
+            conversation.ensure_slug(self.storage.as_ref());
             if let Some(summary) = compact_summary {
-                conversation.append_compact(&summary);
+                conversation.append_compact(self.storage.as_ref(), &summary);
                 if conversation.history.len() > 1 {
-                    conversation.append_messages(&conversation.history[1..]);
+                    let tail = conversation.history[1..].to_vec();
+                    conversation.append_messages(self.storage.as_ref(), &tail);
                 }
             } else {
-                conversation.append_messages(&conversation.history[pre_run_len..]);
+                let new_entries = conversation.history[pre_run_len..].to_vec();
+                conversation.append_messages(self.storage.as_ref(), &new_entries);
             }
-            conversation.append_events(&event_trace);
-            // Persist updated uptime to meta line.
-            conversation.rewrite_meta();
+            conversation.append_events(self.storage.as_ref(), &event_trace);
+            // Persist updated uptime to meta blob.
+            conversation.rewrite_meta(self.storage.as_ref());
 
             // Generate title in background if this is the first exchange.
             if conversation.title.is_empty() && conversation.history.len() >= 2 {
@@ -803,9 +820,10 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
 
             // Persist.
             conversation.uptime_secs += run_start.elapsed().as_secs();
-            conversation.ensure_file();
-            conversation.append_messages(&conversation.history[pre_run_len..]);
-            conversation.rewrite_meta();
+            conversation.ensure_slug(self.storage.as_ref());
+            let new_entries = conversation.history[pre_run_len..].to_vec();
+            conversation.append_messages(self.storage.as_ref(), &new_entries);
+            conversation.rewrite_meta(self.storage.as_ref());
 
             if conversation.title.is_empty() && conversation.history.len() >= 2 {
                 self.spawn_title_generation(conversation_id, &conversation.agent, conversation_mutex.clone());

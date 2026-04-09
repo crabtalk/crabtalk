@@ -1,7 +1,8 @@
 //! Memory entry — frontmatter-based file format for individual memories.
 
-use crate::{memory::ENTRIES_PREFIX, storage::Storage};
+use crate::memory::ENTRIES_PREFIX;
 use anyhow::{Result, bail};
+use wcore::Storage;
 
 /// A single memory entry.
 pub struct MemoryEntry {

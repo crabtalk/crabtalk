@@ -1,12 +1,9 @@
 //! Skill markdown loading.
 
-use crate::{
-    skill::{Skill, SkillRegistry},
-    storage::Storage,
-};
+use crate::skill::{Skill, SkillRegistry};
 use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
-use wcore::utils::split_yaml_frontmatter;
+use wcore::{Storage, utils::split_yaml_frontmatter};
 
 /// Accept both `"a, b, c"` (string) and `["a", "b", "c"]` (sequence) for tool lists.
 fn string_or_vec<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {

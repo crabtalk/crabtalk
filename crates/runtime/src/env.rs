@@ -5,15 +5,13 @@
 //! specific tools (`ask_user`, `delegate`) are routed through the
 //! [`Host`](crate::host::Host).
 
-use crate::{
-    host::Host, mcp::McpHandler, memory::Memory, os, skill, skill::SkillHandler, storage::Storage,
-};
+use crate::{host::Host, mcp::McpHandler, memory::Memory, os, skill, skill::SkillHandler};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
-use wcore::{AgentConfig, AgentEvent, Hook, ToolRegistry, model::HistoryEntry};
+use wcore::{AgentConfig, AgentEvent, Hook, Storage, ToolRegistry, model::HistoryEntry};
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
 #[derive(Default)]
