@@ -15,7 +15,7 @@ pub use config::AgentConfig;
 use crabllm_core::{ChatCompletionRequest, Provider, Role, Tool, ToolCall, ToolChoice, Usage};
 use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
 use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use tokio::sync::{mpsc, oneshot, watch};
 pub use tool::{AsTool, ToolDescription, ToolRequest, ToolSender};
 
@@ -428,28 +428,62 @@ impl<P: Provider + 'static> Agent<P> {
 
                 history.push(HistoryEntry::from_message(message.clone()));
 
-                // Dispatch tool calls if any.
+                // Dispatch tool calls concurrently.
                 //
-                // Batch the tool calls
+                // `FuturesUnordered` polls each dispatch future to completion
+                // independently so `ToolResult` events fire in completion
+                // order (fast tools don't wait on slow siblings in the UI).
+                // Outputs are buffered by the original call index so history
+                // entries append in call order — providers pair results to
+                // calls by position in some encodings, so this ordering is
+                // load-bearing.
                 let mut tool_results = Vec::new();
                 if has_tool_calls {
                     let sender = last_sender(history);
                     yield AgentEvent::ToolCallsStart(tool_calls.clone());
-                    for tc in &tool_calls {
-                        let tool_start = std::time::Instant::now();
-                        let result = self
-                            .dispatch_tool(&tc.function.name, &tc.function.arguments, &sender, conversation_id)
-                            .await;
-                        let duration_ms = tool_start.elapsed().as_millis() as u64;
-                        let entry = HistoryEntry::tool(&result, tc.id.clone(), &tc.function.name);
-                        history.push(entry.clone());
-                        tool_results.push(entry);
+
+                    let mut pending: FuturesUnordered<_> = tool_calls
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, tc)| {
+                            let fut = self.dispatch_tool(
+                                &tc.function.name,
+                                &tc.function.arguments,
+                                &sender,
+                                conversation_id,
+                            );
+                            // `start` is captured inside the async block so
+                            // it measures actual polled runtime, not the time
+                            // since `FuturesUnordered` was built.
+                            async move {
+                                let start = std::time::Instant::now();
+                                let out = fut.await;
+                                (idx, out, start.elapsed().as_millis() as u64)
+                            }
+                        })
+                        .collect();
+
+                    let mut buffered: Vec<Option<String>> = vec![None; tool_calls.len()];
+                    while let Some((idx, output, duration_ms)) = pending.next().await {
+                        let call_id = tool_calls[idx].id.clone();
+                        // Clone: `buffered[idx]` needs its own copy so history
+                        // can be appended in call order after the drain loop,
+                        // while the event takes the original String.
+                        buffered[idx] = Some(output.clone());
                         yield AgentEvent::ToolResult {
-                            call_id: tc.id.clone(),
-                            output: result,
+                            call_id,
+                            output,
                             duration_ms,
                         };
                     }
+
+                    for (tc, out) in tool_calls.iter().zip(buffered.into_iter()) {
+                        let out = out.expect("FuturesUnordered drained every slot");
+                        let entry = HistoryEntry::tool(&out, tc.id.clone(), &tc.function.name);
+                        history.push(entry.clone());
+                        tool_results.push(entry);
+                    }
+
                     yield AgentEvent::ToolCallsComplete;
                 }
 

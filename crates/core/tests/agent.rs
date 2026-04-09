@@ -265,6 +265,131 @@ async fn run_stream_multiple_tool_calls_in_one_step() {
 }
 
 #[tokio::test]
+async fn run_stream_dispatches_tool_calls_concurrently() {
+    // Three tool calls with descending sleep durations — completion order
+    // (fast, med, slow) is the reverse of call order (slow, med, fast).
+    // Sequential would take ~600ms; concurrent dispatch should finish in
+    // ~300ms (the slowest tool). Durations are spaced so the ~200ms gap
+    // between "concurrent" and the test bound survives CI jitter without
+    // approaching the sequential baseline. History entries must still
+    // appear in call order; ToolResult events must fire in completion order.
+    let calls = vec![
+        ToolCall {
+            index: Some(0),
+            id: "call_slow".into(),
+            function: FunctionCall {
+                name: "slow".into(),
+                arguments: "{}".into(),
+            },
+            ..Default::default()
+        },
+        ToolCall {
+            index: Some(1),
+            id: "call_med".into(),
+            function: FunctionCall {
+                name: "med".into(),
+                arguments: "{}".into(),
+            },
+            ..Default::default()
+        },
+        ToolCall {
+            index: Some(2),
+            id: "call_fast".into(),
+            function: FunctionCall {
+                name: "fast".into(),
+                arguments: "{}".into(),
+            },
+            ..Default::default()
+        },
+    ];
+
+    let model = TestProvider::with_chunks(vec![tool_chunks(calls), text_chunks("done")]);
+
+    let (tool_tx, mut tool_rx) = mpsc::unbounded_channel();
+    let agent = AgentBuilder::new(Model::new(model))
+        .config(AgentConfig::new("test-agent"))
+        .tool_tx(tool_tx)
+        .build();
+
+    // Per-request: spawn a task so siblings can run in parallel. The agent
+    // loop sends all three requests before awaiting any reply, so a serial
+    // handler here would defeat the test.
+    tokio::spawn(async move {
+        while let Some(req) = tool_rx.recv().await {
+            tokio::spawn(async move {
+                let sleep_ms = match req.name.as_str() {
+                    "slow" => 300,
+                    "med" => 200,
+                    "fast" => 100,
+                    _ => 0,
+                };
+                tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
+                let _ = req.reply.send(format!("result:{}", req.name));
+            });
+        }
+    });
+
+    let mut history = vec![HistoryEntry::user("multi")];
+    let start = std::time::Instant::now();
+    let mut events: Vec<AgentEvent> = Vec::new();
+    let mut stream = std::pin::pin!(agent.run_stream(&mut history, None, None, None));
+    while let Some(event) = stream.next().await {
+        events.push(event);
+    }
+    let elapsed = start.elapsed();
+
+    // 1. Wall clock proves concurrency. Sequential baseline is ~600ms,
+    //    concurrent baseline ~300ms, bound at 500ms — 200ms slack above
+    //    the concurrent expectation, 100ms below the sequential baseline.
+    assert!(
+        elapsed < std::time::Duration::from_millis(500),
+        "expected concurrent dispatch (< 500ms), got {elapsed:?}"
+    );
+
+    // 2. History: tool results appended in call order regardless of completion order.
+    if let AgentEvent::Done(resp) = events.last().unwrap() {
+        let results = &resp.steps[0].tool_results;
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].text(), "result:slow");
+        assert_eq!(results[1].text(), "result:med");
+        assert_eq!(results[2].text(), "result:fast");
+    } else {
+        panic!("last event should be Done");
+    }
+
+    // 3. Event counts.
+    let result_count = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::ToolResult { .. }))
+        .count();
+    let start_count = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::ToolCallsStart(_)))
+        .count();
+    let complete_count = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::ToolCallsComplete))
+        .count();
+    assert_eq!(result_count, 3);
+    assert_eq!(start_count, 1);
+    assert_eq!(complete_count, 1);
+
+    // 4. ToolResult events fire in completion order: fast → med → slow.
+    let result_ids: Vec<String> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ToolResult { call_id, .. } => Some(call_id.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        result_ids,
+        vec!["call_fast", "call_med", "call_slow"],
+        "ToolResult events should fire in completion order"
+    );
+}
+
+#[tokio::test]
 async fn run_stream_max_iterations() {
     let calls = vec![make_tool_call("bash", "{}")];
 
