@@ -69,7 +69,7 @@ a streamed agent response:
 - `Chunk { content }` — text delta.
 - `Thinking { content }` — thinking/reasoning delta.
 - `ToolStart { calls[] }` — tool invocations beginning.
-- `ToolResult { call_id, output, duration_ms }` — single tool result.
+- `ToolResult { call_id, output, duration_ms, is_error }` — single tool result. `is_error` signals the handler reported failure; `output` carries the text in either case so clients can render it. UIs use the flag to style errors distinctly; agents can use it for retry decisions without string-matching on error messages.
 - `ToolsComplete` — all pending tool calls finished.
 - `AskUser { questions[] }` — agent needs user input.
 - `End { agent, error }` — stream closed (error is empty on success).
@@ -77,12 +77,14 @@ a streamed agent response:
 The client reads `StreamEvent`s until it receives `End`, which is the terminal
 sentinel.
 
+**Tool result ordering.** When a single agent step produces N tool calls, the runtime dispatches them concurrently and emits `ToolResult` events in **completion order** — fast tools are reported as soon as they finish, slow siblings report later. The event stream is therefore not ordered by the call index in `ToolStart.calls[]`. Clients correlate by `call_id`, which is the primary key; do not assume positional alignment with the `ToolStart` call list.
+
 ### Agent events
 
 `AgentEventMsg` carries a `kind` enum (`TEXT_DELTA`, `THINKING_DELTA`,
 `TOOL_START`, `TOOL_RESULT`, `TOOLS_COMPLETE`, `DONE`) plus agent name, session
 ID, content, and timestamp. Used by `SubscribeEvents` for live monitoring of all
-agent activity across sessions.
+agent activity across sessions. For `TOOL_RESULT` events, the `tool_is_error` field mirrors the streaming protocol's `is_error` — monitoring clients use it to aggregate error rates per tool type without parsing output strings.
 
 `AgentEventMsg` overlaps with `StreamEvent` — both represent the agent execution
 lifecycle. `StreamEvent` is the per-request streaming format (rich, typed
