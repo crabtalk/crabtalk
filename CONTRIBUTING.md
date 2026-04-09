@@ -65,9 +65,10 @@ Client (CLI/Telegram/etc) → UDS/TCP → Daemon event loop
 - `Agent<P: Provider>` — immutable definition + execution (step/run/run_stream)
 - `Session` — conversation history container
 - `Runtime<P, H>` — agents + sessions + tool dispatch
-- `Env<B>` — engine environment: skills, MCP, memory, tool routing
+- `Env<H, S>` — engine environment: skills, MCP, memory, tool routing
 - `Host` — trait for server-specific tools (ask_user, delegate, session CWD)
-- `DaemonEnv` — type alias: `Env<DaemonHost>`, adds event broadcasting
+- `Storage` — wcore trait; pluggable KV backend reached through `Hook::Storage`
+- `DaemonEnv` — type alias: `Env<DaemonHost, FsStorage>`, adds event broadcasting
 - `DaemonEvent` — Message | ToolCall | Shutdown
 - `ToolRequest` — single tool call with reply channel
 - Protocol — `ClientMessage` / `ServerMessage` (protobuf)

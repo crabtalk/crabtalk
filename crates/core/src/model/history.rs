@@ -15,10 +15,10 @@ use serde::{Deserialize, Serialize};
 
 /// A single conversation history entry.
 ///
-/// The inner `message` is the wire-level shape sent to providers. The three
-/// runtime-only fields are stripped from the wire but persisted to JSONL for
-/// session reload (except `sender` and `auto_injected`, which are session-
-/// local state that resets on reload).
+/// The inner `message` is the wire-level shape sent to providers. The
+/// runtime-only fields are stripped from the wire but persisted to the
+/// session `Storage` for reload (except `sender` and `auto_injected`,
+/// which are session-local state that resets on reload).
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct HistoryEntry {
     /// Which agent produced this assistant message. Empty = the conversation's
@@ -35,7 +35,7 @@ pub struct HistoryEntry {
 
     /// Whether this entry was auto-injected by the runtime (runtime-only).
     /// Auto-injected entries are stripped before each new run and never
-    /// persisted to JSONL (see `Conversation::append_messages`).
+    /// persisted as session steps (see `Conversation::append_messages`).
     #[serde(skip)]
     pub auto_injected: bool,
 

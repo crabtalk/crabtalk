@@ -9,9 +9,10 @@
 //!   zero-padded monotonic counter so `list(prefix)` returns steps in
 //!   insertion order.
 //!
-//! Compact markers double as archive boundaries: [`Conversation::load_context`]
-//! replays from the last compact forward, same semantics as the old
-//! append-only JSONL format.
+//! Compact markers double as archive boundaries:
+//! [`Conversation::load_context`] replays from the last compact
+//! forward — messages persisted before a compact belong to an
+//! archived segment and are not rehydrated into the working context.
 
 use crate::{AgentEvent, AgentStep, Storage, model::HistoryEntry};
 use crabllm_core::Usage;
@@ -254,7 +255,7 @@ impl Conversation {
     }
 
     /// Set the conversation title and rewrite meta. The slug stays
-    /// stable — unlike the old JSONL path, there's no file rename.
+    /// stable — renaming is a metadata edit on the single meta blob.
     pub fn set_title(&mut self, storage: &impl Storage, title: &str) {
         self.title = title.to_string();
         self.write_meta(storage);

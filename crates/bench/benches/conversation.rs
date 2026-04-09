@@ -1,8 +1,8 @@
 //! Conversation I/O benchmarks: append throughput and load_context latency.
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-use std::{io::Write, path::Path};
-use wcore::{Conversation, model::HistoryEntry};
+use std::sync::Arc;
+use wcore::{Conversation, MemStorage, model::HistoryEntry};
 
 fn generate_messages(n: usize) -> Vec<HistoryEntry> {
     (0..n)
@@ -16,23 +16,15 @@ fn generate_messages(n: usize) -> Vec<HistoryEntry> {
         .collect()
 }
 
-/// Pre-populate a JSONL file with a meta line + n messages, return the path.
-fn prepopulate_conversation(dir: &Path, n: usize) -> std::path::PathBuf {
-    let path = dir.join("bench_conversation.jsonl");
-    let mut file = std::fs::File::create(&path).unwrap();
-
-    // ConversationMeta is not re-exported, write the JSON directly.
-    writeln!(
-        file,
-        r#"{{"agent":"bench","created_by":"bench","created_at":"2026-01-01T00:00:00Z","title":"","uptime_secs":0}}"#
-    )
-    .unwrap();
-
-    for msg in &generate_messages(n) {
-        writeln!(file, "{}", serde_json::to_string(msg).unwrap()).unwrap();
-    }
-
-    path
+/// Build a fresh `MemStorage`-backed conversation with `n` messages
+/// already persisted, and return the storage + slug for replay.
+fn prepopulate_conversation(n: usize) -> (Arc<MemStorage>, String) {
+    let storage = Arc::new(MemStorage::new());
+    let mut conversation = Conversation::new(1, "bench", "bench");
+    conversation.ensure_slug(storage.as_ref());
+    conversation.append_messages(storage.as_ref(), &generate_messages(n));
+    let slug = conversation.slug.expect("slug minted by ensure_slug");
+    (storage, slug)
 }
 
 fn bench_append(c: &mut Criterion) {
@@ -45,13 +37,13 @@ fn bench_append(c: &mut Criterion) {
             |b, messages| {
                 b.iter_batched(
                     || {
-                        let dir = tempfile::tempdir().unwrap();
+                        let storage = Arc::new(MemStorage::new());
                         let mut conversation = Conversation::new(1, "bench", "bench");
-                        conversation.init_file(dir.path());
-                        (dir, conversation)
+                        conversation.ensure_slug(storage.as_ref());
+                        (storage, conversation)
                     },
-                    |(_dir, conversation)| {
-                        conversation.append_messages(messages);
+                    |(storage, mut conversation)| {
+                        conversation.append_messages(storage.as_ref(), messages);
                     },
                     BatchSize::SmallInput,
                 );
@@ -64,11 +56,14 @@ fn bench_append(c: &mut Criterion) {
 fn bench_load_context(c: &mut Criterion) {
     let mut group = c.benchmark_group("conversation_load");
     for size in [10, 100, 1_000, 5_000] {
-        let dir = tempfile::tempdir().unwrap();
-        let path = prepopulate_conversation(dir.path(), size);
-        group.bench_with_input(BenchmarkId::from_parameter(size), &path, |b, path| {
-            b.iter(|| Conversation::load_context(path).unwrap());
-        });
+        let (storage, slug) = prepopulate_conversation(size);
+        group.bench_with_input(
+            BenchmarkId::from_parameter(size),
+            &(storage, slug),
+            |b, (storage, slug)| {
+                b.iter(|| Conversation::load_context(storage.as_ref(), slug).unwrap());
+            },
+        );
     }
     group.finish();
 }

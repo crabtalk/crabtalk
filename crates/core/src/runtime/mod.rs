@@ -251,9 +251,10 @@ impl<P: Provider + 'static, H: Hook + 'static> Runtime<P, H> {
 
     /// Create a new conversation for the given agent. Returns the conversation ID.
     ///
-    /// The JSONL file is not created here — it is deferred until the first
-    /// message is persisted via [`Conversation::ensure_file`], avoiding ghost
-    /// conversation files from connections that drop before any exchange.
+    /// The session slug is not materialized here — it is deferred until
+    /// the first message is persisted via [`Conversation::ensure_slug`],
+    /// avoiding ghost session prefixes from connections that drop
+    /// before any exchange.
     pub async fn create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.has_agent(agent).await {
             bail!("agent '{agent}' not registered");

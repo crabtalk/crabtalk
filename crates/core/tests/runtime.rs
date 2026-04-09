@@ -1,10 +1,8 @@
 //! Tests for Runtime — agent registry, conversation management, and execution.
 //!
-//! Uses the `()` Hook (no-op) and TestProvider.
-//!
-//! Note: conversation operations write to ~/.crabtalk/sessions/ via the global
-//! CONVERSATIONS_DIR path. This is a known limitation — the LazyLock global
-//! cannot be overridden per-test. The files are tiny JSONL and harmless.
+//! Uses [`TestHook`] (MemStorage-backed) and [`TestProvider`]. Every
+//! test gets its own in-memory storage via `TestHook::new()` — no
+//! shared global state, no filesystem I/O, no daemon.
 
 use crabtalk_core::{
     AgentConfig, AgentEvent, AgentStopReason, Runtime, TestHook,
