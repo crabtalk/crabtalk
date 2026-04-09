@@ -1,32 +1,33 @@
 //! Memory entry — frontmatter-based file format for individual memories.
 
-use crate::memory::storage::Storage;
+use crate::{memory::ENTRIES_PREFIX, storage::Storage};
 use anyhow::{Result, bail};
-use std::path::{Path, PathBuf};
 
 /// A single memory entry.
 pub struct MemoryEntry {
     pub name: String,
     pub description: String,
     pub content: String,
-    pub path: PathBuf,
+    /// Storage key for this entry (e.g. `memory/entries/<slug>.md`).
+    pub key: String,
 }
 
 impl MemoryEntry {
-    /// Create a new entry with a computed path under `entries_dir`.
-    pub fn new(name: String, description: String, content: String, entries_dir: &Path) -> Self {
+    /// Create a new entry with a computed storage key under the shared
+    /// entries prefix.
+    pub fn new(name: String, description: String, content: String) -> Self {
         let slug = slugify(&name);
-        let path = entries_dir.join(format!("{slug}.md"));
+        let key = format!("{ENTRIES_PREFIX}{slug}.md");
         Self {
             name,
             description,
             content,
-            path,
+            key,
         }
     }
 
-    /// Parse an entry from its file content and path.
-    pub fn parse(path: PathBuf, raw: &str) -> Result<Self> {
+    /// Parse an entry from its file content and its storage key.
+    pub fn parse(key: String, raw: &str) -> Result<Self> {
         let raw = raw.replace("\r\n", "\n");
         let raw = raw.trim();
         if !raw.starts_with("---") {
@@ -62,7 +63,7 @@ impl MemoryEntry {
             name,
             description,
             content,
-            path,
+            key,
         })
     }
 
@@ -80,12 +81,12 @@ impl MemoryEntry {
 
     /// Write this entry to storage.
     pub fn save(&self, storage: &dyn Storage) -> Result<()> {
-        storage.write(&self.path, &self.serialize())
+        storage.put(&self.key, self.serialize().as_bytes())
     }
 
     /// Delete this entry from storage.
     pub fn delete(&self, storage: &dyn Storage) -> Result<()> {
-        storage.delete(&self.path)
+        storage.delete(&self.key)
     }
 
     /// Text for BM25 scoring — description + content concatenated.

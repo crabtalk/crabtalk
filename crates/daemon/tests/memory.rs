@@ -1,20 +1,10 @@
 //! Integration tests for the memory system using MemStorage (no disk I/O).
 
-use runtime::{
-    MemoryConfig,
-    memory::{
-        Memory,
-        storage::{MemStorage, Storage},
-    },
-};
-use std::path::PathBuf;
+use runtime::{MemStorage, Memory, MemoryConfig, Storage};
+use std::sync::Arc;
 
 fn test_memory() -> Memory {
-    Memory::open(
-        PathBuf::from("/test/memory"),
-        MemoryConfig::default(),
-        Box::new(MemStorage::new()),
-    )
+    Memory::open(MemoryConfig::default(), Arc::new(MemStorage::new()))
 }
 
 #[test]
@@ -155,26 +145,24 @@ fn recall_respects_limit() {
 
 #[test]
 fn migration_converts_legacy_files() {
-    let storage = MemStorage::new();
-    let dir = PathBuf::from("/test/memory");
-
+    let storage = Arc::new(MemStorage::new());
     storage
-        .write(
-            &dir.join("memory.md"),
-            "Luna is a golden retriever\n\nUser works on Crabtalk",
+        .put(
+            "memory/memory.md",
+            b"Luna is a golden retriever\n\nUser works on Crabtalk",
         )
         .unwrap();
     storage
-        .write(&dir.join("user.md"), "Name: Alice\nRole: Developer")
+        .put("memory/user.md", b"Name: Alice\nRole: Developer")
         .unwrap();
     storage
-        .write(
-            &dir.join("facts.toml"),
-            "dog_name = \"Luna\"\nlanguage = \"Rust\"",
+        .put(
+            "memory/facts.toml",
+            b"dog_name = \"Luna\"\nlanguage = \"Rust\"",
         )
         .unwrap();
 
-    let mem = Memory::open(dir.clone(), MemoryConfig::default(), Box::new(storage));
+    let mem = Memory::open(MemoryConfig::default(), storage);
 
     let result = mem.recall("golden retriever", 5);
     assert!(result.contains("golden retriever"));
@@ -206,11 +194,10 @@ fn entry_parse_roundtrip() {
         "test-entry".to_owned(),
         "A test entry for round-trip".to_owned(),
         "Some content here.".to_owned(),
-        &PathBuf::from("/test/entries"),
     );
 
     let serialized = entry.serialize();
-    let parsed = MemoryEntry::parse(entry.path.clone(), &serialized).unwrap();
+    let parsed = MemoryEntry::parse(entry.key.clone(), &serialized).unwrap();
 
     assert_eq!(parsed.name, "test-entry");
     assert_eq!(parsed.description, "A test entry for round-trip");
