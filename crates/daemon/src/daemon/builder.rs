@@ -79,13 +79,14 @@ pub(crate) const SYSTEM_AGENT: &str = runtime::memory::DEFAULT_SOUL;
 /// [`load_agents`] produces at startup. Used by agent CRUD for targeted
 /// in-memory updates that skip a full runtime rebuild.
 ///
-/// Returns `Err` if the agent has no manifest entry or no prompt file
-/// (except for `DEFAULT_AGENT`, which sources its prompt from the
-/// `SYSTEM_AGENT` constant and its config from `[system.crab]`).
+/// Returns `Err` if the agent has no manifest entry or no prompt
+/// (Storage or legacy .md). `DEFAULT_AGENT` sources its prompt from
+/// the `SYSTEM_AGENT` constant and its config from `[system.crab]`.
 pub(crate) fn build_single_agent_config(
     name: &str,
     config: &DaemonConfig,
     manifest: &ResolvedManifest,
+    storage: &dyn runtime::Storage,
 ) -> Result<AgentConfig> {
     let default_model = config
         .system
@@ -110,11 +111,9 @@ pub(crate) fn build_single_agent_config(
         .ok_or_else(|| anyhow::anyhow!("agent '{name}' not found in manifest"))?;
 
     let prompts = crate::config::load_agents_dirs(&manifest.agent_dirs)?;
-    let prompt = prompts
-        .into_iter()
-        .find(|(stem, _)| stem == name)
-        .map(|(_, content)| content)
-        .ok_or_else(|| anyhow::anyhow!("agent '{name}' has no prompt file"))?;
+    let prompt_map: BTreeMap<String, String> = prompts.into_iter().collect();
+    let prompt = resolve_agent_prompt(storage, agent_config, name, &prompt_map)
+        .ok_or_else(|| anyhow::anyhow!("agent '{name}' has no prompt (Storage or .md file)"))?;
 
     let mut agent = agent_config.clone();
     agent.name = name.to_owned();
@@ -214,7 +213,7 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
         let hook = build_env(config, config_dir, &manifest, host).await?;
         let tool_tx = build_tool_sender(event_tx);
         let mut runtime = Runtime::new(model, hook, Some(tool_tx)).await;
-        load_agents(&mut runtime, config, &manifest)?;
+        load_agents(&mut runtime, config_dir, config, &manifest)?;
         Ok(runtime)
     }
 }
@@ -313,9 +312,20 @@ fn build_tool_sender(event_tx: &DaemonEventSender) -> wcore::ToolSender {
 /// Load agents and add them to the runtime.
 fn load_agents<P: Provider + 'static, H: Host + 'static>(
     runtime: &mut Runtime<P, Env<H>>,
+    config_dir: &Path,
     config: &DaemonConfig,
     manifest: &ResolvedManifest,
 ) -> Result<()> {
+    // One-shot migration: hoist legacy `local/agents/<name>.md` files
+    // into the runtime Storage before we read any prompts.
+    if let Err(e) = crate::config::migrate_local_agent_prompts(
+        config_dir,
+        manifest,
+        runtime.hook.storage().as_ref(),
+    ) {
+        tracing::warn!("local agent prompt migration failed: {e}");
+    }
+
     let prompts = crate::config::load_agents_dirs(&manifest.agent_dirs)?;
     let prompt_map: BTreeMap<String, String> = prompts.into_iter().collect();
 
@@ -336,6 +346,7 @@ fn load_agents<P: Provider + 'static, H: Host + 'static>(
     runtime.add_agent(crab_config.clone());
 
     // Sub-agents from manifests.
+    let storage = runtime.hook.storage().clone();
     for (name, agent_config) in &manifest.agents {
         if name == wcore::paths::DEFAULT_AGENT {
             tracing::warn!(
@@ -344,13 +355,14 @@ fn load_agents<P: Provider + 'static, H: Host + 'static>(
             );
             continue;
         }
-        let Some(prompt) = prompt_map.get(name) else {
-            tracing::warn!("agent '{name}' in manifest has no matching .md file, skipping");
+        let Some(prompt) = resolve_agent_prompt(storage.as_ref(), agent_config, name, &prompt_map)
+        else {
+            tracing::warn!("agent '{name}' has no prompt (Storage or .md file), skipping");
             continue;
         };
         let mut agent = agent_config.clone();
         agent.name = name.clone();
-        agent.system_prompt = prompt.clone();
+        agent.system_prompt = prompt;
         if agent.model.is_none() {
             agent.model = Some(default_model.clone());
         }
@@ -387,4 +399,25 @@ fn load_agents<P: Provider + 'static, H: Host + 'static>(
     }
 
     Ok(())
+}
+
+/// Resolve an agent's prompt, preferring the runtime Storage (ULID
+/// key) and falling back to the legacy filesystem prompt map. Plugin
+/// agents have `AgentId::nil()` so they never hit the Storage path and
+/// always take the fs fallback — matching today's behaviour.
+fn resolve_agent_prompt(
+    storage: &dyn runtime::Storage,
+    config: &AgentConfig,
+    name: &str,
+    prompt_map: &BTreeMap<String, String>,
+) -> Option<String> {
+    if !config.id.is_nil() {
+        let key = crate::config::agent_prompt_key(&config.id.to_string());
+        if let Ok(Some(bytes)) = storage.get(&key)
+            && let Ok(content) = String::from_utf8(bytes)
+        {
+            return Some(content);
+        }
+    }
+    prompt_map.get(name).cloned()
 }

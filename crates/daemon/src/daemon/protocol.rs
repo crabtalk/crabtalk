@@ -393,8 +393,20 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
 
     async fn create_agent(&self, req: CreateAgentMsg) -> Result<AgentInfo> {
         validate_agent_name(&req.name)?;
-        self.write_agent_to_manifest(&req.name, &req.config, true)?;
-        self.write_agent_prompt(&req.name, &req.prompt)?;
+        // Normalize identity: mint a fresh ULID if the client didn't
+        // already supply one. Stored in the manifest so subsequent
+        // loads see the same id.
+        let mut config: wcore::AgentConfig =
+            serde_json::from_str(&req.config).context("invalid AgentConfig JSON")?;
+        if config.id.is_nil() {
+            config.id = wcore::AgentId::new();
+        }
+        let id = config.id;
+        let normalized = serde_json::to_string(&config)
+            .context("failed to re-serialize normalized agent config")?;
+        self.write_agent_to_manifest(&req.name, &normalized, true)?;
+        // Prompt lands at the ULID-keyed Storage path.
+        self.write_agent_prompt_to_storage(&id, &req.prompt).await?;
         self.register_agent_from_disk(&req.name).await?;
         self.get_agent(req.name).await
     }
@@ -402,12 +414,31 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
     async fn update_agent(&self, req: UpdateAgentMsg) -> Result<AgentInfo> {
         validate_agent_name(&req.name)?;
         if req.name == wcore::paths::DEFAULT_AGENT {
+            // System crab keeps its baked-in prompt — req.prompt is
+            // ignored on this path, matching the fact that load_agents
+            // always overrides crab.system_prompt with SYSTEM_AGENT.
             self.write_system_crab_config(&req.config)?;
         } else {
-            self.write_agent_to_manifest(&req.name, &req.config, false)?;
-        }
-        if !req.prompt.is_empty() {
-            self.write_agent_prompt(&req.name, &req.prompt)?;
+            // Preserve the existing ULID across updates so session
+            // and cron references stay stable. Mint one only if the
+            // manifest has no record of this agent yet.
+            let mut config: wcore::AgentConfig =
+                serde_json::from_str(&req.config).context("invalid AgentConfig JSON")?;
+            let existing = self.existing_agent_id(&req.name)?;
+            config.id = existing.unwrap_or_else(|| {
+                if config.id.is_nil() {
+                    wcore::AgentId::new()
+                } else {
+                    config.id
+                }
+            });
+            let id = config.id;
+            let normalized = serde_json::to_string(&config)
+                .context("failed to re-serialize normalized agent config")?;
+            self.write_agent_to_manifest(&req.name, &normalized, false)?;
+            if !req.prompt.is_empty() {
+                self.write_agent_prompt_to_storage(&id, &req.prompt).await?;
+            }
         }
         self.register_agent_from_disk(&req.name).await?;
         self.get_agent(req.name).await
@@ -423,6 +454,11 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
         if !manifest_path.exists() {
             return Ok(false);
         }
+
+        // Capture the ULID before we mutate the manifest so we can
+        // delete the matching Storage-keyed prompt afterwards.
+        let existing_id = self.existing_agent_id(&name)?;
+
         let content =
             std::fs::read_to_string(&manifest_path).context("failed to read local manifest")?;
         let mut doc: DocumentMut = content.parse().context("failed to parse local manifest")?;
@@ -435,16 +471,26 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
         if removed {
             std::fs::write(&manifest_path, doc.to_string())
                 .context("failed to write local manifest")?;
-            let prompt_file = self
+
+            // Remove the Storage-keyed prompt (new layout) and the
+            // legacy fs prompt (if any) so nothing stale is left.
+            let rt = self.runtime.read().await.clone();
+            if let Some(id) = existing_id {
+                let key = crate::config::agent_prompt_key(&id.to_string());
+                if let Err(e) = rt.hook.storage().delete(&key) {
+                    tracing::warn!("failed to delete agent prompt {key}: {e}");
+                }
+            }
+            let legacy = self
                 .config_dir
                 .join(wcore::paths::AGENTS_DIR)
                 .join(format!("{name}.md"));
-            if prompt_file.exists() {
-                std::fs::remove_file(&prompt_file).context("failed to remove agent prompt file")?;
+            if legacy.exists() {
+                let _ = std::fs::remove_file(&legacy);
             }
+
             // Targeted in-memory removal — keeps ephemeral agents and
             // in-flight conversations alive, unlike a full reload().
-            let rt = self.runtime.read().await.clone();
             rt.remove_agent(&name);
             rt.hook.unregister_scope(&name);
         }
@@ -1219,14 +1265,30 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
     async fn register_agent_from_disk(&self, name: &str) -> Result<()> {
         let config = self.load_config()?;
         let (manifest, _warnings) = self.resolve_manifests()?;
-        let agent_config =
-            crate::daemon::builder::build_single_agent_config(name, &config, &manifest)?;
         let rt = self.runtime.read().await.clone();
+        let agent_config = crate::daemon::builder::build_single_agent_config(
+            name,
+            &config,
+            &manifest,
+            rt.hook.storage().as_ref(),
+        )?;
         // `upsert_agent` returns the post-`on_build_agent` config so the
         // dispatch scope matches the form actually stored in the registry.
         let registered = rt.upsert_agent(agent_config);
         rt.hook.register_scope(name.to_owned(), &registered);
         Ok(())
+    }
+
+    /// Look up the stable `AgentId` already recorded for `name` in the
+    /// local manifest, if any. Used by update/delete to preserve
+    /// identity across edits.
+    fn existing_agent_id(&self, name: &str) -> Result<Option<wcore::AgentId>> {
+        let (manifest, _) = self.resolve_manifests()?;
+        Ok(manifest
+            .agents
+            .get(name)
+            .filter(|cfg| !cfg.id.is_nil())
+            .map(|cfg| cfg.id))
     }
 
     /// Look up a command service by name from installed plugin manifests.
@@ -1299,13 +1361,18 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
         Ok(())
     }
 
-    /// Write an agent's system prompt to `local/agents/{name}.md`.
-    fn write_agent_prompt(&self, name: &str, prompt: &str) -> Result<()> {
-        let agents_dir = self.config_dir.join(wcore::paths::AGENTS_DIR);
-        std::fs::create_dir_all(&agents_dir).context("failed to create agents directory")?;
-        std::fs::write(agents_dir.join(format!("{name}.md")), prompt)
-            .context("failed to write agent prompt file")?;
-        Ok(())
+    /// Write an agent's system prompt to the runtime Storage at
+    /// `agents/<ulid>/prompt.md`. Replaces the legacy
+    /// `local/agents/<name>.md` path; the migration helper in
+    /// `crate::config::migrate_local_agent_prompts` hoists any
+    /// pre-existing files at startup.
+    async fn write_agent_prompt_to_storage(&self, id: &wcore::AgentId, prompt: &str) -> Result<()> {
+        let rt = self.runtime.read().await.clone();
+        let key = crate::config::agent_prompt_key(&id.to_string());
+        rt.hook
+            .storage()
+            .put(&key, prompt.as_bytes())
+            .with_context(|| format!("failed to write agent prompt at {key}"))
     }
 
     /// Write config into `[system.crab]` in `config.toml`.
