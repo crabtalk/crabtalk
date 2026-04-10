@@ -1,10 +1,6 @@
-//! Memory repository trait and domain types.
+//! Memory domain types.
 //!
-//! [`MemoryRepo`] abstracts memory entry persistence. The daemon provides
-//! a filesystem implementation; tests use an in-memory backend.
-//! [`MemoryEntry`] is the domain type — a named memory blob with YAML
-//! frontmatter metadata. The repo speaks `MemoryEntry` values directly,
-//! never keys or bytes.
+//! [`MemoryEntry`] is a named memory blob with YAML frontmatter metadata.
 
 use anyhow::{Result, bail};
 
@@ -104,28 +100,4 @@ pub fn slugify(name: &str) -> String {
     }
 
     slug
-}
-
-/// Persistence backend for memory entries.
-///
-/// Implementations own their encoding and storage layout. The trait
-/// speaks domain types only — no keys, no bytes, no filesystem concepts.
-pub trait MemoryRepo: Send + Sync + 'static {
-    /// List all entries.
-    fn list(&self) -> Result<Vec<MemoryEntry>>;
-
-    /// Load a specific entry by name.
-    fn load(&self, name: &str) -> Result<Option<MemoryEntry>>;
-
-    /// Create or replace an entry.
-    fn save(&self, entry: &MemoryEntry) -> Result<()>;
-
-    /// Delete an entry by name. Returns `true` if it existed.
-    fn delete(&self, name: &str) -> Result<bool>;
-
-    /// Load the curated MEMORY.md index content.
-    fn load_index(&self) -> Result<Option<String>>;
-
-    /// Overwrite the MEMORY.md index content.
-    fn save_index(&self, content: &str) -> Result<()>;
 }

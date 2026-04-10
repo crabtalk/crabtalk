@@ -1,7 +1,7 @@
-//! Built-in memory — cached access to a [`MemoryRepo`] backend.
+//! Built-in memory — cached access to a [`Storage`] backend.
 //!
-//! `Memory` wraps a `MemoryRepo` with an in-process entry cache (for
-//! BM25 recall scoring) and the MEMORY.md index. The repo owns the
+//! `Memory` wraps a `Storage` with an in-process entry cache (for
+//! BM25 recall scoring) and the MEMORY.md index. Storage owns the
 //! physical layout; Memory owns search and prompt generation.
 
 use crate::config::MemoryConfig;

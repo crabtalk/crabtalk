@@ -1,8 +1,8 @@
 //! Tests for Runtime — agent registry, conversation management, and execution.
 //!
-//! Uses [`TestHook`] (InMemoryRepos-backed) and [`TestProvider`]. Every
-//! test gets its own in-memory repos via `TestHook::new()` — no
-//! shared global state, no filesystem I/O, no daemon.
+//! Uses [`TestHook`] (InMemoryStorage-backed) and [`TestProvider`]. Every
+//! test gets its own in-memory storage via `TestHook::new()` — no
+//! shared global state, no filesystem I/O, no node.
 
 use crabtalk_core::{
     AgentConfig, AgentEvent, AgentStopReason, Runtime, TestHook,

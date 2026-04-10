@@ -1,10 +1,9 @@
 //! Session I/O benchmarks: append throughput and load latency.
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-use std::sync::Arc;
 use wcore::{
     model::HistoryEntry,
-    repos::{SessionHandle, SessionRepo, mem::InMemorySessionRepo},
+    repos::{Storage, mem::InMemoryStorage},
 };
 
 fn generate_messages(n: usize) -> Vec<HistoryEntry> {
@@ -19,14 +18,15 @@ fn generate_messages(n: usize) -> Vec<HistoryEntry> {
         .collect()
 }
 
-/// Create a fresh `InMemorySessionRepo` with `n` messages already
-/// persisted, and return the repo + handle for replay.
-fn prepopulate_session(n: usize) -> (Arc<InMemorySessionRepo>, SessionHandle) {
-    let repo = Arc::new(InMemorySessionRepo::new());
-    let handle = repo.create("bench", "bench").unwrap();
-    repo.append_messages(&handle, &generate_messages(n))
+/// Create a fresh `InMemoryStorage` with `n` messages already
+/// persisted, and return the storage + handle for replay.
+fn prepopulate_session(n: usize) -> (InMemoryStorage, wcore::repos::SessionHandle) {
+    let storage = InMemoryStorage::new();
+    let handle = storage.create_session("bench", "bench").unwrap();
+    storage
+        .append_session_messages(&handle, &generate_messages(n))
         .unwrap();
-    (repo, handle)
+    (storage, handle)
 }
 
 fn bench_append(c: &mut Criterion) {
@@ -39,12 +39,12 @@ fn bench_append(c: &mut Criterion) {
             |b, messages| {
                 b.iter_batched(
                     || {
-                        let repo = Arc::new(InMemorySessionRepo::new());
-                        let handle = repo.create("bench", "bench").unwrap();
-                        (repo, handle)
+                        let storage = InMemoryStorage::new();
+                        let handle = storage.create_session("bench", "bench").unwrap();
+                        (storage, handle)
                     },
-                    |(repo, handle)| {
-                        repo.append_messages(&handle, messages).unwrap();
+                    |(storage, handle)| {
+                        storage.append_session_messages(&handle, messages).unwrap();
                     },
                     BatchSize::SmallInput,
                 );
@@ -57,12 +57,12 @@ fn bench_append(c: &mut Criterion) {
 fn bench_load_context(c: &mut Criterion) {
     let mut group = c.benchmark_group("conversation_load");
     for size in [10, 100, 1_000, 5_000] {
-        let (repo, handle) = prepopulate_session(size);
+        let (storage, handle) = prepopulate_session(size);
         group.bench_with_input(
             BenchmarkId::from_parameter(size),
-            &(repo, handle),
-            |b, (repo, handle)| {
-                b.iter(|| repo.load(handle).unwrap());
+            &(storage, handle),
+            |b, (storage, handle)| {
+                b.iter(|| storage.load_session(handle).unwrap());
             },
         );
     }
