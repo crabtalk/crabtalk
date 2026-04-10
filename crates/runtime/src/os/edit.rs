@@ -4,9 +4,9 @@ use crate::{Env, host::Host};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use wcore::{
-    Storage,
     agent::{AsTool, ToolDescription},
     model::Tool,
+    repos::Repos,
 };
 
 use crate::os::read::MAX_FILE_SIZE;
@@ -29,7 +29,7 @@ pub fn tools() -> Vec<Tool> {
     vec![Edit::as_tool()]
 }
 
-impl<H: Host, S: Storage + 'static> Env<H, S> {
+impl<H: Host, R: Repos> Env<H, R> {
     pub async fn dispatch_edit(
         &self,
         args: &str,

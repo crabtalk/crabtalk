@@ -5,9 +5,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use std::fmt::Write;
 use wcore::{
-    Storage,
     agent::{AsTool, ToolDescription},
     model::Tool,
+    repos::Repos,
 };
 
 /// Default maximum number of lines to return per read.
@@ -37,7 +37,7 @@ pub fn tools() -> Vec<Tool> {
     vec![Read::as_tool()]
 }
 
-impl<H: Host, S: Storage + 'static> Env<H, S> {
+impl<H: Host, R: Repos> Env<H, R> {
     pub async fn dispatch_read(
         &self,
         args: &str,

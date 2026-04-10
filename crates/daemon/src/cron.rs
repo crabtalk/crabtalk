@@ -1,24 +1,17 @@
 //! Daemon-level cron scheduler.
 //!
-//! A cron entry triggers a skill into a session on a schedule. The session
-//! carries the agent — no redundancy. Memory is authoritative at runtime;
-//! the [`Storage`](wcore::Storage) key `cron/crons.toml` is recovery for
-//! restarts.
+//! A cron entry triggers a skill into a session on a schedule.
+//! Memory is authoritative at runtime; `cron/crons.toml` under the
+//! config directory is recovery for restarts.
 
 use crate::daemon::event::{DaemonEvent, DaemonEventSender};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
 use tokio::{
     sync::{Mutex, broadcast},
     task::JoinHandle,
 };
-use wcore::{
-    Storage,
-    protocol::message::{ClientMessage, SendMsg},
-};
-
-/// Storage key for the cron TOML blob.
-const CRONS_KEY: &str = "cron/crons.toml";
+use wcore::protocol::message::{ClientMessage, SendMsg};
 
 /// Persistent cron entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,7 +25,6 @@ pub struct CronEntry {
     pub quiet_start: Option<String>,
     #[serde(default)]
     pub quiet_end: Option<String>,
-    /// Fire once then self-delete.
     #[serde(default)]
     pub once: bool,
 }
@@ -45,67 +37,57 @@ struct CronFile {
 }
 
 /// In-memory cron store with per-entry timer tasks.
-pub struct CronStore<S: Storage> {
+pub struct CronStore {
     entries: HashMap<u64, CronEntry>,
     handles: HashMap<u64, JoinHandle<()>>,
     next_id: u64,
-    storage: Arc<S>,
+    path: PathBuf,
     event_tx: DaemonEventSender,
     shutdown_tx: broadcast::Sender<()>,
 }
 
-/// Validate that a cron schedule expression parses.
 fn validate_schedule(schedule: &str) -> Result<(), String> {
     cron::Schedule::from_str(schedule)
         .map(|_| ())
         .map_err(|e| format!("invalid cron schedule '{schedule}': {e}"))
 }
 
-impl<S: Storage + 'static> CronStore<S> {
-    /// Load crons from [`CRONS_KEY`] in the given [`Storage`]. Missing
-    /// or unparsable blobs yield an empty store; entries with invalid
-    /// schedules are skipped with a warning.
+impl CronStore {
+    /// Load crons from `cron/crons.toml` under `root`.
     pub fn load(
-        storage: Arc<S>,
+        root: PathBuf,
         event_tx: DaemonEventSender,
         shutdown_tx: broadcast::Sender<()>,
     ) -> Self {
+        let path = root.join("cron").join("crons.toml");
         let mut entries = HashMap::new();
         let mut max_id = 0u64;
-        match storage.get(CRONS_KEY) {
-            Ok(Some(bytes)) => match std::str::from_utf8(&bytes) {
-                Ok(content) => match toml::from_str::<CronFile>(content) {
-                    Ok(file) => {
-                        for entry in file.cron {
-                            if let Err(e) = validate_schedule(&entry.schedule) {
-                                tracing::warn!("cron {}: {e}, skipping", entry.id);
-                                continue;
-                            }
-                            max_id = max_id.max(entry.id);
-                            entries.insert(entry.id, entry);
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            match toml::from_str::<CronFile>(&content) {
+                Ok(file) => {
+                    for entry in file.cron {
+                        if let Err(e) = validate_schedule(&entry.schedule) {
+                            tracing::warn!("cron {}: {e}, skipping", entry.id);
+                            continue;
                         }
+                        max_id = max_id.max(entry.id);
+                        entries.insert(entry.id, entry);
                     }
-                    Err(e) => {
-                        tracing::warn!("failed to parse {CRONS_KEY}, starting empty: {e}");
-                    }
-                },
-                Err(_) => tracing::warn!("{CRONS_KEY} is not valid UTF-8, ignoring"),
-            },
-            Ok(None) => {}
-            Err(e) => tracing::warn!("failed to read {CRONS_KEY}: {e}"),
+                }
+                Err(e) => tracing::warn!("failed to parse {}: {e}", path.display()),
+            }
         }
         Self {
             entries,
             handles: HashMap::new(),
             next_id: max_id + 1,
-            storage,
+            path,
             event_tx,
             shutdown_tx,
         }
     }
 
-    /// Spawn timer tasks for all loaded entries.
-    pub fn start_all(&mut self, store: Arc<Mutex<CronStore<S>>>) {
+    pub fn start_all(&mut self, store: Arc<Mutex<CronStore>>) {
         let ids: Vec<u64> = self.entries.keys().copied().collect();
         for id in ids {
             self.spawn_timer(id, store.clone());
@@ -115,12 +97,10 @@ impl<S: Storage + 'static> CronStore<S> {
         }
     }
 
-    /// Create a new cron entry. Validates the schedule, assigns an ID,
-    /// spawns the timer, and persists to disk.
     pub fn create(
         &mut self,
         mut entry: CronEntry,
-        store: Arc<Mutex<CronStore<S>>>,
+        store: Arc<Mutex<CronStore>>,
     ) -> Result<CronEntry, String> {
         validate_schedule(&entry.schedule)?;
         entry.id = self.next_id;
@@ -131,7 +111,6 @@ impl<S: Storage + 'static> CronStore<S> {
         Ok(entry)
     }
 
-    /// Delete a cron entry. Aborts its timer and persists to disk.
     pub fn delete(&mut self, id: u64) -> bool {
         if self.entries.remove(&id).is_none() {
             return false;
@@ -143,13 +122,10 @@ impl<S: Storage + 'static> CronStore<S> {
         true
     }
 
-    /// List all cron entries.
     pub fn list(&self) -> Vec<CronEntry> {
         self.entries.values().cloned().collect()
     }
 
-    /// Write-through to Storage. Serialization failures are logged and
-    /// swallowed — the in-memory state remains authoritative.
     fn save(&self) {
         let file = CronFile {
             cron: self.entries.values().cloned().collect(),
@@ -161,14 +137,15 @@ impl<S: Storage + 'static> CronStore<S> {
                 return;
             }
         };
-        if let Err(e) = self.storage.put(CRONS_KEY, content.as_bytes()) {
-            tracing::error!("failed to write {CRONS_KEY}: {e}");
+        if let Some(parent) = self.path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(e) = std::fs::write(&self.path, &content) {
+            tracing::error!("failed to write {}: {e}", self.path.display());
         }
     }
 
-    /// Spawn a timer task for a single entry.
-    /// One-shot crons self-delete through the `store` handle after firing.
-    fn spawn_timer(&mut self, id: u64, store: Arc<Mutex<CronStore<S>>>) {
+    fn spawn_timer(&mut self, id: u64, store: Arc<Mutex<CronStore>>) {
         let Some(entry) = self.entries.get(&id).cloned() else {
             return;
         };
@@ -186,14 +163,11 @@ impl<S: Storage + 'static> CronStore<S> {
     }
 }
 
-/// Run a single cron timer loop until shutdown.
-/// Returns after first fire when `entry.once` is true.
 async fn run_cron_timer(
     entry: CronEntry,
     event_tx: DaemonEventSender,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
-    // Schedule was validated on create/load — unwrap is safe.
     let schedule = cron::Schedule::from_str(&entry.schedule).expect("pre-validated schedule");
 
     tracing::info!(
@@ -239,9 +213,6 @@ async fn run_cron_timer(
             entry.sender,
         );
 
-        // Fire-and-forget: receiver is dropped, so the first send() in
-        // handle_message returns Err and the loop exits. Output goes to
-        // conversation history only.
         let (reply_tx, _) = tokio::sync::mpsc::channel(1);
         let msg = ClientMessage::from(SendMsg {
             agent: entry.agent.clone(),
@@ -262,7 +233,6 @@ async fn run_cron_timer(
     }
 }
 
-/// Check if the current local time is inside a quiet window.
 fn is_quiet(quiet_start: Option<&str>, quiet_end: Option<&str>) -> bool {
     let (Some(qs), Some(qe)) = (quiet_start, quiet_end) else {
         return false;

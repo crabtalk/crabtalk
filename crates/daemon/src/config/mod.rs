@@ -30,7 +30,7 @@ pub fn validate_providers(providers: &BTreeMap<String, ProviderDef>) -> Result<(
 mod backfill;
 mod loader;
 
-pub use backfill::{agent_prompt_key, backfill_local_agent_ids, migrate_local_agent_prompts};
+pub use backfill::{backfill_local_agent_ids, migrate_local_agent_prompts};
 
 /// Top-level daemon configuration (`config.toml`).
 ///

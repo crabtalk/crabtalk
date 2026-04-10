@@ -27,3 +27,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+wcore = { workspace = true, features = ["test-utils"] }

@@ -1,8 +1,4 @@
 //! Daemon — the core struct composing runtime, transports, and lifecycle.
-//!
-//! [`Daemon`] owns the runtime and shared state. [`DaemonHandle`] owns the
-//! spawned tasks and provides graceful shutdown. Transport setup is
-//! decomposed into private helpers called from [`Daemon::start`].
 
 use crate::{
     DaemonConfig,
@@ -11,12 +7,13 @@ use crate::{
         builder::{BuildProvider, DefaultProvider, build_default_provider},
         event::{DaemonEvent, DaemonEventSender},
     },
+    event_bus::EventBus,
     hook::host::DaemonHost,
-    storage::FsStorage,
+    repos::DaemonRepos,
 };
 use anyhow::Result;
 use crabllm_core::Provider;
-use runtime::{Env, event_bus::EventBus, host::Host};
+use runtime::{Env, host::Host};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -28,37 +25,15 @@ pub(crate) mod builder;
 pub mod event;
 mod protocol;
 
-/// Shared daemon state — holds the runtime. Cheap to clone (`Arc`-backed).
-///
-/// Generic over the provider type [`P`] (`crabllm_core::Provider`) and the
-/// [`Host`] type so downstream binaries can inject custom provider
-/// implementations (e.g. local MLX inference) and server-specific tool
-/// dispatch. The default concrete P is [`DefaultProvider`] —
-/// `Retrying<ProviderRegistry<RemoteProvider>>` — used by `Daemon::start`.
-///
-/// The runtime is stored behind `Arc<RwLock<Arc<Runtime>>>` so that
-/// [`Daemon::reload`] can swap it atomically while in-flight requests that
-/// already cloned the inner `Arc` complete normally.
+/// Shared daemon state.
 pub struct Daemon<P: Provider + 'static = DefaultProvider, B: Host + 'static = DaemonHost> {
-    /// The crabtalk runtime, swappable via [`Daemon::reload`]. The
-    /// storage backend is always [`FsStorage`] — the daemon owns the
-    /// filesystem layering boundary.
     #[allow(clippy::type_complexity)]
-    pub runtime: Arc<RwLock<Arc<Runtime<P, Env<B, FsStorage>>>>>,
-    /// Config directory — stored so [`Daemon::reload`] can re-read config from disk.
+    pub runtime: Arc<RwLock<Arc<Runtime<P, Env<B, DaemonRepos>>>>>,
     pub(crate) config_dir: PathBuf,
-    /// Sender for the daemon event loop — cloned into `Runtime` as `ToolSender`
-    /// so agents can dispatch tool calls. Stored here so [`Daemon::reload`] can
-    /// pass a fresh clone into the rebuilt runtime.
     pub(crate) event_tx: DaemonEventSender,
-    /// When the daemon was started (for uptime calculation).
     pub(crate) started_at: std::time::Instant,
-    /// Daemon-level cron scheduler. Survives runtime reloads.
-    pub(crate) crons: Arc<Mutex<CronStore<FsStorage>>>,
-    /// Event bus — subscription-based routing. Survives runtime reloads.
-    pub(crate) events: Arc<Mutex<EventBus<FsStorage>>>,
-    /// Closure that builds `Model<P>` from config — called on initial
-    /// construction and on every `reload()`.
+    pub(crate) crons: Arc<Mutex<CronStore>>,
+    pub(crate) events: Arc<Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
 }
 
@@ -77,14 +52,6 @@ impl<P: Provider + 'static, B: Host + 'static> Clone for Daemon<P, B> {
 }
 
 impl Daemon<DefaultProvider, DaemonHost> {
-    /// Load config, build runtime with the default provider (a retrying
-    /// `ProviderRegistry<RemoteProvider>`) and the default [`DaemonHost`],
-    /// and start the event loop. This is the entry point the crabtalk CLI
-    /// binary uses.
-    ///
-    /// Library consumers with custom provider types (e.g. the Apple app
-    /// injecting MLX) should call [`Daemon::start_with`] directly with
-    /// their own provider-builder and backend-builder closures.
     pub async fn start(config_dir: &Path) -> Result<DaemonHandle<DefaultProvider, DaemonHost>> {
         Self::start_with(
             config_dir,
@@ -104,18 +71,6 @@ impl Daemon<DefaultProvider, DaemonHost> {
 }
 
 impl<P: Provider + 'static, B: Host + 'static> Daemon<P, B> {
-    /// Load config, build runtime with the given provider-builder and
-    /// backend-builder, and start the event loop.
-    ///
-    /// - `build_provider` receives the loaded [`DaemonConfig`] and returns
-    ///   the [`Model<P>`] the runtime will dispatch through. Called once
-    ///   here and once on every subsequent [`Daemon::reload`].
-    /// - `build_backend` receives the [`DaemonEventSender`] so the backend
-    ///   can inject events (e.g. for delegate dispatch).
-    ///
-    /// The provider-builder is stored on `Daemon` as an `Arc<dyn Fn>` so
-    /// reload can re-run it with fresh config — that's why it needs
-    /// `Fn + Send + Sync + 'static` rather than `FnOnce`.
     pub async fn start_with<BP, BB>(
         config_dir: &Path,
         build_provider: BP,
@@ -131,7 +86,6 @@ impl<P: Provider + 'static, B: Host + 'static> Daemon<P, B> {
 
         let (event_tx, event_rx) = mpsc::unbounded_channel::<DaemonEvent>();
 
-        // Broadcast shutdown — all subsystems subscribe.
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
         let shutdown_event_tx = event_tx.clone();
         let mut shutdown_rx = shutdown_tx.subscribe();
@@ -167,36 +121,19 @@ impl<P: Provider + 'static, B: Host + 'static> Daemon<P, B> {
     }
 }
 
-/// Handle returned by [`Daemon::start`] — holds the event sender and shutdown trigger.
-///
-/// The caller spawns transports (socket, TCP) using [`setup_socket`] and
-/// [`setup_tcp`], passing clones of `event_tx` and `shutdown_tx`.
 pub struct DaemonHandle<P: Provider + 'static = DefaultProvider, B: Host + 'static = DaemonHost> {
-    /// The loaded daemon configuration.
     pub config: DaemonConfig,
-    /// Sender for injecting events into the daemon event loop.
-    /// Clone this and pass to transport setup functions.
     pub event_tx: DaemonEventSender,
-    /// Broadcast shutdown — call `.subscribe()` for transport shutdown,
-    /// or use [`DaemonHandle::shutdown`] to trigger.
     pub shutdown_tx: broadcast::Sender<()>,
-    /// The shared daemon state — exposed for backend/product servers that
-    /// layer additional APIs on top.
     pub daemon: Daemon<P, B>,
     event_loop_join: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl<P: Provider + 'static, B: Host + 'static> DaemonHandle<P, B> {
-    /// Wait until the active model provider is ready.
-    ///
-    /// No-op for remote providers. Kept for API compatibility.
     pub async fn wait_until_ready(&self) -> Result<()> {
         Ok(())
     }
 
-    /// Trigger graceful shutdown and wait for the event loop to stop.
-    ///
-    /// Transport tasks (socket, channels) are the caller's responsibility.
     pub async fn shutdown(mut self) -> Result<()> {
         let _ = self.shutdown_tx.send(());
         if let Some(join) = self.event_loop_join.take() {
@@ -208,7 +145,6 @@ impl<P: Provider + 'static, B: Host + 'static> DaemonHandle<P, B> {
 
 // ── Transport setup helpers ──────────────────────────────────────────
 
-/// Bind the Unix domain socket and spawn the accept loop.
 #[cfg(unix)]
 pub fn setup_socket(
     shutdown_tx: &broadcast::Sender<()>,
@@ -238,10 +174,6 @@ pub fn setup_socket(
     Ok((resolved_path, join))
 }
 
-/// Bind a TCP listener and spawn the accept loop.
-///
-/// Tries the default port (6688), falls back to an OS-assigned port.
-/// Returns the join handle and the actual port bound.
 pub fn setup_tcp(
     shutdown_tx: &broadcast::Sender<()>,
     event_tx: &DaemonEventSender,
@@ -263,7 +195,6 @@ pub fn setup_tcp(
     Ok((join, addr.port()))
 }
 
-/// Bridge a broadcast receiver into a oneshot receiver.
 pub fn bridge_shutdown(mut rx: broadcast::Receiver<()>) -> oneshot::Receiver<()> {
     let (otx, orx) = oneshot::channel();
     tokio::spawn(async move {

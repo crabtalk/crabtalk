@@ -4,9 +4,10 @@
 pub mod config;
 pub mod cron;
 pub mod daemon;
+pub mod event_bus;
 pub mod hook;
 pub mod provider;
-pub mod storage;
+pub mod repos;
 
 pub use config::DaemonConfig;
 #[cfg(unix)]

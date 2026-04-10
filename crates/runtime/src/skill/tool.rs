@@ -1,31 +1,31 @@
 //! Tool dispatch and schema registration for the skill tool.
 
-use crate::{Env, host::Host, skill::loader};
+use crate::{Env, host::Host};
 use serde::Deserialize;
 use wcore::{
-    Storage,
     agent::{AsTool, ToolDescription},
     model::Tool,
+    repos::{Repos, SkillRepo},
 };
 
 #[derive(Deserialize, schemars::JsonSchema)]
-pub struct Skill {
+pub struct SkillTool {
     /// Skill name to load. If no exact match, returns fuzzy matches.
     /// Leave empty to list all available skills.
     pub name: String,
 }
 
-impl ToolDescription for Skill {
+impl ToolDescription for SkillTool {
     const DESCRIPTION: &'static str = "Load a skill by name. Returns its instructions on exact match, or lists matching skills otherwise.";
 }
 
 pub fn tools() -> Vec<Tool> {
-    vec![Skill::as_tool()]
+    vec![SkillTool::as_tool()]
 }
 
-impl<H: Host, S: Storage + 'static> Env<H, S> {
+impl<H: Host, R: Repos> Env<H, R> {
     pub async fn dispatch_skill(&self, args: &str, agent: &str) -> Result<String, String> {
-        let input: Skill =
+        let input: SkillTool =
             serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
         let name = &input.name;
 
@@ -45,31 +45,16 @@ impl<H: Host, S: Storage + 'static> Env<H, S> {
             return Err(format!("invalid skill name: {name}"));
         }
 
-        // Try exact load from each configured skill root.
+        // Try exact load from the repo.
         if !name.is_empty() {
-            let key = format!("{name}/SKILL.md");
-            for root in &self.skills.roots {
-                let Ok(Some(bytes)) = root.storage.get(&key) else {
-                    continue;
-                };
-                let Ok(content) = std::str::from_utf8(&bytes) else {
-                    return Err("skill manifest is not valid UTF-8".to_owned());
-                };
-                return match loader::parse_skill_md(content) {
-                    Ok(skill) => {
-                        let body = skill.body.clone();
-                        self.skills.registry.lock().await.upsert(skill);
-                        let dir_path = root.label.join(name);
-                        Ok(format!("{body}\n\nSkill directory: {}", dir_path.display()))
-                    }
-                    Err(e) => Err(format!("failed to parse skill: {e}")),
-                };
+            match self.repos.skills().load(name) {
+                Ok(Some(skill)) => return Ok(skill.body),
+                Ok(None) => {} // fall through to fuzzy search
+                Err(e) => return Err(format!("failed to load skill: {e}")),
             }
         }
 
-        // No exact match — fuzzy search / list all. Snapshot the allowed
-        // skill list so we don't hold the scopes lock across the registry
-        // lock acquisition below.
+        // No exact match — fuzzy search / list all.
         let query = name.to_lowercase();
         let allowed: Vec<String> = self
             .scopes
@@ -78,9 +63,9 @@ impl<H: Host, S: Storage + 'static> Env<H, S> {
             .get(agent)
             .map(|s| s.skills.clone())
             .unwrap_or_default();
-        let registry = self.skills.registry.lock().await;
-        let matches: Vec<String> = registry
-            .skills
+
+        let skills = self.repos.skills().list().unwrap_or_default();
+        let matches: Vec<String> = skills
             .iter()
             .filter(|s| {
                 if !allowed.is_empty() && !allowed.iter().any(|a| a == s.name.as_str()) {
@@ -93,8 +78,6 @@ impl<H: Host, S: Storage + 'static> Env<H, S> {
             .map(|s| format!("{}: {}", s.name, s.description))
             .collect();
 
-        // Empty discovery is not a failure — the caller asked "what matches?"
-        // and got "nothing". Return Ok so the UI doesn't flag it as an error.
         if matches.is_empty() {
             Ok("no skills found".to_owned())
         } else {

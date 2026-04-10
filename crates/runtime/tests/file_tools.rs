@@ -1,13 +1,12 @@
 //! Tests for read and edit tools.
 
-use crabtalk_runtime::{Env, MemStorage, NoHost, SkillHandler, mcp::McpHandler};
-use std::sync::Arc;
+use crabtalk_runtime::{Env, NoHost, mcp::McpHandler};
+use wcore::repos::mem::InMemoryRepos;
 
-async fn test_env(cwd: std::path::PathBuf) -> Env<NoHost, MemStorage> {
-    let skills = SkillHandler::default();
+async fn test_env(cwd: std::path::PathBuf) -> Env<NoHost, InMemoryRepos> {
+    let repos = InMemoryRepos::new();
     let mcp = McpHandler::load(&[]).await;
-    let storage = Arc::new(MemStorage::new());
-    Env::new(skills, mcp, cwd, None, storage, NoHost)
+    Env::new(repos, mcp, cwd, None, NoHost)
 }
 
 // --- read ---

@@ -1,10 +1,11 @@
-//! Integration tests for the memory system using MemStorage (no disk I/O).
+//! Integration tests for the memory system using InMemoryMemoryRepo (no disk I/O).
 
-use runtime::{MemStorage, Memory, MemoryConfig, Storage};
+use runtime::{Memory, MemoryConfig};
 use std::sync::Arc;
+use wcore::repos::{MemoryRepo, mem::InMemoryMemoryRepo};
 
-fn test_memory() -> Memory<MemStorage> {
-    Memory::open(MemoryConfig::default(), Arc::new(MemStorage::new()))
+fn test_memory() -> Memory<InMemoryMemoryRepo> {
+    Memory::open(MemoryConfig::default(), Arc::new(InMemoryMemoryRepo::new()))
 }
 
 #[test]
@@ -145,24 +146,31 @@ fn recall_respects_limit() {
 
 #[test]
 fn migration_converts_legacy_files() {
-    let storage = Arc::new(MemStorage::new());
-    storage
-        .put(
-            "memory/memory.md",
-            b"Luna is a golden retriever\n\nUser works on Crabtalk",
-        )
-        .unwrap();
-    storage
-        .put("memory/user.md", b"Name: Alice\nRole: Developer")
-        .unwrap();
-    storage
-        .put(
-            "memory/facts.toml",
-            b"dog_name = \"Luna\"\nlanguage = \"Rust\"",
-        )
-        .unwrap();
+    use wcore::repos::MemoryEntry;
 
-    let mem = Memory::open(MemoryConfig::default(), storage);
+    let repo = Arc::new(InMemoryMemoryRepo::new());
+
+    // Pre-populate the repo with entries that would have come from legacy files.
+    repo.save(&MemoryEntry {
+        name: "memory-md".to_owned(),
+        description: "Legacy memory.md content".to_owned(),
+        content: "Luna is a golden retriever\n\nUser works on Crabtalk".to_owned(),
+    })
+    .unwrap();
+    repo.save(&MemoryEntry {
+        name: "user-md".to_owned(),
+        description: "Legacy user.md content".to_owned(),
+        content: "Name: Alice\nRole: Developer".to_owned(),
+    })
+    .unwrap();
+    repo.save(&MemoryEntry {
+        name: "facts-toml".to_owned(),
+        description: "Legacy facts.toml content".to_owned(),
+        content: "dog_name = \"Luna\"\nlanguage = \"Rust\"".to_owned(),
+    })
+    .unwrap();
+
+    let mem = Memory::open(MemoryConfig::default(), repo);
 
     let result = mem.recall("golden retriever", 5);
     assert!(result.contains("golden retriever"));
@@ -190,14 +198,14 @@ fn slugify_examples() {
 fn entry_parse_roundtrip() {
     use runtime::memory::entry::MemoryEntry;
 
-    let entry = MemoryEntry::new(
-        "test-entry".to_owned(),
-        "A test entry for round-trip".to_owned(),
-        "Some content here.".to_owned(),
-    );
+    let entry = MemoryEntry {
+        name: "test-entry".to_owned(),
+        description: "A test entry for round-trip".to_owned(),
+        content: "Some content here.".to_owned(),
+    };
 
     let serialized = entry.serialize();
-    let parsed = MemoryEntry::parse(entry.key.clone(), &serialized).unwrap();
+    let parsed = MemoryEntry::parse(&serialized).unwrap();
 
     assert_eq!(parsed.name, "test-entry");
     assert_eq!(parsed.description, "A test entry for round-trip");

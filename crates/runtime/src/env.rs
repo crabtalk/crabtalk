@@ -1,17 +1,17 @@
 //! Env — the embeddable engine environment.
 //!
 //! [`Env`] composes skill, MCP, OS, and memory sub-hooks. It implements
-//! `wcore::Hook` and provides the central `dispatch_tool` entry point. Server-
-//! specific tools (`ask_user`, `delegate`) are routed through the
+//! `wcore::Hook` and provides the central `dispatch_tool` entry point.
+//! Server-specific tools (`ask_user`, `delegate`) are routed through the
 //! [`Host`](crate::host::Host).
 
-use crate::{host::Host, mcp::McpHandler, memory::Memory, os, skill, skill::SkillHandler};
-use std::{
-    collections::BTreeMap,
-    path::PathBuf,
-    sync::{Arc, RwLock},
+use crate::{host::Host, mcp::McpHandler, memory::Memory, os, skill};
+use std::{collections::BTreeMap, path::PathBuf, sync::RwLock};
+use wcore::{
+    AgentConfig, AgentEvent, Hook,
+    model::HistoryEntry,
+    repos::{Repos, SkillRepo},
 };
-use wcore::{AgentConfig, AgentEvent, Hook, Storage, ToolRegistry, model::HistoryEntry};
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
 #[derive(Default)]
@@ -37,48 +37,39 @@ const MEMORY_TOOLS: &[&str] = &["recall", "remember", "memory", "forget"];
 /// Task delegation tools.
 const TASK_TOOLS: &[&str] = &["delegate"];
 
-pub struct Env<H: Host, S: Storage + 'static> {
-    pub(crate) skills: SkillHandler,
+pub struct Env<H: Host, R: Repos> {
+    pub(crate) repos: R,
+    pub(crate) memory: Option<Memory<R::Memory>>,
     pub(crate) mcp: McpHandler,
     pub(crate) cwd: PathBuf,
-    pub(crate) memory: Option<Memory<S>>,
-    /// Per-agent dispatch scopes. Behind a sync `RwLock` so agent CRUD can
-    /// mutate in place through `&self`. Critical sections are lookups or
-    /// single inserts/removes — never held across an `.await`.
     pub(crate) scopes: RwLock<BTreeMap<String, AgentScope>>,
     pub(crate) agent_descriptions: RwLock<BTreeMap<String, String>>,
-    /// Pluggable persistence backend, shared with runtime subsystems
-    /// that need to read/write state. Concrete type flows through the
-    /// `S` generic — no trait objects, no runtime dispatch.
-    pub(crate) storage: Arc<S>,
     /// Host providing server-specific functionality.
     pub host: H,
 }
 
-impl<H: Host, S: Storage + 'static> Env<H, S> {
+impl<H: Host, R: Repos> Env<H, R> {
     /// Create a new Env with the given backends.
     pub fn new(
-        skills: SkillHandler,
+        repos: R,
         mcp: McpHandler,
         cwd: PathBuf,
-        memory: Option<Memory<S>>,
-        storage: Arc<S>,
+        memory: Option<Memory<R::Memory>>,
         host: H,
     ) -> Self {
         Self {
-            skills,
+            repos,
+            memory,
             mcp,
             cwd,
-            memory,
             scopes: RwLock::new(BTreeMap::new()),
             agent_descriptions: RwLock::new(BTreeMap::new()),
-            storage,
             host,
         }
     }
 
     /// Access memory.
-    pub fn memory(&self) -> Option<&Memory<S>> {
+    pub fn memory(&self) -> Option<&Memory<R::Memory>> {
         self.memory.as_ref()
     }
 
@@ -106,9 +97,7 @@ impl<H: Host, S: Storage + 'static> Env<H, S> {
         );
     }
 
-    /// Drop an agent's scope entry. Used by agent CRUD when an agent is
-    /// deleted — keeps `scopes` and `agent_descriptions` consistent with the
-    /// runtime's live agent registry so stale dispatch rules don't linger.
+    /// Drop an agent's scope entry.
     pub fn unregister_scope(&self, name: &str) {
         self.scopes
             .write()
@@ -194,28 +183,19 @@ impl<H: Host, S: Storage + 'static> Env<H, S> {
             }
         }
 
-        // Try to load the skill from each configured root.
-        let key = format!("{name}/SKILL.md");
-        for root in &self.skills.roots {
-            let Ok(Some(bytes)) = root.storage.get(&key) else {
-                continue;
-            };
-            let Ok(file_content) = std::str::from_utf8(&bytes) else {
-                continue;
-            };
-            let Ok(skill) = skill::loader::parse_skill_md(file_content) else {
-                continue;
-            };
-            let body = remainder.trim_start();
-            let block = format!("<skill name=\"{name}\">\n{}\n</skill>", skill.body);
-            return if body.is_empty() {
-                block
-            } else {
-                format!("{body}\n\n{block}")
-            };
+        // Load via SkillRepo.
+        match self.repos.skills().load(name) {
+            Ok(Some(skill)) => {
+                let body = remainder.trim_start();
+                let block = format!("<skill name=\"{name}\">\n{}\n</skill>", skill.body);
+                if body.is_empty() {
+                    block
+                } else {
+                    format!("{body}\n\n{block}")
+                }
+            }
+            _ => content.to_owned(),
         }
-
-        content.to_owned()
     }
 
     /// Validate member scope and delegate to the bridge.
@@ -225,7 +205,6 @@ impl<H: Host, S: Storage + 'static> Env<H, S> {
         if input.tasks.is_empty() {
             return Err("no tasks provided".to_owned());
         }
-        // Enforce members scope for all target agents.
         {
             let scopes = self.scopes.read().expect("scopes lock poisoned");
             if let Some(scope) = scopes.get(agent)
@@ -287,11 +266,11 @@ impl<H: Host, S: Storage + 'static> Env<H, S> {
     }
 }
 
-impl<H: Host + 'static, S: Storage + 'static> Hook for Env<H, S> {
-    type Storage = S;
+impl<H: Host + 'static, R: Repos> Hook for Env<H, R> {
+    type Repos = R;
 
-    fn storage(&self) -> &Arc<S> {
-        &self.storage
+    fn repos(&self) -> &R {
+        &self.repos
     }
 
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
@@ -313,11 +292,13 @@ impl<H: Host + 'static, S: Storage + 'static> Hook for Env<H, S> {
                 names.join(", ")
             ));
         }
-        if let Ok(reg) = self.skills.registry.try_lock() {
-            let visible: Vec<_> = if config.skills.is_empty() {
-                reg.skills.iter().collect()
+
+        // List visible skills from the repo.
+        if let Ok(all_skills) = self.repos.skills().list() {
+            let visible: Vec<&wcore::repos::Skill> = if config.skills.is_empty() {
+                all_skills.iter().collect()
             } else {
-                reg.skills
+                all_skills
                     .iter()
                     .filter(|s| config.skills.iter().any(|n| n == &s.name))
                     .collect()
@@ -342,6 +323,7 @@ impl<H: Host + 'static, S: Storage + 'static> Hook for Env<H, S> {
                 ));
             }
         }
+
         if !hints.is_empty() {
             config.system_prompt.push_str(&format!(
                 "\n\n<resources>\n{}\n</resources>",
@@ -404,8 +386,6 @@ impl<H: Host + 'static, S: Storage + 'static> Hook for Env<H, S> {
                     .auto_injected(),
             );
         }
-        // If guest agents have spoken in this conversation, inject framing
-        // so the primary agent doesn't drift toward the guests' personality.
         if history.iter().any(|e| !e.agent.is_empty()) {
             entries.push(
                 HistoryEntry::user(
@@ -419,7 +399,7 @@ impl<H: Host + 'static, S: Storage + 'static> Hook for Env<H, S> {
         entries
     }
 
-    async fn on_register_tools(&self, tools: &mut ToolRegistry) {
+    async fn on_register_tools(&self, tools: &mut wcore::ToolRegistry) {
         self.mcp.register_tools(tools);
         tools.insert_all(os::tool::tools());
         tools.insert_all(os::read::tools());

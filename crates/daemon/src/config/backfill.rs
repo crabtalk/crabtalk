@@ -1,29 +1,13 @@
 //! One-shot migrations for legacy on-disk agent state.
-//!
-//! Two migrations live here:
-//!
-//! 1. [`backfill_local_agent_ids`] — stamps a fresh ULID onto any
-//!    `[agents.<name>]` stanza in `local/CrabTalk.toml` that predates
-//!    the `id` field. Runs at daemon startup, idempotent across
-//!    restarts.
-//! 2. [`migrate_local_agent_prompts`] — copies `local/agents/<name>.md`
-//!    into `agents/<ulid>/prompt.md` under the runtime `Storage`.
-//!    Also runs at startup, also idempotent — once a prompt exists at
-//!    the new key, the source file is left alone (rollback-friendly).
-//!
-//! Plugin manifests are intentionally left alone — they come from git
-//! repos and their agents keep their fs paths.
 
 use anyhow::{Context, Result};
 use std::path::Path;
 use toml_edit::{DocumentMut, Item, value};
 use ulid::Ulid;
-use wcore::{ResolvedManifest, Storage, paths::LOCAL_DIR};
+use wcore::{ResolvedManifest, paths::LOCAL_DIR, repos::AgentRepo};
 
 /// Ensure every `[agents.<name>]` entry in `local/CrabTalk.toml` has an
-/// `id` field. Missing entries get a fresh ULID; the file is rewritten
-/// in place (preserving comments and formatting via `toml_edit`) only
-/// if at least one backfill happened.
+/// `id` field. Missing entries get a fresh ULID.
 pub fn backfill_local_agent_ids(config_dir: &Path) -> Result<()> {
     let manifest_path = config_dir.join(LOCAL_DIR).join("CrabTalk.toml");
     if !manifest_path.exists() {
@@ -70,16 +54,13 @@ pub fn backfill_local_agent_ids(config_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Copy `local/agents/<name>.md` prompt files into the runtime
-/// [`Storage`] under `agents/<ulid>/prompt.md`. Only agents that both
-/// (a) appear in the resolved manifest with a non-nil id and (b) have
-/// an existing source file under `local/agents/` are migrated. The
-/// source files are left in place so rollbacks stay trivial; later
-/// phases (or a manual cleanup) can delete them.
+/// Copy `local/agents/<name>.md` prompt files into the agent repo under
+/// ULID-keyed paths. Idempotent — skips agents whose repo entry already
+/// has a prompt.
 pub fn migrate_local_agent_prompts(
     config_dir: &Path,
     manifest: &ResolvedManifest,
-    storage: &impl Storage,
+    repo: &impl AgentRepo,
 ) -> Result<()> {
     let legacy_dir = config_dir.join(wcore::paths::AGENTS_DIR);
     if !legacy_dir.exists() {
@@ -91,29 +72,28 @@ pub fn migrate_local_agent_prompts(
         if cfg.id.is_nil() {
             continue;
         }
-        let new_key = format!("agents/{}/prompt.md", cfg.id);
-        if storage.get(&new_key).ok().flatten().is_some() {
+        // Check if prompt already exists in repo.
+        if let Ok(Some(loaded)) = repo.load(&cfg.id)
+            && !loaded.system_prompt.is_empty()
+        {
             continue;
         }
         let legacy_path = legacy_dir.join(format!("{name}.md"));
         if !legacy_path.exists() {
             continue;
         }
-        let content = std::fs::read(&legacy_path)
+        let content = std::fs::read_to_string(&legacy_path)
             .with_context(|| format!("read {}", legacy_path.display()))?;
-        storage
-            .put(&new_key, &content)
-            .with_context(|| format!("write storage key {new_key}"))?;
-        tracing::info!("migrated agent prompt '{name}' -> {new_key}");
+        repo.upsert(cfg, &content)
+            .with_context(|| format!("migrate prompt for agent '{name}'"))?;
+        tracing::info!(
+            "migrated agent prompt '{name}' -> agents/{}/prompt.md",
+            cfg.id
+        );
         migrated += 1;
     }
     if migrated > 0 {
-        tracing::info!("migrated {migrated} local agent prompt(s) into Storage");
+        tracing::info!("migrated {migrated} local agent prompt(s)");
     }
     Ok(())
-}
-
-/// Storage key for an agent's prompt given its ULID-formatted id.
-pub fn agent_prompt_key(id: &str) -> String {
-    format!("agents/{id}/prompt.md")
 }

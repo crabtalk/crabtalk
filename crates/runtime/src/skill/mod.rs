@@ -1,11 +1,10 @@
-//! Crabtalk skill registry — skill matching and prompt enrichment.
+//! Crabtalk skill integration — parsing and tool dispatch.
+//!
+//! The [`Skill`] domain type and [`SkillRepo`] trait live in core.
+//! This module provides the SKILL.md parser (used by daemon's
+//! `FsSkillRepo`) and the tool dispatch handler.
 
-pub use {
-    handler::{SkillHandler, SkillRoot},
-    registry::{Skill, SkillRegistry},
-};
+pub use wcore::repos::Skill;
 
-mod handler;
 pub mod loader;
-pub mod registry;
 pub mod tool;

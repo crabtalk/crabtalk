@@ -35,3 +35,6 @@ toml.workspace = true
 toml_edit.workspace = true
 tracing.workspace = true
 ulid.workspace = true
+
+[dev-dependencies]
+wcore = { workspace = true, features = ["test-utils"] }

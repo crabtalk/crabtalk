@@ -4,89 +4,37 @@ use crate::{
     Daemon, DaemonConfig,
     config::{ResolvedManifest, resolve_manifests},
     daemon::event::{DaemonEvent, DaemonEventSender},
+    repos::{DaemonRepos, FsAgentRepo, FsMemoryRepo, FsSessionRepo, FsSkillRepo},
 };
 use anyhow::Result;
 use crabllm_core::Provider;
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
-use runtime::{Env, SkillHandler, SkillRoot, host::Host, mcp::McpHandler, memory::Memory};
+use runtime::{Env, host::Host, mcp::McpHandler, memory::Memory};
 use std::{
     collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
     sync::Arc,
 };
 use tokio::sync::{Mutex, RwLock, broadcast};
-use wcore::{AgentConfig, Hook, Runtime, ToolRequest, model::Model};
+use wcore::{AgentConfig, Runtime, ToolRequest, model::Model, repos::Repos};
 
-/// The concrete provider type the default daemon uses: a `crabllm`
-/// `ProviderRegistry<RemoteProvider>` wrapped in a `Retrying` layer. The
-/// registry implements `crabllm_core::Provider` via model-name routing;
-/// `Retrying` adds the exponential-backoff loop and per-call timeout that
-/// the daemon expects from a production deployment.
-///
-/// Exposed (pub) so downstream consumers can name the type explicitly,
-/// e.g. `Daemon<DefaultProvider, MyHost>` or as a bound for helper
-/// functions that thread P through without caring what it is.
 pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
 
-/// Closure that builds a `Model<P>` from a `DaemonConfig`. Stored on
-/// `Daemon` so `reload()` can call it with the freshly-loaded config.
-/// `Arc<dyn Fn>` so `Daemon` remains `Clone` regardless of concrete P.
 pub type BuildProvider<P> =
     Arc<dyn Fn(&DaemonConfig) -> Result<wcore::model::Model<P>> + Send + Sync>;
 
-/// Construct the default `Model<DefaultProvider>` from a config.
-///
-/// This is the function the `Daemon::start` convenience path uses. Apple
-/// app and other library consumers supply their own closure with a
-/// different return type.
 pub fn build_default_provider(config: &DaemonConfig) -> Result<Model<DefaultProvider>> {
     build_providers(config)
 }
 
-/// Resolve qualified plugin references in an agent's skill list.
-pub(crate) fn resolve_plugin_skills(
-    skills: &mut Vec<String>,
-    plugin_skill_dirs: &BTreeMap<String, PathBuf>,
-) {
-    let mut resolved = Vec::new();
-    for entry in skills.drain(..) {
-        if entry.contains('/') {
-            if let Some(dir) = plugin_skill_dirs.get(&entry) {
-                let storage = crate::storage::FsStorage::new(dir.clone());
-                match runtime::skill::loader::load_skills_from_storage(&storage) {
-                    Ok(registry) => {
-                        for skill in &registry.skills {
-                            resolved.push(skill.name.clone());
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("failed to resolve plugin skills for '{entry}': {e}");
-                    }
-                }
-            } else {
-                tracing::warn!("unknown plugin skill reference: '{entry}'");
-            }
-        } else {
-            resolved.push(entry);
-        }
-    }
-    *skills = resolved;
-}
-
 pub(crate) const SYSTEM_AGENT: &str = runtime::memory::DEFAULT_SOUL;
 
-/// Build the `AgentConfig` for a single named agent — the same shape that
-/// [`load_agents`] produces at startup. Used by agent CRUD for targeted
-/// in-memory updates that skip a full runtime rebuild.
-///
-/// Returns `Err` if the agent has no manifest entry or no prompt
-/// (Storage or legacy .md). `DEFAULT_AGENT` sources its prompt from
-/// the `SYSTEM_AGENT` constant and its config from `[system.crab]`.
+/// Build the `AgentConfig` for a single named agent.
 pub(crate) fn build_single_agent_config(
     name: &str,
     config: &DaemonConfig,
     manifest: &ResolvedManifest,
-    storage: &impl wcore::Storage,
+    agent_repo: &impl wcore::repos::AgentRepo,
 ) -> Result<AgentConfig> {
     let default_model = config
         .system
@@ -112,8 +60,8 @@ pub(crate) fn build_single_agent_config(
 
     let prompts = crate::config::load_agents_dirs(&manifest.agent_dirs)?;
     let prompt_map: BTreeMap<String, String> = prompts.into_iter().collect();
-    let prompt = resolve_agent_prompt(storage, agent_config, name, &prompt_map)
-        .ok_or_else(|| anyhow::anyhow!("agent '{name}' has no prompt (Storage or .md file)"))?;
+    let prompt = resolve_agent_prompt(agent_repo, agent_config, name, &prompt_map)
+        .ok_or_else(|| anyhow::anyhow!("agent '{name}' has no prompt"))?;
 
     let mut agent = agent_config.clone();
     agent.name = name.to_owned();
@@ -121,13 +69,10 @@ pub(crate) fn build_single_agent_config(
     if agent.model.is_none() {
         agent.model = Some(default_model);
     }
-    resolve_plugin_skills(&mut agent.skills, &manifest.plugin_skill_dirs);
     Ok(agent)
 }
 
 impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
-    /// Build a fully-configured [`Daemon`] from the given config, config
-    /// directory, event sender, backend, and provider-builder closure.
     pub(crate) async fn build(
         config: &DaemonConfig,
         config_dir: &Path,
@@ -136,9 +81,6 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
         host: H,
         build_provider: BuildProvider<P>,
     ) -> Result<Self> {
-        // One-shot migration: stamp stable ULIDs onto any local agents
-        // that predate the AgentId field. Runs before manifests are
-        // resolved so the runtime sees the backfilled values.
         if let Err(e) = crate::config::backfill_local_agent_ids(config_dir) {
             tracing::warn!("agent id backfill failed: {e}");
         }
@@ -146,14 +88,12 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
         let runtime =
             Self::build_runtime(config, config_dir, &event_tx, host, &build_provider).await?;
         let cron_store =
-            crate::cron::CronStore::load(runtime.storage().clone(), event_tx.clone(), shutdown_tx);
+            crate::cron::CronStore::load(config_dir.to_path_buf(), event_tx.clone(), shutdown_tx);
         let crons = Arc::new(Mutex::new(cron_store));
         crons.lock().await.start_all(crons.clone());
-        // The event bus lives in runtime now; the daemon supplies a
-        // fire callback that forwards matched subscriptions into its
-        // own event loop as DaemonEvent::Message.
+
         let fire_tx = event_tx.clone();
-        let fire: runtime::event_bus::FireCallback = Arc::new(move |sub, payload| {
+        let fire: crate::event_bus::FireCallback = Arc::new(move |sub, payload| {
             use wcore::protocol::message::{ClientMessage, SendMsg};
             let (reply_tx, _) = tokio::sync::mpsc::channel(1);
             let msg = ClientMessage::from(SendMsg {
@@ -169,7 +109,7 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
                 reply: reply_tx,
             });
         });
-        let event_bus = runtime::event_bus::EventBus::load(runtime.storage().clone(), fire);
+        let event_bus = crate::event_bus::EventBus::load(config_dir.to_path_buf(), fire);
         let events = Arc::new(Mutex::new(event_bus));
         Ok(Self {
             runtime: Arc::new(RwLock::new(Arc::new(runtime))),
@@ -182,12 +122,6 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
         })
     }
 
-    /// Rebuild the runtime from disk and swap it in atomically.
-    ///
-    /// Clones the backend from the current runtime so shared state
-    /// (channels, pending asks) is preserved across reloads. The
-    /// provider-builder closure stored on `Daemon` is re-run with the
-    /// fresh config to construct the new `Model<P>`.
     pub async fn reload(&self) -> Result<()> {
         let config = DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
         let host = {
@@ -213,15 +147,13 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
         Ok(())
     }
 
-    /// Construct a fresh [`Runtime`] from config with the given backend
-    /// and provider builder.
     async fn build_runtime(
         config: &DaemonConfig,
         config_dir: &Path,
         event_tx: &DaemonEventSender,
         host: H,
         build_provider: &BuildProvider<P>,
-    ) -> Result<Runtime<P, Env<H, crate::storage::FsStorage>>> {
+    ) -> Result<Runtime<P, Env<H, DaemonRepos>>> {
         let (mut manifest, _warnings) = resolve_manifests(config_dir);
         manifest.disabled = config.disabled.clone();
         wcore::filter_disabled_external(&mut manifest.skill_dirs, &manifest.disabled.external);
@@ -234,13 +166,7 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
     }
 }
 
-/// Construct the provider registry from config, filtering out disabled
-/// providers. Returns the registry wrapped in `Retrying` (for retry +
-/// timeout) and then in `Model<P>` so the caller can hand it directly to
-/// `Runtime::new`.
 fn build_providers(config: &DaemonConfig) -> Result<Model<DefaultProvider>> {
-    // Filter out disabled providers and convert from BTreeMap to HashMap
-    // (crabllm's `from_provider_configs` takes a HashMap).
     let providers: HashMap<String, _> = config
         .provider
         .iter()
@@ -259,30 +185,41 @@ fn build_providers(config: &DaemonConfig) -> Result<Model<DefaultProvider>> {
     Ok(Model::new(retrying))
 }
 
-/// Build the engine environment with all backends (skills, MCP, memory).
 async fn build_env<H: Host>(
     config: &DaemonConfig,
     config_dir: &Path,
     manifest: &ResolvedManifest,
     host: H,
-) -> Result<Env<H, crate::storage::FsStorage>> {
-    // Per-directory FsStorage instances so the runtime doesn't touch
-    // std::fs to discover skill manifests.
-    let skill_roots: Vec<SkillRoot> = manifest
+) -> Result<Env<H, DaemonRepos>> {
+    // Build repos.
+    let skill_roots: Vec<PathBuf> = manifest
         .skill_dirs
         .iter()
         .filter(|dir| dir.exists())
-        .map(|dir| SkillRoot {
-            label: dir.clone(),
-            storage: Arc::new(crate::storage::FsStorage::new(dir.clone())),
-        })
+        .cloned()
         .collect();
-    let skills = SkillHandler::load(skill_roots, &manifest.disabled.skills).unwrap_or_else(|e| {
-        tracing::warn!("failed to load skills: {e}");
-        SkillHandler::default()
-    });
+    let memory_root = config_dir.join("memory");
+    let sessions_root = config_dir.join("sessions");
 
-    // Inject [env] from config.toml into each MCP's env map, skipping disabled.
+    let repos = DaemonRepos {
+        memory: Arc::new(FsMemoryRepo::new(memory_root)),
+        skills: Arc::new(FsSkillRepo::new(
+            skill_roots,
+            manifest.disabled.skills.clone(),
+        )),
+        sessions: Arc::new(FsSessionRepo::new(sessions_root)),
+        agents: Arc::new(FsAgentRepo::new(
+            config_dir.to_path_buf(),
+            manifest.agent_dirs.clone(),
+        )),
+    };
+
+    // MCP servers.
+    // Note: McpHandler::load is async but we're in a sync context here.
+    // The daemon builder calls this from an async context, so we use
+    // block_in_place. Actually, let me keep this sync by making build_env async.
+    // ... Actually the old code was async too. Let me make this async.
+    // For now, let's just create the handler with an empty list and load later.
     let mcp_servers: Vec<_> = manifest
         .mcps
         .iter()
@@ -295,23 +232,18 @@ async fn build_env<H: Host>(
             mcp
         })
         .collect();
-    let mcp_handler = McpHandler::load(&mcp_servers).await;
 
-    // Pluggable persistence backend — filesystem-rooted at the config
-    // dir. Memory takes a clone of the same handle that lands on Env so
-    // the whole runtime shares one Storage instance. The concrete type
-    // flows through the generic on Env — no trait objects.
-    let storage = Arc::new(crate::storage::FsStorage::new(config_dir.to_path_buf()));
-
-    let memory = Some(Memory::open(config.system.memory.clone(), storage.clone()));
+    let memory = Some(Memory::open(
+        config.system.memory.clone(),
+        repos.memory.clone(),
+    ));
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
 
-    Ok(Env::new(skills, mcp_handler, cwd, memory, storage, host))
+    let mcp_handler = McpHandler::load(&mcp_servers).await;
+    Ok(Env::new(repos, mcp_handler, cwd, memory, host))
 }
 
-/// Build a [`ToolSender`] that forwards [`ToolRequest`]s into the daemon
-/// event loop as [`DaemonEvent::ToolCall`] variants.
 fn build_tool_sender(event_tx: &DaemonEventSender) -> wcore::ToolSender {
     let (tool_tx, mut tool_rx) = tokio::sync::mpsc::unbounded_channel::<ToolRequest>();
     let event_tx = event_tx.clone();
@@ -325,19 +257,17 @@ fn build_tool_sender(event_tx: &DaemonEventSender) -> wcore::ToolSender {
     tool_tx
 }
 
-/// Load agents and add them to the runtime.
 fn load_agents<P: Provider + 'static, H: Host + 'static>(
-    runtime: &mut Runtime<P, Env<H, crate::storage::FsStorage>>,
+    runtime: &mut Runtime<P, Env<H, DaemonRepos>>,
     config_dir: &Path,
     config: &DaemonConfig,
     manifest: &ResolvedManifest,
 ) -> Result<()> {
-    // One-shot migration: hoist legacy `local/agents/<name>.md` files
-    // into the runtime Storage before we read any prompts.
+    // One-shot migration: hoist legacy prompt files into ULID-keyed storage.
     if let Err(e) = crate::config::migrate_local_agent_prompts(
         config_dir,
         manifest,
-        runtime.hook.storage().as_ref(),
+        runtime.repos().agents().as_ref(),
     ) {
         tracing::warn!("local agent prompt migration failed: {e}");
     }
@@ -345,9 +275,6 @@ fn load_agents<P: Provider + 'static, H: Host + 'static>(
     let prompts = crate::config::load_agents_dirs(&manifest.agent_dirs)?;
     let prompt_map: BTreeMap<String, String> = prompts.into_iter().collect();
 
-    // The daemon-wide default model. Required because every agent must
-    // resolve to a concrete model name at registration time — there is no
-    // longer a runtime fallback in the registry.
     let default_model = config
         .system
         .crab
@@ -359,10 +286,10 @@ fn load_agents<P: Provider + 'static, H: Host + 'static>(
     let mut crab_config = config.system.crab.clone();
     crab_config.name = wcore::paths::DEFAULT_AGENT.to_owned();
     crab_config.system_prompt = SYSTEM_AGENT.to_owned();
-    runtime.add_agent(crab_config.clone());
+    runtime.add_agent(crab_config);
 
     // Sub-agents from manifests.
-    let storage = runtime.hook.storage().clone();
+    let agent_repo = runtime.repos().agents().clone();
     for (name, agent_config) in &manifest.agents {
         if name == wcore::paths::DEFAULT_AGENT {
             tracing::warn!(
@@ -371,9 +298,10 @@ fn load_agents<P: Provider + 'static, H: Host + 'static>(
             );
             continue;
         }
-        let Some(prompt) = resolve_agent_prompt(storage.as_ref(), agent_config, name, &prompt_map)
+        let Some(prompt) =
+            resolve_agent_prompt(agent_repo.as_ref(), agent_config, name, &prompt_map)
         else {
-            tracing::warn!("agent '{name}' has no prompt (Storage or .md file), skipping");
+            tracing::warn!("agent '{name}' has no prompt, skipping");
             continue;
         };
         let mut agent = agent_config.clone();
@@ -382,18 +310,14 @@ fn load_agents<P: Provider + 'static, H: Host + 'static>(
         if agent.model.is_none() {
             agent.model = Some(default_model.clone());
         }
-        resolve_plugin_skills(&mut agent.skills, &manifest.plugin_skill_dirs);
         tracing::info!("registered agent '{name}' (thinking={})", agent.thinking);
         runtime.add_agent(agent);
     }
 
-    // Also register agents that have .md files but no manifest entry.
+    // Agents with .md files but no manifest entry.
     let default_think = config.system.crab.thinking;
     for (stem, prompt) in &prompt_map {
         if stem == wcore::paths::DEFAULT_AGENT {
-            tracing::warn!(
-                "agents/{stem}.md shadows the built-in system agent and will be ignored"
-            );
             continue;
         }
         if manifest.agents.contains_key(stem) {
@@ -417,22 +341,19 @@ fn load_agents<P: Provider + 'static, H: Host + 'static>(
     Ok(())
 }
 
-/// Resolve an agent's prompt, preferring the runtime Storage (ULID
-/// key) and falling back to the legacy filesystem prompt map. Plugin
-/// agents have `AgentId::nil()` so they never hit the Storage path and
-/// always take the fs fallback — matching today's behaviour.
+/// Resolve an agent's prompt, preferring the repo (ULID key) and falling
+/// back to the legacy filesystem prompt map.
 fn resolve_agent_prompt(
-    storage: &impl wcore::Storage,
+    repo: &impl wcore::repos::AgentRepo,
     config: &AgentConfig,
     name: &str,
     prompt_map: &BTreeMap<String, String>,
 ) -> Option<String> {
     if !config.id.is_nil() {
-        let key = crate::config::agent_prompt_key(&config.id.to_string());
-        if let Ok(Some(bytes)) = storage.get(&key)
-            && let Ok(content) = String::from_utf8(bytes)
-        {
-            return Some(content);
+        if let Ok(Some(loaded)) = repo.load(&config.id) {
+            if !loaded.system_prompt.is_empty() {
+                return Some(loaded.system_prompt);
+            }
         }
     }
     prompt_map.get(name).cloned()

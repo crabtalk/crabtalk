@@ -1,10 +1,10 @@
 //! Server trait implementation for the Daemon.
 
+use crate::event_bus::EventSubscription;
 use crate::{cron::CronEntry, daemon::Daemon};
 use anyhow::{Context, Result};
 use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
-use runtime::event_bus::EventSubscription;
 use runtime::host::Host;
 use std::sync::Arc;
 use std::{
@@ -26,7 +26,10 @@ use wcore::protocol::{
         UpdateAgentMsg, UserSteeredEvent, plugin_event, stream_event,
     },
 };
-use wcore::{AgentEvent, AgentStep, Hook, Storage};
+use wcore::{
+    AgentEvent, AgentStep,
+    repos::{AgentRepo, Repos, SessionRepo},
+};
 
 impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
@@ -473,13 +476,11 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
             std::fs::write(&manifest_path, doc.to_string())
                 .context("failed to write local manifest")?;
 
-            // Remove the Storage-keyed prompt (new layout) and the
-            // legacy fs prompt (if any) so nothing stale is left.
+            // Remove the repo-keyed prompt and legacy fs prompt.
             let rt = self.runtime.read().await.clone();
             if let Some(id) = existing_id {
-                let key = crate::config::agent_prompt_key(&id.to_string());
-                if let Err(e) = rt.hook.storage().delete(&key) {
-                    tracing::warn!("failed to delete agent prompt {key}: {e}");
+                if let Err(e) = rt.repos().agents().delete(&id) {
+                    tracing::warn!("failed to delete agent prompt for {id}: {e}");
                 }
             }
             let legacy = self
@@ -663,7 +664,11 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
         sender: String,
     ) -> Result<Vec<ConversationInfo>> {
         let rt = self.runtime.read().await.clone();
-        Ok(scan_sessions(rt.storage().as_ref(), &agent, &sender))
+        Ok(scan_sessions(
+            rt.repos().sessions().as_ref(),
+            &agent,
+            &sender,
+        ))
     }
 
     async fn get_conversation_history(&self, file_path: String) -> Result<ConversationHistory> {
@@ -672,8 +677,14 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
         // through the runtime Storage.
         let slug = file_path;
         let rt = self.runtime.read().await.clone();
-        let (meta, messages) = wcore::Conversation::load_context(rt.storage().as_ref(), &slug)
-            .with_context(|| format!("conversation not found: {slug}"))?;
+        let handle = wcore::repos::SessionHandle::new(&slug);
+        let snapshot = rt
+            .repos()
+            .sessions()
+            .load(&handle)?
+            .ok_or_else(|| anyhow::anyhow!("conversation not found: {slug}"))?;
+        let meta = snapshot.meta;
+        let messages = snapshot.history;
         Ok(ConversationHistory {
             title: meta.title,
             agent: meta.agent,
@@ -696,18 +707,10 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
     async fn delete_conversation(&self, file_path: String) -> Result<()> {
         let slug = file_path;
         let rt = self.runtime.read().await.clone();
-        let storage = rt.storage().as_ref();
-        let prefix = format!("sessions/{slug}/");
-        let keys = storage
-            .list(&prefix)
-            .with_context(|| format!("failed to list {prefix}"))?;
-        if keys.is_empty() {
+        let handle = wcore::repos::SessionHandle::new(&slug);
+        let deleted = rt.repos().sessions().delete(&handle)?;
+        if !deleted {
             anyhow::bail!("conversation not found: {slug}");
-        }
-        for key in keys {
-            storage
-                .delete(&key)
-                .with_context(|| format!("failed to delete {key}"))?;
         }
         Ok(())
     }
@@ -1282,7 +1285,7 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
             name,
             &config,
             &manifest,
-            rt.hook.storage().as_ref(),
+            rt.repos().agents().as_ref(),
         )?;
         // `upsert_agent` returns the post-`on_build_agent` config so the
         // dispatch scope matches the form actually stored in the registry.
@@ -1374,17 +1377,18 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
     }
 
     /// Write an agent's system prompt to the runtime Storage at
-    /// `agents/<ulid>/prompt.md`. Replaces the legacy
-    /// `local/agents/<name>.md` path; the migration helper in
-    /// `crate::config::migrate_local_agent_prompts` hoists any
-    /// pre-existing files at startup.
+    /// Write an agent's prompt via the agent repo.
     async fn write_agent_prompt_to_storage(&self, id: &wcore::AgentId, prompt: &str) -> Result<()> {
         let rt = self.runtime.read().await.clone();
-        let key = crate::config::agent_prompt_key(&id.to_string());
-        rt.hook
-            .storage()
-            .put(&key, prompt.as_bytes())
-            .with_context(|| format!("failed to write agent prompt at {key}"))
+        // Build a minimal config to upsert via the repo.
+        let config = wcore::AgentConfig {
+            id: *id,
+            ..Default::default()
+        };
+        rt.repos()
+            .agents()
+            .upsert(&config, prompt)
+            .with_context(|| format!("failed to write agent prompt for {id}"))
     }
 
     /// Write config into `[system.crab]` in `config.toml`.
@@ -1470,44 +1474,11 @@ fn plugin_output(content: &str) -> PluginEvent {
 
 /// Scan sessions out of the runtime Storage and return conversation info.
 ///
-/// If `agent` and `sender` are both empty, returns all conversations;
-/// otherwise filters to the given identity. Session slugs use the
-/// `{agent_slug}_{sender_slug}_{seq}` layout defined in
-/// `wcore::runtime::conversation`, and every session has a `meta` blob
-/// plus zero or more `step-<n>` keys underneath its slug.
-fn scan_sessions(
-    storage: &impl wcore::Storage,
-    agent: &str,
-    sender: &str,
-) -> Vec<ConversationInfo> {
-    let Ok(keys) = storage.list("sessions/") else {
+/// List conversations via the session repo.
+fn scan_sessions(repo: &impl SessionRepo, agent: &str, sender: &str) -> Vec<ConversationInfo> {
+    let Ok(summaries) = repo.list_sessions() else {
         return Vec::new();
     };
-
-    // Group keys by slug: `sessions/<slug>/...`. For each slug we care
-    // about the meta key (for title + uptime + timestamps) and the
-    // number of step-* keys (approximate message count).
-    use std::collections::BTreeMap;
-    #[derive(Default)]
-    struct SlugState {
-        has_meta: bool,
-        step_count: u64,
-    }
-    let mut slugs: BTreeMap<String, SlugState> = BTreeMap::new();
-    for key in &keys {
-        let rest = &key["sessions/".len()..];
-        let Some(slash) = rest.find('/') else {
-            continue;
-        };
-        let slug = rest[..slash].to_owned();
-        let entry = slugs.entry(slug).or_default();
-        let tail = &rest[slash + 1..];
-        if tail == "meta" {
-            entry.has_meta = true;
-        } else if tail.starts_with("step-") {
-            entry.step_count += 1;
-        }
-    }
 
     let agent_filter = if agent.is_empty() {
         None
@@ -1521,10 +1492,9 @@ fn scan_sessions(
     };
 
     let mut results = Vec::new();
-    for (slug, state) in slugs {
-        if !state.has_meta {
-            continue;
-        }
+    for summary in summaries {
+        let slug = summary.handle.as_str().to_owned();
+        let meta = &summary.meta;
         let Some((slug_agent, slug_sender, seq)) = parse_session_slug(&slug) else {
             continue;
         };
@@ -1538,29 +1508,18 @@ fn scan_sessions(
         {
             continue;
         }
-
-        let meta_key = format!("sessions/{slug}/meta");
-        let Ok(Some(bytes)) = storage.get(&meta_key) else {
-            continue;
-        };
-        let Ok(meta) = serde_json::from_slice::<wcore::ConversationMeta>(&bytes) else {
-            continue;
-        };
-
         results.push(ConversationInfo {
-            agent: meta.agent,
-            sender: meta.created_by,
+            agent: meta.agent.clone(),
+            sender: meta.created_by.clone(),
             seq,
-            title: meta.title,
-            file_path: slug.clone(),
-            message_count: state.step_count,
+            title: meta.title.clone(),
+            file_path: slug,
+            message_count: 0, // not available from summary
             alive_secs: meta.uptime_secs,
             date: created_date_label(&meta.created_at),
         });
     }
 
-    // Stable ordering: highest seq first within each identity, then
-    // alphabetical. Clients can re-sort if they need mtime semantics.
     results.sort_by(|a, b| b.seq.cmp(&a.seq).then_with(|| a.agent.cmp(&b.agent)));
     results
 }

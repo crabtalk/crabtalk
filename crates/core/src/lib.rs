@@ -25,16 +25,15 @@ pub use config::{
 pub use runtime::hook::TestHook;
 pub use runtime::{
     Conversation, Runtime,
-    conversation::{ConversationMeta, find_latest_conversation, sender_slug},
+    conversation::{ArchiveSegment, ConversationMeta, EventLine, sender_slug},
     hook::Hook,
 };
-pub use storage::{MemStorage, Storage};
 
 pub mod agent;
 pub mod config;
 pub mod model;
 pub mod paths;
 pub mod protocol;
+pub mod repos;
 mod runtime;
-pub mod storage;
 pub mod utils;
