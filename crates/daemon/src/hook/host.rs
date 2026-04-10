@@ -17,6 +17,7 @@ use std::{
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use wcore::{
     AgentEvent,
+    agent::AsTool,
     protocol::message::{
         AgentEventKind, AgentEventMsg, ClientMessage, SendMsg, ToolCallInfo, server_message,
     },
@@ -30,7 +31,8 @@ const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
 /// Timeout for waiting on user reply (5 minutes).
 const ASK_USER_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// Server-specific host for the daemon. Owns event channels and session state.
+/// Server-specific host for the daemon. Owns event channels, session state,
+/// and the MCP bridge (subprocess/HTTP connections to MCP tool servers).
 #[derive(Clone)]
 pub struct DaemonHost {
     /// Event channel for task delegation.
@@ -41,6 +43,9 @@ pub struct DaemonHost {
     pub(crate) conversation_cwds: Arc<Mutex<HashMap<u64, PathBuf>>>,
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
+    /// MCP bridge — connects to MCP tool servers. Daemon-owned because
+    /// MCP involves spawning child processes and opening HTTP connections.
+    pub(crate) mcp: Arc<crate::mcp::McpHandler>,
 }
 
 impl Host for DaemonHost {
@@ -327,6 +332,24 @@ impl Host for DaemonHost {
 
     fn discover_instructions(&self, cwd: &Path) -> Option<String> {
         discover_instructions(cwd)
+    }
+
+    async fn dispatch_mcp(&self, args: &str, allowed_mcps: &[String]) -> Result<String, String> {
+        crate::mcp::dispatch::dispatch_mcp(&self.mcp, args, allowed_mcps).await
+    }
+
+    fn mcp_servers(&self) -> Vec<(String, Vec<String>)> {
+        self.mcp.cached_list()
+    }
+
+    fn mcp_tools(&self) -> Vec<wcore::model::Tool> {
+        vec![runtime::mcp::tool::Mcp::as_tool()]
+    }
+
+    fn set_mcp(&mut self, handler: std::sync::Arc<dyn std::any::Any + Send + Sync>) {
+        if let Ok(mcp) = handler.downcast::<crate::mcp::McpHandler>() {
+            self.mcp = mcp;
+        }
     }
 }
 

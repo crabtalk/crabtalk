@@ -1,14 +1,13 @@
 //! Tests for Env dispatch logic — no daemon, no network, no disk.
 
-use crabtalk_runtime::{Env, NoHost, mcp::McpHandler};
+use crabtalk_runtime::{Env, NoHost};
 use std::path::PathBuf;
 use wcore::{AgentConfig, repos::mem::InMemoryRepos};
 
 async fn test_hook() -> Env<NoHost, InMemoryRepos> {
     let repos = InMemoryRepos::new();
-    let mcp = McpHandler::load(&[]).await;
     let cwd = PathBuf::from("/test");
-    Env::new(repos, mcp, cwd, None, NoHost)
+    Env::new(repos, cwd, None, NoHost)
 }
 
 #[tokio::test]

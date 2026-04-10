@@ -5,7 +5,7 @@
 //! Server-specific tools (`ask_user`, `delegate`) are routed through the
 //! [`Host`](crate::host::Host).
 
-use crate::{host::Host, mcp::McpHandler, memory::Memory, os, skill};
+use crate::{host::Host, memory::Memory, os, skill};
 use std::{collections::BTreeMap, path::PathBuf, sync::RwLock};
 use wcore::{
     AgentConfig, AgentEvent, Hook,
@@ -40,7 +40,6 @@ const TASK_TOOLS: &[&str] = &["delegate"];
 pub struct Env<H: Host, R: Repos> {
     pub(crate) repos: R,
     pub(crate) memory: Option<Memory<R::Memory>>,
-    pub(crate) mcp: McpHandler,
     pub(crate) cwd: PathBuf,
     pub(crate) scopes: RwLock<BTreeMap<String, AgentScope>>,
     pub(crate) agent_descriptions: RwLock<BTreeMap<String, String>>,
@@ -50,17 +49,10 @@ pub struct Env<H: Host, R: Repos> {
 
 impl<H: Host, R: Repos> Env<H, R> {
     /// Create a new Env with the given backends.
-    pub fn new(
-        repos: R,
-        mcp: McpHandler,
-        cwd: PathBuf,
-        memory: Option<Memory<R::Memory>>,
-        host: H,
-    ) -> Self {
+    pub fn new(repos: R, cwd: PathBuf, memory: Option<Memory<R::Memory>>, host: H) -> Self {
         Self {
             repos,
             memory,
-            mcp,
             cwd,
             scopes: RwLock::new(BTreeMap::new()),
             agent_descriptions: RwLock::new(BTreeMap::new()),
@@ -75,7 +67,7 @@ impl<H: Host, R: Repos> Env<H, R> {
 
     /// List connected MCP servers with their tool names.
     pub fn mcp_servers(&self) -> Vec<(String, Vec<String>)> {
-        self.mcp.cached_list()
+        self.host.mcp_servers()
     }
 
     /// Register an agent's scope for dispatch enforcement.
@@ -223,6 +215,19 @@ impl<H: Host, R: Repos> Env<H, R> {
         self.host.dispatch_delegate(args, agent).await
     }
 
+    /// Dispatch the `mcp` tool — extract scope, delegate to Host.
+    async fn dispatch_mcp(&self, args: &str, agent: &str) -> Result<String, String> {
+        let allowed_mcps: Vec<String> = self
+            .scopes
+            .read()
+            .expect("scopes lock poisoned")
+            .get(agent)
+            .filter(|s| !s.mcps.is_empty())
+            .map(|s| s.mcps.clone())
+            .unwrap_or_default();
+        self.host.dispatch_mcp(args, &allowed_mcps).await
+    }
+
     /// Route a tool call by name to the appropriate handler.
     pub async fn dispatch_tool(
         &self,
@@ -284,7 +289,7 @@ impl<H: Host + 'static, R: Repos> Hook for Env<H, R> {
         }
 
         let mut hints = Vec::new();
-        let mcp_servers = self.mcp.cached_list();
+        let mcp_servers = self.host.mcp_servers();
         if !mcp_servers.is_empty() {
             let names: Vec<&str> = mcp_servers.iter().map(|(n, _)| n.as_str()).collect();
             hints.push(format!(
@@ -400,7 +405,11 @@ impl<H: Host + 'static, R: Repos> Hook for Env<H, R> {
     }
 
     async fn on_register_tools(&self, tools: &mut wcore::ToolRegistry) {
-        self.mcp.register_tools(tools);
+        // MCP tool schemas from the host (daemon provides these).
+        let mcp_tools = self.host.mcp_tools();
+        if !mcp_tools.is_empty() {
+            tools.insert_all(mcp_tools);
+        }
         tools.insert_all(os::tool::tools());
         tools.insert_all(os::read::tools());
         tools.insert_all(os::edit::tools());

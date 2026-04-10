@@ -91,6 +91,34 @@ pub trait Host: Send + Sync + Clone {
         None
     }
 
+    /// Handle the `mcp` meta-tool: list/call MCP server tools.
+    ///
+    /// `allowed_mcps` is the agent's MCP scope (empty = unrestricted).
+    /// The host owns the MCP bridge and handles subprocess/HTTP I/O.
+    fn dispatch_mcp(
+        &self,
+        _args: &str,
+        _allowed_mcps: &[String],
+    ) -> impl std::future::Future<Output = Result<String, String>> + Send {
+        async { Err("mcp is not available in this runtime mode".to_owned()) }
+    }
+
+    /// List connected MCP servers with their tool names.
+    /// Used by `on_build_agent` to inject available tools into the prompt.
+    fn mcp_servers(&self) -> Vec<(String, Vec<String>)> {
+        Vec::new()
+    }
+
+    /// Return MCP tool schemas for registration in the tool registry.
+    fn mcp_tools(&self) -> Vec<wcore::model::Tool> {
+        Vec::new()
+    }
+
+    /// Inject the MCP handler after async construction. The handler is
+    /// type-erased so the runtime crate doesn't depend on the daemon's
+    /// MCP types. DaemonHost downcasts; other hosts ignore.
+    fn set_mcp(&mut self, _handler: std::sync::Arc<dyn std::any::Any + Send + Sync>) {}
+
     /// Handle a tool call not matched by the built-in dispatch table.
     /// Downstream hosts override this to inject private tools.
     ///

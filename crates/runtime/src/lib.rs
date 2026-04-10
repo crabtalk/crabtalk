@@ -11,5 +11,4 @@ pub mod task;
 pub use config::{MemoryConfig, SystemConfig, TasksConfig};
 pub use env::Env;
 pub use host::{Host, NoHost};
-pub use mcp::McpHandler;
 pub use memory::Memory;

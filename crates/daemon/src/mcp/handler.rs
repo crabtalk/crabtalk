@@ -12,6 +12,14 @@ pub struct McpHandler {
 }
 
 impl McpHandler {
+    /// Create an empty handler with no connected servers.
+    pub fn empty() -> Self {
+        Self {
+            bridge: RwLock::new(Arc::new(McpBridge::new())),
+            server_cache: StdRwLock::new(Vec::new()),
+        }
+    }
+
     /// Build a bridge from the given MCP server configs and discovered port files.
     /// Timeout for connecting to a single MCP server (30 seconds).
     const MCP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);

@@ -63,6 +63,7 @@ impl Daemon<DefaultProvider, DaemonHost> {
                     pending_asks: Arc::new(Mutex::new(std::collections::HashMap::new())),
                     conversation_cwds: Arc::new(Mutex::new(std::collections::HashMap::new())),
                     events_tx,
+                    mcp: Arc::new(crate::mcp::McpHandler::empty()),
                 }
             },
         )

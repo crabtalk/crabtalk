@@ -1,5 +1,6 @@
 //! Daemon construction and lifecycle methods.
 
+use crate::mcp::McpHandler;
 use crate::{
     Daemon, DaemonConfig,
     config::{ResolvedManifest, resolve_manifests},
@@ -9,7 +10,7 @@ use crate::{
 use anyhow::Result;
 use crabllm_core::Provider;
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
-use runtime::{Env, host::Host, mcp::McpHandler, memory::Memory};
+use runtime::{Env, host::Host, memory::Memory};
 use std::{
     collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
@@ -189,7 +190,7 @@ async fn build_env<H: Host>(
     config: &DaemonConfig,
     config_dir: &Path,
     manifest: &ResolvedManifest,
-    host: H,
+    mut host: H,
 ) -> Result<Env<H, DaemonRepos>> {
     // Build repos.
     let skill_roots: Vec<PathBuf> = manifest
@@ -240,8 +241,9 @@ async fn build_env<H: Host>(
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
 
-    let mcp_handler = McpHandler::load(&mcp_servers).await;
-    Ok(Env::new(repos, mcp_handler, cwd, memory, host))
+    let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::load(&mcp_servers).await);
+    host.set_mcp(mcp_handler);
+    Ok(Env::new(repos, cwd, memory, host))
 }
 
 fn build_tool_sender(event_tx: &DaemonEventSender) -> wcore::ToolSender {

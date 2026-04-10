@@ -1,17 +1,8 @@
-//! Crabtalk MCP bridge — connects to MCP servers and dispatches tool calls.
+//! MCP tool schema — the `mcp` meta-tool that agents call.
+//!
+//! The MCP bridge, client, and handler live in the daemon crate (they
+//! do I/O). Runtime only defines the tool schema and dispatches through
+//! the [`Host`](crate::host::Host) trait.
 
-use wcore::agent::AsTool;
-pub use {bridge::McpBridge, config::McpServerConfig, handler::McpHandler};
-
-mod bridge;
-mod client;
 pub mod config;
-mod handler;
 pub mod tool;
-
-impl McpHandler {
-    /// Register the `mcp` tool schema into the registry.
-    pub fn register_tools(&self, registry: &mut wcore::ToolRegistry) {
-        registry.insert(tool::Mcp::as_tool());
-    }
-}

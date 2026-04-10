@@ -1,8 +1,9 @@
 //! Daemon configuration loaded from TOML.
 
+pub use crate::mcp::{McpHandler, McpServerConfig};
 use anyhow::{Result, bail};
 pub use loader::{DEFAULT_CONFIG, scaffold_config_dir};
-pub use runtime::{McpHandler, SystemConfig, mcp::McpServerConfig};
+pub use runtime::SystemConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 #[cfg(unix)]

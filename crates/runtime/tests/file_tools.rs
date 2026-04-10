@@ -1,12 +1,11 @@
 //! Tests for read and edit tools.
 
-use crabtalk_runtime::{Env, NoHost, mcp::McpHandler};
+use crabtalk_runtime::{Env, NoHost};
 use wcore::repos::mem::InMemoryRepos;
 
 async fn test_env(cwd: std::path::PathBuf) -> Env<NoHost, InMemoryRepos> {
     let repos = InMemoryRepos::new();
-    let mcp = McpHandler::load(&[]).await;
-    Env::new(repos, mcp, cwd, None, NoHost)
+    Env::new(repos, cwd, None, NoHost)
 }
 
 // --- read ---
