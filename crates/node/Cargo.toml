@@ -1,6 +1,8 @@
 [package]
 name = "crabtalk-node"
 description = "Crabtalk node — runtime + transport + event loop"
+documentation = "https://docs.rs/crabtalk-node"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -9,4 +11,31 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
+crabtalk-plugins.workspace = true
+crabtalk-command.workspace = true
+crabllm-core.workspace = true
+crabllm-provider.workspace = true
+runtime.workspace = true
+transport.workspace = true
 wcore.workspace = true
+
+# crates.io
+anyhow.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+cron.workspace = true
+async-stream.workspace = true
+futures-core.workspace = true
+futures-util.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+toml.workspace = true
+toml_edit.workspace = true
+tracing.workspace = true
+ulid.workspace = true
+
+[dev-dependencies]
+wcore = { workspace = true, features = ["test-utils"] }

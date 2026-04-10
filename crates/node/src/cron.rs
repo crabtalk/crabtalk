@@ -4,7 +4,7 @@
 //! Memory is authoritative at runtime; `cron/crons.toml` under the
 //! config directory is recovery for restarts.
 
-use crate::daemon::event::{DaemonEvent, DaemonEventSender};
+use crate::node::event::{NodeEvent, NodeEventSender};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
 use tokio::{
@@ -42,7 +42,7 @@ pub struct CronStore {
     handles: HashMap<u64, JoinHandle<()>>,
     next_id: u64,
     path: PathBuf,
-    event_tx: DaemonEventSender,
+    event_tx: NodeEventSender,
     shutdown_tx: broadcast::Sender<()>,
 }
 
@@ -56,7 +56,7 @@ impl CronStore {
     /// Load crons from `cron/crons.toml` under `root`.
     pub fn load(
         root: PathBuf,
-        event_tx: DaemonEventSender,
+        event_tx: NodeEventSender,
         shutdown_tx: broadcast::Sender<()>,
     ) -> Self {
         let path = root.join("cron").join("crons.toml");
@@ -165,7 +165,7 @@ impl CronStore {
 
 async fn run_cron_timer(
     entry: CronEntry,
-    event_tx: DaemonEventSender,
+    event_tx: NodeEventSender,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
     let schedule = cron::Schedule::from_str(&entry.schedule).expect("pre-validated schedule");
@@ -222,7 +222,7 @@ async fn run_cron_timer(
             guest: None,
             tool_choice: None,
         });
-        let _ = event_tx.send(DaemonEvent::Message {
+        let _ = event_tx.send(NodeEvent::Message {
             msg,
             reply: reply_tx,
         });

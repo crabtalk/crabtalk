@@ -1,6 +1,6 @@
 //! MCP tool dispatch — the `mcp` meta-tool handler.
 //!
-//! Called from `DaemonHost::dispatch_mcp` with the parsed args and the
+//! Called from `NodeHost::dispatch_mcp` with the parsed args and the
 //! agent's MCP scope. Owns tool resolution, scope enforcement, fuzzy
 //! matching, and bridge call routing.
 

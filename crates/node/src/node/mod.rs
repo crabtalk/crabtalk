@@ -1,15 +1,15 @@
-//! Daemon — the core struct composing runtime, transports, and lifecycle.
+//! Node — the core struct composing runtime, transports, and lifecycle.
 
 use crate::{
-    DaemonConfig,
+    NodeConfig,
     cron::CronStore,
-    daemon::{
-        builder::{BuildProvider, DefaultProvider, build_default_provider},
-        event::{DaemonEvent, DaemonEventSender},
-    },
     event_bus::EventBus,
-    hook::host::DaemonHost,
-    repos::DaemonRepos,
+    hook::host::NodeHost,
+    node::{
+        builder::{BuildProvider, DefaultProvider, build_default_provider},
+        event::{NodeEvent, NodeEventSender},
+    },
+    repos::NodeRepos,
 };
 use anyhow::Result;
 use crabllm_core::Provider;
@@ -26,18 +26,18 @@ pub mod event;
 mod protocol;
 
 /// Shared daemon state.
-pub struct Daemon<P: Provider + 'static = DefaultProvider, B: Host + 'static = DaemonHost> {
+pub struct Node<P: Provider + 'static = DefaultProvider, B: Host + 'static = NodeHost> {
     #[allow(clippy::type_complexity)]
-    pub runtime: Arc<RwLock<Arc<Runtime<P, Env<B, DaemonRepos>>>>>,
+    pub runtime: Arc<RwLock<Arc<Runtime<P, Env<B, NodeRepos>>>>>,
     pub(crate) config_dir: PathBuf,
-    pub(crate) event_tx: DaemonEventSender,
+    pub(crate) event_tx: NodeEventSender,
     pub(crate) started_at: std::time::Instant,
     pub(crate) crons: Arc<Mutex<CronStore>>,
     pub(crate) events: Arc<Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
 }
 
-impl<P: Provider + 'static, B: Host + 'static> Clone for Daemon<P, B> {
+impl<P: Provider + 'static, B: Host + 'static> Clone for Node<P, B> {
     fn clone(&self) -> Self {
         Self {
             runtime: self.runtime.clone(),
@@ -51,14 +51,14 @@ impl<P: Provider + 'static, B: Host + 'static> Clone for Daemon<P, B> {
     }
 }
 
-impl Daemon<DefaultProvider, DaemonHost> {
-    pub async fn start(config_dir: &Path) -> Result<DaemonHandle<DefaultProvider, DaemonHost>> {
+impl Node<DefaultProvider, NodeHost> {
+    pub async fn start(config_dir: &Path) -> Result<NodeHandle<DefaultProvider, NodeHost>> {
         Self::start_with(
             config_dir,
-            |config: &DaemonConfig| build_default_provider(config),
+            |config: &NodeConfig| build_default_provider(config),
             |event_tx| {
                 let (events_tx, _) = broadcast::channel(256);
-                DaemonHost {
+                NodeHost {
                     event_tx,
                     pending_asks: Arc::new(Mutex::new(std::collections::HashMap::new())),
                     conversation_cwds: Arc::new(Mutex::new(std::collections::HashMap::new())),
@@ -71,33 +71,33 @@ impl Daemon<DefaultProvider, DaemonHost> {
     }
 }
 
-impl<P: Provider + 'static, B: Host + 'static> Daemon<P, B> {
+impl<P: Provider + 'static, B: Host + 'static> Node<P, B> {
     pub async fn start_with<BP, BB>(
         config_dir: &Path,
         build_provider: BP,
         build_backend: BB,
-    ) -> Result<DaemonHandle<P, B>>
+    ) -> Result<NodeHandle<P, B>>
     where
-        BP: Fn(&DaemonConfig) -> Result<Model<P>> + Send + Sync + 'static,
-        BB: FnOnce(DaemonEventSender) -> B,
+        BP: Fn(&NodeConfig) -> Result<Model<P>> + Send + Sync + 'static,
+        BB: FnOnce(NodeEventSender) -> B,
     {
         let config_path = config_dir.join(wcore::paths::CONFIG_FILE);
-        let config = DaemonConfig::load(&config_path)?;
+        let config = NodeConfig::load(&config_path)?;
         tracing::info!("loaded configuration from {}", config_path.display());
 
-        let (event_tx, event_rx) = mpsc::unbounded_channel::<DaemonEvent>();
+        let (event_tx, event_rx) = mpsc::unbounded_channel::<NodeEvent>();
 
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
         let shutdown_event_tx = event_tx.clone();
         let mut shutdown_rx = shutdown_tx.subscribe();
         tokio::spawn(async move {
             let _ = shutdown_rx.recv().await;
-            let _ = shutdown_event_tx.send(DaemonEvent::Shutdown);
+            let _ = shutdown_event_tx.send(NodeEvent::Shutdown);
         });
 
         let backend = build_backend(event_tx.clone());
         let build_provider: BuildProvider<P> = Arc::new(build_provider);
-        let daemon = Daemon::build(
+        let node = Node::build(
             &config,
             config_dir,
             event_tx.clone(),
@@ -107,30 +107,30 @@ impl<P: Provider + 'static, B: Host + 'static> Daemon<P, B> {
         )
         .await?;
 
-        let d = daemon.clone();
+        let n = node.clone();
         let event_loop_join = tokio::spawn(async move {
-            d.handle_events(event_rx).await;
+            n.handle_events(event_rx).await;
         });
 
-        Ok(DaemonHandle {
+        Ok(NodeHandle {
             config,
             event_tx,
             shutdown_tx,
-            daemon,
+            node,
             event_loop_join: Some(event_loop_join),
         })
     }
 }
 
-pub struct DaemonHandle<P: Provider + 'static = DefaultProvider, B: Host + 'static = DaemonHost> {
-    pub config: DaemonConfig,
-    pub event_tx: DaemonEventSender,
+pub struct NodeHandle<P: Provider + 'static = DefaultProvider, B: Host + 'static = NodeHost> {
+    pub config: NodeConfig,
+    pub event_tx: NodeEventSender,
     pub shutdown_tx: broadcast::Sender<()>,
-    pub daemon: Daemon<P, B>,
+    pub node: Node<P, B>,
     event_loop_join: Option<tokio::task::JoinHandle<()>>,
 }
 
-impl<P: Provider + 'static, B: Host + 'static> DaemonHandle<P, B> {
+impl<P: Provider + 'static, B: Host + 'static> NodeHandle<P, B> {
     pub async fn wait_until_ready(&self) -> Result<()> {
         Ok(())
     }
@@ -149,7 +149,7 @@ impl<P: Provider + 'static, B: Host + 'static> DaemonHandle<P, B> {
 #[cfg(unix)]
 pub fn setup_socket(
     shutdown_tx: &broadcast::Sender<()>,
-    event_tx: &DaemonEventSender,
+    event_tx: &NodeEventSender,
 ) -> Result<(&'static Path, tokio::task::JoinHandle<()>)> {
     let resolved_path: &'static Path = &wcore::paths::SOCKET_PATH;
     if let Some(parent) = resolved_path.parent() {
@@ -167,7 +167,7 @@ pub fn setup_socket(
     let join = tokio::spawn(transport::uds::accept_loop(
         listener,
         move |msg, reply| {
-            let _ = socket_tx.send(DaemonEvent::Message { msg, reply });
+            let _ = socket_tx.send(NodeEvent::Message { msg, reply });
         },
         socket_shutdown,
     ));
@@ -177,7 +177,7 @@ pub fn setup_socket(
 
 pub fn setup_tcp(
     shutdown_tx: &broadcast::Sender<()>,
-    event_tx: &DaemonEventSender,
+    event_tx: &NodeEventSender,
 ) -> Result<(tokio::task::JoinHandle<()>, u16)> {
     let (std_listener, addr) = transport::tcp::bind()?;
     let listener = tokio::net::TcpListener::from_std(std_listener)?;
@@ -188,7 +188,7 @@ pub fn setup_tcp(
     let join = tokio::spawn(transport::tcp::accept_loop(
         listener,
         move |msg, reply| {
-            let _ = tcp_tx.send(DaemonEvent::Message { msg, reply });
+            let _ = tcp_tx.send(NodeEvent::Message { msg, reply });
         },
         tcp_shutdown,
     ));

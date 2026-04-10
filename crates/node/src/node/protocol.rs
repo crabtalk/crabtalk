@@ -1,7 +1,7 @@
-//! Server trait implementation for the Daemon.
+//! Server trait implementation for the Node.
 
 use crate::event_bus::EventSubscription;
-use crate::{cron::CronEntry, daemon::Daemon};
+use crate::{cron::CronEntry, node::Node};
 use anyhow::{Context, Result};
 use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
@@ -28,7 +28,7 @@ use wcore::protocol::{
 };
 use wcore::{AgentEvent, AgentStep, repos::Storage};
 
-impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
+impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
@@ -335,7 +335,7 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Daemon<P, H> {
     }
 
     async fn publish_event(&self, req: PublishEventMsg) -> Result<()> {
-        let _ = self.event_tx.send(crate::DaemonEvent::PublishEvent {
+        let _ = self.event_tx.send(crate::NodeEvent::PublishEvent {
             source: req.source,
             payload: req.payload,
         });
@@ -1234,10 +1234,10 @@ fn find_binary(name: &str) -> Result<std::path::PathBuf> {
     anyhow::bail!("binary '{name}' not found in PATH or ~/.cargo/bin")
 }
 
-impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
-    /// Load the current `DaemonConfig` from disk.
-    fn load_config(&self) -> Result<crate::DaemonConfig> {
-        crate::DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))
+impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
+    /// Load the current `NodeConfig` from disk.
+    fn load_config(&self) -> Result<crate::NodeConfig> {
+        crate::NodeConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))
     }
 
     /// Look up which provider name serves the given model name, by reading
@@ -1273,7 +1273,7 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
         let config = self.load_config()?;
         let (manifest, _warnings) = self.resolve_manifests()?;
         let rt = self.runtime.read().await.clone();
-        let agent_config = crate::daemon::builder::build_single_agent_config(
+        let agent_config = crate::node::builder::build_single_agent_config(
             name,
             &config,
             &manifest,

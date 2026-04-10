@@ -39,7 +39,7 @@ pub use backfill::{backfill_local_agent_ids, migrate_local_agent_prompts};
 /// MCPs and agent configs live in manifests (`local/CrabTalk.toml` and
 /// `packages/*/*.toml`), loaded via [`resolve_manifests`].
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct DaemonConfig {
+pub struct NodeConfig {
     /// Provider definitions (`[provider.<name>]`).
     #[serde(default)]
     pub provider: BTreeMap<String, ProviderDef>,
@@ -58,8 +58,8 @@ pub struct DaemonConfig {
     pub disabled: wcore::config::DisabledItems,
 }
 
-impl DaemonConfig {
-    /// Parse a TOML string into a `DaemonConfig`.
+impl NodeConfig {
+    /// Parse a TOML string into a `NodeConfig`.
     pub fn from_toml(toml_str: &str) -> Result<Self> {
         let mut config: Self = toml::from_str(toml_str)?;
         config.mcps.iter_mut().for_each(|(name, server)| {

@@ -1,6 +1,6 @@
 //! Filesystem-backed repository implementations.
 //!
-//! [`DaemonRepos`] bundles all four into a single [`Repos`]
+//! [`NodeRepos`] bundles all four into a single [`Repos`]
 //! implementation wired up by the daemon builder.
 
 use std::{
@@ -22,14 +22,14 @@ pub use sessions::FsSessionRepo;
 pub use skills::FsSkillRepo;
 
 /// Composite filesystem persistence backend.
-pub struct DaemonRepos {
+pub struct NodeRepos {
     pub memory: Arc<FsMemoryRepo>,
     pub skills: Arc<FsSkillRepo>,
     pub sessions: Arc<FsSessionRepo>,
     pub agents: Arc<FsAgentRepo>,
 }
 
-impl Repos for DaemonRepos {
+impl Repos for NodeRepos {
     type Memory = FsMemoryRepo;
     type Skills = FsSkillRepo;
     type Sessions = FsSessionRepo;
@@ -54,7 +54,7 @@ impl Repos for DaemonRepos {
 
 /// Bridge: delegates Storage methods to the individual sub-repos.
 /// Temporary — replaced by FsStorage in a later phase.
-impl Storage for DaemonRepos {
+impl Storage for NodeRepos {
     fn list_memories(&self) -> anyhow::Result<Vec<wcore::repos::MemoryEntry>> {
         wcore::repos::MemoryRepo::list(self.memory.as_ref())
     }

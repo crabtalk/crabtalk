@@ -1,6 +1,6 @@
 //! NodeHost — server-specific Host implementation.
 //!
-//! Provides `ask_user` and `delegate` dispatch using node event channels,
+//! Provides `ask_user` and `delegate` dispatch using daemon event channels,
 //! per-session CWD resolution, and agent event broadcasting.
 
 use crate::node::event::{NodeEvent, NodeEventSender};
@@ -31,7 +31,7 @@ const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
 /// Timeout for waiting on user reply (5 minutes).
 const ASK_USER_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// Server-specific host for the node. Owns event channels, session state,
+/// Server-specific host for the daemon. Owns event channels, session state,
 /// and the MCP bridge (subprocess/HTTP connections to MCP tool servers).
 #[derive(Clone)]
 pub struct NodeHost {
@@ -43,7 +43,7 @@ pub struct NodeHost {
     pub(crate) conversation_cwds: Arc<Mutex<HashMap<u64, PathBuf>>>,
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
-    /// MCP bridge — connects to MCP tool servers. Node-owned because
+    /// MCP bridge — connects to MCP tool servers. Daemon-owned because
     /// MCP involves spawning child processes and opening HTTP connections.
     pub(crate) mcp: Arc<crate::mcp::McpHandler>,
 }

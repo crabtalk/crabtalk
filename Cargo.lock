@@ -516,7 +516,7 @@ dependencies = [
  "console",
  "crabtalk-command",
  "crabtalk-core",
- "crabtalk-daemon",
+ "crabtalk-node",
  "crabtalk-plugins",
  "crabtalk-runtime",
  "crabtalk-transport",
@@ -605,7 +605,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabtalk-daemon"
+name = "crabtalk-gateway"
+version = "0.0.20"
+dependencies = [
+ "anyhow",
+ "crabtalk-core",
+ "crabtalk-transport",
+ "dirs",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "crabtalk-node"
 version = "0.0.20"
 dependencies = [
  "anyhow",
@@ -631,29 +647,6 @@ dependencies = [
  "toml_edit",
  "tracing",
  "ulid",
-]
-
-[[package]]
-name = "crabtalk-gateway"
-version = "0.0.20"
-dependencies = [
- "anyhow",
- "crabtalk-core",
- "crabtalk-transport",
- "dirs",
- "futures-util",
- "serde",
- "serde_json",
- "tokio",
- "toml",
- "tracing",
-]
-
-[[package]]
-name = "crabtalk-node"
-version = "0.0.20"
-dependencies = [
- "crabtalk-core",
 ]
 
 [[package]]

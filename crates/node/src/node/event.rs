@@ -1,13 +1,13 @@
-//! Daemon event types and dispatch.
+//! Node event types and dispatch.
 //!
 //! All inbound stimuli (socket, channel, tool calls) are represented as
-//! [`DaemonEvent`] variants sent through a single `mpsc::unbounded_channel`.
-//! The [`Daemon`] processes them via [`handle_events`](Daemon::handle_events).
+//! [`NodeEvent`] variants sent through a single `mpsc::unbounded_channel`.
+//! The [`Node`] processes them via [`handle_events`](Node::handle_events).
 //!
-//! Tool call routing is fully delegated to [`DaemonEnv::dispatch_tool`] —
+//! Tool call routing is fully delegated to [`NodeEnv::dispatch_tool`] —
 //! no tool name matching happens here.
 
-use crate::daemon::Daemon;
+use crate::node::Node;
 use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
 use runtime::host::Host;
@@ -21,7 +21,7 @@ use wcore::{
 };
 
 /// Inbound event from any source, processed by the central event loop.
-pub enum DaemonEvent {
+pub enum NodeEvent {
     /// A client message from any source (socket, telegram).
     /// Reply channel streams `ServerMessage`s back to the caller.
     Message {
@@ -30,7 +30,7 @@ pub enum DaemonEvent {
         /// Per-request reply channel for streaming `ServerMessage`s back.
         reply: mpsc::Sender<ServerMessage>,
     },
-    /// A tool call from an agent, routed through `DaemonEnv::dispatch_tool`.
+    /// A tool call from an agent, routed through `NodeEnv::dispatch_tool`.
     ToolCall(ToolRequest),
     /// Publish an event to the event bus — fires matching subscriptions.
     PublishEvent {
@@ -51,33 +51,33 @@ pub enum DaemonEvent {
 }
 
 /// Shorthand for the event sender half of the daemon event channel.
-pub type DaemonEventSender = mpsc::UnboundedSender<DaemonEvent>;
+pub type NodeEventSender = mpsc::UnboundedSender<NodeEvent>;
 
 // ── Event dispatch ───────────────────────────────────────────────────
 
-impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
-    /// Process events until [`DaemonEvent::Shutdown`] is received.
+impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
+    /// Process events until [`NodeEvent::Shutdown`] is received.
     ///
     /// Spawns a task for each event to avoid blocking on LLM calls.
-    pub(crate) async fn handle_events(&self, mut rx: mpsc::UnboundedReceiver<DaemonEvent>) {
+    pub(crate) async fn handle_events(&self, mut rx: mpsc::UnboundedReceiver<NodeEvent>) {
         tracing::info!("event loop started");
         while let Some(event) = rx.recv().await {
             match event {
-                DaemonEvent::Message { msg, reply } => self.handle_message(msg, reply),
-                DaemonEvent::ToolCall(req) => self.handle_tool_call(req),
-                DaemonEvent::PublishEvent { source, payload } => {
+                NodeEvent::Message { msg, reply } => self.handle_message(msg, reply),
+                NodeEvent::ToolCall(req) => self.handle_tool_call(req),
+                NodeEvent::PublishEvent { source, payload } => {
                     self.events.lock().await.publish(&source, &payload);
                 }
-                DaemonEvent::AddEphemeral { config, reply } => {
+                NodeEvent::AddEphemeral { config, reply } => {
                     let rt = self.runtime.read().await.clone();
                     rt.add_ephemeral(config).await;
                     let _ = reply.send(());
                 }
-                DaemonEvent::RemoveEphemeral { name } => {
+                NodeEvent::RemoveEphemeral { name } => {
                     let rt = self.runtime.read().await.clone();
                     rt.remove_ephemeral(&name).await;
                 }
-                DaemonEvent::Shutdown => {
+                NodeEvent::Shutdown => {
                     tracing::info!("event loop shutting down");
                     break;
                 }

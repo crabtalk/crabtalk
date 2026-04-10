@@ -1,7 +1,7 @@
 //! WeChat gateway serve logic.
 
 use crate::{
-    ContextTokens, DaemonClient, GatewayMessage, StreamAccumulator, StreamResult, UserIdMap,
+    ContextTokens, GatewayMessage, NodeClient, StreamAccumulator, StreamResult, UserIdMap,
 };
 use gateway::config::WechatConfig;
 use std::{collections::HashMap, sync::Arc};
@@ -11,8 +11,8 @@ use wcore::protocol::message::{
 };
 
 /// Run the WeChat gateway service.
-pub async fn run(daemon_client: DaemonClient, config: &WechatConfig) -> anyhow::Result<()> {
-    let client = Arc::new(daemon_client);
+pub async fn run(node_client: NodeClient, config: &WechatConfig) -> anyhow::Result<()> {
+    let client = Arc::new(node_client);
 
     let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
     let default_agent = crate::resolve_default_agent(&agents_dir);
@@ -29,11 +29,7 @@ pub async fn run(daemon_client: DaemonClient, config: &WechatConfig) -> anyhow::
     Ok(())
 }
 
-async fn spawn_wechat(
-    wc: &gateway::config::WechatConfig,
-    agent: String,
-    client: Arc<DaemonClient>,
-) {
+async fn spawn_wechat(wc: &gateway::config::WechatConfig, agent: String, client: Arc<NodeClient>) {
     let (tx, rx) = mpsc::unbounded_channel::<GatewayMessage>();
     let ctx_tokens: ContextTokens = Arc::new(std::sync::Mutex::new(HashMap::new()));
     let user_ids: UserIdMap = Arc::new(std::sync::Mutex::new(HashMap::new()));
@@ -84,7 +80,7 @@ async fn reap_chat(chat: ChatStream) -> bool {
 async fn wechat_loop(
     mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
     agent: String,
-    client: Arc<DaemonClient>,
+    client: Arc<NodeClient>,
     ctx_tokens: ContextTokens,
     user_ids: UserIdMap,
     allowed_users: std::collections::HashSet<String>,
@@ -166,7 +162,7 @@ async fn wechat_loop(
 #[allow(clippy::too_many_arguments)]
 async fn wx_stream(
     http: &reqwest::Client,
-    client: &DaemonClient,
+    client: &NodeClient,
     agent: &str,
     chat_id: i64,
     content: &str,

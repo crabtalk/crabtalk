@@ -17,10 +17,10 @@ const LABEL: &str = "ai.crabtalk.crabtalk";
 fn ensure_providers() -> Result<()> {
     let config_path = CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
     if !config_path.exists() {
-        ::daemon::config::scaffold_config_dir(&CONFIG_DIR)?;
+        ::node::config::scaffold_config_dir(&CONFIG_DIR)?;
     }
 
-    let config = ::daemon::DaemonConfig::load(&config_path)?;
+    let config = ::node::NodeConfig::load(&config_path)?;
     if config.provider.is_empty() {
         setup_provider(&config_path)?;
     }

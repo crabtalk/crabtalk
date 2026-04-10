@@ -4,25 +4,25 @@ use anyhow::Result;
 use wcore::paths::{CONFIG_DIR, TCP_PORT_FILE};
 
 pub async fn start() -> Result<()> {
-    daemon::config::scaffold_config_dir(&CONFIG_DIR)?;
+    node::config::scaffold_config_dir(&CONFIG_DIR)?;
 
     // Check if providers are configured; prompt if empty.
     let config_path = CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
-    let config = daemon::DaemonConfig::load(&config_path)?;
+    let config = node::NodeConfig::load(&config_path)?;
     if config.provider.is_empty() {
         crate::cmd::attach::setup_provider(&config_path)?;
     }
 
-    let handle = daemon::Daemon::start(&CONFIG_DIR).await?;
+    let handle = node::Node::start(&CONFIG_DIR).await?;
 
     // UDS transport (Unix only).
     #[cfg(unix)]
-    let (socket_path, socket_join) = daemon::setup_socket(&handle.shutdown_tx, &handle.event_tx)?;
+    let (socket_path, socket_join) = node::setup_socket(&handle.shutdown_tx, &handle.event_tx)?;
     #[cfg(unix)]
     tracing::info!("crabtalk daemon listening on {}", socket_path.display());
 
     // TCP transport.
-    let (tcp_join, tcp_port) = daemon::setup_tcp(&handle.shutdown_tx, &handle.event_tx)?;
+    let (tcp_join, tcp_port) = node::setup_tcp(&handle.shutdown_tx, &handle.event_tx)?;
     std::fs::write(&*TCP_PORT_FILE, tcp_port.to_string())?;
     tracing::info!("wrote tcp port file at {}", TCP_PORT_FILE.display());
 

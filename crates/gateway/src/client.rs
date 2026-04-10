@@ -13,7 +13,7 @@ use wcore::protocol::{
 };
 
 /// How the client connects to the daemon.
-pub enum DaemonTransport {
+pub enum NodeTransport {
     /// Connect via Unix domain socket.
     #[cfg(unix)]
     Uds(std::path::PathBuf),
@@ -26,11 +26,11 @@ pub enum DaemonTransport {
 /// Each call to [`send`] opens a new connection, sends the message, and
 /// returns a receiver that streams back `ServerMessage` responses until
 /// the daemon closes the connection.
-pub struct DaemonClient {
-    transport: DaemonTransport,
+pub struct NodeClient {
+    transport: NodeTransport,
 }
 
-impl DaemonClient {
+impl NodeClient {
     /// Create a client using the platform default transport:
     /// UDS on Unix, TCP (from port file) on Windows.
     pub fn platform_default() -> anyhow::Result<Self> {
@@ -49,7 +49,7 @@ impl DaemonClient {
     /// Create a client that connects via TCP on the given port.
     pub fn tcp(port: u16) -> Self {
         Self {
-            transport: DaemonTransport::Tcp(port),
+            transport: NodeTransport::Tcp(port),
         }
     }
 
@@ -57,7 +57,7 @@ impl DaemonClient {
     #[cfg(unix)]
     pub fn uds(socket_path: &std::path::Path) -> Self {
         Self {
-            transport: DaemonTransport::Uds(socket_path.to_path_buf()),
+            transport: NodeTransport::Uds(socket_path.to_path_buf()),
         }
     }
 
@@ -94,7 +94,7 @@ impl DaemonClient {
 
         match &self.transport {
             #[cfg(unix)]
-            DaemonTransport::Uds(socket_path) => {
+            NodeTransport::Uds(socket_path) => {
                 match transport::uds::CrabtalkClient::new(transport::uds::ClientConfig {
                     socket_path: socket_path.clone(),
                 })
@@ -105,7 +105,7 @@ impl DaemonClient {
                     Err(e) => tracing::error!("failed to connect to daemon: {e}"),
                 }
             }
-            DaemonTransport::Tcp(port) => {
+            NodeTransport::Tcp(port) => {
                 let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, *port));
                 match TcpConnection::connect(addr).await {
                     Ok(conn) => spawn_stream!(conn, msg, tx),

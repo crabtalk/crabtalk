@@ -72,9 +72,9 @@ impl Cli {
             if self.restart {
                 let _ = service::uninstall();
             }
-            daemon::config::scaffold_config_dir(&wcore::paths::CONFIG_DIR)?;
+            node::config::scaffold_config_dir(&wcore::paths::CONFIG_DIR)?;
             let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
-            let config = daemon::DaemonConfig::load(&config_path)?;
+            let config = node::NodeConfig::load(&config_path)?;
             if config.provider.is_empty() {
                 attach::setup_provider(&config_path)?;
             }
@@ -302,9 +302,9 @@ async fn connect_or_start(use_tcp: bool, verbose: u8) -> Result<Runner> {
         Ok(runner) => Ok(runner),
         Err(e) => {
             tracing::debug!("daemon not reachable, starting: {e}");
-            daemon::config::scaffold_config_dir(&wcore::paths::CONFIG_DIR)?;
+            node::config::scaffold_config_dir(&wcore::paths::CONFIG_DIR)?;
             let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
-            let config = daemon::DaemonConfig::load(&config_path)?;
+            let config = node::NodeConfig::load(&config_path)?;
             if config.provider.is_empty() {
                 attach::setup_provider(&config_path)?;
             }

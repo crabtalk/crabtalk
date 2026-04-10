@@ -17,7 +17,7 @@ path = "src/bin/main.rs"
 [dependencies]
 crabtalk-plugins.workspace = true
 crabtalk-command.workspace = true
-daemon.workspace = true
+node.workspace = true
 runtime.workspace = true
 transport.workspace = true
 wcore.workspace = true

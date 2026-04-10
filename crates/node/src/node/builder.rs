@@ -1,11 +1,11 @@
-//! Daemon construction and lifecycle methods.
+//! Node construction and lifecycle methods.
 
 use crate::mcp::McpHandler;
 use crate::{
-    Daemon, DaemonConfig,
+    Node, NodeConfig,
     config::{ResolvedManifest, resolve_manifests},
-    daemon::event::{DaemonEvent, DaemonEventSender},
-    repos::{DaemonRepos, FsAgentRepo, FsMemoryRepo, FsSessionRepo, FsSkillRepo},
+    node::event::{NodeEvent, NodeEventSender},
+    repos::{FsAgentRepo, FsMemoryRepo, FsSessionRepo, FsSkillRepo, NodeRepos},
 };
 use anyhow::Result;
 use crabllm_core::Provider;
@@ -22,9 +22,9 @@ use wcore::{AgentConfig, Runtime, ToolRequest, model::Model, repos::Storage};
 pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
 
 pub type BuildProvider<P> =
-    Arc<dyn Fn(&DaemonConfig) -> Result<wcore::model::Model<P>> + Send + Sync>;
+    Arc<dyn Fn(&NodeConfig) -> Result<wcore::model::Model<P>> + Send + Sync>;
 
-pub fn build_default_provider(config: &DaemonConfig) -> Result<Model<DefaultProvider>> {
+pub fn build_default_provider(config: &NodeConfig) -> Result<Model<DefaultProvider>> {
     build_providers(config)
 }
 
@@ -33,7 +33,7 @@ pub(crate) const SYSTEM_AGENT: &str = runtime::memory::DEFAULT_SOUL;
 /// Build the `AgentConfig` for a single named agent.
 pub(crate) fn build_single_agent_config(
     name: &str,
-    config: &DaemonConfig,
+    config: &NodeConfig,
     manifest: &ResolvedManifest,
     storage: &impl Storage,
 ) -> Result<AgentConfig> {
@@ -73,11 +73,11 @@ pub(crate) fn build_single_agent_config(
     Ok(agent)
 }
 
-impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
+impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
     pub(crate) async fn build(
-        config: &DaemonConfig,
+        config: &NodeConfig,
         config_dir: &Path,
-        event_tx: DaemonEventSender,
+        event_tx: NodeEventSender,
         shutdown_tx: broadcast::Sender<()>,
         host: H,
         build_provider: BuildProvider<P>,
@@ -105,7 +105,7 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
                 guest: None,
                 tool_choice: None,
             });
-            let _ = fire_tx.send(DaemonEvent::Message {
+            let _ = fire_tx.send(NodeEvent::Message {
                 msg,
                 reply: reply_tx,
             });
@@ -124,7 +124,7 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
     }
 
     pub async fn reload(&self) -> Result<()> {
-        let config = DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
+        let config = NodeConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
         let host = {
             let old_rt = self.runtime.read().await;
             old_rt.hook.host.clone()
@@ -149,12 +149,12 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
     }
 
     async fn build_runtime(
-        config: &DaemonConfig,
+        config: &NodeConfig,
         config_dir: &Path,
-        event_tx: &DaemonEventSender,
+        event_tx: &NodeEventSender,
         host: H,
         build_provider: &BuildProvider<P>,
-    ) -> Result<Runtime<P, Env<H, DaemonRepos>>> {
+    ) -> Result<Runtime<P, Env<H, NodeRepos>>> {
         let (mut manifest, _warnings) = resolve_manifests(config_dir);
         manifest.disabled = config.disabled.clone();
         wcore::filter_disabled_external(&mut manifest.skill_dirs, &manifest.disabled.external);
@@ -167,7 +167,7 @@ impl<P: Provider + 'static, H: Host + 'static> Daemon<P, H> {
     }
 }
 
-fn build_providers(config: &DaemonConfig) -> Result<Model<DefaultProvider>> {
+fn build_providers(config: &NodeConfig) -> Result<Model<DefaultProvider>> {
     let providers: HashMap<String, _> = config
         .provider
         .iter()
@@ -187,11 +187,11 @@ fn build_providers(config: &DaemonConfig) -> Result<Model<DefaultProvider>> {
 }
 
 async fn build_env<H: Host>(
-    config: &DaemonConfig,
+    config: &NodeConfig,
     config_dir: &Path,
     manifest: &ResolvedManifest,
     mut host: H,
-) -> Result<Env<H, DaemonRepos>> {
+) -> Result<Env<H, NodeRepos>> {
     // Build repos.
     let skill_roots: Vec<PathBuf> = manifest
         .skill_dirs
@@ -202,7 +202,7 @@ async fn build_env<H: Host>(
     let memory_root = config_dir.join("memory");
     let sessions_root = config_dir.join("sessions");
 
-    let repos = Arc::new(DaemonRepos {
+    let repos = Arc::new(NodeRepos {
         memory: Arc::new(FsMemoryRepo::new(memory_root)),
         skills: Arc::new(FsSkillRepo::new(
             skill_roots,
@@ -237,12 +237,12 @@ async fn build_env<H: Host>(
     Ok(Env::new(repos, cwd, memory, host))
 }
 
-fn build_tool_sender(event_tx: &DaemonEventSender) -> wcore::ToolSender {
+fn build_tool_sender(event_tx: &NodeEventSender) -> wcore::ToolSender {
     let (tool_tx, mut tool_rx) = tokio::sync::mpsc::unbounded_channel::<ToolRequest>();
     let event_tx = event_tx.clone();
     tokio::spawn(async move {
         while let Some(req) = tool_rx.recv().await {
-            if event_tx.send(DaemonEvent::ToolCall(req)).is_err() {
+            if event_tx.send(NodeEvent::ToolCall(req)).is_err() {
                 break;
             }
         }
@@ -251,9 +251,9 @@ fn build_tool_sender(event_tx: &DaemonEventSender) -> wcore::ToolSender {
 }
 
 fn load_agents<P: Provider + 'static, H: Host + 'static>(
-    runtime: &mut Runtime<P, Env<H, DaemonRepos>>,
+    runtime: &mut Runtime<P, Env<H, NodeRepos>>,
     config_dir: &Path,
-    config: &DaemonConfig,
+    config: &NodeConfig,
     manifest: &ResolvedManifest,
 ) -> Result<()> {
     // One-shot migration: hoist legacy prompt files into ULID-keyed storage.

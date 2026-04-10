@@ -1,7 +1,7 @@
 //! Telegram gateway serve logic.
 
 use crate::{
-    COMMAND_HINT, DaemonClient, GatewayMessage, KnownBots, StreamAccumulator, StreamResult,
+    COMMAND_HINT, GatewayMessage, KnownBots, NodeClient, StreamAccumulator, StreamResult,
     attachment_summary, parse_command,
 };
 use gateway::config::TelegramConfig;
@@ -14,8 +14,8 @@ use wcore::protocol::message::{
 };
 
 /// Run the Telegram gateway service.
-pub async fn run(daemon_client: DaemonClient, config: &TelegramConfig) -> anyhow::Result<()> {
-    let client = Arc::new(daemon_client);
+pub async fn run(node_client: NodeClient, config: &TelegramConfig) -> anyhow::Result<()> {
+    let client = Arc::new(node_client);
 
     let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
     let default_agent = crate::resolve_default_agent(&agents_dir);
@@ -46,7 +46,7 @@ async fn spawn_telegram(
     token: &str,
     allowed_users: &[i64],
     agent: String,
-    client: Arc<DaemonClient>,
+    client: Arc<NodeClient>,
     known_bots: KnownBots,
 ) {
     let bot = Bot::new(token);
@@ -102,7 +102,7 @@ async fn telegram_loop(
     mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
     bot: Bot,
     agent: String,
-    client: Arc<DaemonClient>,
+    client: Arc<NodeClient>,
     known_bots: KnownBots,
     allowed_users: std::collections::HashSet<i64>,
 ) {
@@ -198,7 +198,7 @@ async fn telegram_loop(
 #[allow(clippy::too_many_arguments)]
 async fn tg_stream(
     bot: &Bot,
-    client: &DaemonClient,
+    client: &NodeClient,
     agent: &str,
     chat_id: i64,
     reply_to_msg_id: i64,

@@ -10,7 +10,7 @@ struct GatewayWechat;
 
 impl GatewayWechat {
     async fn run(&self) -> anyhow::Result<()> {
-        let client = gateway::DaemonClient::platform_default()?;
+        let client = gateway::NodeClient::platform_default()?;
         let path = config_path();
         let config = WechatConfig::load(&path)?;
         crabtalk_wechat::serve::run(client, &config).await
