@@ -12,7 +12,7 @@ use std::{
     sync::Mutex,
 };
 use wcore::{
-    AgentConfig, AgentId, ArchiveSegment, ConversationMeta, EventLine,
+    AgentConfig, AgentId, ArchiveSegment, ConversationMeta, EventLine, ManifestConfig,
     model::HistoryEntry,
     repos::{MemoryEntry, SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage, slugify},
 };
@@ -532,6 +532,36 @@ impl Storage for FsStorage {
         // Rename is a manifest-level operation (change the TOML key).
         // The ULID stays stable, so the prompt file doesn't move.
         Ok(true)
+    }
+
+    // ── Manifest ───────────────────────────────────────────────────
+
+    fn load_local_manifest(&self) -> Result<ManifestConfig> {
+        let path = self
+            .config_dir
+            .join(wcore::paths::LOCAL_DIR)
+            .join("CrabTalk.toml");
+        match ManifestConfig::load(&path)? {
+            Some(m) => Ok(m),
+            None => Ok(ManifestConfig::default()),
+        }
+    }
+
+    fn save_local_manifest(&self, manifest: &ManifestConfig) -> Result<()> {
+        let dir = self.config_dir.join(wcore::paths::LOCAL_DIR);
+        fs::create_dir_all(&dir)?;
+        let content = toml::to_string_pretty(manifest)?;
+        atomic_write(&dir.join("CrabTalk.toml"), content.as_bytes())
+    }
+
+    fn scaffold(&self) -> Result<()> {
+        fs::create_dir_all(&self.config_dir)?;
+        fs::create_dir_all(self.config_dir.join(wcore::paths::LOCAL_DIR))?;
+        fs::create_dir_all(self.config_dir.join(wcore::paths::SKILLS_DIR))?;
+        fs::create_dir_all(self.config_dir.join(wcore::paths::AGENTS_DIR))?;
+        fs::create_dir_all(&self.memory_root)?;
+        fs::create_dir_all(&self.sessions_root)?;
+        Ok(())
     }
 }
 

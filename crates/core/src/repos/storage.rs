@@ -6,7 +6,7 @@
 //! One implementation per backend — filesystem, in-memory, database.
 
 use crate::{
-    AgentConfig, AgentId,
+    AgentConfig, AgentId, ManifestConfig,
     model::HistoryEntry,
     repos::{MemoryEntry, SessionHandle, SessionSnapshot, SessionSummary, Skill},
     runtime::conversation::{ArchiveSegment, ConversationMeta, EventLine},
@@ -103,4 +103,16 @@ pub trait Storage: Send + Sync + 'static {
 
     /// Rename an agent. The ULID stays stable.
     fn rename_agent(&self, id: &AgentId, new_name: &str) -> Result<bool>;
+
+    // ── Manifest ───────────────────────────────────────────────────
+
+    /// Load the local manifest (`local/CrabTalk.toml`).
+    /// Returns a default (empty) manifest if the file doesn't exist.
+    fn load_local_manifest(&self) -> Result<ManifestConfig>;
+
+    /// Overwrite the local manifest.
+    fn save_local_manifest(&self, manifest: &ManifestConfig) -> Result<()>;
+
+    /// Create the initial config directory structure if it doesn't exist.
+    fn scaffold(&self) -> Result<()>;
 }

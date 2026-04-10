@@ -405,7 +405,8 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {
         let id = config.id;
         let normalized = serde_json::to_string(&config)
             .context("failed to re-serialize normalized agent config")?;
-        self.write_agent_to_manifest(&req.name, &normalized, true)?;
+        self.write_agent_to_manifest(&req.name, &normalized, true)
+            .await?;
         // Prompt lands at the ULID-keyed Storage path.
         self.write_agent_prompt_to_storage(&id, &req.prompt).await?;
         self.register_agent_from_disk(&req.name).await?;
@@ -425,7 +426,7 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {
             // manifest has no record of this agent yet.
             let mut config: wcore::AgentConfig =
                 serde_json::from_str(&req.config).context("invalid AgentConfig JSON")?;
-            let existing = self.existing_agent_id(&req.name)?;
+            let existing = self.existing_agent_id(&req.name).await?;
             config.id = existing.unwrap_or_else(|| {
                 if config.id.is_nil() {
                     wcore::AgentId::new()
@@ -436,7 +437,8 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {
             let id = config.id;
             let normalized = serde_json::to_string(&config)
                 .context("failed to re-serialize normalized agent config")?;
-            self.write_agent_to_manifest(&req.name, &normalized, false)?;
+            self.write_agent_to_manifest(&req.name, &normalized, false)
+                .await?;
             if !req.prompt.is_empty() {
                 self.write_agent_prompt_to_storage(&id, &req.prompt).await?;
             }
@@ -446,50 +448,25 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {
     }
 
     async fn delete_agent(&self, name: String) -> Result<bool> {
-        use toml_edit::DocumentMut;
+        let rt = self.runtime.read().await.clone();
+        let storage = rt.storage();
 
-        let manifest_path = self
-            .config_dir
-            .join(wcore::paths::LOCAL_DIR)
-            .join("CrabTalk.toml");
-        if !manifest_path.exists() {
-            return Ok(false);
-        }
-
-        // Capture the ULID before we mutate the manifest so we can
-        // delete the matching Storage-keyed prompt afterwards.
-        let existing_id = self.existing_agent_id(&name)?;
-
-        let content =
-            std::fs::read_to_string(&manifest_path).context("failed to read local manifest")?;
-        let mut doc: DocumentMut = content.parse().context("failed to parse local manifest")?;
-
-        let removed = doc
-            .get_mut("agents")
-            .and_then(|v| v.as_table_like_mut())
-            .and_then(|t| t.remove(&name))
-            .is_some();
+        let mut manifest = storage.load_local_manifest()?;
+        let existing_id = manifest
+            .agents
+            .get(&name)
+            .filter(|c| !c.id.is_nil())
+            .map(|c| c.id);
+        let removed = manifest.agents.remove(&name).is_some();
         if removed {
-            std::fs::write(&manifest_path, doc.to_string())
-                .context("failed to write local manifest")?;
+            storage.save_local_manifest(&manifest)?;
 
-            // Remove the repo-keyed prompt and legacy fs prompt.
-            let rt = self.runtime.read().await.clone();
             if let Some(id) = existing_id
-                && let Err(e) = rt.storage().delete_agent(&id)
+                && let Err(e) = storage.delete_agent(&id)
             {
                 tracing::warn!("failed to delete agent prompt for {id}: {e}");
             }
-            let legacy = self
-                .config_dir
-                .join(wcore::paths::AGENTS_DIR)
-                .join(format!("{name}.md"));
-            if legacy.exists() {
-                let _ = std::fs::remove_file(&legacy);
-            }
 
-            // Targeted in-memory removal — keeps ephemeral agents and
-            // in-flight conversations alive, unlike a full reload().
             rt.remove_agent(&name);
             rt.hook.unregister_scope(&name);
         }
@@ -1289,8 +1266,9 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
     /// Look up the stable `AgentId` already recorded for `name` in the
     /// local manifest, if any. Used by update/delete to preserve
     /// identity across edits.
-    fn existing_agent_id(&self, name: &str) -> Result<Option<wcore::AgentId>> {
-        let (manifest, _) = self.resolve_manifests()?;
+    async fn existing_agent_id(&self, name: &str) -> Result<Option<wcore::AgentId>> {
+        let rt = self.runtime.read().await.clone();
+        let manifest = rt.storage().load_local_manifest()?;
         Ok(manifest
             .agents
             .get(name)
@@ -1315,56 +1293,25 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
     ///
     /// If `expect_new` is true, fails when the agent already exists in the
     /// manifest. If false, upserts (creates or overwrites).
-    fn write_agent_to_manifest(
+    async fn write_agent_to_manifest(
         &self,
         name: &str,
         config_json: &str,
         expect_new: bool,
     ) -> Result<()> {
-        use toml_edit::DocumentMut;
-
-        // Parse incoming JSON to validate it and convert to TOML value.
         let config: wcore::AgentConfig =
             serde_json::from_str(config_json).context("invalid AgentConfig JSON")?;
-        let toml_value = toml::to_string(&config).context("failed to serialize agent to TOML")?;
-        let agent_doc: DocumentMut = toml_value.parse().context("failed to parse agent TOML")?;
 
-        let manifest_path = self
-            .config_dir
-            .join(wcore::paths::LOCAL_DIR)
-            .join("CrabTalk.toml");
-        let mut doc: DocumentMut = if manifest_path.exists() {
-            std::fs::read_to_string(&manifest_path)
-                .context("failed to read local manifest")?
-                .parse()
-                .context("failed to parse local manifest")?
-        } else {
-            DocumentMut::default()
-        };
+        let rt = self.runtime.read().await.clone();
+        let storage = rt.storage();
+        let mut manifest = storage.load_local_manifest()?;
 
-        // Ensure [agents] table exists.
-        if doc.get("agents").is_none() {
-            doc.insert("agents", toml_edit::Item::Table(toml_edit::Table::new()));
-        }
-        let agents = doc["agents"]
-            .as_table_mut()
-            .context("[agents] is not a table")?;
-
-        if expect_new && agents.contains_key(name) {
+        if expect_new && manifest.agents.contains_key(name) {
             anyhow::bail!("agent '{name}' already exists in local manifest");
         }
 
-        // Insert the agent as a sub-table.
-        let mut agent_table = toml_edit::Table::new();
-        for (key, value) in agent_doc.as_table().iter() {
-            agent_table.insert(key, value.clone());
-        }
-        agents.insert(name, toml_edit::Item::Table(agent_table));
-
-        std::fs::create_dir_all(manifest_path.parent().context("no parent dir")?)
-            .context("failed to create local dir")?;
-        std::fs::write(&manifest_path, doc.to_string())
-            .context("failed to write local manifest")?;
+        manifest.agents.insert(name.to_owned(), config);
+        storage.save_local_manifest(&manifest)?;
         Ok(())
     }
 

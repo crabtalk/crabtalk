@@ -5,7 +5,7 @@
 //! implementation.
 
 use crate::{
-    AgentConfig, AgentId,
+    AgentConfig, AgentId, ManifestConfig,
     model::HistoryEntry,
     repos::{
         AgentRepo, MemoryEntry, MemoryRepo, Repos, SessionHandle, SessionRepo, SessionSnapshot,
@@ -397,6 +397,7 @@ pub struct InMemoryStorage {
     sessions: Mutex<HashMap<String, SessionState>>,
     next_session_seq: Mutex<u32>,
     agents: Mutex<HashMap<String, (AgentConfig, String)>>,
+    manifest: Mutex<ManifestConfig>,
 }
 
 impl Default for InMemoryStorage {
@@ -408,6 +409,7 @@ impl Default for InMemoryStorage {
             sessions: Mutex::new(HashMap::new()),
             next_session_seq: Mutex::new(0),
             agents: Mutex::new(HashMap::new()),
+            manifest: Mutex::new(ManifestConfig::default()),
         }
     }
 }
@@ -673,5 +675,18 @@ impl Storage for InMemoryStorage {
             return Ok(true);
         }
         Ok(false)
+    }
+
+    fn load_local_manifest(&self) -> Result<ManifestConfig> {
+        Ok(self.manifest.lock().unwrap().clone())
+    }
+
+    fn save_local_manifest(&self, manifest: &ManifestConfig) -> Result<()> {
+        *self.manifest.lock().unwrap() = manifest.clone();
+        Ok(())
+    }
+
+    fn scaffold(&self) -> Result<()> {
+        Ok(())
     }
 }
