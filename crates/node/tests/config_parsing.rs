@@ -1,6 +1,6 @@
 //! Tests for NodeConfig TOML parsing.
 
-use crabtalk_node::config::NodeConfig;
+use crabtalk_node::NodeConfig;
 
 #[test]
 fn empty_config() {
