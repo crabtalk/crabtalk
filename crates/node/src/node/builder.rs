@@ -3,9 +3,8 @@
 use crate::mcp::McpHandler;
 use crate::{
     Node, NodeConfig,
-    config::{ResolvedManifest, resolve_manifests},
     node::event::{NodeEvent, NodeEventSender},
-    repos::FsStorage,
+    storage::FsStorage,
 };
 use anyhow::Result;
 use crabllm_core::Provider;
@@ -18,6 +17,7 @@ use std::{
 };
 use tokio::sync::{Mutex, RwLock, broadcast};
 use wcore::{AgentConfig, Runtime, ToolRequest, model::Model, repos::Storage};
+use wcore::{ResolvedManifest, resolve_manifests};
 
 pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
 
@@ -59,7 +59,7 @@ pub(crate) fn build_single_agent_config(
         .get(name)
         .ok_or_else(|| anyhow::anyhow!("agent '{name}' not found in manifest"))?;
 
-    let prompts = crate::config::load_agents_dirs(&manifest.agent_dirs)?;
+    let prompts = wcore::load_agents_dirs(&manifest.agent_dirs)?;
     let prompt_map: BTreeMap<String, String> = prompts.into_iter().collect();
     let prompt = resolve_agent_prompt(storage, agent_config, name, &prompt_map)
         .ok_or_else(|| anyhow::anyhow!("agent '{name}' has no prompt"))?;
@@ -82,7 +82,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         host: H,
         build_provider: BuildProvider<P>,
     ) -> Result<Self> {
-        if let Err(e) = crate::config::backfill_local_agent_ids(config_dir) {
+        if let Err(e) = crate::storage::backfill_local_agent_ids(config_dir) {
             tracing::warn!("agent id backfill failed: {e}");
         }
 
@@ -257,13 +257,15 @@ fn load_agents<P: Provider + 'static, H: Host + 'static>(
     manifest: &ResolvedManifest,
 ) -> Result<()> {
     // One-shot migration: hoist legacy prompt files into ULID-keyed storage.
-    if let Err(e) =
-        crate::config::migrate_local_agent_prompts(config_dir, manifest, runtime.storage().as_ref())
-    {
+    if let Err(e) = crate::storage::migrate_local_agent_prompts(
+        config_dir,
+        manifest,
+        runtime.storage().as_ref(),
+    ) {
         tracing::warn!("local agent prompt migration failed: {e}");
     }
 
-    let prompts = crate::config::load_agents_dirs(&manifest.agent_dirs)?;
+    let prompts = wcore::load_agents_dirs(&manifest.agent_dirs)?;
     let prompt_map: BTreeMap<String, String> = prompts.into_iter().collect();
 
     let default_model = config

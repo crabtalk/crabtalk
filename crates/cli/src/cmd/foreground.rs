@@ -4,7 +4,7 @@ use anyhow::Result;
 use wcore::paths::{CONFIG_DIR, TCP_PORT_FILE};
 
 pub async fn start() -> Result<()> {
-    node::config::scaffold_config_dir(&CONFIG_DIR)?;
+    node::storage::scaffold_config_dir(&CONFIG_DIR)?;
 
     // Check if providers are configured; prompt if empty.
     let config_path = CONFIG_DIR.join(wcore::paths::CONFIG_FILE);

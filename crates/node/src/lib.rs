@@ -1,15 +1,14 @@
 //! Crabtalk node — runtime + transport + event loop.
 
-pub mod config;
 pub mod cron;
 pub mod event_bus;
 pub mod hook;
 pub mod mcp;
 pub mod node;
 pub mod provider;
-pub mod repos;
+#[cfg(feature = "fs")]
+pub mod storage;
 
-pub use config::NodeConfig;
 pub use hook::NodeEnv;
 #[cfg(unix)]
 pub use node::setup_socket;
@@ -19,3 +18,4 @@ pub use node::{
     event::{NodeEvent, NodeEventSender},
     setup_tcp,
 };
+pub use wcore::NodeConfig;

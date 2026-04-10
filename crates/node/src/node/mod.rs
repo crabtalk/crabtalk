@@ -9,7 +9,7 @@ use crate::{
         builder::{BuildProvider, DefaultProvider, build_default_provider},
         event::{NodeEvent, NodeEventSender},
     },
-    repos::FsStorage,
+    storage::FsStorage,
 };
 use anyhow::Result;
 use crabllm_core::Provider;

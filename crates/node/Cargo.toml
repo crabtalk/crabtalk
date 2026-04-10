@@ -32,10 +32,14 @@ reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-toml.workspace = true
-toml_edit.workspace = true
+toml = { workspace = true, optional = true }
+toml_edit = { workspace = true, optional = true }
 tracing.workspace = true
-ulid.workspace = true
+ulid = { workspace = true, optional = true }
+
+[features]
+default = ["fs"]
+fs = ["dep:toml", "dep:toml_edit", "dep:ulid"]
 
 [dev-dependencies]
 wcore = { workspace = true, features = ["test-utils"] }

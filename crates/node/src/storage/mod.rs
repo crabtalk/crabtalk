@@ -1,17 +1,21 @@
 //! Filesystem-backed persistence.
 //!
-//! [`FsStorage`] is the single filesystem backend implementing
-//! [`Storage`](wcore::repos::Storage).
+//! [`FsStorage`] implements [`Storage`](wcore::repos::Storage)
+//! with TOML configs, markdown prompts, and JSON session files.
 
+mod backfill;
 mod fs;
+mod loader;
+
+pub use self::fs::FsStorage;
+pub use backfill::{backfill_local_agent_ids, migrate_local_agent_prompts};
+pub use loader::{DEFAULT_CONFIG, scaffold_config_dir};
 
 use std::{
     fs as stdfs,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
-
-pub use self::fs::FsStorage;
 
 /// Atomic write: same-directory tmp file + rename.
 pub fn atomic_write(path: &Path, data: &[u8]) -> anyhow::Result<()> {

@@ -17,7 +17,7 @@ const LABEL: &str = "ai.crabtalk.crabtalk";
 fn ensure_providers() -> Result<()> {
     let config_path = CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
     if !config_path.exists() {
-        ::node::config::scaffold_config_dir(&CONFIG_DIR)?;
+        ::node::storage::scaffold_config_dir(&CONFIG_DIR)?;
     }
 
     let config = ::node::NodeConfig::load(&config_path)?;
