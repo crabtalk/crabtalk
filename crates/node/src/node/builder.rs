@@ -9,14 +9,14 @@ use crate::{
 use anyhow::Result;
 use crabllm_core::Provider;
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
-use runtime::{Env, host::Host, memory::Memory};
+use runtime::{Env, Runtime, host::Host, memory::Memory};
 use std::{
     collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
     sync::Arc,
 };
 use tokio::sync::{Mutex, RwLock, broadcast};
-use wcore::{AgentConfig, Runtime, ToolRequest, model::Model, repos::Storage};
+use wcore::{AgentConfig, ToolRequest, model::Model, repos::Storage};
 use wcore::{ResolvedManifest, resolve_manifests};
 
 pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
@@ -154,7 +154,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         event_tx: &NodeEventSender,
         mut host: H,
         build_provider: &BuildProvider<P>,
-    ) -> Result<Runtime<P, Env<H, FsStorage>>> {
+    ) -> Result<Runtime<crate::node::NodeCfg<P, H>>> {
         let (mut manifest, _warnings) = resolve_manifests(config_dir);
         manifest.disabled = config.disabled.clone();
         wcore::filter_disabled_external(&mut manifest.skill_dirs, &manifest.disabled.external);
@@ -165,9 +165,9 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::load(&servers).await);
         host.set_mcp(mcp_handler);
 
-        let hook = build_env(config, config_dir, &manifest, host)?;
+        let (hook, storage) = build_env(config, config_dir, &manifest, host)?;
         let tool_tx = build_tool_sender(event_tx);
-        let mut runtime = Runtime::new(model, hook, Some(tool_tx)).await;
+        let mut runtime = Runtime::new(model, hook, storage, Some(tool_tx)).await;
         load_agents(&mut runtime, config_dir, config, &manifest)?;
         Ok(runtime)
     }
@@ -213,7 +213,7 @@ fn build_env<H: Host>(
     config_dir: &Path,
     manifest: &ResolvedManifest,
     host: H,
-) -> Result<Env<H, FsStorage>> {
+) -> Result<(Env<H, FsStorage>, Arc<FsStorage>)> {
     let skill_roots: Vec<PathBuf> = manifest
         .skill_dirs
         .iter()
@@ -234,7 +234,7 @@ fn build_env<H: Host>(
 
     let memory = Some(Memory::open(config.system.memory.clone(), storage.clone()));
     let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
-    Ok(Env::new(storage, cwd, memory, host))
+    Ok((Env::new(storage.clone(), cwd, memory, host), storage))
 }
 
 fn build_tool_sender(event_tx: &NodeEventSender) -> wcore::ToolSender {
@@ -251,7 +251,7 @@ fn build_tool_sender(event_tx: &NodeEventSender) -> wcore::ToolSender {
 }
 
 fn load_agents<P: Provider + 'static, H: Host + 'static>(
-    runtime: &mut Runtime<P, Env<H, FsStorage>>,
+    runtime: &mut Runtime<crate::node::NodeCfg<P, H>>,
     config_dir: &Path,
     config: &NodeConfig,
     manifest: &ResolvedManifest,

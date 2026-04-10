@@ -272,12 +272,6 @@ impl<H: Host, S: Storage> Env<H, S> {
 }
 
 impl<H: Host + 'static, S: Storage> Hook for Env<H, S> {
-    type Storage = S;
-
-    fn storage(&self) -> &Arc<S> {
-        &self.storage
-    }
-
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
         config.system_prompt.push_str(&os::environment_block());
 

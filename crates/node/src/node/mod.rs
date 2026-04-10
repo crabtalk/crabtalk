@@ -13,22 +13,37 @@ use crate::{
 };
 use anyhow::Result;
 use crabllm_core::Provider;
-use runtime::{Env, host::Host};
+use runtime::{Env, Runtime, host::Host};
 use std::{
+    marker::PhantomData,
     path::{Path, PathBuf},
     sync::Arc,
 };
 use tokio::sync::{Mutex, RwLock, broadcast, mpsc, oneshot};
-use wcore::{Runtime, model::Model};
+use wcore::model::Model;
 
 pub(crate) mod builder;
 pub mod event;
 mod protocol;
 
+/// Config binding for a node: ties Provider + Host to FsStorage + Env.
+pub struct NodeCfg<P: Provider + 'static = DefaultProvider, B: Host + 'static = NodeHost> {
+    _marker: PhantomData<(P, B)>,
+}
+
+impl<P: Provider + 'static, B: Host + 'static> wcore::Config for NodeCfg<P, B> {
+    type Storage = FsStorage;
+    type Provider = P;
+    type Hook = Env<B, FsStorage>;
+}
+
+/// Shared runtime handle — `Arc<RwLock<Arc<...>>>` so reload can swap
+/// the inner `Arc` without disrupting in-flight requests.
+pub type SharedRuntime<P, B> = Arc<RwLock<Arc<Runtime<NodeCfg<P, B>>>>>;
+
 /// Shared daemon state.
 pub struct Node<P: Provider + 'static = DefaultProvider, B: Host + 'static = NodeHost> {
-    #[allow(clippy::type_complexity)]
-    pub runtime: Arc<RwLock<Arc<Runtime<P, Env<B, FsStorage>>>>>,
+    pub runtime: SharedRuntime<P, B>,
     pub(crate) config_dir: PathBuf,
     pub(crate) event_tx: NodeEventSender,
     pub(crate) started_at: std::time::Instant,

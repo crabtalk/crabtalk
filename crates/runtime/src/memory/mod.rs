@@ -4,19 +4,23 @@
 //! BM25 recall scoring) and the MEMORY.md index. Storage owns the
 //! physical layout; Memory owns search and prompt generation.
 
-use crate::config::MemoryConfig;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
 use wcore::{
+    MemoryConfig,
     model::{HistoryEntry, Role},
     repos::{MemoryEntry, Storage},
 };
 
 pub mod bm25;
-pub mod entry;
 pub mod tool;
+
+/// Re-exports from wcore for external consumers.
+pub mod entry {
+    pub use wcore::repos::{MemoryEntry, slugify};
+}
 
 const MEMORY_PROMPT: &str = include_str!("../../prompts/memory.md");
 

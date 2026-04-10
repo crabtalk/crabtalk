@@ -7,7 +7,6 @@
 //! - [`ToolRegistry`]: Schema-only tool store. No handlers or closures.
 //! - [`ToolSender`] / [`ToolRequest`]: Agent-side tool dispatch primitives.
 //! - [`Hook`]: Lifecycle backend for agent building, events, and tool registration.
-//! - [`Runtime`]: Agent registry, conversation store, and hook orchestration.
 //! - [`model`]: Unified LLM interface types and traits.
 //! - Agent event types: [`AgentEvent`], [`AgentStep`], [`AgentResponse`], [`AgentStopReason`].
 
@@ -25,7 +24,7 @@ pub use config::{
 #[cfg(feature = "test-utils")]
 pub use runtime::hook::TestHook;
 pub use runtime::{
-    Conversation, Runtime,
+    Config, Conversation,
     conversation::{ArchiveSegment, ConversationMeta, EventLine, sender_slug},
     hook::Hook,
 };

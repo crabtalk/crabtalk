@@ -690,8 +690,12 @@ name = "crabtalk-runtime"
 version = "0.0.20"
 dependencies = [
  "anyhow",
+ "async-stream",
  "chrono",
+ "crabllm-core",
  "crabtalk-core",
+ "futures-core",
+ "futures-util",
  "reqwest 0.13.2",
  "schemars 1.2.1",
  "serde",

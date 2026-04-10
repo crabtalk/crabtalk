@@ -1,23 +1,33 @@
 //! Tests for Runtime — agent registry, conversation management, and execution.
 //!
-//! Uses [`TestHook`] (InMemoryStorage-backed) and [`TestProvider`]. Every
-//! test gets its own in-memory storage via `TestHook::new()` — no
-//! shared global state, no filesystem I/O, no node.
+//! Uses [`TestHook`] and [`TestProvider`] with InMemoryStorage. Every
+//! test gets its own in-memory storage — no shared global state, no
+//! filesystem I/O, no node.
 
-use crabtalk_core::{
-    AgentConfig, AgentEvent, AgentStopReason, Runtime, TestHook,
+use crabtalk_runtime::Runtime;
+use futures_util::StreamExt;
+use std::sync::Arc;
+use wcore::{
+    AgentConfig, AgentEvent, AgentStopReason, Config, TestHook,
     model::{
         Model,
         test_provider::{TestProvider, text_chunks},
     },
+    repos::mem::InMemoryStorage,
 };
-use futures_util::StreamExt;
 
-/// Build a `Runtime` from a `TestProvider`, wrapping the provider in `Model<P>`.
-fn runtime(
-    provider: TestProvider,
-) -> impl std::future::Future<Output = Runtime<TestProvider, TestHook>> {
-    Runtime::new(Model::new(provider), TestHook::new(), None)
+struct TestCfg;
+
+impl Config for TestCfg {
+    type Storage = InMemoryStorage;
+    type Provider = TestProvider;
+    type Hook = TestHook;
+}
+
+/// Build a `Runtime` from a `TestProvider`.
+fn runtime(provider: TestProvider) -> impl std::future::Future<Output = Runtime<TestCfg>> {
+    let storage = Arc::new(InMemoryStorage::new());
+    Runtime::new(Model::new(provider), TestHook::default(), storage, None)
 }
 
 // --- Agent registry ---
@@ -70,9 +80,9 @@ async fn remove_agent_returns_true_when_present() {
 #[tokio::test]
 async fn register_and_unregister_tool() {
     let mut runtime = runtime(TestProvider::with_chunks(vec![])).await;
-    let tool = crabtalk_core::model::Tool {
-        kind: crabtalk_core::model::ToolType::Function,
-        function: crabtalk_core::model::FunctionDef {
+    let tool = wcore::model::Tool {
+        kind: wcore::model::ToolType::Function,
+        function: wcore::model::FunctionDef {
             name: "bash".into(),
             description: Some("run commands".into()),
             parameters: None,
