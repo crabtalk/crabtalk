@@ -39,9 +39,10 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {
             .await?;
         if let Some(ref cwd) = cwd {
             rt.hook
-                .host
-                .set_conversation_cwd(conversation_id, cwd.clone())
-                .await;
+                .conversation_cwds
+                .lock()
+                .await
+                .insert(conversation_id, cwd.clone());
         }
         let tool_choice = req
             .tool_choice
@@ -77,7 +78,7 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
             let conversation_id = rt.get_or_create_conversation(&agent, created_by.as_str()).await?;
             if let Some(ref cwd) = cwd {
-                rt.hook.host.set_conversation_cwd(conversation_id, cwd.clone()).await;
+                rt.hook.conversation_cwds.lock().await.insert(conversation_id, cwd.clone());
             }
 
             let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
@@ -228,7 +229,11 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {
         let Some(conversation_id) = rt.find_conversation_id(&agent, &sender).await else {
             return Ok(false);
         };
-        rt.hook.host.clear_conversation_state(conversation_id).await;
+        rt.hook
+            .conversation_cwds
+            .lock()
+            .await
+            .remove(&conversation_id);
         Ok(rt.close_conversation(conversation_id).await)
     }
 

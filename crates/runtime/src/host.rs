@@ -1,22 +1,17 @@
 //! Host — trait for server-specific capabilities.
 //!
 //! The runtime crate defines this trait. The daemon implements it to provide
-//! per-conversation CWD resolution, event broadcasting, MCP bridge, and
-//! layered instruction discovery. Embedded users get [`NoHost`] with
-//! no-op defaults.
+//! event broadcasting, MCP bridge management, and layered instruction
+//! discovery. Embedded users get [`NoHost`] with no-op defaults.
+//!
+//! Tool dispatch and session state (CWD overrides, pending asks) are NOT
+//! part of this trait — they use shared state captured by handler factories.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Trait for server-specific capabilities that the runtime cannot
-/// provide locally. Tool dispatch is NOT part of this trait — tools
-/// register handlers directly via [`Env::register_handler`](crate::Env::register_handler).
+/// provide locally.
 pub trait Host: Send + Sync + Clone {
-    /// Resolve the working directory for a conversation.
-    /// Returns `None` to fall back to the runtime's base cwd.
-    fn conversation_cwd(&self, _conversation_id: u64) -> Option<PathBuf> {
-        None
-    }
-
     /// Called when an agent event occurs. The daemon uses this to broadcast
     /// protobuf events to console subscribers. Default: no-op.
     fn on_agent_event(&self, _agent: &str, _conversation_id: u64, _event: &wcore::AgentEvent) {}
@@ -29,23 +24,6 @@ pub trait Host: Send + Sync + Clone {
         _content: String,
     ) -> impl std::future::Future<Output = anyhow::Result<bool>> + Send {
         async { Ok(false) }
-    }
-
-    /// Set the working directory override for a conversation.
-    fn set_conversation_cwd(
-        &self,
-        _conversation: u64,
-        _cwd: PathBuf,
-    ) -> impl std::future::Future<Output = ()> + Send {
-        async {}
-    }
-
-    /// Clear all per-conversation state (pending asks, CWD overrides).
-    fn clear_conversation_state(
-        &self,
-        _conversation: u64,
-    ) -> impl std::future::Future<Output = ()> + Send {
-        async {}
     }
 
     /// Subscribe to agent events. Returns `None` if event broadcasting
@@ -61,10 +39,6 @@ pub trait Host: Send + Sync + Clone {
     /// turn, so hosts can surface per-project or per-workspace
     /// guidance to the agent without the runtime itself walking the
     /// filesystem.
-    ///
-    /// Default: `None`. The daemon walks `cwd` upward and merges with
-    /// a global file under `~/.crabtalk/`; embedded users who want the
-    /// same behaviour override this.
     fn discover_instructions(&self, _cwd: &Path) -> Option<String> {
         None
     }

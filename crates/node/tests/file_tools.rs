@@ -1,9 +1,13 @@
 //! Tests for read, edit, and bash tool handlers.
 
 use crabtalk_node::tools::os;
-use runtime::host::NoHost;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tokio::sync::Mutex;
 use wcore::ToolDispatch;
+
+fn no_cwds() -> runtime::ConversationCwds {
+    Arc::new(Mutex::new(HashMap::new()))
+}
 
 fn dispatch(args: &str) -> ToolDispatch {
     ToolDispatch {
@@ -22,7 +26,7 @@ async fn read_basic() {
     let file = dir.path().join("hello.txt");
     std::fs::write(&file, "line one\nline two\nline three\n").unwrap();
 
-    let (_schema, handler) = os::read(dir.path().to_path_buf(), NoHost);
+    let (_schema, handler) = os::read(dir.path().to_path_buf(), no_cwds());
     let args = format!(r#"{{"path":"{}"}}"#, file.display());
     let result = handler(dispatch(&args)).await.unwrap();
 
@@ -39,7 +43,7 @@ async fn read_offset_limit() {
     let content: String = (1..=100).map(|i| format!("line {i}\n")).collect();
     std::fs::write(&file, &content).unwrap();
 
-    let (_schema, handler) = os::read(dir.path().to_path_buf(), NoHost);
+    let (_schema, handler) = os::read(dir.path().to_path_buf(), no_cwds());
     let args = format!(r#"{{"path":"{}","offset":10,"limit":5}}"#, file.display());
     let result = handler(dispatch(&args)).await.unwrap();
 
@@ -52,7 +56,7 @@ async fn read_offset_limit() {
 
 #[tokio::test]
 async fn read_missing() {
-    let (_schema, handler) = os::read(PathBuf::from("/tmp"), NoHost);
+    let (_schema, handler) = os::read(PathBuf::from("/tmp"), no_cwds());
     let args = r#"{"path":"/nonexistent/file.txt"}"#;
     let err = handler(dispatch(args)).await.unwrap_err();
     assert!(err.contains("error reading"));
@@ -64,7 +68,7 @@ async fn read_offset_past_end() {
     let file = dir.path().join("short.txt");
     std::fs::write(&file, "one\ntwo\n").unwrap();
 
-    let (_schema, handler) = os::read(dir.path().to_path_buf(), NoHost);
+    let (_schema, handler) = os::read(dir.path().to_path_buf(), no_cwds());
     let args = format!(r#"{{"path":"{}","offset":999}}"#, file.display());
     let result = handler(dispatch(&args)).await.unwrap();
     assert!(result.contains("past end of file"));
@@ -75,7 +79,7 @@ async fn read_relative_path() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("rel.txt"), "content\n").unwrap();
 
-    let (_schema, handler) = os::read(dir.path().to_path_buf(), NoHost);
+    let (_schema, handler) = os::read(dir.path().to_path_buf(), no_cwds());
     let result = handler(dispatch(r#"{"path":"rel.txt"}"#)).await.unwrap();
     assert!(result.contains("1\tcontent"));
 }
@@ -87,7 +91,7 @@ async fn read_large_file_rejected() {
     let f = std::fs::File::create(&file).unwrap();
     f.set_len(51 * 1024 * 1024).unwrap();
 
-    let (_schema, handler) = os::read(dir.path().to_path_buf(), NoHost);
+    let (_schema, handler) = os::read(dir.path().to_path_buf(), no_cwds());
     let args = format!(r#"{{"path":"{}"}}"#, file.display());
     let err = handler(dispatch(&args)).await.unwrap_err();
     assert!(err.contains("file is too large"));
@@ -101,7 +105,7 @@ async fn edit_basic() {
     let file = dir.path().join("edit.txt");
     std::fs::write(&file, "hello world\n").unwrap();
 
-    let (_schema, handler) = os::edit(dir.path().to_path_buf(), NoHost);
+    let (_schema, handler) = os::edit(dir.path().to_path_buf(), no_cwds());
     let args = format!(
         r#"{{"path":"{}","old_string":"hello","new_string":"goodbye"}}"#,
         file.display()
@@ -117,7 +121,7 @@ async fn edit_not_found() {
     let file = dir.path().join("edit.txt");
     std::fs::write(&file, "hello world\n").unwrap();
 
-    let (_schema, handler) = os::edit(dir.path().to_path_buf(), NoHost);
+    let (_schema, handler) = os::edit(dir.path().to_path_buf(), no_cwds());
     let args = format!(
         r#"{{"path":"{}","old_string":"missing","new_string":"x"}}"#,
         file.display()
@@ -132,7 +136,7 @@ async fn edit_not_unique() {
     let file = dir.path().join("dup.txt");
     std::fs::write(&file, "aaa bbb aaa\n").unwrap();
 
-    let (_schema, handler) = os::edit(dir.path().to_path_buf(), NoHost);
+    let (_schema, handler) = os::edit(dir.path().to_path_buf(), no_cwds());
     let args = format!(
         r#"{{"path":"{}","old_string":"aaa","new_string":"ccc"}}"#,
         file.display()
@@ -148,7 +152,7 @@ async fn edit_identical_strings() {
     let file = dir.path().join("same.txt");
     std::fs::write(&file, "hello\n").unwrap();
 
-    let (_schema, handler) = os::edit(dir.path().to_path_buf(), NoHost);
+    let (_schema, handler) = os::edit(dir.path().to_path_buf(), no_cwds());
     let args = format!(
         r#"{{"path":"{}","old_string":"hello","new_string":"hello"}}"#,
         file.display()
@@ -163,7 +167,7 @@ async fn edit_empty_old_string() {
     let file = dir.path().join("empty.txt");
     std::fs::write(&file, "hello\n").unwrap();
 
-    let (_schema, handler) = os::edit(dir.path().to_path_buf(), NoHost);
+    let (_schema, handler) = os::edit(dir.path().to_path_buf(), no_cwds());
     let args = format!(
         r#"{{"path":"{}","old_string":"","new_string":"x"}}"#,
         file.display()
@@ -174,7 +178,7 @@ async fn edit_empty_old_string() {
 
 #[tokio::test]
 async fn edit_missing_file() {
-    let (_schema, handler) = os::edit(PathBuf::from("/tmp"), NoHost);
+    let (_schema, handler) = os::edit(PathBuf::from("/tmp"), no_cwds());
     let args = r#"{"path":"/nonexistent/file.txt","old_string":"a","new_string":"b"}"#;
     let err = handler(dispatch(args)).await.unwrap_err();
     assert!(err.contains("error reading"));
@@ -184,7 +188,7 @@ async fn edit_missing_file() {
 
 #[tokio::test]
 async fn bash_rejected_for_gateway_sender() {
-    let (_schema, handler) = os::bash(PathBuf::from("/tmp"), NoHost);
+    let (_schema, handler) = os::bash(PathBuf::from("/tmp"), no_cwds());
     let call = ToolDispatch {
         args: r#"{"command":"echo hi"}"#.to_owned(),
         agent: "agent".into(),
@@ -201,7 +205,7 @@ async fn read_allowed_for_gateway_sender() {
     let file = dir.path().join("gateway.txt");
     std::fs::write(&file, "test content\n").unwrap();
 
-    let (_schema, handler) = os::read(dir.path().to_path_buf(), NoHost);
+    let (_schema, handler) = os::read(dir.path().to_path_buf(), no_cwds());
     let call = ToolDispatch {
         args: format!(r#"{{"path":"{}"}}"#, file.display()),
         agent: "agent".into(),

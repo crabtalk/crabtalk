@@ -258,12 +258,16 @@ fn build_env<H: Host + 'static>(
     let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
     let scopes = Arc::new(std::sync::RwLock::new(BTreeMap::new()));
 
+    let conversation_cwds: runtime::ConversationCwds =
+        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+
     let mut env = Env::new(
         storage.clone(),
         cwd.clone(),
         Some(memory.clone()),
         host.clone(),
         scopes.clone(),
+        conversation_cwds.clone(),
     );
 
     // Register tool handlers.
@@ -281,17 +285,17 @@ fn build_env<H: Host + 'static>(
     register(
         &mut tools,
         &mut env,
-        crate::tools::os::bash(cwd.clone(), host.clone()),
+        crate::tools::os::bash(cwd.clone(), conversation_cwds.clone()),
     );
     register(
         &mut tools,
         &mut env,
-        crate::tools::os::read(cwd.clone(), host.clone()),
+        crate::tools::os::read(cwd.clone(), conversation_cwds.clone()),
     );
     register(
         &mut tools,
         &mut env,
-        crate::tools::os::edit(cwd, host.clone()),
+        crate::tools::os::edit(cwd, conversation_cwds),
     );
 
     for entry in crate::tools::memory::handlers(memory) {

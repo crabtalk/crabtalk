@@ -12,7 +12,8 @@ fn test_hook() -> Env<NoHost, InMemoryStorage> {
     let storage = Arc::new(InMemoryStorage::new());
     let cwd = PathBuf::from("/test");
     let scopes = Arc::new(RwLock::new(BTreeMap::new()));
-    let mut env = Env::new(storage, cwd, None, NoHost, scopes);
+    let conversation_cwds = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+    let mut env = Env::new(storage, cwd, None, NoHost, scopes, conversation_cwds);
     // Register a mock tool for testing.
     let mock: ToolHandler =
         Arc::new(|_call: ToolDispatch| Box::pin(async { Ok("mock ok".to_owned()) }));

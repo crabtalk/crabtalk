@@ -1,6 +1,6 @@
 //! OS tool handler factories — bash, read, edit.
 
-use runtime::host::Host;
+use runtime::ConversationCwds;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::{collections::BTreeMap, fmt::Write, path::PathBuf, sync::Arc};
@@ -64,11 +64,11 @@ impl ToolDescription for Edit {
 
 // ── Handlers ─────────────────────────────────────────────────────
 
-pub fn bash<H: Host + 'static>(cwd: PathBuf, host: H) -> (Tool, ToolHandler) {
+pub fn bash(cwd: PathBuf, cwds: ConversationCwds) -> (Tool, ToolHandler) {
     (
         Bash::as_tool(),
         Arc::new(move |call: ToolDispatch| {
-            let host = host.clone();
+            let cwds = cwds.clone();
             let cwd = cwd.clone();
             Box::pin(async move {
                 if call.sender.contains(':') {
@@ -76,9 +76,11 @@ pub fn bash<H: Host + 'static>(cwd: PathBuf, host: H) -> (Tool, ToolHandler) {
                 }
                 let input: Bash = serde_json::from_str(&call.args)
                     .map_err(|e| format!("invalid arguments: {e}"))?;
-                let conversation_cwd = call
-                    .conversation_id
-                    .and_then(|id| host.conversation_cwd(id));
+                let conversation_cwd = if let Some(id) = call.conversation_id {
+                    cwds.lock().await.get(&id).cloned()
+                } else {
+                    None
+                };
                 let effective_cwd = conversation_cwd.as_deref().unwrap_or(&cwd);
 
                 let mut cmd = tokio::process::Command::new("bash");
@@ -132,18 +134,20 @@ pub fn bash<H: Host + 'static>(cwd: PathBuf, host: H) -> (Tool, ToolHandler) {
     )
 }
 
-pub fn read<H: Host + 'static>(cwd: PathBuf, host: H) -> (Tool, ToolHandler) {
+pub fn read(cwd: PathBuf, cwds: ConversationCwds) -> (Tool, ToolHandler) {
     (
         Read::as_tool(),
         Arc::new(move |call: ToolDispatch| {
-            let host = host.clone();
+            let cwds = cwds.clone();
             let cwd = cwd.clone();
             Box::pin(async move {
                 let input: Read = serde_json::from_str(&call.args)
                     .map_err(|e| format!("invalid arguments: {e}"))?;
-                let conversation_cwd = call
-                    .conversation_id
-                    .and_then(|id| host.conversation_cwd(id));
+                let conversation_cwd = if let Some(id) = call.conversation_id {
+                    cwds.lock().await.get(&id).cloned()
+                } else {
+                    None
+                };
                 let effective_cwd = conversation_cwd.as_deref().unwrap_or(&cwd);
 
                 let path = if std::path::Path::new(&input.path).is_absolute() {
@@ -202,11 +206,11 @@ pub fn read<H: Host + 'static>(cwd: PathBuf, host: H) -> (Tool, ToolHandler) {
     )
 }
 
-pub fn edit<H: Host + 'static>(cwd: PathBuf, host: H) -> (Tool, ToolHandler) {
+pub fn edit(cwd: PathBuf, cwds: ConversationCwds) -> (Tool, ToolHandler) {
     (
         Edit::as_tool(),
         Arc::new(move |call: ToolDispatch| {
-            let host = host.clone();
+            let cwds = cwds.clone();
             let cwd = cwd.clone();
             Box::pin(async move {
                 let input: Edit = serde_json::from_str(&call.args)
@@ -219,9 +223,11 @@ pub fn edit<H: Host + 'static>(cwd: PathBuf, host: H) -> (Tool, ToolHandler) {
                     return Err("old_string and new_string are identical".to_owned());
                 }
 
-                let conversation_cwd = call
-                    .conversation_id
-                    .and_then(|id| host.conversation_cwd(id));
+                let conversation_cwd = if let Some(id) = call.conversation_id {
+                    cwds.lock().await.get(&id).cloned()
+                } else {
+                    None
+                };
                 let effective_cwd = conversation_cwd.as_deref().unwrap_or(&cwd);
 
                 let path = if std::path::Path::new(&input.path).is_absolute() {

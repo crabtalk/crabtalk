@@ -23,16 +23,15 @@ use wcore::{
 /// content to render meaningful previews.
 const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
 
-/// Server-specific host for the daemon. Owns event channels, session state,
-/// and the MCP bridge (subprocess/HTTP connections to MCP tool servers).
+/// Server-specific host for the daemon. Owns event channels and the MCP
+/// bridge. Session state (CWD overrides, pending asks) is shared via Arc
+/// with tool handlers and the Env, not owned exclusively by the host.
 #[derive(Clone)]
 pub struct NodeHost {
     /// Event channel for task delegation.
     pub(crate) event_tx: NodeEventSender,
     /// Pending `ask_user` oneshots, keyed by conversation_id.
     pub(crate) pending_asks: Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>,
-    /// Per-conversation working directory overrides.
-    pub(crate) conversation_cwds: Arc<Mutex<HashMap<u64, PathBuf>>>,
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
     /// MCP bridge — connects to MCP tool servers. Daemon-owned because
@@ -41,13 +40,6 @@ pub struct NodeHost {
 }
 
 impl Host for NodeHost {
-    fn conversation_cwd(&self, conversation_id: u64) -> Option<PathBuf> {
-        self.conversation_cwds
-            .try_lock()
-            .ok()
-            .and_then(|m| m.get(&conversation_id).cloned())
-    }
-
     fn on_agent_event(&self, agent: &str, conversation_id: u64, event: &AgentEvent) {
         /// Kind-specific payload built per match arm. `kind` is required —
         /// no `Default` impl, so the compiler forces every arm to set it.
@@ -189,18 +181,6 @@ impl Host for NodeHost {
             return Ok(true);
         }
         Ok(false)
-    }
-
-    async fn set_conversation_cwd(&self, conversation: u64, cwd: std::path::PathBuf) {
-        self.conversation_cwds
-            .lock()
-            .await
-            .insert(conversation, cwd);
-    }
-
-    async fn clear_conversation_state(&self, conversation: u64) {
-        self.pending_asks.lock().await.remove(&conversation);
-        self.conversation_cwds.lock().await.remove(&conversation);
     }
 
     fn subscribe_events(&self) -> Option<broadcast::Receiver<AgentEventMsg>> {

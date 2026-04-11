@@ -81,7 +81,6 @@ impl Node<DefaultProvider, NodeHost> {
                 NodeHost {
                     event_tx,
                     pending_asks: pa,
-                    conversation_cwds: Arc::new(Mutex::new(std::collections::HashMap::new())),
                     events_tx,
                     mcp: Arc::new(crate::mcp::McpHandler::empty()),
                 }

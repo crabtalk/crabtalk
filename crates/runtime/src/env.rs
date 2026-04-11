@@ -38,12 +38,17 @@ const MEMORY_TOOLS: &[&str] = &["recall", "remember", "memory", "forget"];
 /// Task delegation tools.
 const TASK_TOOLS: &[&str] = &["delegate"];
 
+/// Per-conversation working directory overrides (shared with OS tool handlers).
+pub type ConversationCwds = Arc<tokio::sync::Mutex<std::collections::HashMap<u64, PathBuf>>>;
+
 pub struct Env<H: Host, S: Storage> {
     pub(crate) storage: Arc<S>,
     pub(crate) memory: Option<Arc<Memory<S>>>,
     pub(crate) cwd: PathBuf,
     pub scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
     pub(crate) agent_descriptions: RwLock<BTreeMap<String, String>>,
+    /// Per-conversation CWD overrides.
+    pub conversation_cwds: ConversationCwds,
     /// Host providing server-specific functionality.
     pub host: H,
     /// Dynamically registered tool handlers.
@@ -58,6 +63,7 @@ impl<H: Host, S: Storage> Env<H, S> {
         memory: Option<Arc<Memory<S>>>,
         host: H,
         scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
+        conversation_cwds: ConversationCwds,
     ) -> Self {
         Self {
             storage,
@@ -65,6 +71,7 @@ impl<H: Host, S: Storage> Env<H, S> {
             cwd,
             scopes,
             agent_descriptions: RwLock::new(BTreeMap::new()),
+            conversation_cwds,
             host,
             handlers: BTreeMap::new(),
         }
@@ -337,8 +344,10 @@ impl<H: Host + 'static, S: Storage> Hook for Env<H, S> {
             entries.extend(mem.before_run(history));
         }
         let cwd = self
-            .host
-            .conversation_cwd(conversation_id)
+            .conversation_cwds
+            .try_lock()
+            .ok()
+            .and_then(|m| m.get(&conversation_id).cloned())
             .unwrap_or_else(|| self.cwd.clone());
         entries.push(
             HistoryEntry::user(format!(
