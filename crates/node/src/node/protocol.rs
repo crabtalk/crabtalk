@@ -124,7 +124,7 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {
                             .iter()
                             .filter(|c| c.function.name == "ask_user")
                             .filter_map(|c| {
-                                serde_json::from_str::<crate::tools::ask_user::AskUser>(&c.function.arguments)
+                                serde_json::from_str::<tools::ask_user::AskUser>(&c.function.arguments)
                                     .ok()
                             })
                             .flat_map(|a| a.questions)

@@ -1,7 +1,6 @@
 //! Node construction and lifecycle methods.
 
 use crate::mcp::McpHandler;
-use crate::memory::Memory;
 use crate::{
     Node, NodeConfig,
     node::event::{NodeEvent, NodeEventSender},
@@ -17,6 +16,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::{Mutex, RwLock, broadcast};
+use tools::Memory;
 use wcore::{AgentConfig, ToolRequest, model::Model, repos::Storage};
 use wcore::{ResolvedManifest, resolve_manifests};
 
@@ -29,7 +29,7 @@ pub fn build_default_provider(config: &NodeConfig) -> Result<Model<DefaultProvid
     build_providers(config)
 }
 
-pub(crate) const SYSTEM_AGENT: &str = crate::memory::DEFAULT_SOUL;
+pub(crate) const SYSTEM_AGENT: &str = tools::memory::DEFAULT_SOUL;
 
 /// Build the `AgentConfig` for a single named agent.
 pub(crate) fn build_single_agent_config(
@@ -272,38 +272,34 @@ fn build_env<H: Host + 'static>(
     register(
         &mut tools,
         &mut env,
-        crate::tools::os::bash(cwd.clone(), conversation_cwds.clone()),
+        tools::os::bash(cwd.clone(), conversation_cwds.clone()),
     );
     register(
         &mut tools,
         &mut env,
-        crate::tools::os::read(cwd.clone(), conversation_cwds.clone()),
+        tools::os::read(cwd.clone(), conversation_cwds.clone()),
     );
     register(
         &mut tools,
         &mut env,
-        crate::tools::os::edit(cwd, conversation_cwds),
+        tools::os::edit(cwd, conversation_cwds),
     );
 
-    for entry in crate::tools::memory::handlers(memory) {
+    for entry in tools::memory::handlers::handlers(memory) {
         register(&mut tools, &mut env, entry);
     }
 
     register(
         &mut tools,
         &mut env,
-        crate::tools::skill::handler(storage.clone(), scopes.clone()),
+        tools::skill::handler::handler(storage.clone(), scopes.clone()),
     );
     register(
         &mut tools,
         &mut env,
-        crate::tools::delegate::handler(event_tx, scopes.clone()),
+        crate::node_tools::delegate::handler(event_tx, scopes.clone()),
     );
-    register(
-        &mut tools,
-        &mut env,
-        crate::tools::ask_user::handler(pending_asks),
-    );
+    register(&mut tools, &mut env, tools::ask_user::handler(pending_asks));
 
     // MCP — register only if servers are configured.
     if !mcp_handler.cached_list().is_empty() {
@@ -320,7 +316,7 @@ fn build_env<H: Host + 'static>(
             &mut env,
             wcore::ToolEntry {
                 schema: <crate::mcp::tool::Mcp as wcore::agent::AsTool>::as_tool(),
-                handler: crate::tools::mcp::handler(mcp_handler, scopes.clone()),
+                handler: crate::node_tools::mcp::handler(mcp_handler, scopes.clone()),
                 system_prompt: Some(mcp_prompt),
                 before_run: None,
             },

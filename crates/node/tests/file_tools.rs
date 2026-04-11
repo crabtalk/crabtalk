@@ -1,8 +1,8 @@
 //! Tests for read, edit, and bash tool handlers.
 
-use crabtalk_node::tools::os;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
+use tools::os;
 use wcore::ToolDispatch;
 
 fn no_cwds() -> runtime::ConversationCwds {

@@ -1,6 +1,6 @@
 //! Memory tool handler factories — recall, remember, forget, memory.
 
-use crate::memory::Memory;
+use super::Memory;
 use serde::Deserialize;
 use std::sync::Arc;
 use wcore::{

@@ -2,7 +2,7 @@
 
 use crabtalk_bench::generate_corpus;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use node::memory::bm25;
+use tools::memory::bm25;
 
 fn bench_bm25(c: &mut Criterion) {
     let mut group = c.benchmark_group("bm25_recall");

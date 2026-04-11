@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 wcore = { workspace = true, features = ["test-utils"] }
 runtime.workspace = true
-node.workspace = true
+tools.workspace = true
 crabllm-core.workspace = true
 criterion.workspace = true
 prost.workspace = true

@@ -1,7 +1,7 @@
 //! Integration tests for the memory system using InMemoryStorage (no disk I/O).
 
-use crabtalk_node::Memory;
 use std::sync::Arc;
+use tools::Memory;
 use wcore::MemoryConfig;
 use wcore::repos::mem::InMemoryStorage;
 
@@ -188,7 +188,7 @@ fn migration_converts_legacy_files() {
 
 #[test]
 fn slugify_examples() {
-    use crabtalk_node::memory::entry::slugify;
+    use tools::memory::entry::slugify;
 
     assert_eq!(slugify("Luna's Vet Appointment!"), "luna-s-vet-appointment");
     assert_eq!(slugify("hello world"), "hello-world");
@@ -200,7 +200,7 @@ fn slugify_examples() {
 
 #[test]
 fn entry_parse_roundtrip() {
-    use crabtalk_node::memory::entry::MemoryEntry;
+    use tools::memory::entry::MemoryEntry;
 
     let entry = MemoryEntry {
         name: "test-entry".to_owned(),
@@ -218,7 +218,7 @@ fn entry_parse_roundtrip() {
 
 #[test]
 fn bm25_tokenize() {
-    use crabtalk_node::memory::bm25::tokenize;
+    use tools::memory::bm25::tokenize;
 
     let tokens = tokenize("Hello, World! This is a test.");
     assert!(tokens.contains(&"hello".to_owned()));
@@ -231,7 +231,7 @@ fn bm25_tokenize() {
 
 #[test]
 fn bm25_score_ranks() {
-    use crabtalk_node::memory::bm25::score;
+    use tools::memory::bm25::score;
 
     let docs = vec![
         (0, "the weather is sunny today"),

@@ -18,6 +18,7 @@ gateway = { path = "crates/gateway", package = "crabtalk-gateway", version = "0.
 cli = { path = "crates/cli", package = "crabtalk", version = "0.0.20" }
 node = { path = "crates/node", package = "crabtalk-node", version = "0.0.20" }
 runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.0.20" }
+tools = { path = "crates/tools", package = "crabtalk-tools", version = "0.0.20" }
 transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.20" }
 wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.20" }
 crabtalk-command = { path = "crates/command", version = "0.0.20" }

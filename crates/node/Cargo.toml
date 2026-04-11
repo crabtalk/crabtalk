@@ -16,6 +16,7 @@ crabtalk-command.workspace = true
 crabllm-core.workspace = true
 crabllm-provider.workspace = true
 runtime.workspace = true
+tools.workspace = true
 transport.workspace = true
 wcore.workspace = true
 
@@ -32,7 +33,6 @@ reqwest.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yml.workspace = true
 tokio.workspace = true
 toml = { workspace = true, optional = true }
 toml_edit = { workspace = true, optional = true }
