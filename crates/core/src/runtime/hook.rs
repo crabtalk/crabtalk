@@ -5,8 +5,6 @@
 //! at the appropriate lifecycle points. Non-persistence methods default
 //! to no-ops so implementors only override what they need.
 
-#[cfg(feature = "test-utils")]
-use crate::agent::tool::{ToolDispatcher, ToolFuture};
 use crate::{AgentConfig, AgentEvent, model::HistoryEntry};
 
 /// Lifecycle callbacks for agent building, event observation, and
@@ -36,28 +34,5 @@ pub trait Hook: Send + Sync {
         _history: &[HistoryEntry],
     ) -> Vec<HistoryEntry> {
         Vec::new()
-    }
-}
-
-/// Trivial [`Hook`] for tests that don't need lifecycle customization.
-#[cfg(feature = "test-utils")]
-#[derive(Default)]
-pub struct TestHook;
-
-#[cfg(feature = "test-utils")]
-impl Hook for TestHook {}
-
-#[cfg(feature = "test-utils")]
-impl ToolDispatcher for TestHook {
-    fn dispatch<'a>(
-        &'a self,
-        name: &'a str,
-        _args: &'a str,
-        _agent: &'a str,
-        _sender: &'a str,
-        _conversation_id: Option<u64>,
-    ) -> ToolFuture<'a> {
-        let name = name.to_owned();
-        Box::pin(async move { Err(format!("TestHook: tool '{name}' not dispatched")) })
     }
 }

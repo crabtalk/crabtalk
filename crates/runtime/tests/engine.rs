@@ -8,12 +8,12 @@ use crabtalk_runtime::Runtime;
 use futures_util::StreamExt;
 use std::sync::Arc;
 use wcore::{
-    AgentConfig, AgentEvent, AgentStopReason, Config, TestHook,
-    model::{
-        Model,
+    AgentConfig, AgentEvent, AgentStopReason, Config,
+    model::Model,
+    test_utils::{
+        InMemoryStorage, TestHook,
         test_provider::{TestProvider, text_chunks},
     },
-    repos::mem::InMemoryStorage,
 };
 
 struct TestCfg;

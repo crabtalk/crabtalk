@@ -19,6 +19,3 @@ pub mod builder;
 mod client;
 mod history;
 mod limits;
-
-#[cfg(any(test, feature = "test-utils"))]
-pub mod test_provider;

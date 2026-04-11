@@ -6,10 +6,8 @@ use futures_util::StreamExt;
 use std::{future::Future, pin::Pin, sync::Arc};
 use wcore::{
     AgentBuilder, AgentConfig, ToolDispatcher, ToolFuture,
-    model::{
-        HistoryEntry, Model,
-        test_provider::{TestProvider, text_chunks, tool_chunks},
-    },
+    model::{HistoryEntry, Model},
+    test_utils::test_provider::{TestProvider, text_chunks, tool_chunks},
 };
 
 type BoxFut = Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;

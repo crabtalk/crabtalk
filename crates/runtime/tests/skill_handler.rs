@@ -1,6 +1,9 @@
 //! Tests for skill storage and lookup via InMemoryStorage.
 
-use wcore::repos::{Skill, Storage, mem::InMemoryStorage};
+use wcore::{
+    repos::{Skill, Storage},
+    test_utils::InMemoryStorage,
+};
 
 fn skill(name: &str, description: &str) -> Skill {
     Skill {

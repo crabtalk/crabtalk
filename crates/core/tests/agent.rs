@@ -3,12 +3,10 @@
 use crabllm_core::{FinishReason, FunctionCall, Role, ToolCall};
 use crabtalk_core::{
     AgentBuilder, AgentConfig, AgentEvent, AgentStopReason, ToolDispatcher, ToolFuture,
-    model::{
-        HistoryEntry, Model,
-        test_provider::{
-            TestProvider, finish_chunk, mixed_chunk, text_chunk, text_chunks, text_response,
-            thinking_chunk, tool_chunks, tool_response,
-        },
+    model::{HistoryEntry, Model},
+    test_utils::test_provider::{
+        TestProvider, finish_chunk, mixed_chunk, text_chunk, text_chunks, text_response,
+        thinking_chunk, tool_chunks, tool_response,
     },
 };
 use futures_util::StreamExt;

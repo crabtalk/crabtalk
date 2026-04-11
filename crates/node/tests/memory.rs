@@ -2,8 +2,7 @@
 
 use std::sync::Arc;
 use tools::Memory;
-use wcore::MemoryConfig;
-use wcore::repos::mem::InMemoryStorage;
+use wcore::{MemoryConfig, test_utils::InMemoryStorage};
 
 fn test_memory() -> Memory<InMemoryStorage> {
     Memory::open(MemoryConfig::default(), Arc::new(InMemoryStorage::new()))

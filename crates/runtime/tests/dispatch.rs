@@ -6,7 +6,10 @@ use std::{
     path::PathBuf,
     sync::{Arc, RwLock},
 };
-use wcore::{AgentConfig, ToolDispatch, ToolEntry, repos::mem::InMemoryStorage};
+use wcore::{
+    AgentConfig, ToolDispatch, ToolEntry,
+    test_utils::{InMemoryStorage, test_schema},
+};
 
 fn test_hook() -> Env<NoHost, InMemoryStorage> {
     let storage = Arc::new(InMemoryStorage::new());
@@ -24,7 +27,7 @@ fn test_hook() -> Env<NoHost, InMemoryStorage> {
     );
     // Register a mock tool for testing.
     env.register_tool(ToolEntry {
-        schema: wcore::agent::tool::test_schema("mock_tool"),
+        schema: test_schema("mock_tool"),
         handler: Arc::new(|_call: ToolDispatch| Box::pin(async { Ok("mock ok".to_owned()) })),
         system_prompt: None,
         before_run: None,

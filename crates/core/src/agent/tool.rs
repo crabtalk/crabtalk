@@ -133,20 +133,6 @@ impl ToolRegistry {
     }
 }
 
-/// Create a minimal tool schema for testing.
-#[cfg(feature = "test-utils")]
-pub fn test_schema(name: &str) -> Tool {
-    Tool {
-        kind: ToolType::Function,
-        function: FunctionDef {
-            name: name.to_owned(),
-            description: None,
-            parameters: None,
-        },
-        strict: None,
-    }
-}
-
 /// Trait to provide a description for a tool.
 pub trait ToolDescription {
     /// The description of the tool.

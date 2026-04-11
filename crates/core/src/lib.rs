@@ -24,8 +24,6 @@ pub use config::{
     external_source_name, filter_disabled_external, load_agents_dir, load_agents_dirs, repo_slug,
     resolve_manifests, scan_skill_names, validate_providers,
 };
-#[cfg(feature = "test-utils")]
-pub use runtime::hook::TestHook;
 pub use runtime::{
     Config, Conversation,
     conversation::{ArchiveSegment, ConversationMeta, EventLine, sender_slug},
@@ -39,4 +37,6 @@ pub mod paths;
 pub mod protocol;
 pub mod repos;
 mod runtime;
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
 pub mod utils;

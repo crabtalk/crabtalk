@@ -3,8 +3,6 @@
 //! [`Storage`] is the unified persistence backend — one trait, one
 //! implementation per backend.
 
-#[cfg(feature = "test-utils")]
-pub mod mem;
 pub mod memory;
 pub mod sessions;
 pub mod skills;
