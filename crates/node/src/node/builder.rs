@@ -297,7 +297,7 @@ fn build_env<H: Host + 'static>(
     register(
         &mut tools,
         &mut env,
-        crate::node_tools::delegate::handler(event_tx, scopes.clone()),
+        crate::delegate::handler(event_tx, scopes.clone()),
     );
     register(&mut tools, &mut env, tools::ask_user::handler(pending_asks));
 
@@ -316,7 +316,7 @@ fn build_env<H: Host + 'static>(
             &mut env,
             wcore::ToolEntry {
                 schema: <crate::mcp::tool::Mcp as wcore::agent::AsTool>::as_tool(),
-                handler: crate::node_tools::mcp::handler(mcp_handler, scopes.clone()),
+                handler: crate::mcp::tool::handler(mcp_handler, scopes.clone()),
                 system_prompt: Some(mcp_prompt),
                 before_run: None,
             },
