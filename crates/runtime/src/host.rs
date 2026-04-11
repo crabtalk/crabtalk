@@ -7,33 +7,10 @@
 
 use std::path::{Path, PathBuf};
 
-/// Trait for server-specific tool dispatch that the runtime cannot handle locally.
+/// Trait for server-specific capabilities that the runtime cannot
+/// provide locally. Tool dispatch is NOT part of this trait — tools
+/// register handlers directly via [`Env::register_handler`](crate::Env::register_handler).
 pub trait Host: Send + Sync + Clone {
-    /// Handle `ask_user` — block until user replies.
-    ///
-    /// Returns `Ok` for a normal reply, `Err` for a failure (not available,
-    /// timeout, cancelled, invalid args).
-    fn dispatch_ask_user(
-        &self,
-        args: &str,
-        conversation_id: Option<u64>,
-    ) -> impl std::future::Future<Output = Result<String, String>> + Send {
-        let _ = (args, conversation_id);
-        async { Err("ask_user is not available in this runtime mode".to_owned()) }
-    }
-
-    /// Handle `delegate` — spawn sub-agent tasks.
-    ///
-    /// Returns `Ok` for successful delegation output, `Err` for failure.
-    fn dispatch_delegate(
-        &self,
-        args: &str,
-        agent: &str,
-    ) -> impl std::future::Future<Output = Result<String, String>> + Send {
-        let _ = (args, agent);
-        async { Err("delegate is not available in this runtime mode".to_owned()) }
-    }
-
     /// Resolve the working directory for a conversation.
     /// Returns `None` to fall back to the runtime's base cwd.
     fn conversation_cwd(&self, _conversation_id: u64) -> Option<PathBuf> {
@@ -90,18 +67,6 @@ pub trait Host: Send + Sync + Clone {
     /// same behaviour override this.
     fn discover_instructions(&self, _cwd: &Path) -> Option<String> {
         None
-    }
-
-    /// Handle the `mcp` meta-tool: list/call MCP server tools.
-    ///
-    /// `allowed_mcps` is the agent's MCP scope (empty = unrestricted).
-    /// The host owns the MCP bridge and handles subprocess/HTTP I/O.
-    fn dispatch_mcp(
-        &self,
-        _args: &str,
-        _allowed_mcps: &[String],
-    ) -> impl std::future::Future<Output = Result<String, String>> + Send {
-        async { Err("mcp is not available in this runtime mode".to_owned()) }
     }
 
     /// List connected MCP servers with their tool names.

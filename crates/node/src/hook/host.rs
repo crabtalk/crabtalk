@@ -1,35 +1,27 @@
 //! NodeHost — server-specific Host implementation.
 //!
-//! Provides `ask_user` and `delegate` dispatch using daemon event channels,
-//! per-session CWD resolution, and agent event broadcasting.
+//! Provides per-session CWD resolution, agent event broadcasting, and
+//! MCP bridge management. Tool dispatch is handled by registered handlers,
+//! not by this Host implementation.
 
 use crate::node::event::{NodeEvent, NodeEventSender};
 use runtime::host::Host;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::Duration,
+    sync::Arc,
 };
-use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
+use tokio::sync::{Mutex, broadcast, oneshot};
 use wcore::{
     AgentEvent,
     agent::AsTool,
-    protocol::message::{
-        AgentEventKind, AgentEventMsg, ClientMessage, SendMsg, ToolCallInfo, server_message,
-    },
+    protocol::message::{AgentEventKind, AgentEventMsg, ToolCallInfo},
 };
 
 /// Tool result output is truncated to this many bytes in the broadcast.
 /// Keeps the firehose lightweight while still giving rich UIs enough
 /// content to render meaningful previews.
 const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
-
-/// Timeout for waiting on user reply (5 minutes).
-const ASK_USER_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Server-specific host for the daemon. Owns event channels, session state,
 /// and the MCP bridge (subprocess/HTTP connections to MCP tool servers).
@@ -49,121 +41,6 @@ pub struct NodeHost {
 }
 
 impl Host for NodeHost {
-    async fn dispatch_ask_user(
-        &self,
-        args: &str,
-        conversation_id: Option<u64>,
-    ) -> Result<String, String> {
-        let input: crate::tools::ask_user::AskUser =
-            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
-
-        let conversation_id =
-            conversation_id.ok_or("ask_user is only available in streaming mode")?;
-
-        let (tx, rx) = oneshot::channel();
-        self.pending_asks.lock().await.insert(conversation_id, tx);
-
-        match tokio::time::timeout(ASK_USER_TIMEOUT, rx).await {
-            Ok(Ok(reply)) => Ok(reply),
-            Ok(Err(_)) => {
-                self.pending_asks.lock().await.remove(&conversation_id);
-                Err("ask_user cancelled: reply channel closed".to_owned())
-            }
-            Err(_) => {
-                self.pending_asks.lock().await.remove(&conversation_id);
-                let headers: Vec<&str> =
-                    input.questions.iter().map(|q| q.header.as_str()).collect();
-                Err(format!(
-                    "ask_user timed out after {}s: no reply received for: {}",
-                    ASK_USER_TIMEOUT.as_secs(),
-                    headers.join("; "),
-                ))
-            }
-        }
-    }
-
-    async fn dispatch_delegate(&self, args: &str, _agent: &str) -> Result<String, String> {
-        let input: crate::tools::delegate::Delegate =
-            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
-
-        // Register ephemeral agents and resolve agent names.
-        let mut ephemeral_names = Vec::new();
-        let mut tasks = Vec::with_capacity(input.tasks.len());
-        for task in input.tasks {
-            let agent_name = if let Some(prompt) = task.system_prompt {
-                let name = if task.agent.is_empty() {
-                    ephemeral_agent_name()
-                } else {
-                    task.agent
-                };
-                let mut config = wcore::AgentConfig::new(&name);
-                config.system_prompt = prompt;
-                let (tx, rx) = oneshot::channel();
-                let _ = self
-                    .event_tx
-                    .send(NodeEvent::AddEphemeral { config, reply: tx });
-                let _ = rx.await;
-                ephemeral_names.push(name.clone());
-                name
-            } else {
-                task.agent
-            };
-
-            let sender = delegate_sender();
-            let handle = spawn_agent_task(
-                agent_name.clone(),
-                task.message,
-                task.cwd,
-                sender.clone(),
-                self.event_tx.clone(),
-            );
-            tasks.push((agent_name, sender, handle));
-        }
-
-        if input.background {
-            let mut json_results = Vec::with_capacity(tasks.len());
-            let mut handles = Vec::with_capacity(tasks.len());
-            for (agent, sender, handle) in tasks {
-                json_results.push(serde_json::json!({ "agent": agent, "task_id": sender }));
-                handles.push(handle);
-            }
-            // Spawn cleanup that waits for all delegates to finish.
-            if !ephemeral_names.is_empty() {
-                let event_tx = self.event_tx.clone();
-                tokio::spawn(async move {
-                    for h in handles {
-                        let _ = h.await;
-                    }
-                    for name in ephemeral_names {
-                        let _ = event_tx.send(NodeEvent::RemoveEphemeral { name });
-                    }
-                });
-            }
-            return serde_json::to_string(&json_results)
-                .map_err(|e| format!("serialization error: {e}"));
-        }
-
-        let mut results = Vec::with_capacity(tasks.len());
-        for (agent_name, _sender, handle) in tasks {
-            let (result, error) = match handle.await {
-                Ok((r, e)) => (r, e),
-                Err(e) => (None, Some(format!("task panicked: {e}"))),
-            };
-            results.push(serde_json::json!({
-                "agent": agent_name,
-                "result": result,
-                "error": error,
-            }));
-        }
-
-        // Clean up ephemeral agents after foreground tasks complete.
-        for name in ephemeral_names {
-            let _ = self.event_tx.send(NodeEvent::RemoveEphemeral { name });
-        }
-
-        serde_json::to_string(&results).map_err(|e| format!("serialization error: {e}"))
-    }
-
     fn conversation_cwd(&self, conversation_id: u64) -> Option<PathBuf> {
         self.conversation_cwds
             .try_lock()
@@ -334,10 +211,6 @@ impl Host for NodeHost {
         discover_instructions(cwd)
     }
 
-    async fn dispatch_mcp(&self, args: &str, allowed_mcps: &[String]) -> Result<String, String> {
-        crate::mcp::dispatch::dispatch_mcp(&self.mcp, args, allowed_mcps).await
-    }
-
     fn mcp_servers(&self) -> Vec<(String, Vec<String>)> {
         self.mcp.cached_list()
     }
@@ -390,81 +263,6 @@ fn discover_instructions(cwd: &Path) -> Option<String> {
         return None;
     }
     Some(layers.join("\n\n"))
-}
-
-/// Generate a unique delegate sender identity.
-fn delegate_sender() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("delegate:{id}")
-}
-
-/// Generate a unique ephemeral agent name.
-fn ephemeral_agent_name() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("_ephemeral:{id}")
-}
-
-/// Spawn an agent task via the event channel and collect its response.
-fn spawn_agent_task(
-    agent: String,
-    message: String,
-    cwd: Option<String>,
-    delegate_sender: String,
-    event_tx: NodeEventSender,
-) -> tokio::task::JoinHandle<(Option<String>, Option<String>)> {
-    tokio::spawn(async move {
-        let (reply_tx, mut reply_rx) = mpsc::channel(transport::REPLY_CHANNEL_CAPACITY);
-        let msg = ClientMessage::from(SendMsg {
-            agent: agent.clone(),
-            content: message,
-            sender: Some(delegate_sender.clone()),
-            cwd,
-            guest: None,
-            tool_choice: None,
-        });
-        if event_tx
-            .send(NodeEvent::Message {
-                msg,
-                reply: reply_tx,
-            })
-            .is_err()
-        {
-            return (None, Some("event channel closed".to_owned()));
-        }
-
-        let mut result_content: Option<String> = None;
-        let mut error_msg: Option<String> = None;
-
-        while let Some(msg) = reply_rx.recv().await {
-            match msg.msg {
-                Some(server_message::Msg::Response(resp)) => {
-                    result_content = Some(resp.content);
-                }
-                Some(server_message::Msg::Error(err)) => {
-                    error_msg = Some(err.message);
-                }
-                _ => {}
-            }
-        }
-
-        // Kill the delegate conversation after completion.
-        let (reply_tx, _) = mpsc::channel(1);
-        let _ = event_tx.send(NodeEvent::Message {
-            msg: ClientMessage {
-                msg: Some(wcore::protocol::message::client_message::Msg::Kill(
-                    wcore::protocol::message::KillMsg {
-                        agent,
-                        sender: delegate_sender,
-                    },
-                )),
-            },
-            reply: reply_tx,
-        });
-
-        (result_content, error_msg)
-    })
 }
 
 fn format_usage(response: &wcore::AgentResponse) -> String {

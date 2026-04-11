@@ -50,6 +50,7 @@ pub struct Node<P: Provider + 'static = DefaultProvider, B: Host + 'static = Nod
     pub(crate) crons: Arc<Mutex<CronStore>>,
     pub(crate) events: Arc<Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
+    pub(crate) pending_asks: Option<crate::tools::ask_user::PendingAsks>,
 }
 
 impl<P: Provider + 'static, B: Host + 'static> Clone for Node<P, B> {
@@ -62,25 +63,30 @@ impl<P: Provider + 'static, B: Host + 'static> Clone for Node<P, B> {
             crons: self.crons.clone(),
             events: self.events.clone(),
             build_provider: Arc::clone(&self.build_provider),
+            pending_asks: self.pending_asks.clone(),
         }
     }
 }
 
 impl Node<DefaultProvider, NodeHost> {
     pub async fn start(config_dir: &Path) -> Result<NodeHandle<DefaultProvider, NodeHost>> {
+        let pending_asks: crate::tools::ask_user::PendingAsks =
+            Arc::new(Mutex::new(std::collections::HashMap::new()));
+        let pa = pending_asks.clone();
         Self::start_with(
             config_dir,
             |config: &NodeConfig| build_default_provider(config),
-            |event_tx| {
+            move |event_tx| {
                 let (events_tx, _) = broadcast::channel(256);
                 NodeHost {
                     event_tx,
-                    pending_asks: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                    pending_asks: pa,
                     conversation_cwds: Arc::new(Mutex::new(std::collections::HashMap::new())),
                     events_tx,
                     mcp: Arc::new(crate::mcp::McpHandler::empty()),
                 }
             },
+            Some(pending_asks),
         )
         .await
     }
@@ -91,6 +97,7 @@ impl<P: Provider + 'static, B: Host + 'static> Node<P, B> {
         config_dir: &Path,
         build_provider: BP,
         build_backend: BB,
+        pending_asks: Option<crate::tools::ask_user::PendingAsks>,
     ) -> Result<NodeHandle<P, B>>
     where
         BP: Fn(&NodeConfig) -> Result<Model<P>> + Send + Sync + 'static,
@@ -119,6 +126,7 @@ impl<P: Provider + 'static, B: Host + 'static> Node<P, B> {
             shutdown_tx.clone(),
             backend,
             build_provider,
+            pending_asks,
         )
         .await?;
 

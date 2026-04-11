@@ -81,13 +81,21 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         shutdown_tx: broadcast::Sender<()>,
         host: H,
         build_provider: BuildProvider<P>,
+        pending_asks: Option<crate::tools::ask_user::PendingAsks>,
     ) -> Result<Self> {
         if let Err(e) = crate::storage::backfill_local_agent_ids(config_dir) {
             tracing::warn!("agent id backfill failed: {e}");
         }
 
-        let runtime =
-            Self::build_runtime(config, config_dir, &event_tx, host, &build_provider).await?;
+        let runtime = Self::build_runtime(
+            config,
+            config_dir,
+            &event_tx,
+            host,
+            &build_provider,
+            pending_asks.clone(),
+        )
+        .await?;
         let cron_store =
             crate::cron::CronStore::load(config_dir.to_path_buf(), event_tx.clone(), shutdown_tx);
         let crons = Arc::new(Mutex::new(cron_store));
@@ -120,6 +128,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             crons,
             events,
             build_provider,
+            pending_asks,
         })
     }
 
@@ -135,6 +144,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             &self.event_tx,
             host,
             &self.build_provider,
+            self.pending_asks.clone(),
         )
         .await?;
         {
@@ -154,6 +164,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         event_tx: &NodeEventSender,
         mut host: H,
         build_provider: &BuildProvider<P>,
+        pending_asks: Option<crate::tools::ask_user::PendingAsks>,
     ) -> Result<Runtime<crate::node::NodeCfg<P, H>>> {
         let (mut manifest, _warnings) = resolve_manifests(config_dir);
         manifest.disabled = config.disabled.clone();
@@ -163,9 +174,17 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         // Build MCP before the env so the host has it from the start.
         let servers = mcp_servers(config, &manifest);
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::load(&servers).await);
-        host.set_mcp(mcp_handler);
+        host.set_mcp(mcp_handler.clone());
 
-        let (hook, storage, tools) = build_env(config, config_dir, &manifest, host)?;
+        let (hook, storage, tools) = build_env(
+            config,
+            config_dir,
+            &manifest,
+            host,
+            event_tx.clone(),
+            mcp_handler,
+            pending_asks,
+        )?;
         let tool_tx = build_tool_sender(event_tx);
         let mut runtime = Runtime::new(model, hook, storage, Some(tool_tx), tools);
         load_agents(&mut runtime, config_dir, config, &manifest)?;
@@ -213,6 +232,9 @@ fn build_env<H: Host + 'static>(
     config_dir: &Path,
     manifest: &ResolvedManifest,
     host: H,
+    event_tx: NodeEventSender,
+    mcp_handler: Arc<McpHandler>,
+    pending_asks: Option<crate::tools::ask_user::PendingAsks>,
 ) -> Result<(Env<H, FsStorage>, Arc<FsStorage>, wcore::ToolRegistry)> {
     let skill_roots: Vec<PathBuf> = manifest
         .skill_dirs
@@ -284,22 +306,25 @@ fn build_env<H: Host + 'static>(
     register(
         &mut tools,
         &mut env,
-        crate::tools::delegate::handler(host.clone(), scopes.clone()),
+        crate::tools::delegate::handler(event_tx, scopes.clone()),
     );
-    register(
-        &mut tools,
-        &mut env,
-        crate::tools::ask_user::handler(host.clone()),
-    );
+
+    if let Some(pending_asks) = pending_asks {
+        register(
+            &mut tools,
+            &mut env,
+            crate::tools::ask_user::handler(pending_asks),
+        );
+    }
 
     // MCP tools — each schema gets the same shared handler.
     let mcp_tools = host.mcp_tools();
     if !mcp_tools.is_empty() {
-        let mcp_handler = crate::tools::mcp::handler(host, scopes.clone());
+        let mcp_h = crate::tools::mcp::handler(mcp_handler, scopes.clone());
         for schema in mcp_tools {
             let name = schema.function.name.clone();
             tools.insert(schema);
-            env.register_handler(name, mcp_handler.clone());
+            env.register_handler(name, mcp_h.clone());
         }
     }
 
