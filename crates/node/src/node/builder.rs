@@ -13,8 +13,7 @@ use std::{
 };
 use tokio::sync::{Mutex, RwLock, broadcast};
 use tools::Memory;
-use wcore::{AgentConfig, model::Model, repos::Storage};
-use wcore::{ResolvedManifest, resolve_manifests};
+use wcore::{AgentConfig, ResolvedManifest, model::Model, repos::Storage, resolve_manifests};
 
 pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
 
@@ -207,6 +206,8 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         Ok(())
     }
 
+    /// Orchestrate a Runtime build: resolve manifest, build an empty
+    /// runtime (env + tools, no agents), then register agents on it.
     async fn build_runtime(
         config: &NodeConfig,
         config_dir: &Path,
@@ -217,12 +218,12 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         let (mut manifest, _warnings) = resolve_manifests(config_dir);
         manifest.disabled = config.disabled.clone();
         wcore::filter_disabled_external(&mut manifest.skill_dirs, &manifest.disabled.external);
-        let model = build_provider(config)?;
 
+        let model = build_provider(config)?;
         let servers = mcp_servers(config, &manifest);
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::load(&servers).await);
 
-        let (hook, storage, tools) = build_env::<P, H>(
+        let (hook, storage, tools) = Self::build_env(
             config,
             config_dir,
             &manifest,
@@ -231,8 +232,209 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             runtime_once,
         )?;
         let mut runtime = Runtime::new(model, hook, storage, tools);
-        load_agents(&mut runtime, config_dir, config, &manifest)?;
+        Self::register_agents(&mut runtime, config, config_dir, &manifest)?;
         Ok((runtime, mcp_handler))
+    }
+
+    /// Build the Env, FsStorage, and ToolRegistry for a runtime, with all
+    /// node-provided tools registered. Produces an env ready to be wrapped
+    /// in a `Runtime` — agents are added separately via `register_agents`.
+    fn build_env(
+        config: &NodeConfig,
+        config_dir: &Path,
+        manifest: &ResolvedManifest,
+        host: H,
+        mcp_handler: Arc<McpHandler>,
+        runtime_once: Arc<OnceLock<SharedRuntime<P, H>>>,
+    ) -> Result<(Env<H, FsStorage>, Arc<FsStorage>, wcore::ToolRegistry)> {
+        let skill_roots: Vec<PathBuf> = manifest
+            .skill_dirs
+            .iter()
+            .filter(|dir| dir.exists())
+            .cloned()
+            .collect();
+        let memory_root = config_dir.join("memory");
+        let sessions_root = config_dir.join("sessions");
+
+        let storage = Arc::new(FsStorage::new(
+            config_dir.to_path_buf(),
+            memory_root,
+            sessions_root,
+            skill_roots,
+            manifest.disabled.skills.clone(),
+            manifest.agent_dirs.clone(),
+        ));
+
+        let memory = Arc::new(Memory::open(config.system.memory.clone(), storage.clone()));
+        let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
+        let scopes = Arc::new(std::sync::RwLock::new(BTreeMap::new()));
+
+        let conversation_cwds: runtime::ConversationCwds =
+            Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pending_asks: runtime::PendingAsks =
+            Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let mcp_server_list = mcp_handler.cached_list();
+
+        let mut env = Env::new(
+            storage.clone(),
+            cwd.clone(),
+            host,
+            scopes.clone(),
+            conversation_cwds.clone(),
+            pending_asks.clone(),
+        );
+
+        let mut tools = wcore::ToolRegistry::new();
+
+        let register = |tools: &mut wcore::ToolRegistry,
+                        env: &mut Env<H, FsStorage>,
+                        entry: wcore::ToolEntry| {
+            tools.insert(entry.schema.clone());
+            env.register_tool(entry);
+        };
+
+        register(
+            &mut tools,
+            &mut env,
+            tools::os::bash(cwd.clone(), conversation_cwds.clone()),
+        );
+        register(
+            &mut tools,
+            &mut env,
+            tools::os::read(cwd.clone(), conversation_cwds.clone()),
+        );
+        register(
+            &mut tools,
+            &mut env,
+            tools::os::edit(cwd, conversation_cwds),
+        );
+
+        for entry in tools::memory::handlers::handlers(memory) {
+            register(&mut tools, &mut env, entry);
+        }
+
+        register(
+            &mut tools,
+            &mut env,
+            tools::skill::handler::handler(storage.clone(), scopes.clone()),
+        );
+        register(
+            &mut tools,
+            &mut env,
+            crate::delegate::handler::<P, H>(scopes.clone(), runtime_once),
+        );
+        register(&mut tools, &mut env, tools::ask_user::handler(pending_asks));
+
+        // MCP — register only if servers are configured.
+        if !mcp_handler.cached_list().is_empty() {
+            let mcp_prompt = format!(
+                "\n\n<resources>\nMCP servers: {}. Use the mcp tool to list or call tools.\n</resources>",
+                mcp_server_list
+                    .iter()
+                    .map(|(n, _)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            register(
+                &mut tools,
+                &mut env,
+                wcore::ToolEntry {
+                    schema: <crate::mcp::tool::Mcp as wcore::agent::AsTool>::as_tool(),
+                    handler: crate::mcp::tool::handler(mcp_handler, scopes.clone()),
+                    system_prompt: Some(mcp_prompt),
+                    before_run: None,
+                },
+            );
+        }
+
+        Ok((env, storage, tools))
+    }
+
+    /// Register all configured agents on a built runtime: the built-in
+    /// crab agent, manifest-declared sub-agents, and any stray .md prompts
+    /// in the agents directory with no matching manifest entry.
+    fn register_agents(
+        runtime: &mut Runtime<crate::node::NodeCfg<P, H>>,
+        config: &NodeConfig,
+        config_dir: &Path,
+        manifest: &ResolvedManifest,
+    ) -> Result<()> {
+        // One-shot migration: hoist legacy prompt files into ULID-keyed storage.
+        if let Err(e) = crate::storage::migrate_local_agent_prompts(
+            config_dir,
+            manifest,
+            runtime.storage().as_ref(),
+        ) {
+            tracing::warn!("local agent prompt migration failed: {e}");
+        }
+
+        let prompts = wcore::load_agents_dirs(&manifest.agent_dirs)?;
+        let prompt_map: BTreeMap<String, String> = prompts.into_iter().collect();
+
+        let default_model = config
+            .system
+            .crab
+            .model
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("system.crab.model is required in config.toml"))?;
+
+        // Built-in crab agent.
+        let mut crab_config = config.system.crab.clone();
+        crab_config.name = wcore::paths::DEFAULT_AGENT.to_owned();
+        crab_config.system_prompt = SYSTEM_AGENT.to_owned();
+        runtime.add_agent(crab_config);
+
+        // Sub-agents from manifests.
+        let storage = runtime.storage().clone();
+        for (name, agent_config) in &manifest.agents {
+            if name == wcore::paths::DEFAULT_AGENT {
+                tracing::warn!(
+                    "agents.{name} overrides the built-in system agent and will be ignored — \
+                     configure it under [system.crab] instead"
+                );
+                continue;
+            }
+            let Some(prompt) =
+                resolve_agent_prompt(storage.as_ref(), agent_config, name, &prompt_map)
+            else {
+                tracing::warn!("agent '{name}' has no prompt, skipping");
+                continue;
+            };
+            let mut agent = agent_config.clone();
+            agent.name = name.clone();
+            agent.system_prompt = prompt;
+            if agent.model.is_none() {
+                agent.model = Some(default_model.clone());
+            }
+            tracing::info!("registered agent '{name}' (thinking={})", agent.thinking);
+            runtime.add_agent(agent);
+        }
+
+        // Agents with .md files but no manifest entry.
+        let default_think = config.system.crab.thinking;
+        for (stem, prompt) in &prompt_map {
+            if stem == wcore::paths::DEFAULT_AGENT {
+                continue;
+            }
+            if manifest.agents.contains_key(stem) {
+                continue;
+            }
+            let mut agent = AgentConfig::new(stem.as_str());
+            agent.system_prompt = prompt.clone();
+            agent.thinking = default_think;
+            agent.model = Some(default_model.clone());
+            tracing::info!("registered agent '{stem}' (defaults, thinking={default_think})");
+            runtime.add_agent(agent);
+        }
+
+        // Populate per-agent scope maps.
+        for agent_config in runtime.agents() {
+            runtime
+                .hook
+                .register_scope(agent_config.name.clone(), &agent_config);
+        }
+
+        Ok(())
     }
 }
 
@@ -269,200 +471,6 @@ fn mcp_servers(config: &NodeConfig, manifest: &ResolvedManifest) -> Vec<wcore::M
             mcp
         })
         .collect()
-}
-
-fn build_env<P: Provider + 'static, H: Host + 'static>(
-    config: &NodeConfig,
-    config_dir: &Path,
-    manifest: &ResolvedManifest,
-    host: H,
-    mcp_handler: Arc<McpHandler>,
-    runtime_once: Arc<OnceLock<SharedRuntime<P, H>>>,
-) -> Result<(Env<H, FsStorage>, Arc<FsStorage>, wcore::ToolRegistry)> {
-    let skill_roots: Vec<PathBuf> = manifest
-        .skill_dirs
-        .iter()
-        .filter(|dir| dir.exists())
-        .cloned()
-        .collect();
-    let memory_root = config_dir.join("memory");
-    let sessions_root = config_dir.join("sessions");
-
-    let storage = Arc::new(FsStorage::new(
-        config_dir.to_path_buf(),
-        memory_root,
-        sessions_root,
-        skill_roots,
-        manifest.disabled.skills.clone(),
-        manifest.agent_dirs.clone(),
-    ));
-
-    let memory = Arc::new(Memory::open(config.system.memory.clone(), storage.clone()));
-    let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
-    let scopes = Arc::new(std::sync::RwLock::new(BTreeMap::new()));
-
-    let conversation_cwds: runtime::ConversationCwds =
-        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
-    let pending_asks: runtime::PendingAsks =
-        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
-    let mcp_server_list = mcp_handler.cached_list();
-
-    let mut env = Env::new(
-        storage.clone(),
-        cwd.clone(),
-        host,
-        scopes.clone(),
-        conversation_cwds.clone(),
-        pending_asks.clone(),
-    );
-
-    // Register tools.
-    let mut tools = wcore::ToolRegistry::new();
-
-    let register =
-        |tools: &mut wcore::ToolRegistry, env: &mut Env<H, FsStorage>, entry: wcore::ToolEntry| {
-            tools.insert(entry.schema.clone());
-            env.register_tool(entry);
-        };
-
-    register(
-        &mut tools,
-        &mut env,
-        tools::os::bash(cwd.clone(), conversation_cwds.clone()),
-    );
-    register(
-        &mut tools,
-        &mut env,
-        tools::os::read(cwd.clone(), conversation_cwds.clone()),
-    );
-    register(
-        &mut tools,
-        &mut env,
-        tools::os::edit(cwd, conversation_cwds),
-    );
-
-    for entry in tools::memory::handlers::handlers(memory) {
-        register(&mut tools, &mut env, entry);
-    }
-
-    register(
-        &mut tools,
-        &mut env,
-        tools::skill::handler::handler(storage.clone(), scopes.clone()),
-    );
-    register(
-        &mut tools,
-        &mut env,
-        crate::delegate::handler::<P, H>(scopes.clone(), runtime_once),
-    );
-    register(&mut tools, &mut env, tools::ask_user::handler(pending_asks));
-
-    // MCP — register only if servers are configured.
-    if !mcp_handler.cached_list().is_empty() {
-        let mcp_prompt = format!(
-            "\n\n<resources>\nMCP servers: {}. Use the mcp tool to list or call tools.\n</resources>",
-            mcp_server_list
-                .iter()
-                .map(|(n, _)| n.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        register(
-            &mut tools,
-            &mut env,
-            wcore::ToolEntry {
-                schema: <crate::mcp::tool::Mcp as wcore::agent::AsTool>::as_tool(),
-                handler: crate::mcp::tool::handler(mcp_handler, scopes.clone()),
-                system_prompt: Some(mcp_prompt),
-                before_run: None,
-            },
-        );
-    }
-
-    Ok((env, storage, tools))
-}
-
-fn load_agents<P: Provider + 'static, H: Host + 'static>(
-    runtime: &mut Runtime<crate::node::NodeCfg<P, H>>,
-    config_dir: &Path,
-    config: &NodeConfig,
-    manifest: &ResolvedManifest,
-) -> Result<()> {
-    // One-shot migration: hoist legacy prompt files into ULID-keyed storage.
-    if let Err(e) = crate::storage::migrate_local_agent_prompts(
-        config_dir,
-        manifest,
-        runtime.storage().as_ref(),
-    ) {
-        tracing::warn!("local agent prompt migration failed: {e}");
-    }
-
-    let prompts = wcore::load_agents_dirs(&manifest.agent_dirs)?;
-    let prompt_map: BTreeMap<String, String> = prompts.into_iter().collect();
-
-    let default_model = config
-        .system
-        .crab
-        .model
-        .clone()
-        .ok_or_else(|| anyhow::anyhow!("system.crab.model is required in config.toml"))?;
-
-    // Built-in crab agent.
-    let mut crab_config = config.system.crab.clone();
-    crab_config.name = wcore::paths::DEFAULT_AGENT.to_owned();
-    crab_config.system_prompt = SYSTEM_AGENT.to_owned();
-    runtime.add_agent(crab_config);
-
-    // Sub-agents from manifests.
-    let storage = runtime.storage().clone();
-    for (name, agent_config) in &manifest.agents {
-        if name == wcore::paths::DEFAULT_AGENT {
-            tracing::warn!(
-                "agents.{name} overrides the built-in system agent and will be ignored — \
-                 configure it under [system.crab] instead"
-            );
-            continue;
-        }
-        let Some(prompt) = resolve_agent_prompt(storage.as_ref(), agent_config, name, &prompt_map)
-        else {
-            tracing::warn!("agent '{name}' has no prompt, skipping");
-            continue;
-        };
-        let mut agent = agent_config.clone();
-        agent.name = name.clone();
-        agent.system_prompt = prompt;
-        if agent.model.is_none() {
-            agent.model = Some(default_model.clone());
-        }
-        tracing::info!("registered agent '{name}' (thinking={})", agent.thinking);
-        runtime.add_agent(agent);
-    }
-
-    // Agents with .md files but no manifest entry.
-    let default_think = config.system.crab.thinking;
-    for (stem, prompt) in &prompt_map {
-        if stem == wcore::paths::DEFAULT_AGENT {
-            continue;
-        }
-        if manifest.agents.contains_key(stem) {
-            continue;
-        }
-        let mut agent = AgentConfig::new(stem.as_str());
-        agent.system_prompt = prompt.clone();
-        agent.thinking = default_think;
-        agent.model = Some(default_model.clone());
-        tracing::info!("registered agent '{stem}' (defaults, thinking={default_think})");
-        runtime.add_agent(agent);
-    }
-
-    // Populate per-agent scope maps.
-    for agent_config in runtime.agents() {
-        runtime
-            .hook
-            .register_scope(agent_config.name.clone(), &agent_config);
-    }
-
-    Ok(())
 }
 
 /// Resolve an agent's prompt, preferring the repo (ULID key) and falling
