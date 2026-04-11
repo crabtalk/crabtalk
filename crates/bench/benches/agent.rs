@@ -3,15 +3,34 @@
 use crabllm_core::{FunctionCall, ToolCall};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use futures_util::StreamExt;
-use std::pin::pin;
-use tokio::sync::mpsc;
+use std::{future::Future, pin::Pin, sync::Arc};
 use wcore::{
-    AgentBuilder, AgentConfig,
+    AgentBuilder, AgentConfig, ToolDispatcher, ToolFuture,
     model::{
         HistoryEntry, Model,
         test_provider::{TestProvider, text_chunks, tool_chunks},
     },
 };
+
+type BoxFut = Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
+
+struct FnDispatcher<F>(F);
+
+impl<F> ToolDispatcher for FnDispatcher<F>
+where
+    F: Fn() -> BoxFut + Send + Sync + 'static,
+{
+    fn dispatch<'a>(
+        &'a self,
+        _name: &'a str,
+        _args: &'a str,
+        _agent: &'a str,
+        _sender: &'a str,
+        _conversation_id: Option<u64>,
+    ) -> ToolFuture<'a> {
+        (self.0)()
+    }
+}
 
 fn make_tool_call(name: &str, args: &str) -> ToolCall {
     ToolCall {
@@ -43,7 +62,8 @@ fn bench_agent_no_tools(c: &mut Criterion) {
             },
             |(agent, mut history)| {
                 rt.block_on(async {
-                    let mut stream = pin!(agent.run_stream(&mut history, None, None, None));
+                    let mut stream =
+                        std::pin::pin!(agent.run_stream(&mut history, None, None, None));
                     while stream.next().await.is_some() {}
                 });
             },
@@ -64,24 +84,21 @@ fn bench_agent_with_tools(c: &mut Criterion) {
                 let call = make_tool_call("bash", r#"{"command":"ls"}"#);
                 let provider =
                     TestProvider::with_chunks(vec![tool_chunks(vec![call]), text_chunks("done")]);
-                let (tool_tx, tool_rx) = mpsc::unbounded_channel();
+                let dispatcher: Arc<dyn ToolDispatcher> = Arc::new(FnDispatcher(|| -> BoxFut {
+                    Box::pin(async { Ok("ok".to_owned()) })
+                }));
                 let agent = AgentBuilder::new(Model::new(provider))
                     .config(AgentConfig::new("bench"))
-                    .tool_tx(tool_tx)
+                    .dispatcher(dispatcher)
                     .build();
                 let history = vec![HistoryEntry::user("hi")];
-                (agent, history, tool_rx)
+                (agent, history)
             },
-            |(agent, mut history, mut tool_rx)| {
+            |(agent, mut history)| {
                 rt.block_on(async {
-                    let handler = tokio::spawn(async move {
-                        while let Some(req) = tool_rx.recv().await {
-                            let _ = req.reply.send(Ok("ok".into()));
-                        }
-                    });
-                    let mut stream = pin!(agent.run_stream(&mut history, None, None, None));
+                    let mut stream =
+                        std::pin::pin!(agent.run_stream(&mut history, None, None, None));
                     while stream.next().await.is_some() {}
-                    handler.abort();
                 });
             },
             BatchSize::SmallInput,

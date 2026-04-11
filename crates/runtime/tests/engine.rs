@@ -31,7 +31,6 @@ fn runtime(provider: TestProvider) -> Runtime<TestCfg> {
         Model::new(provider),
         TestHook::default(),
         storage,
-        None,
         wcore::ToolRegistry::new(),
     )
 }

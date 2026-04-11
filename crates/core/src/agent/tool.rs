@@ -1,46 +1,33 @@
-//! Tool registry (schema store), ToolRequest, and ToolSender.
+//! Tool registry, dispatcher trait, and handler types.
 //!
 //! [`ToolRegistry`] stores `crabllm_core::Tool` schemas by name — no
-//! handlers, no closures. [`ToolRequest`] and [`ToolSender`] are the
-//! agent-side dispatch primitives: the agent sends a `ToolRequest` per tool
-//! call and awaits a `Result<String, String>` reply — `Ok` carries normal
-//! output, `Err` carries an error message the UI can render distinctly.
+//! handlers, no closures. [`ToolDispatcher`] is the trait Agents call to
+//! execute a tool call; [`ToolHandler`] is the per-tool async closure
+//! type stored in a [`ToolEntry`].
 
 use crate::model::HistoryEntry;
 use crabllm_core::{FunctionDef, Tool, ToolType};
 use heck::ToSnakeCase;
 use schemars::JsonSchema;
 use std::{collections::BTreeMap, future::Future, pin::Pin, sync::Arc};
-use tokio::sync::{mpsc, oneshot};
 
-/// Sender half of the agent tool channel.
+/// Boxed future returned by a [`ToolDispatcher::dispatch`] call.
+pub type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>>;
+
+/// Dynamic tool dispatch surface.
 ///
-/// Captured by `Agent` at construction. When the model returns tool calls,
-/// the agent sends one `ToolRequest` per call and awaits each reply.
-/// `None` means no tools are available (e.g. CLI path without a daemon).
-pub type ToolSender = mpsc::UnboundedSender<ToolRequest>;
-
-/// A single tool call request sent by the agent to the runtime's tool handler.
-pub struct ToolRequest {
-    /// Tool name as returned by the model.
-    pub name: String,
-    /// JSON-encoded arguments string.
-    pub args: String,
-    /// Name of the agent that made this call.
-    pub agent: String,
-    /// Reply channel — the handler sends a `Result<String, String>`:
-    /// `Ok` for normal output, `Err` for an error message the UI can
-    /// render as a failure and the agent can act on for retry decisions.
-    pub reply: oneshot::Sender<Result<String, String>>,
-    /// Task ID of the calling task, if running within a task context.
-    /// Set by the daemon when dispatching task-bound tool calls.
-    pub task_id: Option<u64>,
-    /// Sender identity of the user who triggered this agent run.
-    /// Empty for local/owner conversations.
-    pub sender: String,
-    /// Conversation ID, if running within a conversation.
-    /// Set by the runtime; the agent passes it through as an opaque value.
-    pub conversation_id: Option<u64>,
+/// The Agent holds an `Arc<dyn ToolDispatcher>` and calls `dispatch` for
+/// every tool call the model emits. Implementors look the tool up by
+/// name, enforce scope, and invoke the registered handler.
+pub trait ToolDispatcher: Send + Sync + 'static {
+    fn dispatch<'a>(
+        &'a self,
+        name: &'a str,
+        args: &'a str,
+        agent: &'a str,
+        sender: &'a str,
+        conversation_id: Option<u64>,
+    ) -> ToolFuture<'a>;
 }
 
 /// Arguments passed to a tool handler during dispatch.

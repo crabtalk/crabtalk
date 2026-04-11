@@ -2,7 +2,7 @@
 
 use crabllm_core::{FinishReason, FunctionCall, Role, ToolCall};
 use crabtalk_core::{
-    AgentBuilder, AgentConfig, AgentEvent, AgentStopReason,
+    AgentBuilder, AgentConfig, AgentEvent, AgentStopReason, ToolDispatcher, ToolFuture,
     model::{
         HistoryEntry, Model,
         test_provider::{
@@ -12,9 +12,41 @@ use crabtalk_core::{
     },
 };
 use futures_util::StreamExt;
+use std::{future::Future, pin::Pin, sync::Arc};
 use tokio::sync::mpsc;
 
 // ── test-file-local fixture helpers ──
+
+type BoxFut = Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
+
+/// Minimal [`ToolDispatcher`] wrapping a `Fn(name) -> BoxFut` closure.
+///
+/// Tests that exercise tool dispatch build one of these instead of the
+/// real [`Env`] — no scopes, no handlers, just a per-tool-name response.
+struct FnDispatcher<F>(F);
+
+impl<F> ToolDispatcher for FnDispatcher<F>
+where
+    F: Fn(String) -> BoxFut + Send + Sync + 'static,
+{
+    fn dispatch<'a>(
+        &'a self,
+        name: &'a str,
+        _args: &'a str,
+        _agent: &'a str,
+        _sender: &'a str,
+        _conversation_id: Option<u64>,
+    ) -> ToolFuture<'a> {
+        (self.0)(name.to_owned())
+    }
+}
+
+fn dispatcher<F>(f: F) -> Arc<dyn ToolDispatcher>
+where
+    F: Fn(String) -> BoxFut + Send + Sync + 'static,
+{
+    Arc::new(FnDispatcher(f))
+}
 
 fn make_tool_call(name: &str, args: &str) -> ToolCall {
     ToolCall {
@@ -55,17 +87,12 @@ async fn step_tool_calls_dispatched_and_appended() {
     let calls = vec![make_tool_call("bash", r#"{"command":"ls"}"#)];
     let model = TestProvider::new(vec![tool_response(calls)]);
 
-    let (tool_tx, mut tool_rx) = mpsc::unbounded_channel();
     let agent = AgentBuilder::new(Model::new(model))
         .config(AgentConfig::new("test-agent"))
-        .tool_tx(tool_tx)
+        .dispatcher(dispatcher(|name| {
+            Box::pin(async move { Ok(format!("result for {name}")) })
+        }))
         .build();
-
-    tokio::spawn(async move {
-        while let Some(req) = tool_rx.recv().await {
-            let _ = req.reply.send(Ok(format!("result for {}", req.name)));
-        }
-    });
 
     let mut history = vec![HistoryEntry::user("run ls")];
     let step = agent.step(&mut history, None).await.unwrap();
@@ -79,7 +106,7 @@ async fn step_tool_calls_dispatched_and_appended() {
 }
 
 #[tokio::test]
-async fn step_no_tool_sender_returns_error_message() {
+async fn step_no_dispatcher_returns_error_message() {
     let calls = vec![make_tool_call("bash", "{}")];
     let model = TestProvider::new(vec![tool_response(calls)]);
     let agent = build_agent_no_tools(model);
@@ -90,7 +117,7 @@ async fn step_no_tool_sender_returns_error_message() {
     assert!(
         step.tool_results[0]
             .text()
-            .contains("no tool sender configured")
+            .contains("no tool dispatcher configured")
     );
 }
 
@@ -113,17 +140,12 @@ async fn run_stream_surfaces_handler_error_end_to_end() {
     let calls = vec![make_tool_call("bash", "{}")];
     let model = TestProvider::with_chunks(vec![tool_chunks(calls), text_chunks("ack")]);
 
-    let (tool_tx, mut tool_rx) = mpsc::unbounded_channel();
     let agent = AgentBuilder::new(Model::new(model))
         .config(AgentConfig::new("test-agent"))
-        .tool_tx(tool_tx)
+        .dispatcher(dispatcher(|name| {
+            Box::pin(async move { Err(format!("{name} blew up")) })
+        }))
         .build();
-
-    tokio::spawn(async move {
-        while let Some(req) = tool_rx.recv().await {
-            let _ = req.reply.send(Err(format!("{} blew up", req.name)));
-        }
-    });
 
     let mut history = vec![HistoryEntry::user("go")];
     let mut events: Vec<AgentEvent> = Vec::new();
@@ -199,17 +221,12 @@ async fn run_stream_tool_call_then_text() {
 
     let model = TestProvider::with_chunks(vec![tool_chunks(calls), text_chunks("answer")]);
 
-    let (tool_tx, mut tool_rx) = mpsc::unbounded_channel();
     let agent = AgentBuilder::new(Model::new(model))
         .config(AgentConfig::new("test-agent"))
-        .tool_tx(tool_tx)
+        .dispatcher(dispatcher(|_name| {
+            Box::pin(async { Ok("tool output".to_owned()) })
+        }))
         .build();
-
-    tokio::spawn(async move {
-        while let Some(req) = tool_rx.recv().await {
-            let _ = req.reply.send(Ok("tool output".into()));
-        }
-    });
 
     let mut history = vec![HistoryEntry::user("question")];
     let mut events: Vec<AgentEvent> = Vec::new();
@@ -285,17 +302,12 @@ async fn run_stream_multiple_tool_calls_in_one_step() {
 
     let model = TestProvider::with_chunks(vec![tool_chunks(calls), text_chunks("done")]);
 
-    let (tool_tx, mut tool_rx) = mpsc::unbounded_channel();
     let agent = AgentBuilder::new(Model::new(model))
         .config(AgentConfig::new("test-agent"))
-        .tool_tx(tool_tx)
+        .dispatcher(dispatcher(|name| {
+            Box::pin(async move { Ok(format!("result:{name}")) })
+        }))
         .build();
-
-    tokio::spawn(async move {
-        while let Some(req) = tool_rx.recv().await {
-            let _ = req.reply.send(Ok(format!("result:{}", req.name)));
-        }
-    });
 
     let mut history = vec![HistoryEntry::user("multi")];
     let mut events: Vec<AgentEvent> = Vec::new();
@@ -361,29 +373,21 @@ async fn run_stream_dispatches_tool_calls_concurrently() {
 
     let model = TestProvider::with_chunks(vec![tool_chunks(calls), text_chunks("done")]);
 
-    let (tool_tx, mut tool_rx) = mpsc::unbounded_channel();
     let agent = AgentBuilder::new(Model::new(model))
         .config(AgentConfig::new("test-agent"))
-        .tool_tx(tool_tx)
-        .build();
-
-    // Per-request: spawn a task so siblings can run in parallel. The agent
-    // loop sends all three requests before awaiting any reply, so a serial
-    // handler here would defeat the test.
-    tokio::spawn(async move {
-        while let Some(req) = tool_rx.recv().await {
-            tokio::spawn(async move {
-                let sleep_ms = match req.name.as_str() {
+        .dispatcher(dispatcher(|name| {
+            Box::pin(async move {
+                let sleep_ms = match name.as_str() {
                     "slow" => 300,
                     "med" => 200,
                     "fast" => 100,
                     _ => 0,
                 };
                 tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
-                let _ = req.reply.send(Ok(format!("result:{}", req.name)));
-            });
-        }
-    });
+                Ok(format!("result:{name}"))
+            })
+        }))
+        .build();
 
     let mut history = vec![HistoryEntry::user("multi")];
     let start = std::time::Instant::now();
@@ -455,19 +459,12 @@ async fn run_stream_max_iterations() {
         tool_chunks(calls),
     ]);
 
-    let (tool_tx, mut tool_rx) = mpsc::unbounded_channel();
     let mut config = AgentConfig::new("test-agent");
     config.max_iterations = 2;
     let agent = AgentBuilder::new(Model::new(model))
         .config(config)
-        .tool_tx(tool_tx)
+        .dispatcher(dispatcher(|_name| Box::pin(async { Ok("ok".to_owned()) })))
         .build();
-
-    tokio::spawn(async move {
-        while let Some(req) = tool_rx.recv().await {
-            let _ = req.reply.send(Ok("ok".into()));
-        }
-    });
 
     let mut history = vec![HistoryEntry::user("loop")];
     let mut events: Vec<AgentEvent> = Vec::new();
@@ -683,16 +680,10 @@ async fn run_stream_text_then_tools_closes_text_before_tools() {
     let calls = vec![make_tool_call("recall", r#"{"q":"x"}"#)];
     let model = TestProvider::with_chunks(vec![tool_chunks(calls), text_chunks("ok")]);
 
-    let (tool_tx, mut tool_rx) = mpsc::unbounded_channel();
     let agent = AgentBuilder::new(Model::new(model))
         .config(AgentConfig::new("test-agent"))
-        .tool_tx(tool_tx)
+        .dispatcher(dispatcher(|_name| Box::pin(async { Ok("out".to_owned()) })))
         .build();
-    tokio::spawn(async move {
-        while let Some(req) = tool_rx.recv().await {
-            let _ = req.reply.send(Ok("out".into()));
-        }
-    });
 
     let mut history = vec![HistoryEntry::user("q")];
     let mut events: Vec<AgentEvent> = Vec::new();

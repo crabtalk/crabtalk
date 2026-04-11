@@ -11,7 +11,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 use wcore::{
-    AgentConfig, AgentEvent, Hook, ToolDispatch, ToolEntry, model::HistoryEntry, repos::Storage,
+    AgentConfig, AgentEvent, Hook, ToolDispatch, ToolDispatcher, ToolEntry, ToolFuture,
+    model::HistoryEntry, repos::Storage,
 };
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
@@ -239,6 +240,19 @@ impl<H: Host, S: Storage> Env<H, S> {
             conversation_id,
         })
         .await
+    }
+}
+
+impl<H: Host + 'static, S: Storage + 'static> ToolDispatcher for Env<H, S> {
+    fn dispatch<'a>(
+        &'a self,
+        name: &'a str,
+        args: &'a str,
+        agent: &'a str,
+        sender: &'a str,
+        conversation_id: Option<u64>,
+    ) -> ToolFuture<'a> {
+        Box::pin(self.dispatch_tool(name, args, agent, sender, conversation_id))
     }
 }
 

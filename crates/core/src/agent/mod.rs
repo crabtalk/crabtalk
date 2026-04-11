@@ -1,7 +1,7 @@
 //! Immutable agent definition and execution methods.
 //!
 //! [`Agent`] owns its configuration, model, tool schemas, and an optional
-//! [`ToolSender`] for dispatching tool calls to the runtime. Conversation
+//! [`ToolDispatcher`] handle for executing tool calls. Conversation
 //! history is passed in externally — the agent itself is stateless.
 //! It drives LLM execution through [`Agent::step`], [`Agent::run`], and
 //! [`Agent::run_stream`]. `run_stream()` is the canonical step loop —
@@ -17,8 +17,9 @@ use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
 use futures_core::Stream;
 use futures_util::{StreamExt, future::join_all, stream::FuturesUnordered};
 pub use id::AgentId;
-use tokio::sync::{mpsc, oneshot, watch};
-pub use tool::{AsTool, ToolDescription, ToolRequest, ToolSender};
+use std::sync::Arc;
+use tokio::sync::{mpsc, watch};
+pub use tool::{AsTool, ToolDescription, ToolDispatcher};
 
 mod builder;
 mod compact;
@@ -78,8 +79,8 @@ pub struct Agent<P: Provider + 'static> {
     model: Model<P>,
     /// Tool schemas advertised to the LLM. Set once at build time.
     tools: Vec<Tool>,
-    /// Sender for dispatching tool calls to the runtime. None = no tools.
-    tool_tx: Option<ToolSender>,
+    /// Dispatcher for tool calls. None = no tools.
+    dispatcher: Option<Arc<dyn ToolDispatcher>>,
 }
 
 impl<P: Provider + 'static> Clone for Agent<P> {
@@ -88,7 +89,7 @@ impl<P: Provider + 'static> Clone for Agent<P> {
             config: self.config.clone(),
             model: self.model.clone(),
             tools: self.tools.clone(),
-            tool_tx: self.tool_tx.clone(),
+            dispatcher: self.dispatcher.clone(),
         }
     }
 }
@@ -156,7 +157,7 @@ impl<P: Provider + 'static> Agent<P> {
     ///
     /// Composes a [`ChatCompletionRequest`] from config state (system prompt +
     /// history + tool schemas), calls the stored model, dispatches any tool
-    /// calls via the [`ToolSender`] channel, and appends results to history.
+    /// calls via the [`ToolDispatcher`], and appends results to history.
     pub async fn step(
         &self,
         history: &mut Vec<HistoryEntry>,
@@ -213,12 +214,12 @@ impl<P: Provider + 'static> Agent<P> {
         })
     }
 
-    /// Dispatch a single tool call via the tool sender channel.
+    /// Dispatch a single tool call via the configured [`ToolDispatcher`].
     ///
     /// Returns `Ok(output)` for normal tool output or `Err(message)` for a
-    /// failure. Dispatch-level problems (no sender, channel closed, reply
-    /// dropped) map to `Err`; the handler's own `Ok`/`Err` verdict is
-    /// forwarded unchanged.
+    /// failure. If no dispatcher is configured, returns an `Err` describing
+    /// the misconfiguration; otherwise the dispatcher's verdict is forwarded
+    /// unchanged.
     async fn dispatch_tool(
         &self,
         name: &str,
@@ -226,27 +227,14 @@ impl<P: Provider + 'static> Agent<P> {
         sender: &str,
         conversation_id: Option<u64>,
     ) -> Result<String, String> {
-        let Some(tx) = &self.tool_tx else {
+        let Some(dispatcher) = &self.dispatcher else {
             return Err(format!(
-                "tool '{name}' called but no tool sender configured"
+                "tool '{name}' called but no tool dispatcher configured"
             ));
         };
-        let (reply_tx, reply_rx) = oneshot::channel();
-        let req = ToolRequest {
-            name: name.to_owned(),
-            args: args.to_owned(),
-            agent: self.config.name.to_string(),
-            reply: reply_tx,
-            task_id: None,
-            sender: sender.into(),
-            conversation_id,
-        };
-        if tx.send(req).is_err() {
-            return Err(format!("tool channel closed while calling '{name}'"));
-        }
-        reply_rx
+        dispatcher
+            .dispatch(name, args, &self.config.name, sender, conversation_id)
             .await
-            .unwrap_or_else(|_| Err(format!("tool '{name}' dropped reply")))
     }
 
     /// Determine the stop reason for a step with no tool calls.

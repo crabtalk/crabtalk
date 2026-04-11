@@ -1,6 +1,6 @@
 //! Runtime types — conversation, hook, and configuration traits.
 
-use crate::repos::Storage;
+use crate::{agent::ToolDispatcher, repos::Storage};
 use crabllm_core::Provider;
 
 pub mod conversation;
@@ -20,6 +20,6 @@ pub trait Config: Send + Sync + 'static {
     /// LLM provider for agent execution.
     type Provider: Provider + 'static;
 
-    /// Lifecycle hook for agent building, events, and tool registration.
-    type Hook: Hook;
+    /// Lifecycle hook for agent building, events, and tool dispatch.
+    type Hook: Hook + ToolDispatcher;
 }

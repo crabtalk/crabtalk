@@ -54,23 +54,20 @@ channel.
 ## Data Flow
 
 ```
-Client (CLI/Telegram/etc) → UDS/TCP → Daemon event loop
+Client (CLI/Telegram/etc) → UDS/TCP → Node event loop
   → Agent.step(): config + history + tools → Model.send()/stream()
-  → Tool calls dispatched via ToolSender → Env.dispatch_tool()
-  → Results back to agent via oneshot channel
+  → Tool calls dispatched via ToolDispatcher → Env.dispatch_tool()
 ```
 
 ## Key Types
 
 - `Agent<P: Provider>` — immutable definition + execution (step/run/run_stream)
 - `Session` — conversation history container
-- `Runtime<P, H>` — agents + sessions + tool dispatch
+- `Runtime<C: Config>` — agents + sessions + tool dispatch
 - `Env<H, S>` — engine environment: skills, MCP, memory, tool routing
 - `Host` — trait for server-specific tools (ask_user, delegate, session CWD)
-- `Storage` — wcore trait; pluggable KV backend reached through `Hook::Storage`
-- `DaemonEnv` — type alias: `Env<DaemonHost, FsStorage>`, adds event broadcasting
-- `DaemonEvent` — Message | ToolCall | Shutdown
-- `ToolRequest` — single tool call with reply channel
+- `Storage` — wcore trait; pluggable KV backend reached through `Config::Storage`
+- `ToolDispatcher` — wcore trait the agent calls to execute a tool
 - Protocol — `ClientMessage` / `ServerMessage` (protobuf)
 
 ## External Dependencies

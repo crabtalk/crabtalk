@@ -1,10 +1,11 @@
 //! Fluent builder for constructing an [`Agent`].
 
 use crate::{
-    agent::{Agent, config::AgentConfig, tool::ToolSender},
+    agent::{Agent, config::AgentConfig, tool::ToolDispatcher},
     model::Model,
 };
 use crabllm_core::{Provider, Tool};
+use std::sync::Arc;
 
 /// Fluent builder for [`Agent<P>`].
 ///
@@ -14,7 +15,7 @@ pub struct AgentBuilder<P: Provider + 'static> {
     config: AgentConfig,
     model: Model<P>,
     tools: Vec<Tool>,
-    tool_tx: Option<ToolSender>,
+    dispatcher: Option<Arc<dyn ToolDispatcher>>,
 }
 
 impl<P: Provider + 'static> AgentBuilder<P> {
@@ -24,7 +25,7 @@ impl<P: Provider + 'static> AgentBuilder<P> {
             config: AgentConfig::default(),
             model,
             tools: Vec::new(),
-            tool_tx: None,
+            dispatcher: None,
         }
     }
 
@@ -40,9 +41,9 @@ impl<P: Provider + 'static> AgentBuilder<P> {
         self
     }
 
-    /// Set the tool sender for dispatching tool calls.
-    pub fn tool_tx(mut self, tx: ToolSender) -> Self {
-        self.tool_tx = Some(tx);
+    /// Set the tool dispatcher for executing tool calls.
+    pub fn dispatcher(mut self, dispatcher: Arc<dyn ToolDispatcher>) -> Self {
+        self.dispatcher = Some(dispatcher);
         self
     }
 
@@ -52,7 +53,7 @@ impl<P: Provider + 'static> AgentBuilder<P> {
             config: self.config,
             model: self.model,
             tools: self.tools,
-            tool_tx: self.tool_tx,
+            dispatcher: self.dispatcher,
         }
     }
 }

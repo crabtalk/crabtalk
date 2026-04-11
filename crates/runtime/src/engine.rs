@@ -21,7 +21,7 @@ use std::{
 use tokio::sync::{Mutex, RwLock, mpsc, watch};
 use wcore::{
     Agent, AgentBuilder, AgentConfig, AgentEvent, AgentResponse, AgentStopReason, Config,
-    Conversation, Hook, ToolRegistry, ToolSender,
+    Conversation, Hook, ToolDispatcher, ToolRegistry,
     model::{HistoryEntry, Model},
     repos::{SessionHandle, Storage},
 };
@@ -29,39 +29,38 @@ use wcore::{
 /// The crabtalk runtime.
 pub struct Runtime<C: Config> {
     pub model: Model<C::Provider>,
-    pub hook: C::Hook,
+    pub hook: Arc<C::Hook>,
     storage: Arc<C::Storage>,
     agents: StdRwLock<BTreeMap<String, Agent<C::Provider>>>,
     ephemeral_agents: RwLock<BTreeMap<String, Agent<C::Provider>>>,
     conversations: RwLock<BTreeMap<u64, Arc<Mutex<Conversation>>>>,
     next_conversation_id: AtomicU64,
     pub tools: ToolRegistry,
-    tool_tx: Option<ToolSender>,
     steering: RwLock<BTreeMap<u64, watch::Sender<Option<String>>>>,
 }
 
 impl<C: Config> Runtime<C> {
     /// Create a new runtime with the given model, hook, storage, and tools.
     ///
-    /// Tool schemas and handlers are registered by the caller before
-    /// construction — see [`Env::register_handler`](crate::Env::register_handler).
+    /// Tool schemas and handlers are registered on the hook before
+    /// construction — see [`Env::register_tool`](crate::Env::register_tool).
+    /// The hook doubles as the [`ToolDispatcher`] for every agent built
+    /// by this runtime.
     pub fn new(
         model: Model<C::Provider>,
         hook: C::Hook,
         storage: Arc<C::Storage>,
-        tool_tx: Option<ToolSender>,
         tools: ToolRegistry,
     ) -> Self {
         Self {
             model,
-            hook,
+            hook: Arc::new(hook),
             storage,
             agents: StdRwLock::new(BTreeMap::new()),
             ephemeral_agents: RwLock::new(BTreeMap::new()),
             conversations: RwLock::new(BTreeMap::new()),
             next_conversation_id: AtomicU64::new(1),
             tools,
-            tool_tx,
             steering: RwLock::new(BTreeMap::new()),
         }
     }
@@ -99,13 +98,13 @@ impl<C: Config> Runtime<C> {
         let config = self.hook.on_build_agent(config);
         let name = config.name.clone();
         let tools = self.tools.filtered_snapshot(&config.tools);
-        let mut builder = AgentBuilder::new(self.model.clone())
+        let dispatcher: Arc<dyn ToolDispatcher> = self.hook.clone();
+        let agent = AgentBuilder::new(self.model.clone())
             .config(config)
-            .tools(tools);
-        if let Some(tx) = &self.tool_tx {
-            builder = builder.tool_tx(tx.clone());
-        }
-        (name, builder.build())
+            .tools(tools)
+            .dispatcher(dispatcher)
+            .build();
+        (name, agent)
     }
 
     pub fn agent(&self, name: &str) -> Option<AgentConfig> {

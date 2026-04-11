@@ -17,7 +17,7 @@ use std::{
 };
 use tokio::sync::{Mutex, RwLock, broadcast};
 use tools::Memory;
-use wcore::{AgentConfig, ToolRequest, model::Model, repos::Storage};
+use wcore::{AgentConfig, model::Model, repos::Storage};
 use wcore::{ResolvedManifest, resolve_manifests};
 
 pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
@@ -173,8 +173,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             event_tx.clone(),
             mcp_handler.clone(),
         )?;
-        let tool_tx = build_tool_sender(event_tx);
-        let mut runtime = Runtime::new(model, hook, storage, Some(tool_tx), tools);
+        let mut runtime = Runtime::new(model, hook, storage, tools);
         load_agents(&mut runtime, config_dir, config, &manifest)?;
         Ok((runtime, mcp_handler))
     }
@@ -324,19 +323,6 @@ fn build_env<H: Host + 'static>(
     }
 
     Ok((env, storage, tools))
-}
-
-fn build_tool_sender(event_tx: &NodeEventSender) -> wcore::ToolSender {
-    let (tool_tx, mut tool_rx) = tokio::sync::mpsc::unbounded_channel::<ToolRequest>();
-    let event_tx = event_tx.clone();
-    tokio::spawn(async move {
-        while let Some(req) = tool_rx.recv().await {
-            if event_tx.send(NodeEvent::ToolCall(req)).is_err() {
-                break;
-            }
-        }
-    });
-    tool_tx
 }
 
 fn load_agents<P: Provider + 'static, H: Host + 'static>(

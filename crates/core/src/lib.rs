@@ -5,7 +5,7 @@
 //! - [`AgentConfig`]: Serializable agent parameters.
 //! - [`Conversation`]: Lightweight conversation history container.
 //! - [`ToolRegistry`]: Schema-only tool store. No handlers or closures.
-//! - [`ToolSender`] / [`ToolRequest`]: Agent-side tool dispatch primitives.
+//! - [`ToolDispatcher`]: Agent-side tool dispatch trait.
 //! - [`Hook`]: Lifecycle backend for agent building, events, and tool registration.
 //! - [`model`]: Unified LLM interface types and traits.
 //! - Agent event types: [`AgentEvent`], [`AgentStep`], [`AgentResponse`], [`AgentStopReason`].
@@ -14,7 +14,8 @@ pub use agent::{
     Agent, AgentBuilder, AgentConfig, AgentId,
     event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason},
     tool::{
-        BeforeRunHook, ToolDispatch, ToolEntry, ToolHandler, ToolRegistry, ToolRequest, ToolSender,
+        BeforeRunHook, ToolDispatch, ToolDispatcher, ToolEntry, ToolFuture, ToolHandler,
+        ToolRegistry,
     },
 };
 pub use config::{
