@@ -4,9 +4,8 @@ use runtime::Memory;
 use serde::Deserialize;
 use std::sync::Arc;
 use wcore::{
-    ToolDispatch, ToolHandler,
+    ToolDispatch, ToolEntry,
     agent::{AsTool, ToolDescription},
-    model::Tool,
     repos::Storage,
 };
 
@@ -61,11 +60,15 @@ impl ToolDescription for MemoryTool {
 
 // ── Handlers ─────────────────────────────────────────────────────
 
-pub fn handlers<S: Storage + 'static>(memory: Arc<Memory<S>>) -> Vec<(Tool, ToolHandler)> {
+pub fn handlers<S: Storage + 'static>(memory: Arc<Memory<S>>) -> Vec<ToolEntry> {
+    // Recall gets system_prompt (memory index) and before_run (auto-recall).
     let m = memory.clone();
-    let recall: (Tool, ToolHandler) = (
-        Recall::as_tool(),
-        Arc::new(move |call: ToolDispatch| {
+    let m2 = memory.clone();
+    let recall = ToolEntry {
+        schema: Recall::as_tool(),
+        system_prompt: Some(m.build_prompt()),
+        before_run: Some(Arc::new(move |history| m2.before_run(history))),
+        handler: Arc::new(move |call: ToolDispatch| {
             let mem = m.clone();
             Box::pin(async move {
                 let input: Recall = serde_json::from_str(&call.args)
@@ -73,12 +76,14 @@ pub fn handlers<S: Storage + 'static>(memory: Arc<Memory<S>>) -> Vec<(Tool, Tool
                 Ok(mem.recall(&input.query, input.limit.unwrap_or(5)))
             })
         }),
-    );
+    };
 
     let m = memory.clone();
-    let remember: (Tool, ToolHandler) = (
-        Remember::as_tool(),
-        Arc::new(move |call: ToolDispatch| {
+    let remember = ToolEntry {
+        schema: Remember::as_tool(),
+        system_prompt: None,
+        before_run: None,
+        handler: Arc::new(move |call: ToolDispatch| {
             let mem = m.clone();
             Box::pin(async move {
                 let input: Remember = serde_json::from_str(&call.args)
@@ -86,12 +91,14 @@ pub fn handlers<S: Storage + 'static>(memory: Arc<Memory<S>>) -> Vec<(Tool, Tool
                 Ok(mem.remember(input.name, input.description, input.content))
             })
         }),
-    );
+    };
 
     let m = memory.clone();
-    let forget: (Tool, ToolHandler) = (
-        Forget::as_tool(),
-        Arc::new(move |call: ToolDispatch| {
+    let forget = ToolEntry {
+        schema: Forget::as_tool(),
+        system_prompt: None,
+        before_run: None,
+        handler: Arc::new(move |call: ToolDispatch| {
             let mem = m.clone();
             Box::pin(async move {
                 let input: Forget = serde_json::from_str(&call.args)
@@ -99,12 +106,14 @@ pub fn handlers<S: Storage + 'static>(memory: Arc<Memory<S>>) -> Vec<(Tool, Tool
                 Ok(mem.forget(&input.name))
             })
         }),
-    );
+    };
 
     let m = memory;
-    let memory_tool: (Tool, ToolHandler) = (
-        MemoryTool::as_tool(),
-        Arc::new(move |call: ToolDispatch| {
+    let memory_tool = ToolEntry {
+        schema: MemoryTool::as_tool(),
+        system_prompt: None,
+        before_run: None,
+        handler: Arc::new(move |call: ToolDispatch| {
             let mem = m.clone();
             Box::pin(async move {
                 let input: MemoryTool = serde_json::from_str(&call.args)
@@ -112,7 +121,7 @@ pub fn handlers<S: Storage + 'static>(memory: Arc<Memory<S>>) -> Vec<(Tool, Tool
                 Ok(mem.write_index(&input.content))
             })
         }),
-    );
+    };
 
     vec![recall, remember, forget, memory_tool]
 }

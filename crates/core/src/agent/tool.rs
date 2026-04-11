@@ -6,6 +6,7 @@
 //! call and awaits a `Result<String, String>` reply — `Ok` carries normal
 //! output, `Err` carries an error message the UI can render distinctly.
 
+use crate::model::HistoryEntry;
 use crabllm_core::{FunctionDef, Tool, ToolType};
 use heck::ToSnakeCase;
 use schemars::JsonSchema;
@@ -60,6 +61,21 @@ pub type ToolHandler = Arc<
         + Send
         + Sync,
 >;
+
+/// Callback invoked before each agent run to inject context entries.
+pub type BeforeRunHook = Arc<dyn Fn(&[HistoryEntry]) -> Vec<HistoryEntry> + Send + Sync>;
+
+/// A registered tool: schema + handler + optional lifecycle hooks.
+pub struct ToolEntry {
+    /// Tool schema for the LLM.
+    pub schema: Tool,
+    /// Dispatch handler.
+    pub handler: ToolHandler,
+    /// Appended to agent system prompt at build time.
+    pub system_prompt: Option<String>,
+    /// Injected before each agent turn (auto-recall, context, etc).
+    pub before_run: Option<BeforeRunHook>,
+}
 
 /// Schema-only registry of named tools.
 ///
@@ -127,6 +143,20 @@ impl ToolRegistry {
             .filter(|(k, _)| names.iter().any(|n| n == *k))
             .map(|(_, v)| v.clone())
             .collect()
+    }
+}
+
+/// Create a minimal tool schema for testing.
+#[cfg(feature = "test-utils")]
+pub fn test_schema(name: &str) -> Tool {
+    Tool {
+        kind: ToolType::Function,
+        function: FunctionDef {
+            name: name.to_owned(),
+            description: None,
+            parameters: None,
+        },
+        strict: None,
     }
 }
 

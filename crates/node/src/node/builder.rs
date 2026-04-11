@@ -86,7 +86,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             tracing::warn!("agent id backfill failed: {e}");
         }
 
-        let runtime =
+        let (runtime, mcp) =
             Self::build_runtime(config, config_dir, &event_tx, host, &build_provider).await?;
         let cron_store =
             crate::cron::CronStore::load(config_dir.to_path_buf(), event_tx.clone(), shutdown_tx);
@@ -120,6 +120,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             crons,
             events,
             build_provider,
+            mcp,
         })
     }
 
@@ -129,7 +130,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             let old_rt = self.runtime.read().await;
             old_rt.hook.host.clone()
         };
-        let mut new_runtime = Self::build_runtime(
+        let (mut new_runtime, _mcp) = Self::build_runtime(
             &config,
             &self.config_dir,
             &self.event_tx,
@@ -154,7 +155,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         event_tx: &NodeEventSender,
         host: H,
         build_provider: &BuildProvider<P>,
-    ) -> Result<Runtime<crate::node::NodeCfg<P, H>>> {
+    ) -> Result<(Runtime<crate::node::NodeCfg<P, H>>, Arc<McpHandler>)> {
         let (mut manifest, _warnings) = resolve_manifests(config_dir);
         manifest.disabled = config.disabled.clone();
         wcore::filter_disabled_external(&mut manifest.skill_dirs, &manifest.disabled.external);
@@ -169,12 +170,12 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             &manifest,
             host,
             event_tx.clone(),
-            mcp_handler,
+            mcp_handler.clone(),
         )?;
         let tool_tx = build_tool_sender(event_tx);
         let mut runtime = Runtime::new(model, hook, storage, Some(tool_tx), tools);
         load_agents(&mut runtime, config_dir, config, &manifest)?;
-        Ok(runtime)
+        Ok((runtime, mcp_handler))
     }
 }
 
@@ -252,25 +253,20 @@ fn build_env<H: Host + 'static>(
     let mut env = Env::new(
         storage.clone(),
         cwd.clone(),
-        Some(memory.clone()),
         host,
         scopes.clone(),
         conversation_cwds.clone(),
         pending_asks.clone(),
-        mcp_server_list,
     );
 
-    // Register tool handlers.
+    // Register tools.
     let mut tools = wcore::ToolRegistry::new();
 
-    let register = |tools: &mut wcore::ToolRegistry,
-                    env: &mut Env<H, FsStorage>,
-                    entry: (wcore::model::Tool, wcore::ToolHandler)| {
-        let (schema, handler) = entry;
-        let name = schema.function.name.clone();
-        tools.insert(schema);
-        env.register_handler(name, handler);
-    };
+    let register =
+        |tools: &mut wcore::ToolRegistry, env: &mut Env<H, FsStorage>, entry: wcore::ToolEntry| {
+            tools.insert(entry.schema.clone());
+            env.register_tool(entry);
+        };
 
     register(
         &mut tools,
@@ -302,7 +298,6 @@ fn build_env<H: Host + 'static>(
         &mut env,
         crate::tools::delegate::handler(event_tx, scopes.clone()),
     );
-
     register(
         &mut tools,
         &mut env,
@@ -311,12 +306,23 @@ fn build_env<H: Host + 'static>(
 
     // MCP — register only if servers are configured.
     if !mcp_handler.cached_list().is_empty() {
-        let schema = <crate::mcp::tool::Mcp as wcore::agent::AsTool>::as_tool();
-        let name = schema.function.name.clone();
-        tools.insert(schema);
-        env.register_handler(
-            name,
-            crate::tools::mcp::handler(mcp_handler, scopes.clone()),
+        let mcp_prompt = format!(
+            "\n\n<resources>\nMCP servers: {}. Use the mcp tool to list or call tools.\n</resources>",
+            mcp_server_list
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        register(
+            &mut tools,
+            &mut env,
+            wcore::ToolEntry {
+                schema: <crate::mcp::tool::Mcp as wcore::agent::AsTool>::as_tool(),
+                handler: crate::tools::mcp::handler(mcp_handler, scopes.clone()),
+                system_prompt: Some(mcp_prompt),
+                before_run: None,
+            },
         );
     }
 

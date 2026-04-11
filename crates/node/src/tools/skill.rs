@@ -7,9 +7,8 @@ use std::{
     sync::{Arc, RwLock},
 };
 use wcore::{
-    ToolDispatch, ToolHandler,
+    ToolDispatch, ToolEntry,
     agent::{AsTool, ToolDescription},
-    model::Tool,
     repos::Storage,
 };
 
@@ -27,10 +26,15 @@ impl ToolDescription for SkillTool {
 pub fn handler<S: Storage + 'static>(
     storage: Arc<S>,
     scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
-) -> (Tool, ToolHandler) {
-    (
-        SkillTool::as_tool(),
-        Arc::new(move |call: ToolDispatch| {
+) -> ToolEntry {
+    // Build skill listing for system prompt.
+    let skill_prompt = build_skill_prompt(storage.as_ref());
+
+    ToolEntry {
+        schema: SkillTool::as_tool(),
+        system_prompt: skill_prompt,
+        before_run: None,
+        handler: Arc::new(move |call: ToolDispatch| {
             let storage = storage.clone();
             let scopes = scopes.clone();
             Box::pin(async move {
@@ -93,5 +97,29 @@ pub fn handler<S: Storage + 'static>(
                 }
             })
         }),
-    )
+    }
+}
+
+fn build_skill_prompt(storage: &dyn Storage) -> Option<String> {
+    let skills = storage.list_skills().ok()?;
+    if skills.is_empty() {
+        return None;
+    }
+    let lines: Vec<String> = skills
+        .iter()
+        .map(|s| {
+            if s.description.is_empty() {
+                format!("- {}", s.name)
+            } else {
+                format!("- {}: {}", s.name, s.description)
+            }
+        })
+        .collect();
+    Some(format!(
+        "\n\n<resources>\nSkills:\n\
+         When a <skill> tag appears in a message, it has been pre-loaded by the system. \
+         Follow its instructions directly — do not announce or re-load it.\n\
+         Use the skill tool to discover available skills or load one by name.\n{}\n</resources>",
+        lines.join("\n")
+    ))
 }

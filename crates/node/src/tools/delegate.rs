@@ -12,9 +12,8 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 use wcore::{
-    ToolDispatch, ToolHandler,
+    ToolDispatch, ToolEntry,
     agent::{AsTool, ToolDescription},
-    model::Tool,
     protocol::message::{ClientMessage, SendMsg, server_message},
 };
 
@@ -51,10 +50,12 @@ impl ToolDescription for Delegate {
 pub fn handler(
     event_tx: NodeEventSender,
     scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
-) -> (Tool, ToolHandler) {
-    (
-        Delegate::as_tool(),
-        Arc::new(move |call: ToolDispatch| {
+) -> ToolEntry {
+    ToolEntry {
+        schema: Delegate::as_tool(),
+        system_prompt: None,
+        before_run: None,
+        handler: Arc::new(move |call: ToolDispatch| {
             let event_tx = event_tx.clone();
             let scopes = scopes.clone();
             Box::pin(async move {
@@ -81,7 +82,7 @@ pub fn handler(
                 dispatch_delegate(input, &event_tx).await
             })
         }),
-    )
+    }
 }
 
 async fn dispatch_delegate(input: Delegate, event_tx: &NodeEventSender) -> Result<String, String> {

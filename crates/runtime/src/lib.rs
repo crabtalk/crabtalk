@@ -2,7 +2,6 @@ mod engine;
 pub mod env;
 pub mod host;
 pub mod memory;
-pub mod os;
 pub mod skill;
 
 pub use engine::Runtime;

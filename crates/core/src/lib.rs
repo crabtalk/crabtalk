@@ -13,7 +13,9 @@
 pub use agent::{
     Agent, AgentBuilder, AgentConfig, AgentId,
     event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason},
-    tool::{ToolDispatch, ToolHandler, ToolRegistry, ToolRequest, ToolSender},
+    tool::{
+        BeforeRunHook, ToolDispatch, ToolEntry, ToolHandler, ToolRegistry, ToolRequest, ToolSender,
+    },
 };
 pub use config::{
     ApiStandard, ManifestConfig, McpServerConfig, MemoryConfig, NodeConfig, PackageMeta,

@@ -4,9 +4,8 @@ use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::oneshot;
 use wcore::{
-    ToolDispatch, ToolHandler,
+    ToolDispatch, ToolEntry,
     agent::{AsTool, ToolDescription},
-    model::Tool,
 };
 
 /// Timeout for waiting on user reply (5 minutes).
@@ -46,10 +45,12 @@ impl ToolDescription for AskUser {
     const DESCRIPTION: &'static str = r#"Ask the user one or more structured questions with predefined options. Each question needs a short UI header, the full question text, and options with labels and descriptions. The user picks from the options or types a free-text "Other" answer. Returns JSON mapping question text to selected label. For multi_select, the answer is a comma-joined string like "Option A, Option B"."#;
 }
 
-pub fn handler(pending_asks: runtime::PendingAsks) -> (Tool, ToolHandler) {
-    (
-        AskUser::as_tool(),
-        Arc::new(move |call: ToolDispatch| {
+pub fn handler(pending_asks: runtime::PendingAsks) -> ToolEntry {
+    ToolEntry {
+        schema: AskUser::as_tool(),
+        system_prompt: None,
+        before_run: None,
+        handler: Arc::new(move |call: ToolDispatch| {
             let pending_asks = pending_asks.clone();
             Box::pin(async move {
                 let input: AskUser = serde_json::from_str(&call.args)
@@ -81,5 +82,5 @@ pub fn handler(pending_asks: runtime::PendingAsks) -> (Tool, ToolHandler) {
                 }
             })
         }),
-    )
+    }
 }

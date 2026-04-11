@@ -700,12 +700,11 @@ impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {
 
     async fn list_mcps(&self) -> Result<Vec<McpInfo>> {
         let config = self.load_config().await?;
-        let rt = self.runtime.read().await.clone();
-        let connected: std::collections::BTreeMap<String, usize> = rt
-            .hook
-            .mcp_servers()
-            .iter()
-            .map(|(name, tools)| (name.clone(), tools.len()))
+        let connected: std::collections::BTreeMap<String, usize> = self
+            .mcp
+            .cached_list()
+            .into_iter()
+            .map(|(name, tools)| (name, tools.len()))
             .collect();
 
         let mut mcps = Vec::new();

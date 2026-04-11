@@ -5,9 +5,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use std::{collections::BTreeMap, fmt::Write, path::PathBuf, sync::Arc};
 use wcore::{
-    ToolDispatch, ToolHandler,
+    ToolDispatch, ToolEntry,
     agent::{AsTool, ToolDescription},
-    model::Tool,
 };
 
 /// Default maximum number of lines to return per read.
@@ -64,10 +63,20 @@ impl ToolDescription for Edit {
 
 // ── Handlers ─────────────────────────────────────────────────────
 
-pub fn bash(cwd: PathBuf, cwds: ConversationCwds) -> (Tool, ToolHandler) {
-    (
-        Bash::as_tool(),
-        Arc::new(move |call: ToolDispatch| {
+/// Build an `<environment>` XML block with OS info.
+fn environment_block() -> String {
+    let mut buf = String::from("\n\n<environment>\n");
+    let _ = writeln!(buf, "os: {}", std::env::consts::OS);
+    buf.push_str("</environment>");
+    buf
+}
+
+pub fn bash(cwd: PathBuf, cwds: ConversationCwds) -> ToolEntry {
+    ToolEntry {
+        schema: Bash::as_tool(),
+        system_prompt: Some(environment_block()),
+        before_run: None,
+        handler: Arc::new(move |call: ToolDispatch| {
             let cwds = cwds.clone();
             let cwd = cwd.clone();
             Box::pin(async move {
@@ -131,13 +140,15 @@ pub fn bash(cwd: PathBuf, cwds: ConversationCwds) -> (Tool, ToolHandler) {
                 }
             })
         }),
-    )
+    }
 }
 
-pub fn read(cwd: PathBuf, cwds: ConversationCwds) -> (Tool, ToolHandler) {
-    (
-        Read::as_tool(),
-        Arc::new(move |call: ToolDispatch| {
+pub fn read(cwd: PathBuf, cwds: ConversationCwds) -> ToolEntry {
+    ToolEntry {
+        schema: Read::as_tool(),
+        system_prompt: None,
+        before_run: None,
+        handler: Arc::new(move |call: ToolDispatch| {
             let cwds = cwds.clone();
             let cwd = cwd.clone();
             Box::pin(async move {
@@ -203,13 +214,15 @@ pub fn read(cwd: PathBuf, cwds: ConversationCwds) -> (Tool, ToolHandler) {
                 Ok(buf)
             })
         }),
-    )
+    }
 }
 
-pub fn edit(cwd: PathBuf, cwds: ConversationCwds) -> (Tool, ToolHandler) {
-    (
-        Edit::as_tool(),
-        Arc::new(move |call: ToolDispatch| {
+pub fn edit(cwd: PathBuf, cwds: ConversationCwds) -> ToolEntry {
+    ToolEntry {
+        schema: Edit::as_tool(),
+        system_prompt: None,
+        before_run: None,
+        handler: Arc::new(move |call: ToolDispatch| {
             let cwds = cwds.clone();
             let cwd = cwd.clone();
             Box::pin(async move {
@@ -268,5 +281,5 @@ pub fn edit(cwd: PathBuf, cwds: ConversationCwds) -> (Tool, ToolHandler) {
                 Ok("ok".to_owned())
             })
         }),
-    )
+    }
 }
