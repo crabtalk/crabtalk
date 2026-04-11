@@ -17,12 +17,12 @@ pub async fn start() -> Result<()> {
 
     // UDS transport (Unix only).
     #[cfg(unix)]
-    let (socket_path, socket_join) = node::setup_socket(&handle.shutdown_tx, &handle.event_tx)?;
+    let (socket_path, socket_join) = node::setup_socket(handle.node.clone(), &handle.shutdown_tx)?;
     #[cfg(unix)]
     tracing::info!("crabtalk daemon listening on {}", socket_path.display());
 
     // TCP transport.
-    let (tcp_join, tcp_port) = node::setup_tcp(&handle.shutdown_tx, &handle.event_tx)?;
+    let (tcp_join, tcp_port) = node::setup_tcp(handle.node.clone(), &handle.shutdown_tx)?;
     std::fs::write(&*TCP_PORT_FILE, tcp_port.to_string())?;
     tracing::info!("wrote tcp port file at {}", TCP_PORT_FILE.display());
 

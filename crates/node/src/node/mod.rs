@@ -13,6 +13,7 @@ use crate::{
 };
 use anyhow::Result;
 use crabllm_core::Provider;
+use futures_util::{StreamExt, pin_mut};
 use runtime::{Env, Runtime, host::Host};
 use std::{
     marker::PhantomData,
@@ -23,7 +24,10 @@ use tokio::sync::{Mutex, RwLock, broadcast, mpsc, oneshot};
 // NOTE: EventBus uses std::sync::Mutex so it can be locked from
 // synchronous lifecycle hooks (Env::on_event). Protocol-facing
 // subscribe/unsubscribe/list paths use this same mutex.
-use wcore::model::Model;
+use wcore::{
+    model::Model,
+    protocol::{api::Server, message::ClientMessage},
+};
 
 pub(crate) mod builder;
 pub mod event;
@@ -160,10 +164,31 @@ impl<P: Provider + 'static, B: Host + 'static> NodeHandle<P, B> {
 
 // ── Transport setup helpers ──────────────────────────────────────────
 
+/// Return a per-message callback that spawns a task driving
+/// `node.dispatch` and piping its output to `reply`. Shared between the
+/// UDS and TCP transports.
+fn dispatch_callback<P: Provider + 'static, H: Host + 'static>(
+    node: Node<P, H>,
+) -> impl Fn(ClientMessage, mpsc::Sender<wcore::protocol::message::ServerMessage>) + Clone + Send + 'static
+{
+    move |msg, reply| {
+        let node = node.clone();
+        tokio::spawn(async move {
+            let stream = node.dispatch(msg);
+            pin_mut!(stream);
+            while let Some(server_msg) = stream.next().await {
+                if reply.send(server_msg).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+}
+
 #[cfg(unix)]
-pub fn setup_socket(
+pub fn setup_socket<P: Provider + 'static, H: Host + 'static>(
+    node: Node<P, H>,
     shutdown_tx: &broadcast::Sender<()>,
-    event_tx: &NodeEventSender,
 ) -> Result<(&'static Path, tokio::task::JoinHandle<()>)> {
     let resolved_path: &'static Path = &wcore::paths::SOCKET_PATH;
     if let Some(parent) = resolved_path.parent() {
@@ -177,33 +202,27 @@ pub fn setup_socket(
     tracing::info!("daemon listening on {}", resolved_path.display());
 
     let socket_shutdown = bridge_shutdown(shutdown_tx.subscribe());
-    let socket_tx = event_tx.clone();
     let join = tokio::spawn(transport::uds::accept_loop(
         listener,
-        move |msg, reply| {
-            let _ = socket_tx.send(NodeEvent::Message { msg, reply });
-        },
+        dispatch_callback(node),
         socket_shutdown,
     ));
 
     Ok((resolved_path, join))
 }
 
-pub fn setup_tcp(
+pub fn setup_tcp<P: Provider + 'static, H: Host + 'static>(
+    node: Node<P, H>,
     shutdown_tx: &broadcast::Sender<()>,
-    event_tx: &NodeEventSender,
 ) -> Result<(tokio::task::JoinHandle<()>, u16)> {
     let (std_listener, addr) = transport::tcp::bind()?;
     let listener = tokio::net::TcpListener::from_std(std_listener)?;
     tracing::info!("daemon listening on tcp://{addr}");
 
     let tcp_shutdown = bridge_shutdown(shutdown_tx.subscribe());
-    let tcp_tx = event_tx.clone();
     let join = tokio::spawn(transport::tcp::accept_loop(
         listener,
-        move |msg, reply| {
-            let _ = tcp_tx.send(NodeEvent::Message { msg, reply });
-        },
+        dispatch_callback(node),
         tcp_shutdown,
     ));
 

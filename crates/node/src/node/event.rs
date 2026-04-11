@@ -1,29 +1,15 @@
 //! Node event types and dispatch.
 //!
-//! All inbound stimuli (socket, channel) are represented as [`NodeEvent`]
-//! variants sent through a single `mpsc::unbounded_channel`. The [`Node`]
-//! processes them via [`handle_events`](Node::handle_events).
+//! Only `Shutdown` remains. The event loop will go away entirely in
+//! the next phase — it no longer coordinates any work.
 
 use crate::node::Node;
 use crabllm_core::Provider;
-use futures_util::{StreamExt, pin_mut};
 use runtime::host::Host;
 use tokio::sync::mpsc;
-use wcore::protocol::{
-    api::Server,
-    message::{ClientMessage, ServerMessage},
-};
 
 /// Inbound event from any source, processed by the central event loop.
 pub enum NodeEvent {
-    /// A client message from any source (socket, telegram).
-    /// Reply channel streams `ServerMessage`s back to the caller.
-    Message {
-        /// The parsed client message.
-        msg: ClientMessage,
-        /// Per-request reply channel for streaming `ServerMessage`s back.
-        reply: mpsc::Sender<ServerMessage>,
-    },
     /// Graceful shutdown request.
     Shutdown,
 }
@@ -34,14 +20,11 @@ pub type NodeEventSender = mpsc::UnboundedSender<NodeEvent>;
 // ── Event dispatch ───────────────────────────────────────────────────
 
 impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
-    /// Process events until [`NodeEvent::Shutdown`] is received.
-    ///
-    /// Spawns a task for each event to avoid blocking on LLM calls.
+    /// Drain the legacy event loop until `Shutdown` is received.
     pub(crate) async fn handle_events(&self, mut rx: mpsc::UnboundedReceiver<NodeEvent>) {
         tracing::info!("event loop started");
         while let Some(event) = rx.recv().await {
             match event {
-                NodeEvent::Message { msg, reply } => self.handle_message(msg, reply),
                 NodeEvent::Shutdown => {
                     tracing::info!("event loop shutting down");
                     break;
@@ -49,19 +32,5 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             }
         }
         tracing::info!("event loop stopped");
-    }
-
-    /// Dispatch a client message through the Server trait and stream replies.
-    fn handle_message(&self, msg: ClientMessage, reply: mpsc::Sender<ServerMessage>) {
-        let daemon = self.clone();
-        tokio::spawn(async move {
-            let stream = daemon.dispatch(msg);
-            pin_mut!(stream);
-            while let Some(server_msg) = stream.next().await {
-                if reply.send(server_msg).await.is_err() {
-                    break;
-                }
-            }
-        });
     }
 }
