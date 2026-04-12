@@ -1,8 +1,8 @@
-//! Delegate tool handler factory.
+//! Delegate tool — as a Hook implementation.
 
 use crate::node::SharedRuntime;
 use crabllm_core::Provider;
-use runtime::{AgentScope, host::Host};
+use runtime::{AgentScope, ConversationCwds, Hook, host::Host};
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
@@ -13,7 +13,7 @@ use std::{
     },
 };
 use wcore::{
-    ToolDispatch, ToolEntry,
+    ToolDispatch, ToolFuture,
     agent::{AsTool, ToolDescription},
 };
 
@@ -22,7 +22,6 @@ pub struct Delegate {
     /// List of tasks to run in parallel. Each task has an agent name and a message.
     pub tasks: Vec<DelegateTask>,
     /// If true, return immediately with task IDs instead of waiting for completion.
-    /// Results arrive via agent completion events (`agent:{name}:done`).
     #[serde(default)]
     pub background: bool,
 }
@@ -34,8 +33,7 @@ pub struct DelegateTask {
     pub agent: String,
     /// Message/instruction for the target agent.
     pub message: String,
-    /// System prompt for an ephemeral agent. When set, creates a temporary
-    /// agent with this prompt instead of targeting a pre-registered agent.
+    /// System prompt for an ephemeral agent.
     #[serde(default)]
     pub system_prompt: Option<String>,
     /// Working directory for this task. Defaults to the parent's CWD.
@@ -47,50 +45,73 @@ impl ToolDescription for Delegate {
     const DESCRIPTION: &'static str = "Delegate tasks to other agents. Runs all tasks in parallel. Set background=true to return immediately with task IDs — results arrive via agent completion events.";
 }
 
-pub fn handler<P: Provider + 'static, H: Host + 'static>(
+/// Delegate subsystem: dispatch tasks to other agents.
+///
+/// Owns scopes for member enforcement, a late-bind runtime handle, and
+/// the shared conversation CWD map for child task CWD overrides.
+pub struct DelegateHook<P: Provider + 'static, H: Host + 'static> {
     scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
     runtime: Arc<OnceLock<SharedRuntime<P, H>>>,
-) -> ToolEntry {
-    ToolEntry {
-        schema: Delegate::as_tool(),
-        system_prompt: None,
-        before_run: None,
-        handler: Arc::new(move |call: ToolDispatch| {
-            let scopes = scopes.clone();
-            let runtime = runtime.clone();
-            Box::pin(async move {
-                let input: Delegate = serde_json::from_str(&call.args)
-                    .map_err(|e| format!("invalid arguments: {e}"))?;
-                if input.tasks.is_empty() {
-                    return Err("no tasks provided".to_owned());
-                }
+    conversation_cwds: ConversationCwds,
+}
+
+impl<P: Provider + 'static, H: Host + 'static> DelegateHook<P, H> {
+    pub fn new(
+        scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
+        runtime: Arc<OnceLock<SharedRuntime<P, H>>>,
+        conversation_cwds: ConversationCwds,
+    ) -> Self {
+        Self {
+            scopes,
+            runtime,
+            conversation_cwds,
+        }
+    }
+}
+
+impl<P: Provider + 'static, H: Host + 'static> Hook for DelegateHook<P, H> {
+    fn schema(&self) -> Vec<wcore::model::Tool> {
+        vec![Delegate::as_tool()]
+    }
+
+    fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
+        if name != "delegate" {
+            return None;
+        }
+        Some(Box::pin(async move {
+            let input: Delegate =
+                serde_json::from_str(&call.args).map_err(|e| format!("invalid arguments: {e}"))?;
+            if input.tasks.is_empty() {
+                return Err("no tasks provided".to_owned());
+            }
+            {
+                let scopes = self.scopes.read().expect("scopes lock poisoned");
+                if let Some(scope) = scopes.get(&call.agent)
+                    && !scope.members.is_empty()
                 {
-                    let scopes = scopes.read().expect("scopes lock poisoned");
-                    if let Some(scope) = scopes.get(&call.agent)
-                        && !scope.members.is_empty()
-                    {
-                        for task in &input.tasks {
-                            if !scope.members.iter().any(|m| m == &task.agent) {
-                                return Err(format!(
-                                    "agent '{}' is not in your members list",
-                                    task.agent
-                                ));
-                            }
+                    for task in &input.tasks {
+                        if !scope.members.iter().any(|m| m == &task.agent) {
+                            return Err(format!(
+                                "agent '{}' is not in your members list",
+                                task.agent
+                            ));
                         }
                     }
                 }
-                let shared = runtime
-                    .get()
-                    .ok_or_else(|| "delegate: runtime not initialized".to_owned())?;
-                dispatch_delegate(input, shared).await
-            })
-        }),
+            }
+            let shared = self
+                .runtime
+                .get()
+                .ok_or_else(|| "delegate: runtime not initialized".to_owned())?;
+            dispatch_delegate(input, shared, &self.conversation_cwds).await
+        }))
     }
 }
 
 async fn dispatch_delegate<P: Provider + 'static, H: Host + 'static>(
     input: Delegate,
     shared: &SharedRuntime<P, H>,
+    conversation_cwds: &ConversationCwds,
 ) -> Result<String, String> {
     let mut ephemeral_names = Vec::new();
     let mut tasks = Vec::with_capacity(input.tasks.len());
@@ -114,6 +135,7 @@ async fn dispatch_delegate<P: Provider + 'static, H: Host + 'static>(
         let sender = delegate_sender();
         let handle = spawn_agent_task(
             shared.clone(),
+            conversation_cwds.clone(),
             agent_name.clone(),
             task.message,
             task.cwd,
@@ -182,6 +204,7 @@ fn ephemeral_agent_name() -> String {
 
 fn spawn_agent_task<P: Provider + 'static, H: Host + 'static>(
     shared: SharedRuntime<P, H>,
+    conversation_cwds: ConversationCwds,
     agent: String,
     message: String,
     cwd: Option<String>,
@@ -197,8 +220,7 @@ fn spawn_agent_task<P: Provider + 'static, H: Host + 'static>(
             Err(e) => return (None, Some(e.to_string())),
         };
         if let Some(cwd) = cwd {
-            rt.hook
-                .conversation_cwds
+            conversation_cwds
                 .lock()
                 .await
                 .insert(conversation_id, PathBuf::from(cwd));
@@ -212,14 +234,7 @@ fn spawn_agent_task<P: Provider + 'static, H: Host + 'static>(
             Err(e) => (None, Some(e.to_string())),
         };
 
-        // Tear down the conversation so the delegate sender identity can
-        // be reused. Matches the prior Kill round-trip that went through
-        // the protocol layer.
-        rt.hook
-            .conversation_cwds
-            .lock()
-            .await
-            .remove(&conversation_id);
+        conversation_cwds.lock().await.remove(&conversation_id);
         rt.close_conversation(conversation_id).await;
 
         (result_content, error_msg)

@@ -298,7 +298,6 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
 
         let mut tools = wcore::ToolRegistry::new();
 
-        // Helper: register a Hook — populates both Env and ToolRegistry.
         let register_hook = |tools: &mut wcore::ToolRegistry,
                              env: &mut Env<H, FsStorage>,
                              name: &str,
@@ -309,19 +308,11 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             env.register_hook(name, hook);
         };
 
-        // Helper: register a legacy ToolEntry.
-        let register = |tools: &mut wcore::ToolRegistry,
-                        env: &mut Env<H, FsStorage>,
-                        entry: wcore::ToolEntry| {
-            tools.insert(entry.schema.clone());
-            env.register_tool(entry);
-        };
-
         register_hook(
             &mut tools,
             env,
             "os",
-            Arc::new(tools::os::OsHook::new(cwd, conversation_cwds)),
+            Arc::new(tools::os::OsHook::new(cwd, conversation_cwds.clone())),
         );
 
         register_hook(
@@ -340,10 +331,15 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
                 scopes.clone(),
             )),
         );
-        register(
+        register_hook(
             &mut tools,
             env,
-            crate::delegate::handler::<P, H>(scopes.clone(), runtime_once),
+            "delegate",
+            Arc::new(crate::delegate::DelegateHook::<P, H>::new(
+                scopes.clone(),
+                runtime_once,
+                conversation_cwds,
+            )),
         );
         register_hook(
             &mut tools,
@@ -362,15 +358,15 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
                     .collect::<Vec<_>>()
                     .join(", ")
             );
-            register(
+            register_hook(
                 &mut tools,
                 env,
-                wcore::ToolEntry {
-                    schema: <crate::mcp::tool::Mcp as wcore::agent::AsTool>::as_tool(),
-                    handler: crate::mcp::tool::handler(mcp_handler, scopes),
-                    system_prompt: Some(mcp_prompt),
-                    before_run: None,
-                },
+                "mcp",
+                Arc::new(crate::mcp::tool::McpHook::new(
+                    mcp_handler,
+                    scopes,
+                    mcp_prompt,
+                )),
             );
         }
 

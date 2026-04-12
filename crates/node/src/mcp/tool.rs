@@ -1,14 +1,17 @@
-//! MCP tool schema and handler factory.
+//! MCP tool — as a Hook implementation.
 
 use super::McpHandler;
-use runtime::AgentScope;
+use runtime::{AgentScope, Hook};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
     sync::{Arc, RwLock},
 };
-use wcore::{ToolDispatch, ToolHandler, agent::ToolDescription};
+use wcore::{
+    ToolDispatch, ToolFuture,
+    agent::{AsTool, ToolDescription},
+};
 
 #[derive(Deserialize, JsonSchema)]
 pub struct Mcp {
@@ -25,23 +28,50 @@ impl ToolDescription for Mcp {
         "Call an MCP tool by name, or list available tools if no exact match.";
 }
 
-/// Build a handler that dispatches MCP tool calls through the McpHandler.
-pub fn handler(
+/// MCP subsystem: routes tool calls to MCP servers.
+pub struct McpHook {
     mcp: Arc<McpHandler>,
     scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
-) -> ToolHandler {
-    Arc::new(move |call: ToolDispatch| {
-        let mcp = mcp.clone();
-        let scopes = scopes.clone();
-        Box::pin(async move {
-            let allowed_mcps: Vec<String> = scopes
+    prompt: String,
+}
+
+impl McpHook {
+    pub fn new(
+        mcp: Arc<McpHandler>,
+        scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
+        prompt: String,
+    ) -> Self {
+        Self {
+            mcp,
+            scopes,
+            prompt,
+        }
+    }
+}
+
+impl Hook for McpHook {
+    fn schema(&self) -> Vec<wcore::model::Tool> {
+        vec![Mcp::as_tool()]
+    }
+
+    fn system_prompt(&self) -> Option<String> {
+        Some(self.prompt.clone())
+    }
+
+    fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
+        if name != "mcp" {
+            return None;
+        }
+        Some(Box::pin(async move {
+            let allowed_mcps: Vec<String> = self
+                .scopes
                 .read()
                 .expect("scopes lock poisoned")
                 .get(&call.agent)
                 .filter(|s| !s.mcps.is_empty())
                 .map(|s| s.mcps.clone())
                 .unwrap_or_default();
-            super::dispatch::dispatch_mcp(&mcp, &call.args, &allowed_mcps).await
-        })
-    })
+            super::dispatch::dispatch_mcp(&self.mcp, &call.args, &allowed_mcps).await
+        }))
+    }
 }
