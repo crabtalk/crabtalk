@@ -205,9 +205,9 @@ impl Cli {
 
 /// Scaffold config dir and prompt for provider if none configured.
 fn ensure_config() -> Result<()> {
-    node::storage::scaffold_config_dir(&wcore::paths::CONFIG_DIR)?;
+    crabtalk::storage::scaffold_config_dir(&wcore::paths::CONFIG_DIR)?;
     let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
-    let config = node::NodeConfig::load(&config_path)?;
+    let config = crabtalk::NodeConfig::load(&config_path)?;
     if config.provider.is_empty() {
         attach::setup_provider(&config_path)?;
     }

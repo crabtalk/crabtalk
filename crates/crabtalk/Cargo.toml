@@ -1,6 +1,6 @@
 [package]
-name = "crabtalk-node"
-description = "Crabtalk node — runtime + transport + event loop"
+name = "crabtalk"
+description = "Crabtalk library"
 documentation = "https://docs.rs/crabtalk-node"
 readme = "README.md"
 version.workspace = true

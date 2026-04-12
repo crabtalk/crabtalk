@@ -511,21 +511,30 @@ version = "0.0.20"
 dependencies = [
  "anyhow",
  "async-stream",
- "clap",
+ "bytes",
+ "chrono",
+ "crabllm-core",
+ "crabllm-provider",
  "crabtalk-command",
  "crabtalk-core",
- "crabtalk-node",
+ "crabtalk-plugins",
+ "crabtalk-runtime",
  "crabtalk-transport",
- "dialoguer",
- "dirs",
+ "cron",
  "futures-core",
  "futures-util",
- "rustls",
+ "rand 0.9.2",
+ "reqwest 0.13.2",
+ "schemars 1.2.1",
+ "serde",
  "serde_json",
+ "serde_yml",
+ "tempfile",
  "tokio",
+ "toml",
  "toml_edit",
  "tracing",
- "tracing-subscriber",
+ "ulid",
 ]
 
 [[package]]
@@ -533,8 +542,8 @@ name = "crabtalk-bench"
 version = "0.0.20"
 dependencies = [
  "crabllm-core",
+ "crabtalk",
  "crabtalk-core",
- "crabtalk-node",
  "crabtalk-runtime",
  "criterion",
  "futures-util",
@@ -592,38 +601,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml",
- "tracing",
- "ulid",
-]
-
-[[package]]
-name = "crabtalk-node"
-version = "0.0.20"
-dependencies = [
- "anyhow",
- "async-stream",
- "bytes",
- "chrono",
- "crabllm-core",
- "crabllm-provider",
- "crabtalk-command",
- "crabtalk-core",
- "crabtalk-plugins",
- "crabtalk-runtime",
- "crabtalk-transport",
- "cron",
- "futures-core",
- "futures-util",
- "rand 0.9.2",
- "reqwest 0.13.2",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "serde_yml",
- "tempfile",
- "tokio",
- "toml",
- "toml_edit",
  "tracing",
  "ulid",
 ]
@@ -798,6 +775,29 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "crabtalkd"
+version = "0.0.20"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "clap",
+ "crabtalk",
+ "crabtalk-command",
+ "crabtalk-core",
+ "crabtalk-transport",
+ "dialoguer",
+ "dirs",
+ "futures-core",
+ "futures-util",
+ "rustls",
+ "serde_json",
+ "tokio",
+ "toml_edit",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

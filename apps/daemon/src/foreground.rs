@@ -5,12 +5,13 @@ use wcore::paths::{CONFIG_DIR, SOCKET_PATH, TCP_PORT_FILE};
 
 pub async fn start() -> Result<()> {
     crate::ensure_config()?;
-    let handle = node::Node::start(&CONFIG_DIR).await?;
+    let handle = crabtalk::Node::start(&CONFIG_DIR).await?;
 
     #[cfg(unix)]
-    let (socket_path, socket_join) = node::setup_socket(handle.node.clone(), &handle.shutdown_tx)?;
+    let (socket_path, socket_join) =
+        crabtalk::setup_socket(handle.node.clone(), &handle.shutdown_tx)?;
 
-    let (tcp_join, tcp_port) = node::setup_tcp(handle.node.clone(), &handle.shutdown_tx)?;
+    let (tcp_join, tcp_port) = crabtalk::setup_tcp(handle.node.clone(), &handle.shutdown_tx)?;
     std::fs::write(&*TCP_PORT_FILE, tcp_port.to_string())?;
     tracing::info!(tcp_port, "TCP transport listening");
 

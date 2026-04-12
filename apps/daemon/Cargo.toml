@@ -1,5 +1,5 @@
 [package]
-name = "crabtalk"
+name = "crabtalkd"
 description = "Crabtalk daemon — AI agent platform"
 documentation = "https://docs.rs/crabtalk"
 readme = "README.md"
@@ -16,7 +16,7 @@ path = "src/bin/main.rs"
 
 [dependencies]
 command.workspace = true
-node.workspace = true
+crabtalk.workspace = true
 transport.workspace = true
 wcore.workspace = true
 

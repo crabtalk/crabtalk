@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use clap::Parser;
-use crabtalk::Cli;
+use crabtalkd::Cli;
 
 #[tokio::main]
 async fn main() -> Result<()> {

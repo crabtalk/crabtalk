@@ -1,6 +1,6 @@
 //! Integration tests for the memory system using InMemoryStorage (no disk I/O).
 
-use crabtalk_node::hooks::Memory;
+use crabtalk::hooks::Memory;
 use std::sync::Arc;
 use wcore::{MemoryConfig, testing::InMemoryStorage};
 
