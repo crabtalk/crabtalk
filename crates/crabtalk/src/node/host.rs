@@ -1,7 +1,8 @@
 //! NodeHost — server-specific Host implementation and NodeEnv type alias.
 
+use crate::node::hook::ConversationCwds;
 use runtime::host::Host;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::sync::broadcast;
 use wcore::{
     AgentEvent,
@@ -21,6 +22,10 @@ const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
 pub struct NodeHost {
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
+    /// Base working directory.
+    pub(crate) cwd: PathBuf,
+    /// Per-conversation CWD overrides (shared with NodeHook + OsHook + DelegateHook).
+    pub(crate) conversation_cwds: ConversationCwds,
 }
 
 impl Host for NodeHost {
@@ -142,6 +147,15 @@ impl Host for NodeHost {
 
     fn discover_instructions(&self, cwd: &Path) -> Option<String> {
         discover_instructions(cwd)
+    }
+
+    fn effective_cwd(&self, conversation_id: u64) -> PathBuf {
+        if let Ok(map) = self.conversation_cwds.try_lock()
+            && let Some(cwd) = map.get(&conversation_id)
+        {
+            return cwd.clone();
+        }
+        self.cwd.clone()
     }
 }
 

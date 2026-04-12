@@ -102,7 +102,7 @@ pub(super) async fn delete<P: Provider + 'static, H: Host + 'static>(
         }
 
         rt.remove_agent(&name);
-        rt.hook.unregister_scope(&name);
+        node.hook.unregister_scope(&name);
     }
     Ok(removed)
 }
@@ -117,7 +117,7 @@ async fn register_agent_from_disk<P: Provider + 'static, H: Host + 'static>(
     let agent_config =
         node::builder::build_single_agent_config(name, &config, &manifest, rt.storage().as_ref())?;
     let registered = rt.upsert_agent(agent_config);
-    rt.hook.register_scope(name.to_owned(), &registered);
+    node.hook.register_scope(name.to_owned(), &registered);
     Ok(())
 }
 

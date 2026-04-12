@@ -2,7 +2,8 @@
 //!
 //! Provides skill loading/discovery and slash-skill preprocessing.
 
-use runtime::{AgentScope, Hook};
+use crate::node::hook::AgentScope;
+use runtime::Hook;
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,

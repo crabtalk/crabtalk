@@ -7,7 +7,7 @@
 //! Tool dispatch and session state (CWD overrides, pending asks) are NOT
 //! part of this trait — they use shared state captured by handler factories.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::sync::broadcast;
 use wcore::protocol::message;
 
@@ -31,6 +31,13 @@ pub trait Host: Send + Sync + Clone {
     /// filesystem.
     fn discover_instructions(&self, _cwd: &Path) -> Option<String> {
         None
+    }
+
+    /// Effective working directory for a conversation. Defaults to the
+    /// process CWD. Hosts that support per-conversation CWD overrides
+    /// (e.g. for delegated tasks) resolve them here.
+    fn effective_cwd(&self, _conversation_id: u64) -> PathBuf {
+        std::env::current_dir().unwrap_or_default()
     }
 }
 

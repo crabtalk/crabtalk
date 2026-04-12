@@ -3,7 +3,7 @@
 //! Uses `Env<()>` with InMemoryStorage. Every test gets its own
 //! in-memory storage — no shared global state, no filesystem I/O, no node.
 
-use crabtalk_runtime::{Config, Env, Runtime};
+use crabtalk_runtime::{Config, Env, Hook, Runtime};
 use futures_util::StreamExt;
 use std::{
     collections::BTreeMap,
@@ -28,13 +28,13 @@ impl Config for TestCfg {
 }
 
 /// Build a `Runtime` from a `TestProvider`.
+/// A no-op hook for tests.
+struct NoopHook;
+impl Hook for NoopHook {}
+
 fn runtime(provider: TestProvider) -> Runtime<TestCfg> {
     let storage = Arc::new(InMemoryStorage::new());
-    let cwd = PathBuf::from("/test");
-    let scopes = Arc::new(RwLock::new(BTreeMap::new()));
-    let cwds = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
-    let asks = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
-    let env = Env::new(cwd, (), scopes, cwds, asks);
+    let env = Env::new((), Arc::new(NoopHook));
     Runtime::new(
         Model::new(provider),
         env,

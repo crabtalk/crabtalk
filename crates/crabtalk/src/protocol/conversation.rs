@@ -21,7 +21,7 @@ pub(super) async fn send<P: Provider + 'static, H: Host + 'static>(
         .get_or_create_conversation(&req.agent, created_by)
         .await?;
     if let Some(ref cwd) = cwd {
-        rt.hook
+        node.hook
             .conversation_cwds
             .lock()
             .await
@@ -48,6 +48,7 @@ pub(super) fn stream<'a, P: Provider + 'static, H: Host + 'static>(
     req: StreamMsg,
 ) -> impl futures_core::Stream<Item = Result<StreamEvent>> + Send + 'a {
     let runtime = node.runtime.clone();
+    let conversation_cwds = node.hook.conversation_cwds.clone();
     let agent = req.agent;
     let content = req.content;
     let sender = req.sender.unwrap_or_default();
@@ -61,7 +62,7 @@ pub(super) fn stream<'a, P: Provider + 'static, H: Host + 'static>(
         let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
         let conversation_id = rt.get_or_create_conversation(&agent, created_by.as_str()).await?;
         if let Some(ref cwd) = cwd {
-            rt.hook.conversation_cwds.lock().await.insert(conversation_id, cwd.clone());
+            conversation_cwds.lock().await.insert(conversation_id, cwd.clone());
         }
 
         let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
@@ -217,7 +218,7 @@ pub(super) async fn kill<P: Provider + 'static, H: Host + 'static>(
     let Some(conversation_id) = rt.find_conversation_id(&agent, &sender).await else {
         return Ok(false);
     };
-    rt.hook
+    node.hook
         .conversation_cwds
         .lock()
         .await
@@ -238,14 +239,14 @@ pub(super) async fn reply_to_ask<P: Provider + 'static, H: Host + 'static>(
         .ok_or_else(|| {
             anyhow::anyhow!("conversation not found for agent='{agent}' sender='{sender}'")
         })?;
-    if let Some(tx) = rt.hook.pending_asks.lock().await.remove(&conversation_id) {
+    if let Some(tx) = node.hook.pending_asks.lock().await.remove(&conversation_id) {
         let _ = tx.send(content);
         return Ok(());
     }
     // Retry once after a short delay — the ask_user handler may not have
     // inserted the oneshot yet if the reply races the tool call.
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    if let Some(tx) = rt.hook.pending_asks.lock().await.remove(&conversation_id) {
+    if let Some(tx) = node.hook.pending_asks.lock().await.remove(&conversation_id) {
         let _ = tx.send(content);
         return Ok(());
     }

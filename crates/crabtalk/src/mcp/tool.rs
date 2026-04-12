@@ -1,7 +1,8 @@
 //! MCP tool — as a Hook implementation.
 
 use super::McpHandler;
-use runtime::{AgentScope, Hook};
+use crate::node::hook::AgentScope;
+use runtime::Hook;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::{

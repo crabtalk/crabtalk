@@ -4,16 +4,16 @@ use crate::{
     Node, NodeConfig,
     hooks::{Memory, delegate},
     mcp::McpHandler,
-    node::SharedRuntime,
+    node::{SharedRuntime, hook::NodeHook},
     node::{cron, event},
     storage::FsStorage,
 };
 use anyhow::Result;
 use crabllm_core::Provider;
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
-use runtime::{Env, Runtime, host::Host};
+use runtime::{Env, Hook, Runtime, host::Host};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::{Arc, OnceLock},
 };
@@ -81,26 +81,33 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         shutdown_tx: broadcast::Sender<()>,
         host: H,
         build_provider: BuildProvider<P>,
+        cwd: PathBuf,
+        conversation_cwds: crate::node::hook::ConversationCwds,
     ) -> Result<Self> {
         if let Err(e) = crate::storage::backfill_local_agent_ids(config_dir) {
             tracing::warn!("agent id backfill failed: {e}");
         }
 
-        // Pre-allocate a late-bind slot for the shared runtime. Delegate
-        // tool handlers capture this OnceLock at build time and read the
-        // installed SharedRuntime at dispatch time, breaking the circular
-        // dependency between Env construction and Runtime construction.
         let runtime_once: Arc<OnceLock<SharedRuntime<P, H>>> = Arc::new(OnceLock::new());
 
         let (approval_tx, approval_rx) = tokio::sync::mpsc::channel(1);
         let approvals = Arc::new(std::sync::Mutex::new(Some(approval_rx)));
-        let (runtime, mcp) = Self::build_runtime(
+        let pending_asks = Default::default();
+        let mut node_hook = NodeHook::new(
+            Arc::new(std::sync::RwLock::new(BTreeMap::new())),
+            conversation_cwds,
+            pending_asks,
+            approval_tx,
+        );
+
+        let (runtime, mcp, node_hook) = Self::build_runtime(
             config,
             config_dir,
             host,
             &build_provider,
             runtime_once.clone(),
-            approval_tx.clone(),
+            node_hook,
+            cwd,
         )
         .await?;
         let shared_runtime: SharedRuntime<P, H> = Arc::new(RwLock::new(Arc::new(runtime)));
@@ -115,8 +122,6 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         let crons = Arc::new(Mutex::new(cron_store));
         crons.lock().await.start_all(crons.clone());
 
-        // Subscription matches fire new messages into the matched agent by
-        // calling rt.send_to directly — no protocol round-trip.
         let fire_runtime = shared_runtime.clone();
         let fire: event::FireCallback = Arc::new(move |sub, payload| {
             let runtime = fire_runtime.clone();
@@ -146,28 +151,27 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         let event_bus = event::EventBus::load(config_dir.to_path_buf(), fire);
         let events = Arc::new(std::sync::Mutex::new(event_bus));
 
-        // Install the event sink on Env so agent completion events publish
-        // into the bus without going through the node event loop.
         {
             let events_for_sink = events.clone();
-            let sink: runtime::EventSink = Arc::new(move |source: &str, payload: &str| {
-                events_for_sink
-                    .lock()
-                    .expect("event bus lock poisoned")
-                    .publish(source, payload);
-            });
-            shared_runtime.read().await.hook.set_event_sink(sink);
+            let sink: crate::node::hook::EventSink =
+                Arc::new(move |source: &str, payload: &str| {
+                    events_for_sink
+                        .lock()
+                        .expect("event bus lock poisoned")
+                        .publish(source, payload);
+                });
+            node_hook.set_event_sink(sink);
         }
 
         Ok(Self {
             runtime: shared_runtime,
+            hook: node_hook,
             config_dir: config_dir.to_path_buf(),
             started_at: std::time::Instant::now(),
             crons,
             events,
             build_provider,
             mcp,
-            approval_tx,
             approvals,
         })
     }
@@ -178,20 +182,32 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             let old_rt = self.runtime.read().await;
             old_rt.hook.host.clone()
         };
-        // Reuse the current SharedRuntime slot for late-binding — delegate
-        // handlers built for the new runtime will see this same handle,
-        // whose inner Arc<Runtime> we swap below.
         let runtime_once: Arc<OnceLock<SharedRuntime<P, H>>> = Arc::new(OnceLock::new());
         runtime_once
             .set(self.runtime.clone())
             .unwrap_or_else(|_| panic!("runtime_once already set"));
-        let (mut new_runtime, _mcp) = Self::build_runtime(
+
+        // Build a fresh NodeHook reusing persistent shared state.
+        let node_hook = NodeHook::new(
+            self.hook.scopes.clone(),
+            self.hook.conversation_cwds.clone(),
+            self.hook.pending_asks.clone(),
+            self.hook.approval_tx.clone(),
+        );
+
+        let cwd = {
+            let old_rt = self.runtime.read().await;
+            old_rt.hook.host.effective_cwd(0)
+        };
+
+        let (mut new_runtime, _mcp, new_hook) = Self::build_runtime(
             &config,
             &self.config_dir,
             host,
             &self.build_provider,
             runtime_once,
-            self.approval_tx.clone(),
+            node_hook,
+            cwd,
         )
         .await?;
         {
@@ -200,33 +216,35 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
                 .transfer_conversations(&mut new_runtime)
                 .await;
         }
-        // Wire the new Env to the existing node event bus before it goes
-        // live, so agent completion events continue to fan out.
         {
             let events_for_sink = self.events.clone();
-            let sink: runtime::EventSink = Arc::new(move |source: &str, payload: &str| {
-                events_for_sink
-                    .lock()
-                    .expect("event bus lock poisoned")
-                    .publish(source, payload);
-            });
-            new_runtime.hook.set_event_sink(sink);
+            let sink: crate::node::hook::EventSink =
+                Arc::new(move |source: &str, payload: &str| {
+                    events_for_sink
+                        .lock()
+                        .expect("event bus lock poisoned")
+                        .publish(source, payload);
+                });
+            new_hook.set_event_sink(sink);
         }
         *self.runtime.write().await = Arc::new(new_runtime);
         tracing::info!("daemon reloaded");
         Ok(())
     }
 
-    /// Orchestrate a Runtime build: resolve manifest, build an empty env,
-    /// register tools on it, wrap in a Runtime, then register agents.
     async fn build_runtime(
         config: &NodeConfig,
         config_dir: &Path,
         host: H,
         build_provider: &BuildProvider<P>,
         runtime_once: Arc<OnceLock<SharedRuntime<P, H>>>,
-        approval_tx: crate::hooks::os::ApprovalTx,
-    ) -> Result<(Runtime<crate::node::NodeCfg<P, H>>, Arc<McpHandler>)> {
+        mut node_hook: NodeHook,
+        cwd: PathBuf,
+    ) -> Result<(
+        Runtime<crate::node::NodeCfg<P, H>>,
+        Arc<McpHandler>,
+        Arc<NodeHook>,
+    )> {
         let (mut manifest, _warnings) = resolve_manifests(config_dir);
         manifest.disabled = config.disabled.clone();
         wcore::filter_disabled_external(&mut manifest.skill_dirs, &manifest.disabled.external);
@@ -235,30 +253,30 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         let servers = mcp_servers(config, &manifest);
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::load(&servers).await);
 
-        let (mut env, storage, cwd) = Self::empty_env(config_dir, &manifest, host);
-        let tools = Self::register_tools(
-            &mut env,
+        let storage = Self::build_storage(config_dir, &manifest);
+        Self::register_tools(
+            &mut node_hook,
             storage.clone(),
-            cwd,
             config,
             config_dir,
             mcp_handler.clone(),
             runtime_once,
-            approval_tx,
+            cwd,
         );
+
+        let node_hook = Arc::new(node_hook);
+        let mut tools = wcore::ToolRegistry::new();
+        for schema in Hook::schema(node_hook.as_ref()) {
+            tools.insert(schema);
+        }
+
+        let env = Env::new(host, node_hook.clone() as Arc<dyn Hook>);
         let mut runtime = Runtime::new(model, env, storage, tools);
         Self::register_agents(&mut runtime, config, config_dir, &manifest)?;
-        Ok((runtime, mcp_handler))
+        Ok((runtime, mcp_handler, node_hook))
     }
 
-    /// Build an `Env` with scopes and conversation state wired up — but
-    /// no hooks registered yet. Returns the env, storage for `Runtime::new`,
-    /// and the cwd used for tool handlers.
-    fn empty_env(
-        config_dir: &Path,
-        manifest: &ResolvedManifest,
-        host: H,
-    ) -> (Env<H>, Arc<FsStorage>, PathBuf) {
+    fn build_storage(config_dir: &Path, manifest: &ResolvedManifest) -> Arc<FsStorage> {
         let skill_roots: Vec<PathBuf> = manifest
             .skill_dirs
             .iter()
@@ -266,62 +284,36 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             .cloned()
             .collect();
 
-        let storage = Arc::new(FsStorage::new(
+        Arc::new(FsStorage::new(
             config_dir.to_path_buf(),
             config_dir.join("memory"),
             config_dir.join("sessions"),
             skill_roots,
             manifest.disabled.skills.clone(),
             manifest.agent_dirs.clone(),
-        ));
-
-        let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
-        let scopes = Arc::new(std::sync::RwLock::new(BTreeMap::new()));
-        let conversation_cwds: runtime::ConversationCwds =
-            Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
-        let pending_asks: runtime::PendingAsks =
-            Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
-
-        let env = Env::new(cwd.clone(), host, scopes, conversation_cwds, pending_asks);
-        (env, storage, cwd)
+        ))
     }
 
-    /// Populate `env`'s tool map (and a parallel `ToolRegistry`) with all
-    /// node-provided tools: bash/read/edit, memory, skill, delegate,
-    /// ask_user, and mcp (if any servers are configured).
+    /// Register all sub-hooks on the composite NodeHook.
     fn register_tools(
-        env: &mut Env<H>,
+        node_hook: &mut NodeHook,
         storage: Arc<FsStorage>,
-        cwd: PathBuf,
         config: &NodeConfig,
         config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         runtime_once: Arc<OnceLock<SharedRuntime<P, H>>>,
-        approval_tx: crate::hooks::os::ApprovalTx,
-    ) -> wcore::ToolRegistry {
+        cwd: PathBuf,
+    ) {
         let memory = Arc::new(Memory::open(config.system.memory.clone(), storage.clone()));
-        let scopes = env.scopes.clone();
-        let conversation_cwds = env.conversation_cwds.clone();
-        let pending_asks = env.pending_asks.clone();
+        let scopes = node_hook.scopes.clone();
+        let conversation_cwds = node_hook.conversation_cwds.clone();
         let read_files: crate::hooks::os::ReadFiles = Default::default();
+        let pending_asks = node_hook.pending_asks.clone();
+        let approval_tx = node_hook.approval_tx.clone();
         let mcp_server_list = mcp_handler.cached_list();
 
-        let mut tools = wcore::ToolRegistry::new();
-
-        let register_hook = |tools: &mut wcore::ToolRegistry,
-                             env: &mut Env<H>,
-                             name: &str,
-                             hook: Arc<dyn runtime::Hook>| {
-            for schema in hook.schema() {
-                tools.insert(schema);
-            }
-            env.register_hook(name, hook);
-        };
-
         let bash_config = crate::hooks::os::BashConfig::load(config_dir);
-        register_hook(
-            &mut tools,
-            env,
+        node_hook.register_hook(
             "os",
             Arc::new(crate::hooks::os::OsHook::new(
                 cwd,
@@ -332,25 +324,19 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             )),
         );
 
-        register_hook(
-            &mut tools,
-            env,
+        node_hook.register_hook(
             "memory",
             Arc::new(crate::hooks::memory::handlers::MemoryHook::new(memory)),
         );
 
-        register_hook(
-            &mut tools,
-            env,
+        node_hook.register_hook(
             "skill",
             Arc::new(crate::hooks::skill::handler::SkillHook::new(
                 storage,
                 scopes.clone(),
             )),
         );
-        register_hook(
-            &mut tools,
-            env,
+        node_hook.register_hook(
             "delegate",
             Arc::new(delegate::DelegateHook::<P, H>::new(
                 scopes.clone(),
@@ -359,14 +345,11 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
                 read_files,
             )),
         );
-        register_hook(
-            &mut tools,
-            env,
+        node_hook.register_hook(
             "ask_user",
             Arc::new(crate::hooks::ask_user::AskUserHook::new(pending_asks)),
         );
 
-        // MCP — register only if servers are configured.
         if !mcp_server_list.is_empty() {
             let mcp_prompt = format!(
                 "\n\n<resources>\nMCP servers: {}. Use the mcp tool to list or call tools.\n</resources>",
@@ -376,9 +359,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
                     .collect::<Vec<_>>()
                     .join(", ")
             );
-            register_hook(
-                &mut tools,
-                env,
+            node_hook.register_hook(
                 "mcp",
                 Arc::new(crate::mcp::tool::McpHook::new(
                     mcp_handler,
@@ -387,30 +368,22 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
                 )),
             );
         }
-
-        tools
     }
 
-    /// Register all configured agents on a built runtime: the built-in
-    /// crab agent, manifest-declared sub-agents, and any stray .md prompts
-    /// in the agents directory with no matching manifest entry.
+    /// Register all configured agents on a built runtime.
     fn register_agents(
         runtime: &mut Runtime<crate::node::NodeCfg<P, H>>,
         config: &NodeConfig,
         config_dir: &Path,
         manifest: &ResolvedManifest,
     ) -> Result<()> {
-        // One-shot migration: hoist legacy prompt files into ULID-keyed storage.
         if let Err(e) = crate::storage::migrate_local_agent_prompts(
             config_dir,
             manifest,
             runtime.storage().as_ref(),
         ) {
-            tracing::warn!("local agent prompt migration failed: {e}");
+            tracing::warn!("legacy prompt migration failed: {e}");
         }
-
-        let prompts = wcore::load_agents_dirs(&manifest.agent_dirs)?;
-        let prompt_map: BTreeMap<String, String> = prompts.into_iter().collect();
 
         let default_model = config
             .system
@@ -419,26 +392,25 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             .clone()
             .ok_or_else(|| anyhow::anyhow!("system.crab.model is required in config.toml"))?;
 
-        // Built-in crab agent.
-        let mut crab_config = config.system.crab.clone();
-        crab_config.name = wcore::paths::DEFAULT_AGENT.to_owned();
-        crab_config.system_prompt = SYSTEM_AGENT.to_owned();
-        runtime.add_agent(crab_config);
-
-        // Sub-agents from manifests.
-        let storage = runtime.storage().clone();
-        for (name, agent_config) in &manifest.agents {
-            if name == wcore::paths::DEFAULT_AGENT {
-                tracing::warn!(
-                    "agents.{name} overrides the built-in system agent and will be ignored — \
-                     configure it under [system.crab] instead"
-                );
-                continue;
+        // Crab (default agent).
+        {
+            let mut crab = config.system.crab.clone();
+            crab.name = wcore::paths::DEFAULT_AGENT.to_owned();
+            crab.system_prompt = SYSTEM_AGENT.to_owned();
+            if crab.model.is_none() {
+                crab.model = Some(default_model.clone());
             }
+            runtime.add_agent(crab);
+        }
+
+        let prompts = wcore::load_agents_dirs(&manifest.agent_dirs)?;
+        let prompt_map: BTreeMap<String, String> = prompts.into_iter().collect();
+
+        for (name, agent_config) in &manifest.agents {
             let Some(prompt) =
-                resolve_agent_prompt(storage.as_ref(), agent_config, name, &prompt_map)
+                resolve_agent_prompt(runtime.storage().as_ref(), agent_config, name, &prompt_map)
             else {
-                tracing::warn!("agent '{name}' has no prompt, skipping");
+                tracing::warn!(name, "agent has no prompt — skipping");
                 continue;
             };
             let mut agent = agent_config.clone();
@@ -447,40 +419,47 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             if agent.model.is_none() {
                 agent.model = Some(default_model.clone());
             }
-            tracing::info!("registered agent '{name}' (thinking={})", agent.thinking);
             runtime.add_agent(agent);
         }
 
-        // Agents with .md files but no manifest entry.
-        let default_think = config.system.crab.thinking;
-        for (stem, prompt) in &prompt_map {
-            if stem == wcore::paths::DEFAULT_AGENT {
+        // Orphan prompts — .md files with no manifest entry.
+        for (name, prompt) in &prompt_map {
+            if name == wcore::paths::DEFAULT_AGENT || manifest.agents.contains_key(name) {
                 continue;
             }
-            if manifest.agents.contains_key(stem) {
-                continue;
-            }
-            let mut agent = AgentConfig::new(stem.as_str());
-            agent.system_prompt = prompt.clone();
-            agent.thinking = default_think;
-            agent.model = Some(default_model.clone());
-            tracing::info!("registered agent '{stem}' (defaults, thinking={default_think})");
-            runtime.add_agent(agent);
-        }
-
-        // Populate per-agent scope maps.
-        for agent_config in runtime.agents() {
-            runtime
-                .hook
-                .register_scope(agent_config.name.clone(), &agent_config);
+            let mut config = AgentConfig::new(name);
+            config.system_prompt = prompt.clone();
+            config.model = Some(default_model.clone());
+            runtime.add_agent(config);
         }
 
         Ok(())
     }
 }
 
+fn resolve_agent_prompt(
+    storage: &impl Storage,
+    config: &AgentConfig,
+    name: &str,
+    prompt_map: &BTreeMap<String, String>,
+) -> Option<String> {
+    if let Ok(Some(loaded)) = storage.load_agent_by_name(name) {
+        if !loaded.system_prompt.is_empty() {
+            return Some(loaded.system_prompt);
+        }
+    }
+    if !config.id.is_nil() {
+        if let Ok(Some(loaded)) = storage.load_agent(&config.id) {
+            if !loaded.system_prompt.is_empty() {
+                return Some(loaded.system_prompt);
+            }
+        }
+    }
+    prompt_map.get(name).cloned()
+}
+
 fn build_providers(config: &NodeConfig) -> Result<Model<DefaultProvider>> {
-    let providers: HashMap<String, _> = config
+    let providers: std::collections::HashMap<String, _> = config
         .provider
         .iter()
         .filter(|(name, _)| !config.disabled.providers.contains(name))
@@ -489,7 +468,11 @@ fn build_providers(config: &NodeConfig) -> Result<Model<DefaultProvider>> {
     let provider_count = providers.len();
     let model_count: usize = providers.values().map(|def| def.models.len()).sum();
 
-    let registry = ProviderRegistry::from_provider_configs(&providers, &HashMap::new(), |r| r)?;
+    let registry = ProviderRegistry::from_provider_configs(
+        &providers,
+        &std::collections::HashMap::new(),
+        |r| r,
+    )?;
     let retrying = crate::provider::Retrying::new(registry);
 
     tracing::info!(
@@ -498,7 +481,6 @@ fn build_providers(config: &NodeConfig) -> Result<Model<DefaultProvider>> {
     Ok(Model::new(retrying))
 }
 
-/// Build MCP server configs from manifest + node config env vars.
 fn mcp_servers(config: &NodeConfig, manifest: &ResolvedManifest) -> Vec<wcore::McpServerConfig> {
     manifest
         .mcps
@@ -512,21 +494,4 @@ fn mcp_servers(config: &NodeConfig, manifest: &ResolvedManifest) -> Vec<wcore::M
             mcp
         })
         .collect()
-}
-
-/// Resolve an agent's prompt, preferring the repo (ULID key) and falling
-/// back to the legacy filesystem prompt map.
-fn resolve_agent_prompt(
-    storage: &impl Storage,
-    config: &AgentConfig,
-    name: &str,
-    prompt_map: &BTreeMap<String, String>,
-) -> Option<String> {
-    if !config.id.is_nil()
-        && let Ok(Some(loaded)) = storage.load_agent(&config.id)
-        && !loaded.system_prompt.is_empty()
-    {
-        return Some(loaded.system_prompt);
-    }
-    prompt_map.get(name).cloned()
 }

@@ -25,6 +25,7 @@ use {
 pub mod builder;
 pub mod cron;
 pub mod event;
+pub mod hook;
 pub mod host;
 
 /// Config binding for a node: ties Provider + Host to FsStorage + Env.
@@ -45,14 +46,14 @@ pub type SharedRuntime<P, B> = Arc<RwLock<Arc<Runtime<NodeCfg<P, B>>>>>;
 /// Shared daemon state.
 pub struct Node<P: Provider + 'static = DefaultProvider, B: Host + 'static = NodeHost> {
     pub runtime: SharedRuntime<P, B>,
+    /// Composite hook owning all sub-hooks and shared state.
+    pub hook: Arc<hook::NodeHook>,
     pub(crate) config_dir: PathBuf,
     pub(crate) started_at: std::time::Instant,
     pub(crate) crons: Arc<Mutex<CronStore<P, B>>>,
     pub(crate) events: Arc<std::sync::Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<crate::mcp::McpHandler>,
-    /// Sender for bash approval requests (cloned into OsHook on build/reload).
-    pub(crate) approval_tx: crate::hooks::os::ApprovalTx,
     /// Bash approval requests — take once to handle in the app layer.
     pub approvals: Arc<std::sync::Mutex<Option<mpsc::Receiver<crate::hooks::os::ApprovalRequest>>>>,
 }
@@ -61,13 +62,13 @@ impl<P: Provider + 'static, B: Host + 'static> Clone for Node<P, B> {
     fn clone(&self) -> Self {
         Self {
             runtime: self.runtime.clone(),
+            hook: self.hook.clone(),
             config_dir: self.config_dir.clone(),
             started_at: self.started_at,
             crons: self.crons.clone(),
             events: self.events.clone(),
             build_provider: Arc::clone(&self.build_provider),
             mcp: self.mcp.clone(),
-            approval_tx: self.approval_tx.clone(),
             approvals: self.approvals.clone(),
         }
     }
@@ -78,9 +79,13 @@ impl Node<DefaultProvider, NodeHost> {
         Self::start_with(
             config_dir,
             |config: &NodeConfig| build_default_provider(config),
-            || {
+            |cwd, conversation_cwds| {
                 let (events_tx, _) = broadcast::channel(256);
-                NodeHost { events_tx }
+                NodeHost {
+                    events_tx,
+                    cwd,
+                    conversation_cwds,
+                }
             },
         )
         .await
@@ -95,7 +100,7 @@ impl<P: Provider + 'static, B: Host + 'static> Node<P, B> {
     ) -> Result<NodeHandle<P, B>>
     where
         BP: Fn(&NodeConfig) -> Result<Model<P>> + Send + Sync + 'static,
-        BB: FnOnce() -> B,
+        BB: FnOnce(PathBuf, hook::ConversationCwds) -> B,
     {
         let config_path = config_dir.join(wcore::paths::CONFIG_FILE);
         let config = NodeConfig::load(&config_path)?;
@@ -103,7 +108,9 @@ impl<P: Provider + 'static, B: Host + 'static> Node<P, B> {
 
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
 
-        let backend = build_backend();
+        let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
+        let conversation_cwds: hook::ConversationCwds = Default::default();
+        let backend = build_backend(cwd.clone(), conversation_cwds.clone());
         let build_provider: BuildProvider<P> = Arc::new(build_provider);
         let node = Node::build(
             &config,
@@ -111,6 +118,8 @@ impl<P: Provider + 'static, B: Host + 'static> Node<P, B> {
             shutdown_tx.clone(),
             backend,
             build_provider,
+            cwd,
+            conversation_cwds,
         )
         .await?;
 

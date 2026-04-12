@@ -6,7 +6,7 @@ pub mod host;
 
 pub use conversation::Conversation;
 pub use engine::Runtime;
-pub use env::{AgentScope, ConversationCwds, Env, EventSink, PendingAsks};
+pub use env::Env;
 pub use hook::Hook;
 pub use host::Host;
 pub use wcore::{MemoryConfig, SystemConfig, TasksConfig};

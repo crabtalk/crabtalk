@@ -1,6 +1,7 @@
 //! Ask-user tool — as a Hook implementation.
 
-use runtime::{Hook, PendingAsks};
+use crate::node::hook::PendingAsks;
+use runtime::Hook;
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::sync::oneshot;

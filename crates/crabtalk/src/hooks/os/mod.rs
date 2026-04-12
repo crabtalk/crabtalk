@@ -1,10 +1,11 @@
 //! OS tools — bash, read, edit — as a Hook implementation.
 
+use crate::node::hook::ConversationCwds;
 use bash::Bash;
 pub use bash::BashConfig;
 use edit::Edit;
 use read::Read;
-use runtime::{ConversationCwds, Hook};
+use runtime::Hook;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Write,
