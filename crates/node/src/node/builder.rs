@@ -110,7 +110,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         // Subscription matches fire new messages into the matched agent by
         // calling rt.send_to directly — no protocol round-trip.
         let fire_runtime = shared_runtime.clone();
-        let fire: crate::event_bus::FireCallback = Arc::new(move |sub, payload| {
+        let fire: crate::event::FireCallback = Arc::new(move |sub, payload| {
             let runtime = fire_runtime.clone();
             let target_agent = sub.target_agent.clone();
             let source = sub.source.clone();
@@ -135,7 +135,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
                 }
             });
         });
-        let event_bus = crate::event_bus::EventBus::load(config_dir.to_path_buf(), fire);
+        let event_bus = crate::event::EventBus::load(config_dir.to_path_buf(), fire);
         let events = Arc::new(std::sync::Mutex::new(event_bus));
 
         // Install the event sink on Env so agent completion events publish

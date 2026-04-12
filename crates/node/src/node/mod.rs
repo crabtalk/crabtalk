@@ -3,7 +3,7 @@
 use crate::{
     NodeConfig,
     cron::CronStore,
-    event_bus::EventBus,
+    event::EventBus,
     hook::host::NodeHost,
     node::builder::{BuildProvider, DefaultProvider, build_default_provider},
     storage::FsStorage,

@@ -1,6 +1,6 @@
 //! Server trait implementation for the Node.
 
-use crate::event_bus::EventSubscription;
+use crate::event::EventSubscription;
 use crate::{cron::CronEntry, node::Node};
 use anyhow::{Context, Result};
 use crabllm_core::Provider;
@@ -11,21 +11,7 @@ use std::{
     collections::VecDeque,
     io::{BufRead, BufReader},
 };
-use wcore::protocol::{
-    api::Server,
-    message::{
-        ActiveConversationInfo, AgentEventMsg, AgentInfo, AskOption, AskQuestion, AskUserEvent,
-        ConversationHistory, ConversationInfo, ConversationMessage, CreateAgentMsg, CreateCronMsg,
-        CronInfo, CronList, DaemonStats, InstallPluginMsg, McpInfo, McpStatus, ModelInfo,
-        PluginDone, PluginEvent, PluginInfo, PluginSetupOutput, PluginStep, PluginWarning,
-        ProtoProviderKind, ProviderInfo, ProviderPresetInfo, PublishEventMsg, ResourceKind,
-        SendMsg, SendResponse, SkillInfo, SourceKind, SteerSessionMsg, StreamChunk, StreamEnd,
-        StreamEvent, StreamMsg, StreamStart, StreamThinking, SubscribeEventMsg, SubscriptionInfo,
-        SubscriptionList, TextEndEvent, TextStartEvent, ThinkingEndEvent, ThinkingStartEvent,
-        TokenUsage, ToolCallInfo, ToolResultEvent, ToolStartEvent, ToolsCompleteEvent,
-        UpdateAgentMsg, UserSteeredEvent, plugin_event, stream_event,
-    },
-};
+use wcore::protocol::{api::Server, message::*};
 use wcore::{AgentEvent, AgentStep, repos::Storage};
 
 impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {

@@ -2,7 +2,7 @@
 
 pub mod cron;
 pub mod delegate;
-pub mod event_bus;
+pub mod event;
 pub mod hook;
 pub mod mcp;
 pub mod node;
