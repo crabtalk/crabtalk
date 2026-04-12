@@ -172,3 +172,16 @@ where
         }
     }
 }
+
+impl ToolDispatcher for () {
+    fn dispatch<'a>(
+        &'a self,
+        name: &'a str,
+        _args: &'a str,
+        _agent: &'a str,
+        _sender: &'a str,
+        _conversation_id: Option<u64>,
+    ) -> ToolFuture<'a> {
+        Box::pin(async move { Err(format!("tool not registered: {name}")) })
+    }
+}

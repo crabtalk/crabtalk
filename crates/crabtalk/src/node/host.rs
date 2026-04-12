@@ -1,17 +1,16 @@
-//! NodeHost — server-specific Host implementation and NodeEnv type alias.
+//! NodeEnv — server-specific Host implementation and NodeEnv type alias.
 
-use crate::node::hook::ConversationCwds;
-use runtime::host::Host;
-use std::path::{Path, PathBuf};
+use crate::node::hook::{ConversationCwds, NodeHook};
+use runtime::Env;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tokio::sync::broadcast;
 use wcore::{
     AgentEvent,
     protocol::message::{AgentEventKind, AgentEventMsg, ToolCallInfo},
 };
-
-/// The daemon's environment type — Env with NodeHost for
-/// server-specific dispatch.
-pub type NodeEnv = runtime::Env<NodeHost>;
 
 /// Tool result output is truncated to this many bytes in the broadcast.
 const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
@@ -19,16 +18,24 @@ const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
 /// Server-specific host for the daemon — event broadcasting and
 /// instruction discovery.
 #[derive(Clone)]
-pub struct NodeHost {
+pub struct NodeEnv {
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
     /// Base working directory.
     pub(crate) cwd: PathBuf,
     /// Per-conversation CWD overrides (shared with NodeHook + OsHook + DelegateHook).
     pub(crate) conversation_cwds: ConversationCwds,
+    /// Composite hook owning all sub-hooks and shared state.
+    pub(crate) hook: Arc<NodeHook>,
 }
 
-impl Host for NodeHost {
+impl Env for NodeEnv {
+    type Hook = NodeHook;
+
+    fn hook(&self) -> &NodeHook {
+        &self.hook
+    }
+
     fn on_agent_event(&self, agent: &str, conversation_id: u64, event: &AgentEvent) {
         struct Payload {
             kind: AgentEventKind,
@@ -156,6 +163,19 @@ impl Host for NodeHost {
             return cwd.clone();
         }
         self.cwd.clone()
+    }
+}
+
+impl wcore::ToolDispatcher for NodeEnv {
+    fn dispatch<'a>(
+        &'a self,
+        name: &'a str,
+        args: &'a str,
+        agent: &'a str,
+        sender: &'a str,
+        conversation_id: Option<u64>,
+    ) -> wcore::ToolFuture<'a> {
+        runtime::env::dispatch_tool(self, name, args, agent, sender, conversation_id)
     }
 }
 

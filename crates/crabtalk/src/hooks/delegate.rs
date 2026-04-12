@@ -4,7 +4,7 @@ use crate::node::hook::AgentScope;
 use crate::node::hook::ConversationCwds;
 use crate::{hooks::os::ReadFiles, node::SharedRuntime};
 use crabllm_core::Provider;
-use runtime::{Hook, host::Host};
+use runtime::Hook;
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
@@ -51,17 +51,17 @@ impl ToolDescription for Delegate {
 ///
 /// Owns scopes for member enforcement, a late-bind runtime handle, and
 /// the shared conversation CWD map for child task CWD overrides.
-pub struct DelegateHook<P: Provider + 'static, H: Host + 'static> {
+pub struct DelegateHook<P: Provider + 'static> {
     scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
-    runtime: Arc<OnceLock<SharedRuntime<P, H>>>,
+    runtime: Arc<OnceLock<SharedRuntime<P>>>,
     conversation_cwds: ConversationCwds,
     read_files: ReadFiles,
 }
 
-impl<P: Provider + 'static, H: Host + 'static> DelegateHook<P, H> {
+impl<P: Provider + 'static> DelegateHook<P> {
     pub fn new(
         scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
-        runtime: Arc<OnceLock<SharedRuntime<P, H>>>,
+        runtime: Arc<OnceLock<SharedRuntime<P>>>,
         conversation_cwds: ConversationCwds,
         read_files: ReadFiles,
     ) -> Self {
@@ -74,7 +74,7 @@ impl<P: Provider + 'static, H: Host + 'static> DelegateHook<P, H> {
     }
 }
 
-impl<P: Provider + 'static, H: Host + 'static> Hook for DelegateHook<P, H> {
+impl<P: Provider + 'static> Hook for DelegateHook<P> {
     fn schema(&self) -> Vec<wcore::model::Tool> {
         vec![Delegate::as_tool()]
     }
@@ -113,9 +113,9 @@ impl<P: Provider + 'static, H: Host + 'static> Hook for DelegateHook<P, H> {
     }
 }
 
-async fn dispatch_delegate<P: Provider + 'static, H: Host + 'static>(
+async fn dispatch_delegate<P: Provider + 'static>(
     input: Delegate,
-    shared: &SharedRuntime<P, H>,
+    shared: &SharedRuntime<P>,
     conversation_cwds: &ConversationCwds,
     read_files: &ReadFiles,
 ) -> Result<String, String> {
@@ -209,8 +209,8 @@ fn ephemeral_agent_name() -> String {
     format!("_ephemeral:{id}")
 }
 
-fn spawn_agent_task<P: Provider + 'static, H: Host + 'static>(
-    shared: SharedRuntime<P, H>,
+fn spawn_agent_task<P: Provider + 'static>(
+    shared: SharedRuntime<P>,
     conversation_cwds: ConversationCwds,
     read_files: ReadFiles,
     agent: String,

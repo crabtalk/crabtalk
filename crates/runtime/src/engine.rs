@@ -30,7 +30,7 @@ use wcore::{
 /// The crabtalk runtime.
 pub struct Runtime<C: Config> {
     pub model: Model<C::Provider>,
-    pub hook: Arc<Env<C::Host>>,
+    pub env: Arc<C::Env>,
     storage: Arc<C::Storage>,
     agents: StdRwLock<BTreeMap<String, Agent<C::Provider>>>,
     ephemeral_agents: RwLock<BTreeMap<String, Agent<C::Provider>>>,
@@ -44,13 +44,13 @@ impl<C: Config> Runtime<C> {
     /// Create a new runtime with the given model, env, storage, and tools.
     pub fn new(
         model: Model<C::Provider>,
-        hook: Env<C::Host>,
+        env: Arc<C::Env>,
         storage: Arc<C::Storage>,
         tools: ToolRegistry,
     ) -> Self {
         Self {
             model,
-            hook: Arc::new(hook),
+            env,
             storage,
             agents: StdRwLock::new(BTreeMap::new()),
             ephemeral_agents: RwLock::new(BTreeMap::new()),
@@ -91,10 +91,10 @@ impl<C: Config> Runtime<C> {
     }
 
     fn build_agent(&self, config: AgentConfig) -> (String, Agent<C::Provider>) {
-        let config = self.hook.on_build_agent(config);
+        let config = self.env.hook().on_build_agent(config);
         let name = config.name.clone();
         let tools = self.tools.filtered_snapshot(&config.tools);
-        let dispatcher: Arc<dyn ToolDispatcher> = self.hook.clone();
+        let dispatcher: Arc<dyn ToolDispatcher> = self.env.clone();
         let agent = AgentBuilder::new(self.model.clone())
             .config(config)
             .tools(tools)
@@ -463,7 +463,8 @@ impl<C: Config> Runtime<C> {
         sender: &str,
     ) -> String {
         let content = self
-            .hook
+            .env
+            .hook()
             .preprocess(&conversation.agent, content)
             .unwrap_or_else(|| content.to_owned());
         if sender.is_empty() {
@@ -477,9 +478,31 @@ impl<C: Config> Runtime<C> {
         conversation.history.retain(|e| !e.auto_injected);
 
         let agent_name = conversation.agent.clone();
-        let recall_msgs =
-            self.hook
+        let mut recall_msgs =
+            self.env
+                .hook()
                 .on_before_run(&agent_name, conversation.id, &conversation.history);
+
+        // Layered instructions (Crab.md).
+        let cwd = self.env.effective_cwd(conversation.id);
+        if let Some(instructions) = self.env.discover_instructions(&cwd) {
+            recall_msgs.push(
+                HistoryEntry::user(format!("<instructions>\n{instructions}\n</instructions>"))
+                    .auto_injected(),
+            );
+        }
+
+        // Guest agent framing.
+        if conversation.history.iter().any(|e| !e.agent.is_empty()) {
+            recall_msgs.push(
+                HistoryEntry::user(
+                    "Messages wrapped in <from agent=\"...\"> tags are from guest agents \
+                     who were consulted in this conversation. Continue responding as yourself."
+                        .to_string(),
+                )
+                .auto_injected(),
+            );
+        }
         if !recall_msgs.is_empty() {
             let insert_pos = conversation.history.len().saturating_sub(1);
             for (i, entry) in recall_msgs.into_iter().enumerate() {
@@ -524,7 +547,11 @@ impl<C: Config> Runtime<C> {
             if let AgentEvent::Compact { ref summary } = event {
                 compact_summary = Some(summary.clone());
             }
-            self.hook.on_event(&agent_name, conversation_id, &event);
+            self.env
+                .hook()
+                .on_event(&agent_name, conversation_id, &event);
+            self.env
+                .on_agent_event(&agent_name, conversation_id, &event);
         }
 
         self.persist_messages(&mut conversation, pre_run_len, compact_summary, &[]);
@@ -584,7 +611,8 @@ impl<C: Config> Runtime<C> {
                     if let AgentEvent::Compact { ref summary } = event {
                         compact_summary = Some(summary.clone());
                     }
-                    self.hook.on_event(&agent_name, conversation_id, &event);
+                    self.env.hook().on_event(&agent_name, conversation_id, &event);
+                    self.env.on_agent_event(&agent_name, conversation_id, &event);
                     if let Some(line) = wcore::EventLine::from_agent_event(&event) {
                         event_trace.push(line);
                     }
@@ -643,7 +671,8 @@ impl<C: Config> Runtime<C> {
             let pre_run_len = conversation.history.len();
 
             let content = self
-                .hook
+                .env
+                .hook()
                 .preprocess(&conversation.agent, &content)
                 .unwrap_or_else(|| content.clone());
             if sender.is_empty() {

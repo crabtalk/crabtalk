@@ -157,19 +157,13 @@ fn split_compound(command: &str) -> Vec<&str> {
     let mut start = 0;
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'&' && i + 1 < bytes.len() && bytes[i + 1] == b'&' {
+        // Two-character operators: && and ||
+        if (bytes[i] == b'&' || bytes[i] == b'|') && i + 1 < bytes.len() && bytes[i + 1] == bytes[i]
+        {
             parts.push(command[start..i].trim());
             i += 2;
             start = i;
-        } else if bytes[i] == b'|' && i + 1 < bytes.len() && bytes[i + 1] == b'|' {
-            parts.push(command[start..i].trim());
-            i += 2;
-            start = i;
-        } else if bytes[i] == b'|' {
-            parts.push(command[start..i].trim());
-            i += 1;
-            start = i;
-        } else if bytes[i] == b';' || bytes[i] == b'\n' {
+        } else if bytes[i] == b'|' || bytes[i] == b';' || bytes[i] == b'\n' {
             parts.push(command[start..i].trim());
             i += 1;
             start = i;

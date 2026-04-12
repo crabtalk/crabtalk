@@ -6,7 +6,6 @@
 
 use crate::node::SharedRuntime;
 use crabllm_core::Provider;
-use runtime::host::Host;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
 use tokio::{
@@ -38,12 +37,12 @@ struct CronFile {
 }
 
 /// In-memory cron store with per-entry timer tasks.
-pub struct CronStore<P: Provider + 'static, H: Host + 'static> {
+pub struct CronStore<P: Provider + 'static> {
     entries: HashMap<u64, CronEntry>,
     handles: HashMap<u64, JoinHandle<()>>,
     next_id: u64,
     path: PathBuf,
-    runtime: SharedRuntime<P, H>,
+    runtime: SharedRuntime<P>,
     shutdown_tx: broadcast::Sender<()>,
 }
 
@@ -53,11 +52,11 @@ fn validate_schedule(schedule: &str) -> Result<(), String> {
         .map_err(|e| format!("invalid cron schedule '{schedule}': {e}"))
 }
 
-impl<P: Provider + 'static, H: Host + 'static> CronStore<P, H> {
+impl<P: Provider + 'static> CronStore<P> {
     /// Load crons from `cron/crons.toml` under `root`.
     pub fn load(
         root: PathBuf,
-        runtime: SharedRuntime<P, H>,
+        runtime: SharedRuntime<P>,
         shutdown_tx: broadcast::Sender<()>,
     ) -> Self {
         let path = root.join("cron").join("crons.toml");
@@ -88,7 +87,7 @@ impl<P: Provider + 'static, H: Host + 'static> CronStore<P, H> {
         }
     }
 
-    pub fn start_all(&mut self, store: Arc<Mutex<CronStore<P, H>>>) {
+    pub fn start_all(&mut self, store: Arc<Mutex<CronStore<P>>>) {
         let ids: Vec<u64> = self.entries.keys().copied().collect();
         for id in ids {
             self.spawn_timer(id, store.clone());
@@ -101,7 +100,7 @@ impl<P: Provider + 'static, H: Host + 'static> CronStore<P, H> {
     pub fn create(
         &mut self,
         mut entry: CronEntry,
-        store: Arc<Mutex<CronStore<P, H>>>,
+        store: Arc<Mutex<CronStore<P>>>,
     ) -> Result<CronEntry, String> {
         validate_schedule(&entry.schedule)?;
         entry.id = self.next_id;
@@ -146,7 +145,7 @@ impl<P: Provider + 'static, H: Host + 'static> CronStore<P, H> {
         }
     }
 
-    fn spawn_timer(&mut self, id: u64, store: Arc<Mutex<CronStore<P, H>>>) {
+    fn spawn_timer(&mut self, id: u64, store: Arc<Mutex<CronStore<P>>>) {
         let Some(entry) = self.entries.get(&id).cloned() else {
             return;
         };
@@ -164,9 +163,9 @@ impl<P: Provider + 'static, H: Host + 'static> CronStore<P, H> {
     }
 }
 
-async fn run_cron_timer<P: Provider + 'static, H: Host + 'static>(
+async fn run_cron_timer<P: Provider + 'static>(
     entry: CronEntry,
-    runtime: SharedRuntime<P, H>,
+    runtime: SharedRuntime<P>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
     let schedule = cron::Schedule::from_str(&entry.schedule).expect("pre-validated schedule");

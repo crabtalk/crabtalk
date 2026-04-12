@@ -52,3 +52,6 @@ pub trait Hook: Send + Sync {
         None
     }
 }
+
+/// No-op Hook for tests.
+impl Hook for () {}

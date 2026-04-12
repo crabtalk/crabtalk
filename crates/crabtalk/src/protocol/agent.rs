@@ -3,13 +3,10 @@
 use crate::node::{self, Node};
 use anyhow::{Context, Result};
 use crabllm_core::Provider;
-use runtime::host::Host;
 use wcore::protocol::message::*;
 use wcore::storage::Storage;
 
-pub(super) async fn list<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
-) -> Result<Vec<AgentInfo>> {
+pub(super) async fn list<P: Provider + 'static>(node: &Node<P>) -> Result<Vec<AgentInfo>> {
     let rt = node.runtime.read().await.clone();
     Ok(rt
         .agents()
@@ -18,10 +15,7 @@ pub(super) async fn list<P: Provider + 'static, H: Host + 'static>(
         .collect())
 }
 
-pub(super) async fn get<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
-    name: String,
-) -> Result<AgentInfo> {
+pub(super) async fn get<P: Provider + 'static>(node: &Node<P>, name: String) -> Result<AgentInfo> {
     let rt = node.runtime.read().await.clone();
     let config = rt
         .agent(&name)
@@ -29,8 +23,8 @@ pub(super) async fn get<P: Provider + 'static, H: Host + 'static>(
     Ok(agent_config_to_info(&config))
 }
 
-pub(super) async fn create<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn create<P: Provider + 'static>(
+    node: &Node<P>,
     req: CreateAgentMsg,
 ) -> Result<AgentInfo> {
     validate_agent_name(&req.name)?;
@@ -48,8 +42,8 @@ pub(super) async fn create<P: Provider + 'static, H: Host + 'static>(
     get(node, req.name).await
 }
 
-pub(super) async fn update<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn update<P: Provider + 'static>(
+    node: &Node<P>,
     req: UpdateAgentMsg,
 ) -> Result<AgentInfo> {
     validate_agent_name(&req.name)?;
@@ -78,10 +72,7 @@ pub(super) async fn update<P: Provider + 'static, H: Host + 'static>(
     get(node, req.name).await
 }
 
-pub(super) async fn delete<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
-    name: String,
-) -> Result<bool> {
+pub(super) async fn delete<P: Provider + 'static>(node: &Node<P>, name: String) -> Result<bool> {
     let rt = node.runtime.read().await.clone();
     let storage = rt.storage();
 
@@ -107,10 +98,7 @@ pub(super) async fn delete<P: Provider + 'static, H: Host + 'static>(
     Ok(removed)
 }
 
-async fn register_agent_from_disk<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
-    name: &str,
-) -> Result<()> {
+async fn register_agent_from_disk<P: Provider + 'static>(node: &Node<P>, name: &str) -> Result<()> {
     let config = super::config::load_config(node).await?;
     let (manifest, _warnings) = super::config::resolve_manifests(node).await?;
     let rt = node.runtime.read().await.clone();
@@ -121,8 +109,8 @@ async fn register_agent_from_disk<P: Provider + 'static, H: Host + 'static>(
     Ok(())
 }
 
-async fn existing_agent_id<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+async fn existing_agent_id<P: Provider + 'static>(
+    node: &Node<P>,
     name: &str,
 ) -> Result<Option<wcore::AgentId>> {
     let rt = node.runtime.read().await.clone();
@@ -134,8 +122,8 @@ async fn existing_agent_id<P: Provider + 'static, H: Host + 'static>(
         .map(|cfg| cfg.id))
 }
 
-async fn write_agent_to_manifest<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+async fn write_agent_to_manifest<P: Provider + 'static>(
+    node: &Node<P>,
     name: &str,
     config_json: &str,
     expect_new: bool,
@@ -156,8 +144,8 @@ async fn write_agent_to_manifest<P: Provider + 'static, H: Host + 'static>(
     Ok(())
 }
 
-async fn write_agent_prompt_to_storage<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+async fn write_agent_prompt_to_storage<P: Provider + 'static>(
+    node: &Node<P>,
     id: &wcore::AgentId,
     prompt: &str,
 ) -> Result<()> {
@@ -171,8 +159,8 @@ async fn write_agent_prompt_to_storage<P: Provider + 'static, H: Host + 'static>
         .with_context(|| format!("failed to write agent prompt for {id}"))
 }
 
-async fn write_system_crab_config<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+async fn write_system_crab_config<P: Provider + 'static>(
+    node: &Node<P>,
     config_json: &str,
 ) -> Result<()> {
     let crab: wcore::AgentConfig =

@@ -3,11 +3,10 @@
 use crate::node::Node;
 use anyhow::{Context, Result};
 use crabllm_core::Provider;
-use runtime::host::Host;
 use wcore::protocol::message::*;
 
-pub(super) fn install<'a, P: Provider + 'static, H: Host + 'static>(
-    node: &'a Node<P, H>,
+pub(super) fn install<'a, P: Provider + 'static>(
+    node: &'a Node<P>,
     req: InstallPluginMsg,
 ) -> impl futures_core::Stream<Item = Result<PluginEvent>> + Send + 'a {
     async_stream::try_stream! {
@@ -90,8 +89,8 @@ pub(super) fn install<'a, P: Provider + 'static, H: Host + 'static>(
     }
 }
 
-pub(super) fn uninstall<'a, P: Provider + 'static, H: Host + 'static>(
-    node: &'a Node<P, H>,
+pub(super) fn uninstall<'a, P: Provider + 'static>(
+    node: &'a Node<P>,
     plugin: String,
 ) -> impl futures_core::Stream<Item = Result<PluginEvent>> + Send + 'a {
     async_stream::try_stream! {
@@ -135,9 +134,7 @@ pub(super) fn uninstall<'a, P: Provider + 'static, H: Host + 'static>(
     }
 }
 
-pub(super) async fn list<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
-) -> Result<Vec<PluginInfo>> {
+pub(super) async fn list<P: Provider + 'static>(node: &Node<P>) -> Result<Vec<PluginInfo>> {
     let mut result: Vec<PluginInfo> = scan_plugin_manifests(&node.config_dir)
         .into_iter()
         .map(|(name, manifest)| PluginInfo {

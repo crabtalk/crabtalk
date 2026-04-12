@@ -3,12 +3,11 @@
 use crate::node::Node;
 use anyhow::{Context, Result};
 use crabllm_core::Provider;
-use runtime::host::Host;
 use wcore::protocol::message::*;
 use wcore::storage::Storage;
 
-pub(super) async fn list_providers<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn list_providers<P: Provider + 'static>(
+    node: &Node<P>,
 ) -> Result<Vec<ProviderInfo>> {
     let config = load_config(node).await?;
     let (manifest, _) = resolve_manifests(node).await?;
@@ -30,8 +29,8 @@ pub(super) async fn list_providers<P: Provider + 'static, H: Host + 'static>(
         .collect())
 }
 
-pub(super) async fn set_provider<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn set_provider<P: Provider + 'static>(
+    node: &Node<P>,
     name: String,
     config: String,
 ) -> Result<ProviderInfo> {
@@ -66,8 +65,8 @@ pub(super) async fn set_provider<P: Provider + 'static, H: Host + 'static>(
     })
 }
 
-pub(super) async fn delete_provider<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn delete_provider<P: Provider + 'static>(
+    node: &Node<P>,
     name: String,
 ) -> Result<()> {
     let rt = node.runtime.read().await.clone();
@@ -80,8 +79,8 @@ pub(super) async fn delete_provider<P: Provider + 'static, H: Host + 'static>(
     node.reload().await
 }
 
-pub(super) async fn set_active_model<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn set_active_model<P: Provider + 'static>(
+    node: &Node<P>,
     model: String,
 ) -> Result<()> {
     let rt = node.runtime.read().await.clone();
@@ -114,9 +113,7 @@ pub(super) async fn list_provider_presets() -> Result<Vec<ProviderPresetInfo>> {
         .collect())
 }
 
-pub(super) async fn list_mcps<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
-) -> Result<Vec<McpInfo>> {
+pub(super) async fn list_mcps<P: Provider + 'static>(node: &Node<P>) -> Result<Vec<McpInfo>> {
     let config = load_config(node).await?;
     let connected: std::collections::BTreeMap<String, usize> = node
         .mcp
@@ -170,8 +167,8 @@ pub(super) async fn list_mcps<P: Provider + 'static, H: Host + 'static>(
     Ok(mcps)
 }
 
-pub(super) async fn set_local_mcps<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn set_local_mcps<P: Provider + 'static>(
+    node: &Node<P>,
     mcps: Vec<McpInfo>,
 ) -> Result<()> {
     let rt = node.runtime.read().await.clone();
@@ -198,9 +195,7 @@ pub(super) async fn set_local_mcps<P: Provider + 'static, H: Host + 'static>(
     node.reload().await
 }
 
-pub(super) async fn list_skills<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
-) -> Result<Vec<SkillInfo>> {
+pub(super) async fn list_skills<P: Provider + 'static>(node: &Node<P>) -> Result<Vec<SkillInfo>> {
     let (manifest, _) = resolve_manifests(node).await?;
     let local_skills_dir = node.config_dir.join(wcore::paths::SKILLS_DIR);
 
@@ -241,9 +236,7 @@ pub(super) async fn list_skills<P: Provider + 'static, H: Host + 'static>(
     Ok(skills)
 }
 
-pub(super) async fn list_models<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
-) -> Result<Vec<ModelInfo>> {
+pub(super) async fn list_models<P: Provider + 'static>(node: &Node<P>) -> Result<Vec<ModelInfo>> {
     let config = load_config(node).await?;
     let active_model = config.system.crab.model.clone().unwrap_or_default();
 
@@ -264,8 +257,8 @@ pub(super) async fn list_models<P: Provider + 'static, H: Host + 'static>(
     Ok(models)
 }
 
-pub(super) async fn set_enabled<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn set_enabled<P: Provider + 'static>(
+    node: &Node<P>,
     kind: ResourceKind,
     name: String,
     enabled: bool,
@@ -307,15 +300,15 @@ pub(super) async fn set_enabled<P: Provider + 'static, H: Host + 'static>(
 
 // ── Helpers shared across protocol handlers ──────────────────────────
 
-pub(super) async fn load_config<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn load_config<P: Provider + 'static>(
+    node: &Node<P>,
 ) -> Result<wcore::NodeConfig> {
     let rt = node.runtime.read().await.clone();
     rt.storage().load_config()
 }
 
-pub(super) async fn provider_name_for_model<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn provider_name_for_model<P: Provider + 'static>(
+    node: &Node<P>,
     model: &str,
 ) -> String {
     load_config(node)
@@ -330,8 +323,8 @@ pub(super) async fn provider_name_for_model<P: Provider + 'static, H: Host + 'st
         .unwrap_or_default()
 }
 
-pub(super) async fn resolve_manifests<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn resolve_manifests<P: Provider + 'static>(
+    node: &Node<P>,
 ) -> Result<(wcore::ResolvedManifest, Vec<String>)> {
     let config = load_config(node).await?;
     let (mut manifest, warnings) = wcore::resolve_manifests(&node.config_dir);

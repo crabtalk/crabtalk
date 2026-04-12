@@ -2,7 +2,7 @@
 //!
 //! Daemon-owned because MCP involves spawning child processes, opening
 //! HTTP connections, and scanning the filesystem for port files. Runtime
-//! accesses MCP through the [`Host`](runtime::host::Host) trait.
+//! accesses MCP through the [`Host`](runtime::Env) trait.
 
 pub use {bridge::McpBridge, config::McpServerConfig, handler::McpHandler};
 

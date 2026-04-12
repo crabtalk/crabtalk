@@ -1,95 +1,75 @@
-//! Env — thin wrapper combining a Host with a composite Hook.
+//! Env — trait for node-specific capabilities and tool dispatch.
 //!
-//! The runtime engine sees `Env` as its Hook and ToolDispatcher. Env
-//! delegates tool dispatch and lifecycle callbacks to the inner Hook,
-//! adding Host-specific behavior (instruction discovery, event
-//! broadcasting).
+//! The runtime engine talks to a single `Env` implementation. The node
+//! crate provides [`NodeEnv`] which bundles event broadcasting,
+//! instruction discovery, and a composite Hook. Tests use `()`.
 
-use crate::{Hook, host::Host};
-use std::sync::Arc;
-use wcore::{
-    AgentConfig, AgentEvent, ToolDispatch, ToolDispatcher, ToolFuture, model::HistoryEntry,
-};
+use crate::Hook;
+use std::path::{Path, PathBuf};
+use tokio::sync::broadcast;
+use wcore::{AgentEvent, ToolDispatch, ToolFuture, protocol::message};
 
-pub struct Env<H: Host> {
-    /// Host providing server-specific functionality.
-    pub host: H,
-    /// The composite hook that aggregates all sub-hooks.
-    pub hook: Arc<dyn Hook>,
-}
+/// The runtime environment — combines server capabilities with tool dispatch.
+///
+/// Each node/binary defines one implementation that wires together
+/// the composite hook, event broadcasting, CWD management, and
+/// instruction discovery.
+pub trait Env: Send + Sync + 'static {
+    /// The composite hook providing tool schemas, dispatch, and lifecycle.
+    type Hook: Hook;
 
-impl<H: Host> Env<H> {
-    pub fn new(host: H, hook: Arc<dyn Hook>) -> Self {
-        Self { host, hook }
+    /// Access the composite hook.
+    fn hook(&self) -> &Self::Hook;
+
+    /// Called when an agent event occurs. Default: no-op.
+    fn on_agent_event(&self, _agent: &str, _conversation_id: u64, _event: &AgentEvent) {}
+
+    /// Subscribe to agent events. Returns `None` if event broadcasting
+    /// is not supported.
+    fn subscribe_events(&self) -> Option<broadcast::Receiver<message::AgentEventMsg>> {
+        None
+    }
+
+    /// Collect layered instructions (e.g. `Crab.md` files) for the
+    /// given working directory.
+    fn discover_instructions(&self, _cwd: &Path) -> Option<String> {
+        None
+    }
+
+    /// Effective working directory for a conversation. Defaults to the
+    /// process CWD.
+    fn effective_cwd(&self, _conversation_id: u64) -> PathBuf {
+        std::env::current_dir().unwrap_or_default()
     }
 }
 
-impl<H: Host + 'static> ToolDispatcher for Env<H> {
-    fn dispatch<'a>(
-        &'a self,
-        name: &'a str,
-        args: &'a str,
-        agent: &'a str,
-        sender: &'a str,
-        conversation_id: Option<u64>,
-    ) -> ToolFuture<'a> {
-        let call = ToolDispatch {
-            args: args.to_owned(),
-            agent: agent.to_owned(),
-            sender: sender.to_owned(),
-            conversation_id,
-        };
+/// Dispatch a tool call through an Env's hook. Utility for Env
+/// implementors building their ToolDispatcher impl.
+pub fn dispatch_tool<'a, E: Env>(
+    env: &'a E,
+    name: &'a str,
+    args: &'a str,
+    agent: &'a str,
+    sender: &'a str,
+    conversation_id: Option<u64>,
+) -> ToolFuture<'a> {
+    let call = ToolDispatch {
+        args: args.to_owned(),
+        agent: agent.to_owned(),
+        sender: sender.to_owned(),
+        conversation_id,
+    };
 
-        match self.hook.dispatch(name, call) {
-            Some(fut) => fut,
-            None => Box::pin(async move { Err(format!("tool not registered: {name}")) }),
-        }
+    match env.hook().dispatch(name, call) {
+        Some(fut) => fut,
+        None => Box::pin(async move { Err(format!("tool not registered: {name}")) }),
     }
 }
 
-impl<H: Host + 'static> Hook for Env<H> {
-    fn on_build_agent(&self, config: AgentConfig) -> AgentConfig {
-        self.hook.on_build_agent(config)
-    }
+impl Env for () {
+    type Hook = ();
 
-    fn preprocess(&self, agent: &str, content: &str) -> Option<String> {
-        self.hook.preprocess(agent, content)
-    }
-
-    fn on_before_run(
-        &self,
-        agent: &str,
-        conversation_id: u64,
-        history: &[HistoryEntry],
-    ) -> Vec<HistoryEntry> {
-        let mut injected = self.hook.on_before_run(agent, conversation_id, history);
-
-        // Layered instructions (Crab.md).
-        let cwd = self.host.effective_cwd(conversation_id);
-        if let Some(instructions) = self.host.discover_instructions(&cwd) {
-            injected.push(
-                HistoryEntry::user(format!("<instructions>\n{instructions}\n</instructions>"))
-                    .auto_injected(),
-            );
-        }
-
-        // Guest agent framing.
-        if history.iter().any(|e| !e.agent.is_empty()) {
-            injected.push(
-                HistoryEntry::user(
-                    "Messages wrapped in <from agent=\"...\"> tags are from guest agents \
-                     who were consulted in this conversation. Continue responding as yourself."
-                        .to_string(),
-                )
-                .auto_injected(),
-            );
-        }
-
-        injected
-    }
-
-    fn on_event(&self, agent: &str, conversation_id: u64, event: &AgentEvent) {
-        self.hook.on_event(agent, conversation_id, event);
-        self.host.on_agent_event(agent, conversation_id, event);
+    fn hook(&self) -> &() {
+        &()
     }
 }

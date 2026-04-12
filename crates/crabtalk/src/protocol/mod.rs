@@ -3,7 +3,6 @@
 use crate::node::Node;
 use anyhow::Result;
 use crabllm_core::Provider;
-use runtime::host::Host;
 use wcore::protocol::api::Server;
 use wcore::protocol::message::*;
 
@@ -14,7 +13,7 @@ mod conversation;
 mod history;
 mod plugin;
 
-impl<P: Provider + 'static, H: Host + 'static> Server for Node<P, H> {
+impl<P: Provider + 'static> Server for Node<P> {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         conversation::send(self, req).await
     }

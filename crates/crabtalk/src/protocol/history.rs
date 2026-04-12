@@ -3,12 +3,11 @@
 use crate::node::Node;
 use anyhow::Result;
 use crabllm_core::Provider;
-use runtime::host::Host;
 use wcore::protocol::message::*;
 use wcore::storage::Storage;
 
-pub(super) async fn list_conversations<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn list_conversations<P: Provider + 'static>(
+    node: &Node<P>,
     agent: String,
     sender: String,
 ) -> Result<Vec<ConversationInfo>> {
@@ -16,8 +15,8 @@ pub(super) async fn list_conversations<P: Provider + 'static, H: Host + 'static>
     Ok(scan_sessions(rt.storage().as_ref(), &agent, &sender))
 }
 
-pub(super) async fn get_conversation_history<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn get_conversation_history<P: Provider + 'static>(
+    node: &Node<P>,
     slug: String,
 ) -> Result<ConversationHistory> {
     let rt = node.runtime.read().await.clone();
@@ -47,8 +46,8 @@ pub(super) async fn get_conversation_history<P: Provider + 'static, H: Host + 's
     })
 }
 
-pub(super) async fn delete_conversation<P: Provider + 'static, H: Host + 'static>(
-    node: &Node<P, H>,
+pub(super) async fn delete_conversation<P: Provider + 'static>(
+    node: &Node<P>,
     slug: String,
 ) -> Result<()> {
     let rt = node.runtime.read().await.clone();
