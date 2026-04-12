@@ -3,6 +3,8 @@
 use crate::repl::runner::Runner;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+#[cfg(feature = "daemon")]
+use std::ffi::OsString;
 
 pub mod config;
 pub mod console;
@@ -14,6 +16,34 @@ pub mod console;
     about = "Crabtalk TUI — interactive agent client"
 )]
 pub struct Cli {
+    /// Run the daemon in the foreground.
+    #[cfg(feature = "daemon")]
+    #[arg(long)]
+    pub foreground: bool,
+    /// Start the daemon service without entering chat.
+    #[cfg(feature = "daemon")]
+    #[arg(long, group = "daemon_op")]
+    pub start: bool,
+    /// Stop and restart the daemon service.
+    #[cfg(feature = "daemon")]
+    #[arg(long, group = "daemon_op")]
+    pub restart: bool,
+    /// Stop the daemon service.
+    #[cfg(feature = "daemon")]
+    #[arg(long, group = "daemon_op")]
+    pub stop: bool,
+    /// Hot-reload daemon config.
+    #[cfg(feature = "daemon")]
+    #[arg(long, group = "daemon_op")]
+    pub reload: bool,
+    /// Stream daemon events.
+    #[cfg(feature = "daemon")]
+    #[arg(long, group = "daemon_op")]
+    pub events: bool,
+    /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
+    #[cfg(feature = "daemon")]
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    pub verbose: u8,
     /// Connect via TCP instead of Unix domain socket.
     #[arg(long)]
     pub tcp: bool,
@@ -25,11 +55,91 @@ pub struct Cli {
     pub command: Option<Command>,
 }
 
+/// Top-level subcommands.
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Configure providers, models, and MCP servers.
+    Config(config::Config),
+    /// Resume a previous conversation.
+    Resume {
+        /// Conversation file to resume. If omitted, shows a conversation picker.
+        file: Option<String>,
+    },
+    /// Install a plugin.
+    #[cfg(feature = "daemon")]
+    Pull {
+        /// Plugin name.
+        plugin: String,
+        /// Overwrite if already installed.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Uninstall a plugin.
+    #[cfg(feature = "daemon")]
+    Rm {
+        /// Plugin name.
+        plugin: String,
+    },
+    /// List running services.
+    #[cfg(feature = "daemon")]
+    Ps,
+    /// View daemon logs.
+    #[cfg(feature = "daemon")]
+    Logs {
+        /// Arguments passed through to `tail` (e.g. `-f`, `-n 100`).
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        tail_args: Vec<String>,
+    },
+    /// Forward to an external `crabtalk-{name}` binary.
+    #[cfg(feature = "daemon")]
+    #[command(external_subcommand)]
+    External(Vec<OsString>),
+}
+
 impl Cli {
     /// Parse and dispatch the CLI command.
     pub async fn run(self) -> Result<()> {
+        // Daemon flags take priority.
+        #[cfg(feature = "daemon")]
+        {
+            if self.foreground {
+                return crabtalkd::foreground::start().await;
+            }
+            if self.start || self.restart {
+                if self.restart {
+                    let _ = crabtalkd::service::uninstall();
+                }
+                crabtalkd::ensure_config()?;
+                return crabtalkd::service::install(self.verbose.max(1), self.restart);
+            }
+            if self.stop {
+                return crabtalkd::service::uninstall();
+            }
+            if self.reload {
+                let daemon = crabtalkd::Cli {
+                    foreground: false,
+                    verbose: 0,
+                    tcp: self.tcp,
+                    command: Some(crabtalkd::Command::Reload),
+                };
+                return daemon.run().await;
+            }
+            if self.events {
+                let daemon = crabtalkd::Cli {
+                    foreground: false,
+                    verbose: 0,
+                    tcp: self.tcp,
+                    command: Some(crabtalkd::Command::Events),
+                };
+                return daemon.run().await;
+            }
+        }
+
         match self.command {
             None => {
+                #[cfg(feature = "daemon")]
+                let runner = connect_or_start(self.tcp, self.verbose.max(1)).await?;
+                #[cfg(not(feature = "daemon"))]
                 let runner = connect(self.tcp).await?;
                 let mut repl = crate::repl::ChatRepl::new(runner, self.agent)?;
                 repl.run().await
@@ -52,20 +162,78 @@ impl Cli {
                 }
             }
             Some(Command::Config(cmd)) => cmd.run().await,
+            #[cfg(feature = "daemon")]
+            Some(Command::Pull { plugin, force }) => {
+                let daemon = crabtalkd::Cli {
+                    foreground: false,
+                    verbose: 0,
+                    tcp: self.tcp,
+                    command: Some(crabtalkd::Command::Pull { plugin, force }),
+                };
+                daemon.run().await
+            }
+            #[cfg(feature = "daemon")]
+            Some(Command::Rm { plugin }) => {
+                let daemon = crabtalkd::Cli {
+                    foreground: false,
+                    verbose: 0,
+                    tcp: self.tcp,
+                    command: Some(crabtalkd::Command::Rm { plugin }),
+                };
+                daemon.run().await
+            }
+            #[cfg(feature = "daemon")]
+            Some(Command::Ps) => {
+                let daemon = crabtalkd::Cli {
+                    foreground: false,
+                    verbose: 0,
+                    tcp: self.tcp,
+                    command: Some(crabtalkd::Command::Ps),
+                };
+                daemon.run().await
+            }
+            #[cfg(feature = "daemon")]
+            Some(Command::Logs { tail_args }) => {
+                let daemon = crabtalkd::Cli {
+                    foreground: false,
+                    verbose: 0,
+                    tcp: self.tcp,
+                    command: Some(crabtalkd::Command::Logs { tail_args }),
+                };
+                daemon.run().await
+            }
+            #[cfg(feature = "daemon")]
+            Some(Command::External(args)) => {
+                let daemon = crabtalkd::Cli {
+                    foreground: false,
+                    verbose: 0,
+                    tcp: self.tcp,
+                    command: Some(crabtalkd::Command::External(args)),
+                };
+                daemon.run().await
+            }
         }
     }
 }
 
-/// Top-level subcommands.
-#[derive(Subcommand, Debug)]
-pub enum Command {
-    /// Configure providers, models, and MCP servers.
-    Config(config::Config),
-    /// Resume a previous conversation.
-    Resume {
-        /// Conversation file to resume. If omitted, shows a conversation picker.
-        file: Option<String>,
-    },
+/// Connect to daemon, auto-starting it if not reachable.
+#[cfg(feature = "daemon")]
+async fn connect_or_start(use_tcp: bool, verbose: u8) -> Result<Runner> {
+    match connect(use_tcp).await {
+        Ok(runner) => Ok(runner),
+        Err(e) => {
+            tracing::debug!("daemon not reachable, starting: {e}");
+            crabtalkd::ensure_config()?;
+            crabtalkd::service::install(verbose, false)?;
+            for _ in 0..20 {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                if let Ok(runner) = connect(use_tcp).await {
+                    return Ok(runner);
+                }
+            }
+            anyhow::bail!("daemon started but not reachable after 5s")
+        }
+    }
 }
 
 /// Connect to daemon, failing if not reachable.

@@ -1,4 +1,4 @@
-use crabtalk::{storage::DEFAULT_CONFIG, NodeConfig};
+use crabtalk::{NodeConfig, storage::DEFAULT_CONFIG};
 
 #[test]
 fn parse_default_config_template() {

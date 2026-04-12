@@ -11,10 +11,11 @@ repository.workspace = true
 keywords.workspace = true
 
 [[bin]]
-name = "crabtalk-tui"
+name = "crabtalk"
 path = "src/bin/main.rs"
 
 [dependencies]
+crabtalkd = { workspace = true, optional = true }
 transport.workspace = true
 wcore.workspace = true
 
@@ -38,3 +39,7 @@ toml.workspace = true
 toml_edit.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[features]
+default = []
+daemon = ["dep:crabtalkd"]

@@ -10,10 +10,10 @@ use wcore::protocol::{
     message::{AgentEventKind, plugin_event},
 };
 
-mod attach;
-mod external;
-mod foreground;
-mod service;
+pub mod attach;
+pub mod external;
+pub mod foreground;
+pub mod service;
 
 /// Crabtalk — AI agent platform.
 #[derive(Parser, Debug)]
@@ -204,7 +204,7 @@ impl Cli {
 }
 
 /// Scaffold config dir and prompt for provider if none configured.
-fn ensure_config() -> Result<()> {
+pub fn ensure_config() -> Result<()> {
     crabtalk::storage::scaffold_config_dir(&wcore::paths::CONFIG_DIR)?;
     let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
     let config = crabtalk::NodeConfig::load(&config_path)?;

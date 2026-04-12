@@ -11,7 +11,7 @@ repository.workspace = true
 keywords.workspace = true
 
 [[bin]]
-name = "crabtalk"
+name = "crabtalkd"
 path = "src/bin/main.rs"
 
 [dependencies]
