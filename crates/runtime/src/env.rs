@@ -25,7 +25,10 @@ pub struct AgentScope {
 }
 
 /// Base tools always included in every agent's whitelist.
-const BASE_TOOLS: &[&str] = &["bash", "ask_user", "read", "edit"];
+const BASE_TOOLS: &[&str] = &["ask_user", "read", "edit"];
+
+/// Shell tools (bash) — included when the shell hook is registered.
+const SHELL_TOOLS: &[&str] = &["bash"];
 
 /// Skill discovery/loading tools.
 const SKILL_TOOLS: &[&str] = &["skill"];
@@ -146,6 +149,14 @@ impl<H: Host> Env<H> {
         }
 
         let mut whitelist: Vec<String> = BASE_TOOLS.iter().map(|&s| s.to_owned()).collect();
+        if SHELL_TOOLS
+            .iter()
+            .any(|&t| self.dispatch_map.contains_key(t))
+        {
+            for &t in SHELL_TOOLS {
+                whitelist.push(t.to_owned());
+            }
+        }
         if MEMORY_TOOLS
             .iter()
             .any(|&t| self.dispatch_map.contains_key(t))

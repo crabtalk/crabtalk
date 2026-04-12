@@ -234,6 +234,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             storage.clone(),
             cwd,
             config,
+            config_dir,
             mcp_handler.clone(),
             runtime_once,
         );
@@ -285,6 +286,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         storage: Arc<FsStorage>,
         cwd: PathBuf,
         config: &NodeConfig,
+        config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         runtime_once: Arc<OnceLock<SharedRuntime<P, H>>>,
     ) -> wcore::ToolRegistry {
@@ -307,6 +309,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             env.register_hook(name, hook);
         };
 
+        let bash_config = crate::hooks::os::BashConfig::load(config_dir);
         register_hook(
             &mut tools,
             env,
@@ -315,6 +318,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
                 cwd,
                 conversation_cwds.clone(),
                 read_files.clone(),
+                bash_config,
             )),
         );
 

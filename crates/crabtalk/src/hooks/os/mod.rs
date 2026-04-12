@@ -18,6 +18,7 @@ use wcore::{ToolDispatch, ToolFuture, agent::AsTool, model::HistoryEntry};
 pub type ReadFiles = Arc<Mutex<HashMap<u64, HashSet<PathBuf>>>>;
 
 use bash::Bash;
+pub use bash::BashConfig;
 use edit::Edit;
 use read::Read;
 
@@ -41,14 +42,22 @@ pub struct OsHook {
     conversation_cwds: ConversationCwds,
     /// Files read per conversation — edit requires a prior read.
     read_files: ReadFiles,
+    /// Bash command policy.
+    bash_config: BashConfig,
 }
 
 impl OsHook {
-    pub fn new(cwd: PathBuf, conversation_cwds: ConversationCwds, read_files: ReadFiles) -> Self {
+    pub fn new(
+        cwd: PathBuf,
+        conversation_cwds: ConversationCwds,
+        read_files: ReadFiles,
+        bash_config: BashConfig,
+    ) -> Self {
         Self {
             cwd,
             conversation_cwds,
             read_files,
+            bash_config,
         }
     }
 
@@ -93,7 +102,11 @@ impl Hook for OsHook {
     }
 
     fn system_prompt(&self) -> Option<String> {
-        Some(environment_block())
+        let mut prompt = environment_block();
+        if let Some(policy) = self.bash_config.prompt_block() {
+            prompt.push_str(&policy);
+        }
+        Some(prompt)
     }
 
     fn on_before_run(
