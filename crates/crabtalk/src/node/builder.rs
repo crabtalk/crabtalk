@@ -92,12 +92,15 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         // dependency between Env construction and Runtime construction.
         let runtime_once: Arc<OnceLock<SharedRuntime<P, H>>> = Arc::new(OnceLock::new());
 
+        let (approval_tx, approval_rx) = tokio::sync::mpsc::channel(1);
+        let approvals = Arc::new(std::sync::Mutex::new(Some(approval_rx)));
         let (runtime, mcp) = Self::build_runtime(
             config,
             config_dir,
             host,
             &build_provider,
             runtime_once.clone(),
+            approval_tx.clone(),
         )
         .await?;
         let shared_runtime: SharedRuntime<P, H> = Arc::new(RwLock::new(Arc::new(runtime)));
@@ -164,6 +167,8 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             events,
             build_provider,
             mcp,
+            approval_tx,
+            approvals,
         })
     }
 
@@ -186,6 +191,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             host,
             &self.build_provider,
             runtime_once,
+            self.approval_tx.clone(),
         )
         .await?;
         {
@@ -219,6 +225,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         host: H,
         build_provider: &BuildProvider<P>,
         runtime_once: Arc<OnceLock<SharedRuntime<P, H>>>,
+        approval_tx: crate::hooks::os::ApprovalTx,
     ) -> Result<(Runtime<crate::node::NodeCfg<P, H>>, Arc<McpHandler>)> {
         let (mut manifest, _warnings) = resolve_manifests(config_dir);
         manifest.disabled = config.disabled.clone();
@@ -237,6 +244,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
             config_dir,
             mcp_handler.clone(),
             runtime_once,
+            approval_tx,
         );
         let mut runtime = Runtime::new(model, env, storage, tools);
         Self::register_agents(&mut runtime, config, config_dir, &manifest)?;
@@ -289,6 +297,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         runtime_once: Arc<OnceLock<SharedRuntime<P, H>>>,
+        approval_tx: crate::hooks::os::ApprovalTx,
     ) -> wcore::ToolRegistry {
         let memory = Arc::new(Memory::open(config.system.memory.clone(), storage.clone()));
         let scopes = env.scopes.clone();
@@ -319,6 +328,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
                 conversation_cwds.clone(),
                 read_files.clone(),
                 bash_config,
+                approval_tx,
             )),
         );
 

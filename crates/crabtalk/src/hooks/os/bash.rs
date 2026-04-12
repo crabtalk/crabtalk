@@ -61,12 +61,7 @@ impl BashConfig {
         }
 
         // If allow list is non-empty, command must match at least one.
-        if !self.allow.is_empty() {
-            for pattern in &self.allow {
-                if matches_pattern(pattern, command) {
-                    return Ok(());
-                }
-            }
+        if !self.allow.is_empty() && !self.allow.iter().any(|p| matches_pattern(p, command)) {
             return Err(format!("not in allow list: {command}"));
         }
 
@@ -161,8 +156,22 @@ impl OsHook {
         let input: Bash =
             serde_json::from_str(&call.args).map_err(|e| format!("invalid arguments: {e}"))?;
 
-        // Policy check.
-        self.bash_config.check(&input.command)?;
+        // Policy check — request interactive approval on denial.
+        if let Err(reason) = self.bash_config.check(&input.command) {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let request = super::ApprovalRequest {
+                command: input.command.clone(),
+                reason: reason.clone(),
+                reply: tx,
+            };
+            if self.approval_tx.send(request).await.is_err() {
+                return Err(reason);
+            }
+            match tokio::time::timeout(std::time::Duration::from_secs(120), rx).await {
+                Ok(Ok(true)) => {} // approved, continue
+                _ => return Err(reason),
+            }
+        }
 
         let cwd = self.effective_cwd(call.conversation_id);
 

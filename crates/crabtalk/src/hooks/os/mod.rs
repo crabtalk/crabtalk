@@ -11,11 +11,25 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
+use tokio::sync::{mpsc, oneshot};
 use wcore::{ToolDispatch, ToolFuture, agent::AsTool, model::HistoryEntry};
 
 /// Per-conversation set of files that have been read (shared with DelegateHook
 /// for cleanup when delegated conversations close).
 pub type ReadFiles = Arc<Mutex<HashMap<u64, HashSet<PathBuf>>>>;
+
+/// A bash approval request sent to the app layer.
+pub struct ApprovalRequest {
+    /// The command that was denied.
+    pub command: String,
+    /// Why it was denied (e.g. "not in allow list" or "denied by policy").
+    pub reason: String,
+    /// Send `true` to approve, `false` to deny.
+    pub reply: oneshot::Sender<bool>,
+}
+
+/// Sender half of the approval channel.
+pub type ApprovalTx = mpsc::Sender<ApprovalRequest>;
 
 use bash::Bash;
 pub use bash::BashConfig;
@@ -44,6 +58,8 @@ pub struct OsHook {
     read_files: ReadFiles,
     /// Bash command policy.
     bash_config: BashConfig,
+    /// Approval channel for interactive bash policy prompts.
+    approval_tx: ApprovalTx,
 }
 
 impl OsHook {
@@ -52,12 +68,14 @@ impl OsHook {
         conversation_cwds: ConversationCwds,
         read_files: ReadFiles,
         bash_config: BashConfig,
+        approval_tx: ApprovalTx,
     ) -> Self {
         Self {
             cwd,
             conversation_cwds,
             read_files,
             bash_config,
+            approval_tx,
         }
     }
 

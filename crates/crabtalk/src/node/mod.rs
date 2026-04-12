@@ -51,6 +51,10 @@ pub struct Node<P: Provider + 'static = DefaultProvider, B: Host + 'static = Nod
     pub(crate) events: Arc<std::sync::Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<crate::mcp::McpHandler>,
+    /// Sender for bash approval requests (cloned into OsHook on build/reload).
+    pub(crate) approval_tx: crate::hooks::os::ApprovalTx,
+    /// Bash approval requests — take once to handle in the app layer.
+    pub approvals: Arc<std::sync::Mutex<Option<mpsc::Receiver<crate::hooks::os::ApprovalRequest>>>>,
 }
 
 impl<P: Provider + 'static, B: Host + 'static> Clone for Node<P, B> {
@@ -63,6 +67,8 @@ impl<P: Provider + 'static, B: Host + 'static> Clone for Node<P, B> {
             events: self.events.clone(),
             build_provider: Arc::clone(&self.build_provider),
             mcp: self.mcp.clone(),
+            approval_tx: self.approval_tx.clone(),
+            approvals: self.approvals.clone(),
         }
     }
 }
