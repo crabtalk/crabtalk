@@ -1,6 +1,7 @@
 //! Crabtalk Telegram gateway — Telegram Bot API adapter.
 
 pub mod command;
+pub mod config;
 pub mod markdown;
 pub mod serve;
 

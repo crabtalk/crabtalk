@@ -664,10 +664,8 @@ dependencies = [
  "crabtalk-transport",
  "dirs",
  "futures-util",
- "serde",
  "serde_json",
  "tokio",
- "toml",
  "tracing",
 ]
 
@@ -709,9 +707,11 @@ dependencies = [
  "crabtalk-transport",
  "crossterm 0.28.1",
  "futures-util",
+ "serde",
  "serde_json",
  "teloxide",
  "tokio",
+ "toml",
  "tracing",
 ]
 
@@ -776,6 +776,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "toml",
  "tracing",
 ]
 

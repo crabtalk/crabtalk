@@ -1,6 +1,7 @@
 //! Crabtalk WeChat gateway — ilink bot API adapter.
 
 pub mod api;
+pub mod config;
 pub mod serve;
 
 use api::WeixinMessage;

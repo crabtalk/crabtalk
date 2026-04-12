@@ -13,10 +13,8 @@ keywords.workspace = true
 anyhow.workspace = true
 dirs.workspace = true
 futures-util.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-toml.workspace = true
 transport.workspace = true
 tracing.workspace = true
 

@@ -3,7 +3,7 @@
 use crate::{
     ContextTokens, GatewayMessage, NodeClient, StreamAccumulator, StreamResult, UserIdMap,
 };
-use sdk::config::WechatConfig;
+use crate::config::WechatConfig;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
 use wcore::protocol::message::{
@@ -29,7 +29,7 @@ pub async fn run(node_client: NodeClient, config: &WechatConfig) -> anyhow::Resu
     Ok(())
 }
 
-async fn spawn_wechat(wc: &sdk::config::WechatConfig, agent: String, client: Arc<NodeClient>) {
+async fn spawn_wechat(wc: &WechatConfig, agent: String, client: Arc<NodeClient>) {
     let (tx, rx) = mpsc::unbounded_channel::<GatewayMessage>();
     let ctx_tokens: ContextTokens = Arc::new(std::sync::Mutex::new(HashMap::new()));
     let user_ids: UserIdMap = Arc::new(std::sync::Mutex::new(HashMap::new()));
