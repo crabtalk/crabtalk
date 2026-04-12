@@ -11,19 +11,20 @@ Layer 0 ─ Foundation
 
 Layer 1 ─ Backends (independent of each other)
   ├─ model               ProviderRegistry (OpenAI, Anthropic, Google, Bedrock, Azure)
-  ├─ transport            UDS + TCP socket layers
-  └─ command              Service management (systemd), proc macro codegen
+  ├─ transport            UDS + TCP socket layers, shared Transport enum
+  └─ command              Service management (systemd/launchd), proc macro codegen
 
 Layer 2 ─ Engine
   └─ runtime              Env, tool dispatch, MCP, skills, memory
 
 Layer 3 ─ Server
-  └─ daemon               Event loop, transport setup, cron, config, hot reload
+  └─ crabtalk             Daemon core: event loop, transport setup, cron, config, hot reload
 
 Layer 4 ─ Adapters
-  ├─ gateway              DaemonClient, message types for platform adapters
-  ├─ cli                  REPL, TUI, daemon control
-  ├─ apps/                telegram, wechat (agent apps)
+  ├─ crabtalkd            Daemon CLI: start/stop/foreground, admin commands
+  ├─ sdk                  NodeClient, message types for platform adapters
+  ├─ tui                  REPL, config TUI (optional daemon feature for all-in-one)
+  ├─ apps/                telegram, wechat (gateway clients)
   └─ plugins/             outlook, search (official plugins)
 ```
 
@@ -35,16 +36,17 @@ Layer 4 ─ Adapters
 | Does it add or configure an LLM provider? | model |
 | Does it add a wire transport? | transport |
 | Does it add a tool the agent can call, a skill, or memory? | runtime |
-| Does it need network I/O, scheduling, or process lifecycle? | daemon |
-| Does it adapt a platform or parse bot commands? | gateway |
-| Does it add a CLI command or TUI feature? | cli |
+| Does it need network I/O, scheduling, or process lifecycle? | crabtalk |
+| Does it adapt a platform or parse bot commands? | sdk |
+| Does it add a daemon admin command? | crabtalkd |
+| Does it add a TUI feature or interactive UI? | tui |
 | **If none of these fit, challenge whether the feature should exist.** | |
 
 ## Boundary Contracts
 
 - **Runtime** — never initiates I/O. It only responds. No sockets, timers, or listeners.
-- **Daemon** — never interprets tool semantics. It only routes. Cron and config are daemon concerns (process-lifetime, not session-lifetime).
-- **Gateway** — no dependency on runtime or model. Adapter-centric, not agent-centric.
+- **Crabtalk (daemon core)** — never interprets tool semantics. It only routes. Cron and config are daemon concerns (process-lifetime, not session-lifetime).
+- **SDK** — no dependency on runtime or model. Adapter-centric, not agent-centric.
 - **Core** — defines traits and types only. If a core change pulls in runtime or daemon deps, the abstraction is wrong.
 
 `Host` is the seam between daemon and runtime. The daemon constructs the
@@ -54,7 +56,7 @@ channel.
 ## Data Flow
 
 ```
-Client (CLI/Telegram/etc) → UDS/TCP → Node event loop
+Client (TUI/Telegram/etc) → UDS/TCP → Daemon event loop
   → Agent.step(): config + history + tools → Model.send()/stream()
   → Tool calls dispatched via ToolDispatcher → Env.dispatch_tool()
 ```

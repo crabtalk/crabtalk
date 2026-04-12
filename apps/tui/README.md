@@ -1,10 +1,19 @@
-# crabtalk-cli
+# crabtalk-tui
 
-Command-line interface for Crabtalk.
+Interactive TUI client for the Crabtalk daemon.
 
-Provides the `crabtalk` binary with an interactive REPL, agent management,
-model downloads, and MCP server configuration — all communicating with the
-daemon over Unix domain sockets.
+Provides an interactive REPL, conversation management, and provider/MCP
+configuration — all communicating with the daemon over Unix domain sockets
+or TCP.
+
+## Features
+
+- `daemon` — embeds daemon lifecycle commands (start/stop/foreground, plugin
+  management, admin). With this feature, the TUI auto-starts the daemon and
+  works as an all-in-one binary.
+
+Without the `daemon` feature, the TUI is a pure client that requires a
+running daemon (`crabtalk start` or `crabtalk foreground`).
 
 ## License
 

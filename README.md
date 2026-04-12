@@ -11,7 +11,7 @@ Start it, talk to it, extend it with plugins.
 curl -fsSL https://crabtalk.ai/install.sh | sh
 ```
 
-Or `cargo install crabtalk`. See the [installation guide][install] for details.
+Or `cargo install crabtalk-tui`. See the [installation guide][install] for details.
 
 ## Quick Start
 
@@ -20,7 +20,7 @@ Or `cargo install crabtalk`. See the [installation guide][install] for details.
 crabtalk
 ```
 
-Full config reference: [`crates/daemon/config.toml`](crates/daemon/config.toml).
+Full config reference: [`crates/crabtalk/config.toml`](crates/crabtalk/config.toml).
 
 ## How It Works
 
@@ -34,7 +34,7 @@ are agent-powered experiences built on top of the daemon.
 ## Learn More
 
 - [The Crabtalk Book][book] — manifesto, architecture, and design RFCs
-- [Configuration](crates/daemon/config.toml) — config.toml reference
+- [Configuration](crates/crabtalk/config.toml) — config.toml reference
 - [Contributing](CONTRIBUTING.md) — architecture, layering, and data flow
 
 ## License
