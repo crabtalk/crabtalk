@@ -2,10 +2,10 @@
 
 use crate::{
     NodeConfig,
+    builder::{BuildProvider, DefaultProvider, build_default_provider},
     cron::CronStore,
     event::EventBus,
     hook::host::NodeHost,
-    node::builder::{BuildProvider, DefaultProvider, build_default_provider},
     storage::FsStorage,
 };
 use anyhow::Result;
@@ -18,16 +18,10 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::{Mutex, RwLock, broadcast, mpsc, oneshot};
-// NOTE: EventBus uses std::sync::Mutex so it can be locked from
-// synchronous lifecycle hooks (Env::on_event). Protocol-facing
-// subscribe/unsubscribe/list paths use this same mutex.
 use wcore::{
     model::Model,
     protocol::{api::Server, message::ClientMessage},
 };
-
-pub(crate) mod builder;
-mod protocol;
 
 /// Config binding for a node: ties Provider + Host to FsStorage + Env.
 pub struct NodeCfg<P: Provider + 'static = DefaultProvider, B: Host + 'static = NodeHost> {
