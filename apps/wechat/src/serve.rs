@@ -1,9 +1,9 @@
 //! WeChat gateway serve logic.
 
+use crate::config::WechatConfig;
 use crate::{
     ContextTokens, GatewayMessage, NodeClient, StreamAccumulator, StreamResult, UserIdMap,
 };
-use crate::config::WechatConfig;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
 use wcore::protocol::message::{

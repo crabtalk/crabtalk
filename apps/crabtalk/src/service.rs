@@ -1,6 +1,5 @@
 //! System service management (install/uninstall daemon as launchd/systemd service).
 
-use crate::cmd::attach::setup_provider;
 use anyhow::Result;
 use wcore::paths::{CONFIG_DIR, LOGS_DIR};
 
@@ -12,20 +11,6 @@ const SYSTEMD_TEMPLATE: &str = include_str!("systemd.service");
 const SCHTASKS_TEMPLATE: &str = include_str!("schtasks.xml");
 
 const LABEL: &str = "ai.crabtalk.crabtalk";
-
-/// Check if providers are configured; scaffold config and prompt if needed.
-fn ensure_providers() -> Result<()> {
-    let config_path = CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
-    if !config_path.exists() {
-        ::node::storage::scaffold_config_dir(&CONFIG_DIR)?;
-    }
-
-    let config = ::node::NodeConfig::load(&config_path)?;
-    if config.provider.is_empty() {
-        setup_provider(&config_path)?;
-    }
-    Ok(())
-}
 
 fn render_daemon_template(template: &str, verbose: u8) -> Result<String> {
     let binary = std::env::current_exe()?;
@@ -47,7 +32,6 @@ pub fn install(verbose: u8, force: bool) -> Result<()> {
         println!("daemon is already running");
         return Ok(());
     }
-    ensure_providers()?;
     let rendered = render_daemon_template(LAUNCHD_TEMPLATE, verbose)?;
     command::install(&rendered, LABEL)
 }
@@ -63,7 +47,6 @@ pub fn install(verbose: u8, force: bool) -> Result<()> {
         println!("daemon is already running");
         return Ok(());
     }
-    ensure_providers()?;
     let rendered = render_daemon_template(SYSTEMD_TEMPLATE, verbose)?;
     command::install(&rendered, LABEL)
 }
@@ -79,7 +62,6 @@ pub fn install(verbose: u8, force: bool) -> Result<()> {
         println!("daemon is already running");
         return Ok(());
     }
-    ensure_providers()?;
     let rendered = render_daemon_template(SCHTASKS_TEMPLATE, verbose)?;
     command::install(&rendered, LABEL)
 }

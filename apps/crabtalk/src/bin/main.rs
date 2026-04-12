@@ -1,8 +1,8 @@
-//! Crabtalk TUI binary entry point.
+//! Crabtalk daemon binary entry point.
 
 use anyhow::Result;
 use clap::Parser;
-use crabtalk_tui::Cli;
+use crabtalk::Cli;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -10,7 +10,23 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("failed to install rustls crypto provider");
 
-    if let Ok(val) = std::env::var("RUST_LOG") {
+    let cli = Cli::parse();
+
+    if cli.foreground && cli.verbose > 0 {
+        let level = match cli.verbose {
+            1 => "crabtalk=info",
+            2 => "crabtalk=debug",
+            _ => "crabtalk=trace",
+        };
+        // SAFETY: called in main before spawning any threads.
+        unsafe { std::env::set_var("RUST_LOG", level) };
+        let level = parse_level(level);
+        tracing_subscriber::fmt()
+            .with_max_level(level)
+            .without_time()
+            .with_target(false)
+            .init();
+    } else if let Ok(val) = std::env::var("RUST_LOG") {
         let level = parse_level(&val);
         tracing_subscriber::fmt()
             .with_max_level(level)
@@ -19,7 +35,6 @@ async fn main() -> Result<()> {
             .init();
     }
 
-    let cli = Cli::parse();
     cli.run().await
 }
 

@@ -7,9 +7,6 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
 #[cfg(unix)]
 use std::path::PathBuf;
-use transport::tcp::TcpConnection;
-#[cfg(unix)]
-use transport::uds::{ClientConfig, Connection, CrabtalkClient};
 use wcore::protocol::{
     api::Client,
     message::{
@@ -48,46 +45,7 @@ pub enum OutputChunk {
     },
 }
 
-/// Transport-agnostic connection to the crabtalk daemon.
-///
-/// Implements [`Client`] so all typed protocol methods are available.
-pub enum Transport {
-    #[cfg(unix)]
-    Uds(Connection),
-    Tcp(TcpConnection),
-}
-
-/// Dispatch a method call to the inner connection regardless of variant.
-macro_rules! dispatch {
-    ($self:expr, |$c:ident| $body:expr) => {
-        match $self {
-            #[cfg(unix)]
-            Transport::Uds($c) => $body,
-            Transport::Tcp($c) => $body,
-        }
-    };
-}
-
-impl Client for Transport {
-    async fn request(&mut self, msg: ClientMessage) -> Result<ServerMessage> {
-        dispatch!(self, |c| c.request(msg).await)
-    }
-
-    fn request_stream(
-        &mut self,
-        msg: ClientMessage,
-    ) -> impl Stream<Item = Result<ServerMessage>> + Send + '_ {
-        async_stream::try_stream! {
-            dispatch!(self, |c| {
-                let s = c.request_stream(msg);
-                tokio::pin!(s);
-                while let Some(item) = s.next().await {
-                    yield item?;
-                }
-            });
-        }
-    }
-}
+pub use transport::Transport;
 
 /// How to reconnect to the daemon (for sending ReplyToAsk on a separate connection).
 #[derive(Clone)]
@@ -123,10 +81,10 @@ impl Runner {
     /// Connect to crabtalk daemon via Unix domain socket.
     #[cfg(unix)]
     pub async fn connect(socket_path: &Path) -> Result<Self> {
-        let config = ClientConfig {
+        let config = transport::uds::ClientConfig {
             socket_path: socket_path.to_path_buf(),
         };
-        let client = CrabtalkClient::new(config);
+        let client = transport::uds::CrabtalkClient::new(config);
         let connection = client.connect().await?;
         Ok(Self {
             transport: Transport::Uds(connection),
@@ -137,7 +95,7 @@ impl Runner {
     /// Connect to crabtalk daemon via TCP.
     pub async fn connect_tcp(port: u16) -> Result<Self> {
         let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-        let connection = TcpConnection::connect(addr).await?;
+        let connection = transport::tcp::TcpConnection::connect(addr).await?;
         Ok(Self {
             transport: Transport::Tcp(connection),
             conn_info: ConnectionInfo::Tcp(port),
@@ -442,7 +400,7 @@ pub async fn send_reply(
     match conn_info {
         #[cfg(unix)]
         ConnectionInfo::Uds(path) => {
-            let client = CrabtalkClient::new(ClientConfig {
+            let client = transport::uds::CrabtalkClient::new(transport::uds::ClientConfig {
                 socket_path: path.clone(),
             });
             let mut conn = client.connect().await?;
@@ -450,7 +408,7 @@ pub async fn send_reply(
         }
         ConnectionInfo::Tcp(port) => {
             let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, *port));
-            let mut conn = TcpConnection::connect(addr).await?;
+            let mut conn = transport::tcp::TcpConnection::connect(addr).await?;
             conn.request(msg).await?;
         }
     }

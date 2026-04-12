@@ -15,5 +15,6 @@ wcore.workspace = true
 anyhow.workspace = true
 async-stream.workspace = true
 futures-core.workspace = true
+futures-util.workspace = true
 tokio.workspace = true
 tracing.workspace = true

@@ -7,7 +7,7 @@ use toml_edit::{Array, DocumentMut, Item, Table, value};
 use wcore::config::PROVIDER_PRESETS;
 
 /// Interactive provider setup for first-time daemon start.
-pub(crate) fn setup_provider(config_path: &Path) -> Result<()> {
+pub fn setup_provider(config_path: &Path) -> Result<()> {
     let theme = ColorfulTheme::default();
     let preset_names: Vec<&str> = PROVIDER_PRESETS.iter().map(|p| p.name).collect();
 

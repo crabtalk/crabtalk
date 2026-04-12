@@ -120,7 +120,7 @@ fn confirm(prompt: &str) -> Result<bool> {
 
 /// Look for an external binary next to the current exe, then on PATH,
 /// then in `~/.cargo/bin` as a fallback.
-fn find_binary(name: &str) -> Option<PathBuf> {
+pub fn find_binary(name: &str) -> Option<PathBuf> {
     if let Ok(current) = std::env::current_exe()
         && let Some(dir) = current.parent()
     {

@@ -15,7 +15,7 @@ plugin = { path = "plugins/plugins", package = "crabtalk-plugins", version = "0.
 telegram = { path = "apps/telegram", package = "crabtalk-telegram", version = "0.0.20" }
 wechat = { path = "apps/wechat", package = "crabtalk-wechat", version = "0.0.20" }
 sdk = { path = "apps/sdk", package = "crabtalk-sdk", version = "0.0.20" }
-tui = { path = "apps/tui", package = "crabtalk", version = "0.0.20" }
+tui = { path = "apps/tui", package = "crabtalk-tui", version = "0.0.20" }
 node = { path = "crates/node", package = "crabtalk-node", version = "0.0.20" }
 runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.0.20" }
 transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.20" }
