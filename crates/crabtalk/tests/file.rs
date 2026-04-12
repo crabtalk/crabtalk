@@ -1,6 +1,6 @@
 //! Tests for read, edit, and bash tool handlers via OsHook.
 
-use crabtalk::hooks::os::OsHook;
+use crabtalk::hooks::os::{BashConfig, OsHook};
 use runtime::Hook;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
@@ -8,7 +8,10 @@ use wcore::ToolDispatch;
 
 fn hook(cwd: PathBuf) -> OsHook {
     let cwds = Arc::new(Mutex::new(HashMap::new()));
-    OsHook::new(cwd, cwds)
+    let read_files = Default::default();
+    let bash_config = BashConfig::default();
+    let (approval_tx, _rx) = tokio::sync::mpsc::channel(1);
+    OsHook::new(cwd, cwds, read_files, bash_config, approval_tx)
 }
 
 fn dispatch(args: &str) -> ToolDispatch {
@@ -16,7 +19,7 @@ fn dispatch(args: &str) -> ToolDispatch {
         args: args.to_owned(),
         agent: "agent".into(),
         sender: String::new(),
-        conversation_id: None,
+        conversation_id: Some(1),
     }
 }
 
@@ -115,6 +118,10 @@ async fn edit_basic() {
     std::fs::write(&file, "hello world\n").unwrap();
 
     let h = hook(dir.path().to_path_buf());
+    // Must read before edit.
+    let read_args = format!(r#"{{"path":"{}"}}"#, file.display());
+    call(&h, "read", &read_args).await.unwrap();
+
     let args = format!(
         r#"{{"path":"{}","old_string":"hello","new_string":"goodbye"}}"#,
         file.display()
@@ -131,6 +138,9 @@ async fn edit_not_found() {
     std::fs::write(&file, "hello world\n").unwrap();
 
     let h = hook(dir.path().to_path_buf());
+    let read_args = format!(r#"{{"path":"{}"}}"#, file.display());
+    call(&h, "read", &read_args).await.unwrap();
+
     let args = format!(
         r#"{{"path":"{}","old_string":"missing","new_string":"x"}}"#,
         file.display()
@@ -146,6 +156,9 @@ async fn edit_not_unique() {
     std::fs::write(&file, "aaa bbb aaa\n").unwrap();
 
     let h = hook(dir.path().to_path_buf());
+    let read_args = format!(r#"{{"path":"{}"}}"#, file.display());
+    call(&h, "read", &read_args).await.unwrap();
+
     let args = format!(
         r#"{{"path":"{}","old_string":"aaa","new_string":"ccc"}}"#,
         file.display()
@@ -162,6 +175,9 @@ async fn edit_identical_strings() {
     std::fs::write(&file, "hello\n").unwrap();
 
     let h = hook(dir.path().to_path_buf());
+    let read_args = format!(r#"{{"path":"{}"}}"#, file.display());
+    call(&h, "read", &read_args).await.unwrap();
+
     let args = format!(
         r#"{{"path":"{}","old_string":"hello","new_string":"hello"}}"#,
         file.display()
@@ -177,6 +193,9 @@ async fn edit_empty_old_string() {
     std::fs::write(&file, "hello\n").unwrap();
 
     let h = hook(dir.path().to_path_buf());
+    let read_args = format!(r#"{{"path":"{}"}}"#, file.display());
+    call(&h, "read", &read_args).await.unwrap();
+
     let args = format!(
         r#"{{"path":"{}","old_string":"","new_string":"x"}}"#,
         file.display()
@@ -188,28 +207,28 @@ async fn edit_empty_old_string() {
 #[tokio::test]
 async fn edit_missing_file() {
     let h = hook(PathBuf::from("/tmp"));
+    // edit_missing_file: file doesn't exist so read fails, then edit
+    // should fail with "you must read" since the file was never read.
     let args = r#"{"path":"/nonexistent/file.txt","old_string":"a","new_string":"b"}"#;
     let err = call(&h, "edit", args).await.unwrap_err();
-    assert!(err.contains("error reading"));
+    assert!(err.contains("you must read"));
 }
 
-// --- sender restrictions ---
+// --- read-before-edit ---
 
 #[tokio::test]
-async fn bash_rejected_for_gateway_sender() {
-    let h = hook(PathBuf::from("/tmp"));
-    let call = ToolDispatch {
-        args: r#"{"command":"echo hi"}"#.to_owned(),
-        agent: "agent".into(),
-        sender: "gateway:telegram".into(),
-        conversation_id: None,
-    };
-    let err = h
-        .dispatch("bash", call)
-        .expect("hook should handle bash")
-        .await
-        .unwrap_err();
-    assert!(err.contains("only available in the command line interface"));
+async fn edit_without_read_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("no_read.txt");
+    std::fs::write(&file, "hello\n").unwrap();
+
+    let h = hook(dir.path().to_path_buf());
+    let args = format!(
+        r#"{{"path":"{}","old_string":"hello","new_string":"bye"}}"#,
+        file.display()
+    );
+    let err = call(&h, "edit", &args).await.unwrap_err();
+    assert!(err.contains("you must read"));
 }
 
 #[tokio::test]
