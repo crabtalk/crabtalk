@@ -11,7 +11,7 @@ use crate::{
 use anyhow::Result;
 use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
-use runtime::{Env, Runtime, host::Host};
+use runtime::{Runtime, host::Host};
 use std::{
     marker::PhantomData,
     path::{Path, PathBuf},
@@ -31,7 +31,7 @@ pub struct NodeCfg<P: Provider + 'static = DefaultProvider, B: Host + 'static = 
 impl<P: Provider + 'static, B: Host + 'static> runtime::Config for NodeCfg<P, B> {
     type Storage = FsStorage;
     type Provider = P;
-    type Hook = Env<B, FsStorage>;
+    type Host = B;
 }
 
 /// Shared runtime handle — `Arc<RwLock<Arc<...>>>` so reload can swap

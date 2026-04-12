@@ -237,14 +237,14 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         Ok((runtime, mcp_handler))
     }
 
-    /// Build an `Env` with storage, scopes, and conversation state wired
-    /// up — but no tools registered yet. Returns the env, a clone of its
-    /// storage for `Runtime::new`, and the cwd used for tool handlers.
+    /// Build an `Env` with scopes and conversation state wired up — but
+    /// no hooks registered yet. Returns the env, storage for `Runtime::new`,
+    /// and the cwd used for tool handlers.
     fn empty_env(
         config_dir: &Path,
         manifest: &ResolvedManifest,
         host: H,
-    ) -> (Env<H, FsStorage>, Arc<FsStorage>, PathBuf) {
+    ) -> (Env<H>, Arc<FsStorage>, PathBuf) {
         let skill_roots: Vec<PathBuf> = manifest
             .skill_dirs
             .iter()
@@ -268,14 +268,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         let pending_asks: runtime::PendingAsks =
             Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
-        let env = Env::new(
-            storage.clone(),
-            cwd.clone(),
-            host,
-            scopes,
-            conversation_cwds,
-            pending_asks,
-        );
+        let env = Env::new(cwd.clone(), host, scopes, conversation_cwds, pending_asks);
         (env, storage, cwd)
     }
 
@@ -283,7 +276,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
     /// node-provided tools: bash/read/edit, memory, skill, delegate,
     /// ask_user, and mcp (if any servers are configured).
     fn register_tools(
-        env: &mut Env<H, FsStorage>,
+        env: &mut Env<H>,
         storage: Arc<FsStorage>,
         cwd: PathBuf,
         config: &NodeConfig,
@@ -299,7 +292,7 @@ impl<P: Provider + 'static, H: Host + 'static> Node<P, H> {
         let mut tools = wcore::ToolRegistry::new();
 
         let register_hook = |tools: &mut wcore::ToolRegistry,
-                             env: &mut Env<H, FsStorage>,
+                             env: &mut Env<H>,
                              name: &str,
                              hook: Arc<dyn runtime::Hook>| {
             for schema in hook.schema() {

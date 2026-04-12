@@ -9,8 +9,8 @@ use wcore::{
 };
 
 /// The daemon's environment type — Env with NodeHost for
-/// server-specific dispatch and FsStorage for persistence.
-pub type NodeEnv = runtime::Env<NodeHost, crate::storage::FsStorage>;
+/// server-specific dispatch.
+pub type NodeEnv = runtime::Env<NodeHost>;
 
 /// Tool result output is truncated to this many bytes in the broadcast.
 const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;

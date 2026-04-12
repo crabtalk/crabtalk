@@ -1,14 +1,17 @@
 //! Tests for Runtime — agent registry, conversation management, and execution.
 //!
-//! Uses [`TestHook`] and [`TestProvider`] with InMemoryStorage. Every
-//! test gets its own in-memory storage — no shared global state, no
-//! filesystem I/O, no node.
+//! Uses `Env<()>` with InMemoryStorage. Every test gets its own
+//! in-memory storage — no shared global state, no filesystem I/O, no node.
 
-use crabtalk_runtime::{Config, Hook, Runtime};
+use crabtalk_runtime::{Config, Env, Runtime};
 use futures_util::StreamExt;
-use std::sync::Arc;
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 use wcore::{
-    AgentConfig, AgentEvent, AgentStopReason, ToolDispatcher, ToolFuture,
+    AgentConfig, AgentEvent, AgentStopReason,
     model::Model,
     testing::{
         InMemoryStorage,
@@ -16,38 +19,25 @@ use wcore::{
     },
 };
 
-/// Trivial no-op Hook + ToolDispatcher for tests.
-#[derive(Default, Clone)]
-struct TestHook;
-impl Hook for TestHook {}
-impl ToolDispatcher for TestHook {
-    fn dispatch<'a>(
-        &'a self,
-        name: &'a str,
-        _args: &'a str,
-        _agent: &'a str,
-        _sender: &'a str,
-        _conversation_id: Option<u64>,
-    ) -> ToolFuture<'a> {
-        let name = name.to_owned();
-        Box::pin(async move { Err(format!("TestHook: tool '{name}' not dispatched")) })
-    }
-}
-
 struct TestCfg;
 
 impl Config for TestCfg {
     type Storage = InMemoryStorage;
     type Provider = TestProvider;
-    type Hook = TestHook;
+    type Host = ();
 }
 
 /// Build a `Runtime` from a `TestProvider`.
 fn runtime(provider: TestProvider) -> Runtime<TestCfg> {
     let storage = Arc::new(InMemoryStorage::new());
+    let cwd = PathBuf::from("/test");
+    let scopes = Arc::new(RwLock::new(BTreeMap::new()));
+    let cwds = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+    let asks = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+    let env = Env::new(cwd, (), scopes, cwds, asks);
     Runtime::new(
         Model::new(provider),
-        TestHook::default(),
+        env,
         storage,
         wcore::ToolRegistry::new(),
     )

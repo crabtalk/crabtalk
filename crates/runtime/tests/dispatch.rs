@@ -1,30 +1,37 @@
 //! Tests for Env dispatch logic — scope enforcement and handler lookup.
 
-use crabtalk_runtime::Env;
+use crabtalk_runtime::{Env, Hook};
 use std::{
     collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, RwLock},
 };
-use wcore::{
-    AgentConfig, ToolDispatch, ToolEntry,
-    testing::{InMemoryStorage, test_schema},
-};
+use wcore::{AgentConfig, ToolDispatch, ToolFuture, testing::test_schema};
 
-fn test_hook() -> Env<(), InMemoryStorage> {
-    let storage = Arc::new(InMemoryStorage::new());
+/// A mock hook that handles one tool called "mock_tool".
+struct MockHook;
+
+impl Hook for MockHook {
+    fn schema(&self) -> Vec<wcore::model::Tool> {
+        vec![test_schema("mock_tool")]
+    }
+
+    fn dispatch<'a>(&'a self, name: &'a str, _call: ToolDispatch) -> Option<ToolFuture<'a>> {
+        if name == "mock_tool" {
+            Some(Box::pin(async { Ok("mock ok".to_owned()) }))
+        } else {
+            None
+        }
+    }
+}
+
+fn test_hook() -> Env<()> {
     let cwd = PathBuf::from("/test");
     let scopes = Arc::new(RwLock::new(BTreeMap::new()));
     let conversation_cwds = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
     let pending_asks = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
-    let mut env = Env::new(storage, cwd, (), scopes, conversation_cwds, pending_asks);
-    // Register a mock tool for testing.
-    env.register_tool(ToolEntry {
-        schema: test_schema("mock_tool"),
-        handler: Arc::new(|_call: ToolDispatch| Box::pin(async { Ok("mock ok".to_owned()) })),
-        system_prompt: None,
-        before_run: None,
-    });
+    let mut env = Env::new(cwd, (), scopes, conversation_cwds, pending_asks);
+    env.register_hook("mock", Arc::new(MockHook));
     env
 }
 
