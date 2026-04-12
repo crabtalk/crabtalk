@@ -21,7 +21,7 @@ use crabllm_core::{
     ToolType,
 };
 use crabtalk_core::model::HistoryEntry;
-use crabtalk_core::model::builder::MessageBuilder;
+use crabtalk_core::model::MessageBuilder;
 
 // --- content: null discrimination ---
 

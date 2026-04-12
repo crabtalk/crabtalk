@@ -7,7 +7,7 @@
 //! [`Agent::run_stream`]. `run_stream()` is the canonical step loop —
 //! `run()` collects its events and returns the final response.
 
-use crate::model::{HistoryEntry, Model, builder::MessageBuilder};
+use crate::model::{HistoryEntry, MessageBuilder, Model};
 use anyhow::Result;
 use async_stream::stream;
 pub use builder::AgentBuilder;
