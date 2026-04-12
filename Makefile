@@ -12,8 +12,15 @@
 # make windows-amd64
 VERSION = v$(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
 CARGO = cargo b --profile prod
-PACKAGES = -p crabtalk -p crabtalk-search -p crabtalk-telegram
+PACKAGES = -p crabtalkd -p crabtalk-search -p crabtalk-telegram
 BINS = crabtalk crabtalk-search crabtalk-telegram
+
+# TLS backend: native-tls on macOS, rustls on Linux/Windows.
+tls-macos-arm64 =
+tls-macos-amd64 =
+tls-linux-arm64 = --no-default-features --features rustls
+tls-linux-amd64 = --no-default-features --features rustls
+tls-windows-amd64 = --no-default-features --features rustls
 
 # Cross-compilation: set CC/AR so aws-lc-sys cmake uses the right
 # assembler (macOS as doesn't understand armv8.4-a+sha3 etc).
@@ -49,7 +56,7 @@ crabtalk: $(addprefix crabtalk-,$(PLATFORMS))
 		tar -czf target/bundle/crabtalk-$(VERSION)-$(p).tar.gz -C target/$(triple-$(p))/prod crabtalk$(ext-$(p));)
 
 crabtalk-%:
-	$(build-$*) -p crabtalk
+	$(build-$*) -p crabtalkd $(tls-$*)
 
 # build all packages for all platforms
 bundle: $(PLATFORMS) tar-all

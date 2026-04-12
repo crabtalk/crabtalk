@@ -34,14 +34,18 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yml.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+
+# optional dependencies
 toml = { workspace = true, optional = true }
 toml_edit = { workspace = true, optional = true }
-tracing.workspace = true
 ulid = { workspace = true, optional = true }
 
 [features]
-default = ["fs"]
+default = ["fs", "native-tls"]
 fs = ["dep:toml", "dep:toml_edit", "dep:ulid"]
+native-tls = ["reqwest/native-tls", "crabllm-provider/native-tls"]
+rustls = ["reqwest/rustls", "crabllm-provider/rustls"]
 
 [dev-dependencies]
 tempfile.workspace = true

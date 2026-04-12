@@ -6,10 +6,6 @@ use crabtalk_tui::Cli;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .expect("failed to install rustls crypto provider");
-
     if let Ok(val) = std::env::var("RUST_LOG") {
         let level = parse_level(&val);
         tracing_subscriber::fmt()
