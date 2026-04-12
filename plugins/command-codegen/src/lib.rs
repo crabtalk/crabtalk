@@ -64,7 +64,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     let run_arm = match args.kind.as_str() {
         "mcp" => quote! {
             #command_enum::Run => {
-                crabtalk_command::run_mcp(self).await?
+                command::run_mcp(self).await?
             }
         },
         "client" => quote! {
@@ -82,7 +82,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #input
 
-        impl crabtalk_command::Service for #struct_name {
+        impl command::Service for #struct_name {
             fn name(&self) -> &str {
                 #name
             }
@@ -128,8 +128,8 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
             pub async fn exec(
                 &self,
                 action: #command_enum,
-            ) -> crabtalk_command::anyhow::Result<()> {
-                use crabtalk_command::Service as _;
+            ) -> command::anyhow::Result<()> {
+                use command::Service as _;
                 match action {
                     #command_enum::Start { force } => self.start(force)?,
                     #command_enum::Stop => self.stop()?,
@@ -145,7 +145,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
         impl CrabtalkCli {
             /// Init tracing, build a tokio runtime, and run the command.
             pub fn start(self, svc: #struct_name) {
-                crabtalk_command::run(self.verbose, move || async move {
+                command::run(self.verbose, move || async move {
                     svc.exec(self.action).await
                 });
             }

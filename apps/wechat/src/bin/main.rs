@@ -5,7 +5,7 @@ use crabtalk_wechat::config::WechatConfig;
 
 const DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
 
-#[crabtalk_command::command(kind = "client", name = "wechat")]
+#[command::command(kind = "client", name = "wechat")]
 struct GatewayWechat;
 
 impl GatewayWechat {
@@ -93,8 +93,8 @@ async fn qr_login() -> anyhow::Result<(String, String)> {
 
 fn main() {
     // Migrate: remove old gateway-prefixed service if present.
-    if crabtalk_command::is_installed("ai.crabtalk.gateway-wechat") {
-        let _ = crabtalk_command::uninstall("ai.crabtalk.gateway-wechat");
+    if command::is_installed("ai.crabtalk.gateway-wechat") {
+        let _ = command::uninstall("ai.crabtalk.gateway-wechat");
     }
 
     let cli = CrabtalkCli::parse();

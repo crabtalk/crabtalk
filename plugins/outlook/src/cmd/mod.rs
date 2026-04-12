@@ -4,11 +4,11 @@ use crate::{auth, config::Config, error::Error, token::token_path};
 use clap::{Parser, Subcommand};
 
 #[cfg(feature = "mcp")]
-#[crabtalk_command::command(kind = "mcp", name = "outlook")]
+#[command::command(kind = "mcp", name = "outlook")]
 struct Outlook;
 
 #[cfg(feature = "mcp")]
-impl crabtalk_command::McpService for Outlook {
+impl command::McpService for Outlook {
     fn router(&self) -> axum::Router {
         use crate::mcp::OutlookServer;
         use rmcp::transport::streamable_http_server::{

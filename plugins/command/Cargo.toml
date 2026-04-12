@@ -15,7 +15,7 @@ mcp = ["dep:axum", "dep:schemars", "dep:serde_json"]
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-crabtalk-command-codegen.workspace = true
+command-codegen.workspace = true
 dirs.workspace = true
 tokio.workspace = true
 tracing.workspace = true

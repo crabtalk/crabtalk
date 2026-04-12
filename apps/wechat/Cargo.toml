@@ -16,7 +16,7 @@ path = "src/bin/main.rs"
 gateway.workspace = true
 wcore.workspace = true
 transport.workspace = true
-crabtalk-command.workspace = true
+command.workspace = true
 
 anyhow.workspace = true
 base64.workspace = true

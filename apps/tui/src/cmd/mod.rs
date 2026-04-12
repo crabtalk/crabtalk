@@ -254,7 +254,7 @@ impl Cli {
                 }
                 Ok(())
             }
-            Some(Command::Logs { tail_args }) => crabtalk_command::view_logs("daemon", &tail_args),
+            Some(Command::Logs { tail_args }) => command::view_logs("daemon", &tail_args),
             Some(Command::External(args)) => external::run(args),
         }
     }

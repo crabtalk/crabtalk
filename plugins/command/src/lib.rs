@@ -1,5 +1,5 @@
 pub use anyhow;
-pub use crabtalk_command_codegen::command;
+pub use command_codegen::command;
 pub use wcore;
 
 pub mod service;

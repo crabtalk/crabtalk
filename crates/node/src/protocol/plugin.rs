@@ -25,7 +25,7 @@ pub(super) fn install<'a, P: Provider + 'static, H: Host + 'static>(
             async move {
                 let branch = if branch.is_empty() { None } else { Some(branch.as_str()) };
                 let path = if path.is_empty() { None } else { Some(std::path::Path::new(&path)) };
-                crabtalk_plugins::plugin::install(
+                plugin::plugin::install(
                     &plugin, branch, path, force,
                     |msg| { let _ = tx.send((false, msg.to_string())); },
                     |msg| { let _ = tx2.send((true, msg.to_string())); },
@@ -98,7 +98,7 @@ pub(super) fn uninstall<'a, P: Provider + 'static, H: Host + 'static>(
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let name = plugin.clone();
         let handle = tokio::spawn(async move {
-            crabtalk_plugins::plugin::uninstall(&name, |msg| {
+            plugin::plugin::uninstall(&name, |msg| {
                 let _ = tx.send(msg.to_string());
             })
             .await
@@ -152,7 +152,7 @@ pub(super) async fn list<P: Provider + 'static, H: Host + 'static>(
 }
 
 pub(super) async fn search(query: String) -> Result<Vec<PluginInfo>> {
-    let entries = crabtalk_plugins::plugin::search(&query).await?;
+    let entries = plugin::plugin::search(&query).await?;
     Ok(entries
         .into_iter()
         .map(|e| PluginInfo {
@@ -168,7 +168,7 @@ pub(super) async fn search(query: String) -> Result<Vec<PluginInfo>> {
 
 pub(super) fn scan_plugin_manifests(
     config_dir: &std::path::Path,
-) -> Vec<(String, crabtalk_plugins::manifest::Manifest)> {
+) -> Vec<(String, plugin::manifest::Manifest)> {
     let plugins_dir = config_dir.join(wcore::paths::PLUGINS_DIR);
     let mut result = Vec::new();
     let entries = match std::fs::read_dir(&plugins_dir) {
@@ -188,7 +188,7 @@ pub(super) fn scan_plugin_manifests(
             Ok(c) => c,
             Err(_) => continue,
         };
-        match toml::from_str::<crabtalk_plugins::manifest::Manifest>(&content) {
+        match toml::from_str::<plugin::manifest::Manifest>(&content) {
             Ok(manifest) => result.push((name.to_string(), manifest)),
             Err(e) => {
                 tracing::warn!("failed to parse manifest {}: {e}", path.display());

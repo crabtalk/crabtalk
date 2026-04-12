@@ -18,7 +18,7 @@ required-features = ["cli"]
 [features]
 default = ["cli", "mcp"]
 cli = ["dep:clap", "dep:tracing-subscriber"]
-mcp = ["dep:rmcp", "dep:schemars", "dep:axum", "dep:crabtalk-command", "dep:anyhow", "cli"]
+mcp = ["dep:rmcp", "dep:schemars", "dep:axum", "dep:command", "dep:anyhow", "cli"]
 
 [dependencies]
 base64.workspace = true
@@ -38,7 +38,7 @@ url.workspace = true
 percent-encoding.workspace = true
 anyhow = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
-crabtalk-command = { workspace = true, features = ["mcp"], optional = true }
+command = { workspace = true, features = ["mcp"], optional = true }
 rmcp = { workspace = true, optional = true, features = [
     "server",
     "macros",

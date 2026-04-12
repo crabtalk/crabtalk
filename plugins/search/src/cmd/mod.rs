@@ -24,11 +24,11 @@ pub struct App {
 }
 
 #[cfg(feature = "mcp")]
-#[crabtalk_command::command(kind = "mcp", name = "search")]
+#[command::command(kind = "mcp", name = "search")]
 pub struct Mcp;
 
 #[cfg(feature = "mcp")]
-impl crabtalk_command::McpService for Mcp {
+impl command::McpService for Mcp {
     fn router(&self) -> axum::Router {
         use crate::mcp::SearchServer;
         use rmcp::transport::streamable_http_server::{

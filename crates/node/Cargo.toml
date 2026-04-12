@@ -11,8 +11,8 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-crabtalk-plugins.workspace = true
-crabtalk-command.workspace = true
+plugin.workspace = true
+command.workspace = true
 crabllm-core.workspace = true
 crabllm-provider.workspace = true
 runtime.workspace = true

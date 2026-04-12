@@ -161,11 +161,11 @@ pub(super) async fn start_service<P: Provider + 'static, H: Host + 'static>(
 ) -> Result<()> {
     let cmd = find_command_service(node, &name)?;
     let label = format!("ai.crabtalk.{name}");
-    if !force && crabtalk_command::service::is_installed(&label) {
+    if !force && command::service::is_installed(&label) {
         anyhow::bail!("service '{name}' is already running, use force to restart");
     }
     let binary = find_binary(&cmd.krate)?;
-    let rendered = crabtalk_command::service::render_service_template(
+    let rendered = command::service::render_service_template(
         &CommandService {
             name: name.clone(),
             description: cmd.description.clone(),
@@ -173,12 +173,12 @@ pub(super) async fn start_service<P: Provider + 'static, H: Host + 'static>(
         },
         &binary,
     );
-    crabtalk_command::service::install(&rendered, &label)
+    command::service::install(&rendered, &label)
 }
 
 pub(super) async fn stop_service(name: String) -> Result<()> {
     let label = format!("ai.crabtalk.{name}");
-    crabtalk_command::service::uninstall(&label)?;
+    command::service::uninstall(&label)?;
     let _ = std::fs::remove_file(wcore::paths::service_port_file(&name));
     Ok(())
 }
@@ -205,7 +205,7 @@ pub(super) async fn service_logs(name: String, lines: u32) -> Result<String> {
 fn find_command_service<P: Provider + 'static, H: Host + 'static>(
     node: &Node<P, H>,
     name: &str,
-) -> Result<crabtalk_plugins::manifest::CommandConfig> {
+) -> Result<plugin::manifest::CommandConfig> {
     for (_, manifest) in super::plugin::scan_plugin_manifests(&node.config_dir) {
         if let Some(cmd) = manifest.commands.get(name) {
             return Ok(cmd.clone());
@@ -240,7 +240,7 @@ struct CommandService {
     label: String,
 }
 
-impl crabtalk_command::service::Service for CommandService {
+impl command::service::Service for CommandService {
     fn name(&self) -> &str {
         &self.name
     }

@@ -11,17 +11,17 @@ repository = "https://github.com/crabtalk/crabtalk"
 keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
-crabtalk-plugins = { path = "plugins/plugins", version = "0.0.20" }
-crabtalk-telegram = { path = "apps/telegram", version = "0.0.20" }
-crabtalk-wechat = { path = "apps/wechat", version = "0.0.20" }
+plugin = { path = "plugins/plugins", package = "crabtalk-plugins", version = "0.0.20" }
+telegram = { path = "apps/telegram", package = "crabtalk-telegram", version = "0.0.20" }
+wechat = { path = "apps/wechat", package = "crabtalk-wechat", version = "0.0.20" }
 gateway = { path = "apps/gateway", package = "crabtalk-gateway", version = "0.0.20" }
 tui = { path = "apps/tui", package = "crabtalk", version = "0.0.20" }
 node = { path = "crates/node", package = "crabtalk-node", version = "0.0.20" }
 runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.0.20" }
 transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.20" }
 wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.20" }
-crabtalk-command = { path = "plugins/command", version = "0.0.20" }
-crabtalk-command-codegen = { path = "plugins/command-codegen", version = "0.0.20" }
+command = { path = "plugins/command", package = "crabtalk-command", version = "0.0.20" }
+command-codegen = { path = "plugins/command-codegen", package = "crabtalk-command-codegen", version = "0.0.20" }
 woutlook = { path = "plugins/outlook", package = "crabtalk-outlook", version = "0.0.20", default-features = false }
 wsearch = { path = "plugins/search", package = "crabtalk-search", version = "0.0.20", default-features = false }
 

@@ -35,7 +35,7 @@ fn render_daemon_template(template: &str, verbose: u8) -> Result<String> {
         .replace("{description}", "Crabtalk Daemon")
         .replace("{log_name}", "daemon")
         .replace("{binary}", &binary.display().to_string())
-        .replace("-v", &crabtalk_command::verbose_flag(verbose))
+        .replace("-v", &command::verbose_flag(verbose))
         .replace("{logs_dir}", &LOGS_DIR.display().to_string())
         .replace("{config_dir}", &CONFIG_DIR.display().to_string())
         .replace("{path}", &path_env))
@@ -43,50 +43,50 @@ fn render_daemon_template(template: &str, verbose: u8) -> Result<String> {
 
 #[cfg(target_os = "macos")]
 pub fn install(verbose: u8, force: bool) -> Result<()> {
-    if !force && crabtalk_command::is_installed(LABEL) {
+    if !force && command::is_installed(LABEL) {
         println!("daemon is already running");
         return Ok(());
     }
     ensure_providers()?;
     let rendered = render_daemon_template(LAUNCHD_TEMPLATE, verbose)?;
-    crabtalk_command::install(&rendered, LABEL)
+    command::install(&rendered, LABEL)
 }
 
 #[cfg(target_os = "macos")]
 pub fn uninstall() -> Result<()> {
-    crabtalk_command::uninstall(LABEL)
+    command::uninstall(LABEL)
 }
 
 #[cfg(target_os = "linux")]
 pub fn install(verbose: u8, force: bool) -> Result<()> {
-    if !force && crabtalk_command::is_installed(LABEL) {
+    if !force && command::is_installed(LABEL) {
         println!("daemon is already running");
         return Ok(());
     }
     ensure_providers()?;
     let rendered = render_daemon_template(SYSTEMD_TEMPLATE, verbose)?;
-    crabtalk_command::install(&rendered, LABEL)
+    command::install(&rendered, LABEL)
 }
 
 #[cfg(target_os = "linux")]
 pub fn uninstall() -> Result<()> {
-    crabtalk_command::uninstall(LABEL)
+    command::uninstall(LABEL)
 }
 
 #[cfg(target_os = "windows")]
 pub fn install(verbose: u8, force: bool) -> Result<()> {
-    if !force && crabtalk_command::is_installed(LABEL) {
+    if !force && command::is_installed(LABEL) {
         println!("daemon is already running");
         return Ok(());
     }
     ensure_providers()?;
     let rendered = render_daemon_template(SCHTASKS_TEMPLATE, verbose)?;
-    crabtalk_command::install(&rendered, LABEL)
+    command::install(&rendered, LABEL)
 }
 
 #[cfg(target_os = "windows")]
 pub fn uninstall() -> Result<()> {
-    crabtalk_command::uninstall(LABEL)
+    command::uninstall(LABEL)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]

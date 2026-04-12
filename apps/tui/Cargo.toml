@@ -15,8 +15,8 @@ name = "crabtalk"
 path = "src/bin/main.rs"
 
 [dependencies]
-crabtalk-plugins.workspace = true
-crabtalk-command.workspace = true
+plugin.workspace = true
+command.workspace = true
 node.workspace = true
 runtime.workspace = true
 transport.workspace = true
