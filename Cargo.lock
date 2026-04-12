@@ -694,6 +694,7 @@ version = "0.0.20"
 dependencies = [
  "anyhow",
  "async-stream",
+ "chrono",
  "crabllm-core",
  "crabtalk-core",
  "futures-core",

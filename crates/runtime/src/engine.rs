@@ -6,6 +6,7 @@
 //! (`send_to`, `stream_to`) take a conversation ID, lock the conversation,
 //! clone the agent, and run with the conversation's history.
 
+use crate::{Config, Conversation, Hook};
 use anyhow::{Result, bail};
 use async_stream::stream;
 use crabllm_core::{ChatCompletionRequest, Message, Role, ToolChoice};
@@ -20,8 +21,8 @@ use std::{
 };
 use tokio::sync::{Mutex, RwLock, mpsc, watch};
 use wcore::{
-    Agent, AgentBuilder, AgentConfig, AgentEvent, AgentResponse, AgentStopReason, Config,
-    Conversation, Hook, ToolDispatcher, ToolRegistry,
+    Agent, AgentBuilder, AgentConfig, AgentEvent, AgentResponse, AgentStopReason, ToolDispatcher,
+    ToolRegistry,
     model::{HistoryEntry, Model},
     storage::{SessionHandle, Storage},
 };

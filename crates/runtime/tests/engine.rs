@@ -4,17 +4,35 @@
 //! test gets its own in-memory storage — no shared global state, no
 //! filesystem I/O, no node.
 
-use crabtalk_runtime::Runtime;
+use crabtalk_runtime::{Config, Hook, Runtime};
 use futures_util::StreamExt;
 use std::sync::Arc;
 use wcore::{
-    AgentConfig, AgentEvent, AgentStopReason, Config,
+    AgentConfig, AgentEvent, AgentStopReason, ToolDispatcher, ToolFuture,
     model::Model,
     test_utils::{
-        InMemoryStorage, TestHook,
+        InMemoryStorage,
         test_provider::{TestProvider, text_chunks},
     },
 };
+
+/// Trivial no-op Hook + ToolDispatcher for tests.
+#[derive(Default, Clone)]
+struct TestHook;
+impl Hook for TestHook {}
+impl ToolDispatcher for TestHook {
+    fn dispatch<'a>(
+        &'a self,
+        name: &'a str,
+        _args: &'a str,
+        _agent: &'a str,
+        _sender: &'a str,
+        _conversation_id: Option<u64>,
+    ) -> ToolFuture<'a> {
+        let name = name.to_owned();
+        Box::pin(async move { Err(format!("TestHook: tool '{name}' not dispatched")) })
+    }
+}
 
 struct TestCfg;
 

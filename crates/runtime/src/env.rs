@@ -1,17 +1,17 @@
 //! Env — the embeddable engine environment.
 //!
-//! [`Env`] implements `wcore::Hook` and provides the central `dispatch_tool`
+//! [`Env`] implements [`Hook`] and provides the central `dispatch_tool`
 //! entry point. Tool handlers are registered dynamically at startup — there
 //! is no hardcoded dispatch table.
 
-use crate::host::Host;
+use crate::{Hook, host::Host};
 use std::{
     collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, RwLock},
 };
 use wcore::{
-    AgentConfig, AgentEvent, Hook, ToolDispatch, ToolDispatcher, ToolEntry, ToolFuture,
+    AgentConfig, AgentEvent, ToolDispatch, ToolDispatcher, ToolEntry, ToolFuture,
     model::HistoryEntry, storage::Storage,
 };
 

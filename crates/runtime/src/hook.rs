@@ -1,11 +1,7 @@
 //! Hook trait — lifecycle callbacks for agent building, event observation,
 //! and preprocessing.
-//!
-//! All hook crates implement this trait. The runtime calls these methods
-//! at the appropriate lifecycle points. Non-persistence methods default
-//! to no-ops so implementors only override what they need.
 
-use crate::{AgentConfig, AgentEvent, model::HistoryEntry};
+use wcore::{AgentConfig, AgentEvent, model::HistoryEntry};
 
 /// Lifecycle callbacks for agent building, event observation, and
 /// preprocessing.

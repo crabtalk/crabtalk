@@ -28,7 +28,7 @@ pub struct NodeCfg<P: Provider + 'static = DefaultProvider, B: Host + 'static = 
     _marker: PhantomData<(P, B)>,
 }
 
-impl<P: Provider + 'static, B: Host + 'static> wcore::Config for NodeCfg<P, B> {
+impl<P: Provider + 'static, B: Host + 'static> runtime::Config for NodeCfg<P, B> {
     type Storage = FsStorage;
     type Provider = P;
     type Hook = Env<B, FsStorage>;

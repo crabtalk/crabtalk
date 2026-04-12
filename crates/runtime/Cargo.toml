@@ -15,6 +15,7 @@ wcore.workspace = true
 crabllm-core.workspace = true
 
 # crates.io
+chrono.workspace = true
 anyhow.workspace = true
 async-stream.workspace = true
 futures-core.workspace = true

@@ -3,11 +3,10 @@
 //! - [`Agent`]: Immutable agent definition with step/run/run_stream.
 //! - [`AgentBuilder`]: Fluent construction with a model provider.
 //! - [`AgentConfig`]: Serializable agent parameters.
-//! - [`Conversation`]: Lightweight conversation history container.
 //! - [`ToolRegistry`]: Schema-only tool store. No handlers or closures.
 //! - [`ToolDispatcher`]: Agent-side tool dispatch trait.
-//! - [`Hook`]: Lifecycle backend for agent building, events, and tool registration.
 //! - [`model`]: Unified LLM interface types and traits.
+//! - [`storage`]: Unified persistence trait and domain types.
 //! - Agent event types: [`AgentEvent`], [`AgentStep`], [`AgentResponse`], [`AgentStopReason`].
 
 pub use agent::{
@@ -24,18 +23,13 @@ pub use config::{
     external_source_name, filter_disabled_external, load_agents_dir, load_agents_dirs, repo_slug,
     resolve_manifests, scan_skill_names, validate_providers,
 };
-pub use runtime::{
-    Config, Conversation,
-    conversation::{ArchiveSegment, ConversationMeta, EventLine, sender_slug},
-    hook::Hook,
-};
+pub use storage::{ArchiveSegment, ConversationMeta, EventLine, sender_slug};
 
 pub mod agent;
 pub mod config;
 pub mod model;
 pub mod paths;
 pub mod protocol;
-mod runtime;
 pub mod storage;
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
