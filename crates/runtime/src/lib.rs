@@ -1,14 +1,14 @@
-mod conversation;
+mod conv;
 mod engine;
 pub mod env;
 pub mod hook;
 pub mod host;
 
-pub use conversation::Conversation;
+pub use conv::Conversation;
 pub use engine::Runtime;
 pub use env::{AgentScope, ConversationCwds, Env, EventSink, PendingAsks};
 pub use hook::Hook;
-pub use host::{Host, NoHost};
+pub use host::Host;
 pub use wcore::{MemoryConfig, SystemConfig, TasksConfig};
 
 use crabllm_core::Provider;

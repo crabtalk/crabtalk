@@ -1,6 +1,6 @@
 //! Tests for Env dispatch logic — scope enforcement and handler lookup.
 
-use crabtalk_runtime::{Env, NoHost};
+use crabtalk_runtime::Env;
 use std::{
     collections::BTreeMap,
     path::PathBuf,
@@ -11,20 +11,13 @@ use wcore::{
     testing::{InMemoryStorage, test_schema},
 };
 
-fn test_hook() -> Env<NoHost, InMemoryStorage> {
+fn test_hook() -> Env<(), InMemoryStorage> {
     let storage = Arc::new(InMemoryStorage::new());
     let cwd = PathBuf::from("/test");
     let scopes = Arc::new(RwLock::new(BTreeMap::new()));
     let conversation_cwds = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
     let pending_asks = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
-    let mut env = Env::new(
-        storage,
-        cwd,
-        NoHost,
-        scopes,
-        conversation_cwds,
-        pending_asks,
-    );
+    let mut env = Env::new(storage, cwd, (), scopes, conversation_cwds, pending_asks);
     // Register a mock tool for testing.
     env.register_tool(ToolEntry {
         schema: test_schema("mock_tool"),

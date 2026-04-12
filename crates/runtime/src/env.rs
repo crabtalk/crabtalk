@@ -6,10 +6,11 @@
 
 use crate::{Hook, host::Host};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     path::PathBuf,
     sync::{Arc, RwLock},
 };
+use tokio::sync::{Mutex, oneshot};
 use wcore::{
     AgentConfig, AgentEvent, ToolDispatch, ToolDispatcher, ToolEntry, ToolFuture,
     model::HistoryEntry, storage::Storage,
@@ -40,11 +41,10 @@ const MEMORY_TOOLS: &[&str] = &["recall", "remember", "memory", "forget"];
 const TASK_TOOLS: &[&str] = &["delegate"];
 
 /// Per-conversation working directory overrides (shared with OS tool handlers).
-pub type ConversationCwds = Arc<tokio::sync::Mutex<std::collections::HashMap<u64, PathBuf>>>;
+pub type ConversationCwds = Arc<Mutex<HashMap<u64, PathBuf>>>;
 
 /// Pending ask_user oneshots (shared with ask_user handler and protocol layer).
-pub type PendingAsks =
-    Arc<tokio::sync::Mutex<std::collections::HashMap<u64, tokio::sync::oneshot::Sender<String>>>>;
+pub type PendingAsks = Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>;
 
 /// Late-bindable sink for `agent:{name}:done` event publishes.
 ///

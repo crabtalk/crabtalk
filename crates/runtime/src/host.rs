@@ -8,6 +8,8 @@
 //! part of this trait — they use shared state captured by handler factories.
 
 use std::path::Path;
+use tokio::sync::broadcast;
+use wcore::protocol::message;
 
 /// Trait for server-specific capabilities that the runtime cannot
 /// provide locally: event broadcasting and instruction discovery.
@@ -18,9 +20,7 @@ pub trait Host: Send + Sync + Clone {
 
     /// Subscribe to agent events. Returns `None` if event broadcasting
     /// is not supported by this host.
-    fn subscribe_events(
-        &self,
-    ) -> Option<tokio::sync::broadcast::Receiver<wcore::protocol::message::AgentEventMsg>> {
+    fn subscribe_events(&self) -> Option<broadcast::Receiver<message::AgentEventMsg>> {
         None
     }
 
@@ -34,8 +34,4 @@ pub trait Host: Send + Sync + Clone {
     }
 }
 
-/// No-op host for embedded use.
-#[derive(Clone)]
-pub struct NoHost;
-
-impl Host for NoHost {}
+impl Host for () {}
