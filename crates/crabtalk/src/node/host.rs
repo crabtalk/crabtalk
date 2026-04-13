@@ -1,6 +1,6 @@
 //! NodeEnv — server-specific Host implementation and NodeEnv type alias.
 
-use crate::node::hook::{ConversationCwds, NodeHook};
+use crate::node::{ConversationCwds, hook::NodeHook};
 use runtime::Env;
 use std::{
     path::{Path, PathBuf},

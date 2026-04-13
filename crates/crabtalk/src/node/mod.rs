@@ -5,6 +5,7 @@ use anyhow::Result;
 use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
 use runtime::Runtime;
+use std::collections::HashMap;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -17,6 +18,12 @@ use {
     event::EventBus,
     host::NodeEnv,
 };
+
+/// Per-conversation working directory overrides.
+pub type ConversationCwds = Arc<Mutex<HashMap<u64, PathBuf>>>;
+
+/// Pending ask_user oneshots (shared with AskUserHook and protocol layer).
+pub type PendingAsks = Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>;
 
 pub mod builder;
 pub mod cron;
@@ -49,6 +56,12 @@ pub struct Node<P: Provider + 'static = DefaultProvider> {
     pub(crate) events: Arc<std::sync::Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<crate::mcp::McpHandler>,
+    /// Per-conversation CWD overrides (shared with OsHook + DelegateHook + NodeEnv).
+    pub conversation_cwds: ConversationCwds,
+    /// Pending ask_user replies (shared with AskUserHook + protocol layer).
+    pub pending_asks: PendingAsks,
+    /// Bash approval sender (preserved across reloads).
+    pub(crate) approval_tx: crate::hooks::os::ApprovalTx,
     /// Bash approval requests — take once to handle in the app layer.
     pub approvals: Arc<std::sync::Mutex<Option<mpsc::Receiver<crate::hooks::os::ApprovalRequest>>>>,
 }
@@ -64,6 +77,9 @@ impl<P: Provider + 'static> Clone for Node<P> {
             events: self.events.clone(),
             build_provider: Arc::clone(&self.build_provider),
             mcp: self.mcp.clone(),
+            conversation_cwds: self.conversation_cwds.clone(),
+            pending_asks: self.pending_asks.clone(),
+            approval_tx: self.approval_tx.clone(),
             approvals: self.approvals.clone(),
         }
     }

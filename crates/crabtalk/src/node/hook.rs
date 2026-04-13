@@ -4,21 +4,12 @@
 //! (os, memory, skill, delegate, ask_user, mcp), the dispatch map, scope
 //! enforcement, agent descriptions, and the event sink.
 
-use crate::hooks::os::ApprovalTx;
 use runtime::Hook;
 use std::{
-    collections::{BTreeMap, HashMap},
-    path::PathBuf,
+    collections::BTreeMap,
     sync::{Arc, RwLock},
 };
-use tokio::sync::{Mutex, oneshot};
 use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture, model::HistoryEntry};
-
-/// Per-conversation working directory overrides.
-pub type ConversationCwds = Arc<Mutex<HashMap<u64, PathBuf>>>;
-
-/// Pending ask_user oneshots (shared with AskUserHook and protocol layer).
-pub type PendingAsks = Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>;
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
 #[derive(Default)]
@@ -47,30 +38,16 @@ pub struct NodeHook {
     hooks: BTreeMap<String, Arc<dyn Hook>>,
     dispatch_map: BTreeMap<String, Arc<dyn Hook>>,
     event_sink: RwLock<Option<EventSink>>,
-    /// Per-conversation CWD overrides (shared with Host + OsHook + DelegateHook).
-    pub conversation_cwds: ConversationCwds,
-    /// Pending ask_user replies (shared with AskUserHook + protocol layer).
-    pub pending_asks: PendingAsks,
-    /// Bash approval sender (cloned into OsHook).
-    pub approval_tx: ApprovalTx,
 }
 
 impl NodeHook {
-    pub fn new(
-        scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
-        conversation_cwds: ConversationCwds,
-        pending_asks: PendingAsks,
-        approval_tx: ApprovalTx,
-    ) -> Self {
+    pub fn new(scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>) -> Self {
         Self {
             scopes,
             agent_descriptions: RwLock::new(BTreeMap::new()),
             hooks: BTreeMap::new(),
             dispatch_map: BTreeMap::new(),
             event_sink: RwLock::new(None),
-            conversation_cwds,
-            pending_asks,
-            approval_tx,
         }
     }
 

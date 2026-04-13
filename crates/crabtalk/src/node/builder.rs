@@ -88,14 +88,11 @@ impl<P: Provider + 'static> Node<P> {
         let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
 
         let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
+        let conversation_cwds: crate::node::ConversationCwds = Default::default();
+        let pending_asks: crate::node::PendingAsks = Default::default();
         let (approval_tx, approval_rx) = tokio::sync::mpsc::channel(1);
         let approvals = Arc::new(std::sync::Mutex::new(Some(approval_rx)));
-        let node_hook = NodeHook::new(
-            Arc::new(std::sync::RwLock::new(BTreeMap::new())),
-            Default::default(),
-            Default::default(),
-            approval_tx,
-        );
+        let node_hook = NodeHook::new(Arc::new(std::sync::RwLock::new(BTreeMap::new())));
 
         let (runtime, mcp, node_hook) = Self::build_all(
             config,
@@ -104,6 +101,9 @@ impl<P: Provider + 'static> Node<P> {
             runtime_once.clone(),
             cwd.clone(),
             node_hook,
+            conversation_cwds.clone(),
+            pending_asks.clone(),
+            approval_tx.clone(),
         )
         .await?;
         let shared_runtime: SharedRuntime<P> = Arc::new(RwLock::new(Arc::new(runtime)));
@@ -168,6 +168,9 @@ impl<P: Provider + 'static> Node<P> {
             events,
             build_provider,
             mcp,
+            conversation_cwds,
+            pending_asks,
+            approval_tx,
             approvals,
         })
     }
@@ -181,12 +184,7 @@ impl<P: Provider + 'static> Node<P> {
 
         let cwd = self.runtime.read().await.env.cwd.clone();
 
-        let node_hook = NodeHook::new(
-            self.hook.scopes.clone(),
-            self.hook.conversation_cwds.clone(),
-            self.hook.pending_asks.clone(),
-            self.hook.approval_tx.clone(),
-        );
+        let node_hook = NodeHook::new(self.hook.scopes.clone());
 
         let (mut new_runtime, _mcp, new_hook) = Self::build_all(
             &config,
@@ -195,6 +193,9 @@ impl<P: Provider + 'static> Node<P> {
             runtime_once,
             cwd,
             node_hook,
+            self.conversation_cwds.clone(),
+            self.pending_asks.clone(),
+            self.approval_tx.clone(),
         )
         .await?;
         {
@@ -227,6 +228,9 @@ impl<P: Provider + 'static> Node<P> {
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
         cwd: PathBuf,
         mut node_hook: NodeHook,
+        conversation_cwds: crate::node::ConversationCwds,
+        pending_asks: crate::node::PendingAsks,
+        approval_tx: crate::hooks::os::ApprovalTx,
     ) -> Result<(
         Runtime<crate::node::NodeCfg<P>>,
         Arc<McpHandler>,
@@ -248,6 +252,9 @@ impl<P: Provider + 'static> Node<P> {
             mcp_handler.clone(),
             runtime_once,
             cwd.clone(),
+            conversation_cwds.clone(),
+            pending_asks,
+            approval_tx,
         );
         let node_hook = Arc::new(node_hook);
 
@@ -256,7 +263,7 @@ impl<P: Provider + 'static> Node<P> {
         let env = Arc::new(NodeEnv {
             events_tx,
             cwd,
-            conversation_cwds: node_hook.conversation_cwds.clone(),
+            conversation_cwds,
             hook: node_hook.clone(),
         });
 
@@ -296,13 +303,13 @@ impl<P: Provider + 'static> Node<P> {
         mcp_handler: Arc<McpHandler>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
         cwd: PathBuf,
+        conversation_cwds: crate::node::ConversationCwds,
+        pending_asks: crate::node::PendingAsks,
+        approval_tx: crate::hooks::os::ApprovalTx,
     ) {
         let memory = Arc::new(Memory::open(config.system.memory.clone(), storage.clone()));
         let scopes = node_hook.scopes.clone();
-        let conversation_cwds = node_hook.conversation_cwds.clone();
         let read_files: crate::hooks::os::ReadFiles = Default::default();
-        let pending_asks = node_hook.pending_asks.clone();
-        let approval_tx = node_hook.approval_tx.clone();
         let mcp_server_list = mcp_handler.cached_list();
 
         let bash_config = crate::hooks::os::BashConfig::load(config_dir);
