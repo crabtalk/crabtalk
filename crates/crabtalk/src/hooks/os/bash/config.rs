@@ -1,28 +1,10 @@
-//! Bash tool schema, config, and handler.
+//! Bash policy — allow/ask/deny command classification.
 
-use super::OsHook;
-use schemars::JsonSchema;
 use serde::Deserialize;
-use std::{collections::BTreeMap, path::Path};
-use wcore::{ToolDispatch, agent::ToolDescription};
-
-#[derive(Deserialize, JsonSchema)]
-pub struct Bash {
-    /// Shell command to run (e.g. `"ls -la"`, `"cat foo.txt | grep bar"`).
-    pub command: String,
-    /// Environment variables to set for the process.
-    #[serde(default)]
-    pub env: BTreeMap<String, String>,
-}
-
-impl ToolDescription for Bash {
-    const DESCRIPTION: &'static str = "Run a shell command.";
-}
-
-// ── Config ──────────────────────────────────────────────────────────
+use std::path::Path;
 
 /// Result of a policy check on a single command.
-pub(super) enum Verdict {
+pub(in crate::hooks::os) enum Verdict {
     /// Command matches an allow pattern — execute immediately.
     Allow,
     /// Command matches a deny pattern — reject, no override.
@@ -91,7 +73,7 @@ impl BashConfig {
 
     /// Check a (possibly compound) command. Returns the most restrictive
     /// verdict across all subcommands: Deny > Ask > Allow.
-    pub(super) fn check(&self, command: &str) -> Verdict {
+    pub(in crate::hooks::os) fn check(&self, command: &str) -> Verdict {
         let mut needs_ask = None;
         for sub in split_compound(command) {
             match self.check_command(sub) {
@@ -175,80 +157,4 @@ fn split_compound(command: &str) -> Vec<&str> {
         parts.push(command[start..].trim());
     }
     parts.into_iter().filter(|s| !s.is_empty()).collect()
-}
-
-// ── Handler ─────────────────────────────────────────────────────────
-
-impl OsHook {
-    pub(super) async fn handle_bash(&self, call: ToolDispatch) -> Result<String, String> {
-        let input: Bash =
-            serde_json::from_str(&call.args).map_err(|e| format!("invalid arguments: {e}"))?;
-
-        // Policy check.
-        match self.bash_config.check(&input.command) {
-            Verdict::Allow => {}
-            Verdict::Deny(reason) => return Err(reason),
-            Verdict::Ask(reason) => {
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                let request = super::ApprovalRequest {
-                    command: input.command.clone(),
-                    reason: reason.clone(),
-                    reply: tx,
-                };
-                if self.approval_tx.send(request).await.is_err() {
-                    return Err(reason);
-                }
-                match tokio::time::timeout(std::time::Duration::from_secs(120), rx).await {
-                    Ok(Ok(true)) => {} // approved, continue
-                    _ => return Err(reason),
-                }
-            }
-        }
-
-        let cwd = self.effective_cwd(call.conversation_id);
-
-        let mut cmd = tokio::process::Command::new("bash");
-        cmd.args(["-c", &input.command])
-            .envs(&input.env)
-            .current_dir(&cwd)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-
-        let child = cmd.spawn().map_err(|e| {
-            serde_json::json!({
-                "stdout": "",
-                "stderr": format!("bash failed: {e}"),
-                "exit_code": -1
-            })
-            .to_string()
-        })?;
-
-        match tokio::time::timeout(std::time::Duration::from_secs(30), child.wait_with_output())
-            .await
-        {
-            Ok(Ok(output)) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let exit_code = output.status.code().unwrap_or(-1);
-                Ok(serde_json::json!({
-                    "stdout": stdout.as_ref(),
-                    "stderr": stderr.as_ref(),
-                    "exit_code": exit_code
-                })
-                .to_string())
-            }
-            Ok(Err(e)) => Err(serde_json::json!({
-                "stdout": "",
-                "stderr": format!("bash failed: {e}"),
-                "exit_code": -1
-            })
-            .to_string()),
-            Err(_) => Err(serde_json::json!({
-                "stdout": "",
-                "stderr": "bash timed out after 30 seconds",
-                "exit_code": -1
-            })
-            .to_string()),
-        }
-    }
 }
