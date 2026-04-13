@@ -213,6 +213,7 @@ impl<P: Provider + 'static> Daemon<P> {
     }
 
     /// Build DaemonHook, DaemonEnv, and Runtime in one shot.
+    #[allow(clippy::too_many_arguments)]
     async fn build_all(
         config: &NodeConfig,
         config_dir: &Path,
@@ -286,6 +287,7 @@ impl<P: Provider + 'static> Daemon<P> {
         ))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn register_tools(
         node_hook: &mut DaemonHook,
         storage: Arc<FsStorage>,
