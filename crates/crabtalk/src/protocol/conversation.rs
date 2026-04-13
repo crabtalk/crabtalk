@@ -20,7 +20,8 @@ pub(super) async fn send<P: Provider + 'static>(
         .get_or_create_conversation(&req.agent, created_by)
         .await?;
     if let Some(ref cwd) = cwd {
-        node.conversation_cwds
+        node.os_hook
+            .conversation_cwds()
             .lock()
             .await
             .insert(conversation_id, cwd.clone());
@@ -46,7 +47,7 @@ pub(super) fn stream<'a, P: Provider + 'static>(
     req: StreamMsg,
 ) -> impl futures_core::Stream<Item = Result<StreamEvent>> + Send + 'a {
     let runtime = node.runtime.clone();
-    let conversation_cwds = node.conversation_cwds.clone();
+    let conversation_cwds = node.os_hook.conversation_cwds().clone();
     let agent = req.agent;
     let content = req.content;
     let sender = req.sender.unwrap_or_default();
@@ -216,7 +217,11 @@ pub(super) async fn kill<P: Provider + 'static>(
     let Some(conversation_id) = rt.find_conversation_id(&agent, &sender).await else {
         return Ok(false);
     };
-    node.conversation_cwds.lock().await.remove(&conversation_id);
+    node.os_hook
+        .conversation_cwds()
+        .lock()
+        .await
+        .remove(&conversation_id);
     Ok(rt.close_conversation(conversation_id).await)
 }
 
@@ -233,14 +238,26 @@ pub(super) async fn reply_to_ask<P: Provider + 'static>(
         .ok_or_else(|| {
             anyhow::anyhow!("conversation not found for agent='{agent}' sender='{sender}'")
         })?;
-    if let Some(tx) = node.pending_asks.lock().await.remove(&conversation_id) {
+    if let Some(tx) = node
+        .ask_hook
+        .pending_asks()
+        .lock()
+        .await
+        .remove(&conversation_id)
+    {
         let _ = tx.send(content);
         return Ok(());
     }
     // Retry once after a short delay — the ask_user handler may not have
     // inserted the oneshot yet if the reply races the tool call.
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    if let Some(tx) = node.pending_asks.lock().await.remove(&conversation_id) {
+    if let Some(tx) = node
+        .ask_hook
+        .pending_asks()
+        .lock()
+        .await
+        .remove(&conversation_id)
+    {
         let _ = tx.send(content);
         return Ok(());
     }

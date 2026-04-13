@@ -88,22 +88,20 @@ impl<P: Provider + 'static> Node<P> {
         let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
 
         let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
-        let conversation_cwds: crate::node::ConversationCwds = Default::default();
-        let pending_asks: crate::node::PendingAsks = Default::default();
         let (approval_tx, approval_rx) = tokio::sync::mpsc::channel(1);
         let approvals = Arc::new(std::sync::Mutex::new(Some(approval_rx)));
         let node_hook = NodeHook::new(Arc::new(std::sync::RwLock::new(BTreeMap::new())));
 
-        let (runtime, mcp, node_hook) = Self::build_all(
+        let (runtime, mcp, node_hook, os_hook, ask_hook) = Self::build_all(
             config,
             config_dir,
             &build_provider,
             runtime_once.clone(),
             cwd.clone(),
             node_hook,
-            conversation_cwds.clone(),
-            pending_asks.clone(),
-            approval_tx.clone(),
+            Default::default(),
+            Default::default(),
+            approval_tx,
         )
         .await?;
         let shared_runtime: SharedRuntime<P> = Arc::new(RwLock::new(Arc::new(runtime)));
@@ -168,9 +166,8 @@ impl<P: Provider + 'static> Node<P> {
             events,
             build_provider,
             mcp,
-            conversation_cwds,
-            pending_asks,
-            approval_tx,
+            os_hook,
+            ask_hook,
             approvals,
         })
     }
@@ -186,16 +183,16 @@ impl<P: Provider + 'static> Node<P> {
 
         let node_hook = NodeHook::new(self.hook.scopes.clone());
 
-        let (mut new_runtime, _mcp, new_hook) = Self::build_all(
+        let (mut new_runtime, _mcp, new_hook, _, _) = Self::build_all(
             &config,
             &self.config_dir,
             &self.build_provider,
             runtime_once,
             cwd,
             node_hook,
-            self.conversation_cwds.clone(),
-            self.pending_asks.clone(),
-            self.approval_tx.clone(),
+            self.os_hook.conversation_cwds().clone(),
+            self.ask_hook.pending_asks().clone(),
+            self.os_hook.approval_tx().clone(),
         )
         .await?;
         {
@@ -235,6 +232,8 @@ impl<P: Provider + 'static> Node<P> {
         Runtime<crate::node::NodeCfg<P>>,
         Arc<McpHandler>,
         Arc<NodeHook>,
+        Arc<crate::hooks::os::OsHook>,
+        Arc<crate::hooks::ask_user::AskUserHook>,
     )> {
         let (mut manifest, _warnings) = resolve_manifests(config_dir);
         manifest.disabled = config.disabled.clone();
@@ -244,7 +243,7 @@ impl<P: Provider + 'static> Node<P> {
         let servers = mcp_servers(config, &manifest);
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::load(&servers).await);
         let storage = Self::build_storage(config_dir, &manifest);
-        Self::register_tools(
+        let (os_hook, ask_hook) = Self::register_tools(
             &mut node_hook,
             storage.clone(),
             config,
@@ -274,7 +273,7 @@ impl<P: Provider + 'static> Node<P> {
         }
         let mut runtime = Runtime::new(model, env, storage, tools);
         Self::register_agents(&mut runtime, config, config_dir, &manifest)?;
-        Ok((runtime, mcp_handler, node_hook))
+        Ok((runtime, mcp_handler, node_hook, os_hook, ask_hook))
     }
 
     fn build_storage(config_dir: &Path, manifest: &ResolvedManifest) -> Arc<FsStorage> {
@@ -306,6 +305,9 @@ impl<P: Provider + 'static> Node<P> {
         conversation_cwds: crate::node::ConversationCwds,
         pending_asks: crate::node::PendingAsks,
         approval_tx: crate::hooks::os::ApprovalTx,
+    ) -> (
+        Arc<crate::hooks::os::OsHook>,
+        Arc<crate::hooks::ask_user::AskUserHook>,
     ) {
         let memory = Arc::new(Memory::open(config.system.memory.clone(), storage.clone()));
         let scopes = node_hook.scopes.clone();
@@ -313,16 +315,14 @@ impl<P: Provider + 'static> Node<P> {
         let mcp_server_list = mcp_handler.cached_list();
 
         let bash_config = crate::hooks::os::BashConfig::load(config_dir);
-        node_hook.register_hook(
-            "os",
-            Arc::new(crate::hooks::os::OsHook::new(
-                cwd,
-                conversation_cwds.clone(),
-                read_files.clone(),
-                bash_config,
-                approval_tx,
-            )),
-        );
+        let os_hook = Arc::new(crate::hooks::os::OsHook::new(
+            cwd,
+            conversation_cwds.clone(),
+            read_files.clone(),
+            bash_config,
+            approval_tx,
+        ));
+        node_hook.register_hook("os", os_hook.clone());
 
         node_hook.register_hook(
             "memory",
@@ -345,10 +345,8 @@ impl<P: Provider + 'static> Node<P> {
                 read_files,
             )),
         );
-        node_hook.register_hook(
-            "ask_user",
-            Arc::new(crate::hooks::ask_user::AskUserHook::new(pending_asks)),
-        );
+        let ask_hook = Arc::new(crate::hooks::ask_user::AskUserHook::new(pending_asks));
+        node_hook.register_hook("ask_user", ask_hook.clone());
 
         if !mcp_server_list.is_empty() {
             let mcp_prompt = format!(
@@ -368,6 +366,7 @@ impl<P: Provider + 'static> Node<P> {
                 )),
             );
         }
+        (os_hook, ask_hook)
     }
 
     fn register_agents(

@@ -79,6 +79,16 @@ impl OsHook {
         }
     }
 
+    /// Per-conversation CWD overrides.
+    pub fn conversation_cwds(&self) -> &ConversationCwds {
+        &self.conversation_cwds
+    }
+
+    /// Bash approval sender (for preservation across reloads).
+    pub fn approval_tx(&self) -> &ApprovalTx {
+        &self.approval_tx
+    }
+
     /// Record that a file was read in a conversation.
     fn record_read(&self, conversation_id: u64, path: PathBuf) {
         let path = std::fs::canonicalize(&path).unwrap_or(path);
