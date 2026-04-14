@@ -230,6 +230,12 @@ impl Memory {
         }
 
         fs::write(dir.join("SUMMARY.md"), dump::build_summary(&by_kind))?;
+        // Seed book.toml so the tree is `mdbook serve`-ready. Only
+        // written when absent — any user edits survive re-dumps.
+        let book_toml = dir.join("book.toml");
+        if !book_toml.exists() {
+            fs::write(&book_toml, dump::BOOK_TOML)?;
+        }
         Ok(())
     }
 

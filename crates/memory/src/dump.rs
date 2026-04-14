@@ -56,6 +56,11 @@ pub(crate) const KIND_SECTIONS: &[(EntryKind, &str, &str)] = &[
 const META_OPEN: &str = "<div id=\"meta\">";
 const META_CLOSE: &str = "</div>";
 
+/// Minimal `book.toml` so the dumped tree is `mdbook serve`-ready.
+/// `src = "."` points mdbook at the dump root where `SUMMARY.md` lives,
+/// instead of the default `src/` subdirectory.
+pub(crate) const BOOK_TOML: &str = "[book]\ntitle = \"Memory\"\nsrc = \".\"\n\n[output.html]\n";
+
 /// Reject names that aren't safe as filesystem basenames. POSIX-friendly;
 /// does not check Windows-reserved basenames (CON, NUL, etc.) — the dump
 /// tree is not intended to roundtrip across Windows.
