@@ -8,7 +8,6 @@ use wcore::{
     ToolDispatch, ToolFuture,
     agent::{AsTool, ToolDescription},
     model::HistoryEntry,
-    storage::Storage,
 };
 
 // ── Schemas ──────────────────────────────────────────────────────
@@ -30,14 +29,16 @@ impl ToolDescription for Recall {
 pub struct Remember {
     /// Short name for this memory entry (used as identifier).
     pub name: String,
-    /// One-line description — determines search relevance.
-    pub description: String,
-    /// The content to remember.
+    /// The content to remember — markdown.
     pub content: String,
+    /// Optional alternative search terms / related note names.
+    #[serde(default)]
+    pub aliases: Vec<String>,
 }
 
 impl ToolDescription for Remember {
-    const DESCRIPTION: &'static str = "Save or update a memory entry. Creates a persistent file with the given name, description, and content.";
+    const DESCRIPTION: &'static str =
+        "Save or update a memory entry. Aliases are searchable alternative terms.";
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -62,20 +63,17 @@ impl ToolDescription for MemoryTool {
 
 // ── Hook ────────────────────────────────────────────────────────
 
-/// Memory subsystem: recall, remember, forget, memory.
-///
-/// Owns the Memory index and provides auto-recall in on_before_run.
-pub struct MemoryHook<S: Storage> {
-    memory: Arc<Memory<S>>,
+pub struct MemoryHook {
+    memory: Arc<Memory>,
 }
 
-impl<S: Storage> MemoryHook<S> {
-    pub fn new(memory: Arc<Memory<S>>) -> Self {
+impl MemoryHook {
+    pub fn new(memory: Arc<Memory>) -> Self {
         Self { memory }
     }
 }
 
-impl<S: Storage + 'static> Hook for MemoryHook<S> {
+impl Hook for MemoryHook {
     fn schema(&self) -> Vec<wcore::model::Tool> {
         vec![
             Recall::as_tool(),
@@ -110,7 +108,7 @@ impl<S: Storage + 'static> Hook for MemoryHook<S> {
                     .map_err(|e| format!("invalid arguments: {e}"))?;
                 Ok(self
                     .memory
-                    .remember(input.name, input.description, input.content))
+                    .remember(input.name, input.content, input.aliases))
             })),
             "forget" => Some(Box::pin(async move {
                 let input: Forget = serde_json::from_str(&call.args)
@@ -120,7 +118,7 @@ impl<S: Storage + 'static> Hook for MemoryHook<S> {
             "memory" => Some(Box::pin(async move {
                 let input: MemoryTool = serde_json::from_str(&call.args)
                     .map_err(|e| format!("invalid arguments: {e}"))?;
-                Ok(self.memory.write_index(&input.content))
+                Ok(self.memory.write_prompt(&input.content))
             })),
             _ => None,
         }

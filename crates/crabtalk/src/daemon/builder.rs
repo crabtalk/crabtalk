@@ -242,12 +242,13 @@ impl<P: Provider + 'static> Daemon<P> {
             &mut node_hook,
             storage.clone(),
             config,
+            config_dir,
             mcp_handler.clone(),
             runtime_once,
             cwd.clone(),
             conversation_cwds.clone(),
             pending_asks,
-        );
+        )?;
         let node_hook = Arc::new(node_hook);
 
         // Build DaemonEnv.
@@ -279,7 +280,6 @@ impl<P: Provider + 'static> Daemon<P> {
 
         Arc::new(FsStorage::new(
             config_dir.to_path_buf(),
-            config_dir.join("memory"),
             config_dir.join("sessions"),
             skill_roots,
             manifest.disabled.skills.clone(),
@@ -292,16 +292,23 @@ impl<P: Provider + 'static> Daemon<P> {
         node_hook: &mut DaemonHook,
         storage: Arc<FsStorage>,
         config: &NodeConfig,
+        config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
         cwd: PathBuf,
         conversation_cwds: crate::daemon::ConversationCwds,
         pending_asks: crate::daemon::PendingAsks,
-    ) -> (
+    ) -> Result<(
         Arc<crate::hooks::os::OsHook>,
         Arc<crate::hooks::ask_user::AskUserHook>,
-    ) {
-        let memory = Arc::new(Memory::open(config.system.memory.clone(), storage.clone()));
+    )> {
+        let legacy_memory_dir = config_dir.join("memory");
+        let legacy = legacy_memory_dir.exists().then_some(legacy_memory_dir);
+        let memory = Arc::new(Memory::open(
+            config.system.memory.clone(),
+            config_dir.join("memory.db"),
+            legacy,
+        )?);
         let scopes = node_hook.scopes.clone();
         let read_files: crate::hooks::os::ReadFiles = Default::default();
         let mcp_server_list = mcp_handler.cached_list();
@@ -356,7 +363,7 @@ impl<P: Provider + 'static> Daemon<P> {
                 )),
             );
         }
-        (os_hook, ask_hook)
+        Ok((os_hook, ask_hook))
     }
 
     fn register_agents(

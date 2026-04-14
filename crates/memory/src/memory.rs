@@ -192,6 +192,14 @@ impl Memory {
         file::write(path, self.next_id, &entries)
     }
 
+    /// Force a write of the current state to disk, whether or not any
+    /// mutation has happened. Useful for one-shot migration paths that
+    /// need the db file to exist even when every incoming op failed.
+    /// A no-op when the memory is in-RAM only (no path).
+    pub fn checkpoint(&self) -> Result<()> {
+        self.flush()
+    }
+
     /// Materialize the db as a markdown tree at `dir`. Each kind's
     /// subdirectory is cleared before writing so renames and deletes
     /// don't leave orphan files behind. Anything else in `dir` (e.g. a

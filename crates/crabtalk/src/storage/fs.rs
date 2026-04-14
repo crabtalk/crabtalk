@@ -14,9 +14,7 @@ use std::{
 use wcore::{
     AgentConfig, AgentId, ArchiveSegment, ConversationMeta, EventLine, ManifestConfig, NodeConfig,
     model::HistoryEntry,
-    storage::{
-        MemoryEntry, SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage, slugify,
-    },
+    storage::{SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage},
 };
 
 use super::atomic_write;
@@ -25,8 +23,6 @@ use super::atomic_write;
 pub struct FsStorage {
     /// Config directory root (for agent prompt storage under `agents/<ulid>/`).
     config_dir: PathBuf,
-    /// Root for memory entries and MEMORY.md index.
-    memory_root: PathBuf,
     /// Root for session directories.
     sessions_root: PathBuf,
     /// Ordered skill roots to scan (local first, then packages).
@@ -42,7 +38,6 @@ pub struct FsStorage {
 impl FsStorage {
     pub fn new(
         config_dir: PathBuf,
-        memory_root: PathBuf,
         sessions_root: PathBuf,
         skill_roots: Vec<PathBuf>,
         disabled_skills: Vec<String>,
@@ -50,28 +45,12 @@ impl FsStorage {
     ) -> Self {
         Self {
             config_dir,
-            memory_root,
             sessions_root,
             skill_roots,
             disabled_skills,
             agent_dirs,
             session_counters: Mutex::new(HashMap::new()),
         }
-    }
-
-    // ── Memory helpers ─────────────────────────────────────────────
-
-    fn memory_entries_dir(&self) -> PathBuf {
-        self.memory_root.join("entries")
-    }
-
-    fn memory_entry_path(&self, name: &str) -> PathBuf {
-        self.memory_entries_dir()
-            .join(format!("{}.md", slugify(name)))
-    }
-
-    fn memory_index_path(&self) -> PathBuf {
-        self.memory_root.join("MEMORY.md")
     }
 
     // ── Session helpers ────────────────────────────────────────────
@@ -139,71 +118,6 @@ enum StepLine {
 // ── Storage implementation ─────────────────────────────────────────
 
 impl Storage for FsStorage {
-    // ── Memory ─────────────────────────────────────────────────────
-
-    fn list_memories(&self) -> Result<Vec<MemoryEntry>> {
-        let dir = self.memory_entries_dir();
-        if !dir.exists() {
-            return Ok(Vec::new());
-        }
-        let mut entries = Vec::new();
-        for entry in fs::read_dir(&dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "md") {
-                let content = fs::read_to_string(&path)?;
-                match MemoryEntry::parse(&content) {
-                    Ok(parsed) => entries.push(parsed),
-                    Err(e) => tracing::warn!("failed to parse {}: {e}", path.display()),
-                }
-            }
-        }
-        Ok(entries)
-    }
-
-    fn load_memory(&self, name: &str) -> Result<Option<MemoryEntry>> {
-        let path = self.memory_entry_path(name);
-        match fs::read_to_string(&path) {
-            Ok(content) => Ok(Some(MemoryEntry::parse(&content)?)),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    fn save_memory(&self, entry: &MemoryEntry) -> Result<()> {
-        let path = self.memory_entry_path(&entry.name);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        atomic_write(&path, entry.serialize().as_bytes())
-    }
-
-    fn delete_memory(&self, name: &str) -> Result<bool> {
-        let path = self.memory_entry_path(name);
-        match fs::remove_file(&path) {
-            Ok(()) => Ok(true),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    fn load_memory_index(&self) -> Result<Option<String>> {
-        let path = self.memory_index_path();
-        match fs::read_to_string(&path) {
-            Ok(s) => Ok(Some(s)),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    fn save_memory_index(&self, content: &str) -> Result<()> {
-        let path = self.memory_index_path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        atomic_write(&path, content.as_bytes())
-    }
-
     // ── Skills ─────────────────────────────────────────────────────
 
     fn list_skills(&self) -> Result<Vec<Skill>> {
@@ -575,7 +489,6 @@ impl Storage for FsStorage {
         fs::create_dir_all(self.config_dir.join(wcore::paths::LOCAL_DIR))?;
         fs::create_dir_all(self.config_dir.join(wcore::paths::SKILLS_DIR))?;
         fs::create_dir_all(self.config_dir.join(wcore::paths::AGENTS_DIR))?;
-        fs::create_dir_all(&self.memory_root)?;
         fs::create_dir_all(&self.sessions_root)?;
         Ok(())
     }

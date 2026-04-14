@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 wcore = { workspace = true, features = ["testing"] }
 crabtalk.workspace = true
+memory.workspace = true
 runtime.workspace = true
 crabllm-core.workspace = true
 criterion.workspace = true

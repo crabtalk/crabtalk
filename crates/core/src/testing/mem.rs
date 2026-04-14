@@ -4,7 +4,7 @@ use crate::{
     AgentConfig, AgentId, ManifestConfig, NodeConfig,
     model::HistoryEntry,
     storage::{
-        ArchiveSegment, ConversationMeta, EventLine, MemoryEntry, SessionHandle, SessionSnapshot,
+        ArchiveSegment, ConversationMeta, EventLine, SessionHandle, SessionSnapshot,
         SessionSummary, Skill, Storage,
     },
 };
@@ -22,8 +22,6 @@ struct SessionState {
 
 /// In-memory [`Storage`] for tests.
 pub struct InMemoryStorage {
-    memories: Mutex<HashMap<String, MemoryEntry>>,
-    memory_index: Mutex<Option<String>>,
     skills: Mutex<Vec<Skill>>,
     sessions: Mutex<HashMap<String, SessionState>>,
     next_session_seq: Mutex<u32>,
@@ -35,8 +33,6 @@ pub struct InMemoryStorage {
 impl Default for InMemoryStorage {
     fn default() -> Self {
         Self {
-            memories: Mutex::new(HashMap::new()),
-            memory_index: Mutex::new(None),
             skills: Mutex::new(Vec::new()),
             sessions: Mutex::new(HashMap::new()),
             next_session_seq: Mutex::new(0),
@@ -61,37 +57,6 @@ impl InMemoryStorage {
 }
 
 impl Storage for InMemoryStorage {
-    // ── Memory ─────────────────────────────────────────────────────
-
-    fn list_memories(&self) -> Result<Vec<MemoryEntry>> {
-        Ok(self.memories.lock().unwrap().values().cloned().collect())
-    }
-
-    fn load_memory(&self, name: &str) -> Result<Option<MemoryEntry>> {
-        Ok(self.memories.lock().unwrap().get(name).cloned())
-    }
-
-    fn save_memory(&self, entry: &MemoryEntry) -> Result<()> {
-        self.memories
-            .lock()
-            .unwrap()
-            .insert(entry.name.clone(), entry.clone());
-        Ok(())
-    }
-
-    fn delete_memory(&self, name: &str) -> Result<bool> {
-        Ok(self.memories.lock().unwrap().remove(name).is_some())
-    }
-
-    fn load_memory_index(&self) -> Result<Option<String>> {
-        Ok(self.memory_index.lock().unwrap().clone())
-    }
-
-    fn save_memory_index(&self, content: &str) -> Result<()> {
-        *self.memory_index.lock().unwrap() = Some(content.to_owned());
-        Ok(())
-    }
-
     // ── Skills ─────────────────────────────────────────────────────
 
     fn list_skills(&self) -> Result<Vec<Skill>> {

@@ -1,147 +1,152 @@
-//! Built-in memory — cached access to a [`Storage`] backend.
-//!
-//! `Memory` wraps a `Storage` with an in-process entry cache (for
-//! BM25 recall scoring) and the MEMORY.md index. Storage owns the
-//! physical layout; Memory owns search and prompt generation.
+//! Memory hook — thin facade over `crabtalk-memory`, plus the system
+//! prompt assembly and legacy-tree import for first-open migration.
 
+use anyhow::Result;
+use memory::{EntryKind, Memory as Store, Op};
 use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
+    path::{Path, PathBuf},
+    sync::RwLock,
 };
-use wcore::{
-    MemoryConfig,
-    model::{HistoryEntry, Role},
-    storage::{MemoryEntry, Storage},
-};
+use wcore::MemoryConfig;
+use wcore::model::{HistoryEntry, Role};
 
-pub mod bm25;
 pub mod handlers;
 
-/// Re-exports from wcore for external consumers.
-pub mod entry {
-    pub use wcore::storage::{MemoryEntry, slugify};
-}
-
 const MEMORY_PROMPT: &str = include_str!("../../../prompts/memory.md");
-
 pub const DEFAULT_SOUL: &str = include_str!("../../../prompts/crab.md");
 
-pub struct Memory<S: Storage> {
-    storage: Arc<S>,
-    entries: RwLock<HashMap<String, MemoryEntry>>,
-    index: RwLock<String>,
-    config: MemoryConfig,
+/// Reserved entry name for the always-injected curated overview — what
+/// used to be `MEMORY.md`. Named `global` because per-agent prompts
+/// (v2) will live as sibling entries keyed by agent id.
+pub const GLOBAL_PROMPT_NAME: &str = "global";
+
+/// Reserved names users can't create/delete through `remember`/`forget`
+/// — their content is load-bearing for the agent's system prompt.
+fn is_reserved(name: &str) -> bool {
+    name == GLOBAL_PROMPT_NAME
 }
 
-impl<S: Storage> Memory<S> {
-    /// Open memory storage against the given storage backend.
-    pub fn open(config: MemoryConfig, storage: Arc<S>) -> Self {
-        let mem = Self {
-            storage,
-            entries: RwLock::new(HashMap::new()),
-            index: RwLock::new(String::new()),
-            config,
-        };
+pub struct Memory {
+    inner: RwLock<Store>,
+    recall_limit: usize,
+}
 
-        mem.load_entries();
-        mem.load_index();
-        mem
-    }
-
-    fn load_entries(&self) {
-        let loaded = match self.storage.list_memories() {
-            Ok(entries) => entries,
-            Err(_) => return,
-        };
-        let mut cache = self.entries.write().unwrap();
-        for entry in loaded {
-            cache.insert(entry.name.clone(), entry);
+impl Memory {
+    /// Open the memory db at `db_path`. If the db is fresh and
+    /// `legacy_dir` points to an old `memory/` directory (frontmatter
+    /// entries + `MEMORY.md`), import it in one shot.
+    pub fn open(
+        config: MemoryConfig,
+        db_path: PathBuf,
+        legacy_dir: Option<PathBuf>,
+    ) -> Result<Self> {
+        let fresh = !db_path.exists();
+        let mut store = Store::open(&db_path)?;
+        if fresh {
+            if let Some(dir) = legacy_dir {
+                import_legacy(&mut store, &dir)?;
+            }
+            // Create the db file unconditionally so a crash or a
+            // legacy import with zero successful ops still counts
+            // as "migrated" — next open won't re-enter this branch.
+            store.checkpoint()?;
         }
+        Ok(Self {
+            inner: RwLock::new(store),
+            recall_limit: config.recall_limit,
+        })
     }
 
-    fn load_index(&self) {
-        if let Ok(Some(content)) = self.storage.load_memory_index() {
-            *self.index.write().unwrap() = content;
-        }
-    }
-
-    /// BM25-ranked recall over all entries.
     pub fn recall(&self, query: &str, limit: usize) -> String {
-        let entries = self.entries.read().unwrap();
-        if entries.is_empty() {
+        let store = self.inner.read().unwrap();
+        let hits = store.search(query, limit);
+        if hits.is_empty() {
             return "no memories found".to_owned();
         }
-
-        let entry_vec: Vec<&MemoryEntry> = entries.values().collect();
-        let docs: Vec<(usize, String)> = entry_vec
-            .iter()
-            .enumerate()
-            .map(|(i, e)| (i, e.search_text()))
-            .collect();
-        let doc_refs: Vec<(usize, &str)> = docs.iter().map(|(i, s)| (*i, s.as_str())).collect();
-
-        let results = bm25::score(&doc_refs, query, limit);
-        if results.is_empty() {
-            return "no memories found".to_owned();
-        }
-
-        results
-            .iter()
-            .map(|(idx, _score)| {
-                let e = &entry_vec[*idx];
-                format!("## {}\n{}\n\n{}", e.name, e.description, e.content)
-            })
+        hits.iter()
+            .map(|h| format!("## {}\n{}", h.entry.name, h.entry.content))
             .collect::<Vec<_>>()
             .join("\n---\n")
     }
 
-    /// Create or update a memory entry.
-    pub fn remember(&self, name: String, description: String, content: String) -> String {
-        let entry = MemoryEntry {
-            name: name.clone(),
-            description,
-            content,
-        };
-        if let Err(e) = self.storage.save_memory(&entry) {
-            return format!("failed to save entry: {e}");
+    pub fn remember(&self, name: String, content: String, aliases: Vec<String>) -> String {
+        if is_reserved(&name) {
+            return format!("'{name}' is reserved — use the memory tool to edit it");
         }
-        self.entries.write().unwrap().insert(name.clone(), entry);
-        format!("remembered: {name}")
-    }
-
-    /// Delete a memory entry by name.
-    pub fn forget(&self, name: &str) -> String {
-        let mut entries = self.entries.write().unwrap();
-        match entries.remove(name) {
-            Some(_) => {
-                if let Err(e) = self.storage.delete_memory(name) {
-                    tracing::warn!("failed to delete memory entry '{name}': {e}");
-                }
-                format!("forgot: {name}")
+        let mut store = self.inner.write().unwrap();
+        let exists = store.get(&name).is_some();
+        let op = if exists {
+            Op::Update {
+                name: name.clone(),
+                content,
+                aliases,
             }
-            None => format!("no entry named: {name}"),
+        } else {
+            Op::Add {
+                name: name.clone(),
+                content,
+                aliases,
+                kind: EntryKind::Note,
+            }
+        };
+        match store.apply(op) {
+            Ok(_) => format!("remembered: {name}"),
+            Err(e) => format!("failed to save entry: {e}"),
         }
     }
 
-    /// Overwrite MEMORY.md (the curated overview).
-    pub fn write_index(&self, content: &str) -> String {
-        if let Err(e) = self.storage.save_memory_index(content) {
-            return format!("failed to write MEMORY.md: {e}");
+    pub fn forget(&self, name: &str) -> String {
+        if is_reserved(name) {
+            return format!("'{name}' is reserved and cannot be forgotten");
         }
-        *self.index.write().unwrap() = content.to_owned();
-        "MEMORY.md updated".to_owned()
+        let mut store = self.inner.write().unwrap();
+        match store.apply(Op::Remove {
+            name: name.to_owned(),
+        }) {
+            Ok(_) => format!("forgot: {name}"),
+            Err(_) => format!("no entry named: {name}"),
+        }
     }
 
-    /// Build system prompt block from MEMORY.md content.
+    /// Upsert the reserved `global` Prompt entry (what `MEMORY.md` used
+    /// to be).
+    pub fn write_prompt(&self, content: &str) -> String {
+        let mut store = self.inner.write().unwrap();
+        let exists = store.get(GLOBAL_PROMPT_NAME).is_some();
+        let op = if exists {
+            Op::Update {
+                name: GLOBAL_PROMPT_NAME.to_owned(),
+                content: content.to_owned(),
+                aliases: vec![],
+            }
+        } else {
+            Op::Add {
+                name: GLOBAL_PROMPT_NAME.to_owned(),
+                content: content.to_owned(),
+                aliases: vec![],
+                kind: EntryKind::Prompt,
+            }
+        };
+        match store.apply(op) {
+            Ok(_) => "MEMORY.md updated".to_owned(),
+            Err(e) => format!("failed to write MEMORY.md: {e}"),
+        }
+    }
+
+    /// System-prompt block: the `global` Prompt content wrapped in
+    /// `<memory>` tags, plus the memory tool instructions.
     pub fn build_prompt(&self) -> String {
-        let index = self.index.read().unwrap();
-        if index.is_empty() {
-            return format!("\n\n{MEMORY_PROMPT}");
+        let store = self.inner.read().unwrap();
+        match store.get(GLOBAL_PROMPT_NAME) {
+            Some(e) if !e.content.trim().is_empty() => {
+                format!("\n\n<memory>\n{}\n</memory>\n\n{MEMORY_PROMPT}", e.content)
+            }
+            _ => format!("\n\n{MEMORY_PROMPT}"),
         }
-        format!("\n\n<memory>\n{}\n</memory>\n\n{MEMORY_PROMPT}", *index)
     }
 
-    /// Auto-recall from last user message, injected before each turn.
+    /// Auto-recall: BM25-search the last user message, inject any hits
+    /// as a synthetic user turn.
     pub fn before_run(&self, history: &[HistoryEntry]) -> Vec<HistoryEntry> {
         let last_user = history
             .iter()
@@ -163,12 +168,94 @@ impl<S: Storage> Memory<S> {
             return Vec::new();
         }
 
-        let limit = self.config.recall_limit;
-        let result = self.recall(&query, limit);
+        let result = self.recall(&query, self.recall_limit);
         if result == "no memories found" {
             return Vec::new();
         }
-
         vec![HistoryEntry::user(format!("<recall>\n{result}\n</recall>")).auto_injected()]
     }
+}
+
+/// Import entries from a legacy `memory/` directory:
+/// - `memory/entries/*.md` (YAML frontmatter + body) → Note entries
+/// - `memory/MEMORY.md`                              → `global` Prompt entry
+///
+/// One-shot, best-effort: malformed files are logged and skipped so one
+/// broken entry can't block the upgrade.
+fn import_legacy(store: &mut Store, dir: &Path) -> Result<()> {
+    let entries_dir = dir.join("entries");
+    if entries_dir.is_dir() {
+        for ent in std::fs::read_dir(&entries_dir)? {
+            let path = ent?.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            match parse_legacy_entry(&raw) {
+                Some((name, _)) if is_reserved(&name) => {
+                    tracing::warn!(
+                        ?path,
+                        "legacy import: skipping entry with reserved name '{name}'"
+                    );
+                }
+                Some((name, content)) => {
+                    if let Err(e) = store.apply(Op::Add {
+                        name,
+                        content,
+                        aliases: vec![],
+                        kind: EntryKind::Note,
+                    }) {
+                        tracing::warn!(?path, "legacy import: {e}");
+                    }
+                }
+                None => tracing::warn!(?path, "legacy import: unparseable entry"),
+            }
+        }
+    }
+
+    let index_path = dir.join("MEMORY.md");
+    if let Ok(content) = std::fs::read_to_string(&index_path)
+        && !content.trim().is_empty()
+        && let Err(e) = store.apply(Op::Add {
+            name: GLOBAL_PROMPT_NAME.to_owned(),
+            content,
+            aliases: vec![],
+            kind: EntryKind::Prompt,
+        })
+    {
+        tracing::warn!("legacy MEMORY.md import: {e}");
+    }
+    Ok(())
+}
+
+/// Parse the legacy frontmatter-based entry format into `(name, content)`.
+/// Description, if present, is folded into the first line of content.
+fn parse_legacy_entry(raw: &str) -> Option<(String, String)> {
+    let raw = raw.replace("\r\n", "\n");
+    let raw = raw.trim();
+    let after_open = raw.strip_prefix("---")?;
+    let close_pos = after_open.find("\n---")?;
+    let frontmatter = &after_open[..close_pos];
+    let body = after_open[close_pos + 4..].trim();
+
+    let mut name = None;
+    let mut description: Option<String> = None;
+    for line in frontmatter.lines() {
+        let line = line.trim();
+        if let Some(val) = line.strip_prefix("name:") {
+            name = Some(val.trim().to_owned());
+        } else if let Some(val) = line.strip_prefix("description:") {
+            description = Some(val.trim().to_owned());
+        }
+    }
+
+    let name = name?;
+    let content = match description.filter(|d| !d.is_empty()) {
+        Some(desc) if !body.is_empty() => format!("{desc}\n\n{body}"),
+        Some(desc) => desc,
+        None => body.to_owned(),
+    };
+    Some((name, content))
 }
