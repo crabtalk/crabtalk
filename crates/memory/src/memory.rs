@@ -248,7 +248,7 @@ impl Memory {
                 name: item.name.clone(),
                 content: item.content,
                 aliases: item.aliases,
-                created_at: now_unix(),
+                created_at: item.created_at.unwrap_or_else(now_unix),
                 kind: item.kind,
             };
             let mut terms = tokenize(&entry.content);

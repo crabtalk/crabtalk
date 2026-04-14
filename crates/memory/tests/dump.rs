@@ -55,11 +55,28 @@ fn dump_creates_sections_and_summary() {
 }
 
 #[test]
-fn dump_emits_refs_section_only_when_aliases_exist() {
+fn dump_always_emits_meta_block_with_created() {
     let dir = tempdir().unwrap();
     let brain = dir.path().join("brain");
     let mut mem = Memory::new();
     add(&mut mem, EntryKind::Note, "plain", "just prose", &[]);
+
+    mem.dump(&brain).unwrap();
+    let text = fs::read_to_string(brain.join("notes/plain.md")).unwrap();
+    assert!(text.starts_with("<div id=\"meta\">"));
+    assert!(text.contains("<dl>"));
+    assert!(text.contains("<dt>Created</dt>"));
+    assert!(text.contains("<time datetime=\""));
+    // No aliases row when there are no aliases.
+    assert!(!text.contains("<dt>Aliases</dt>"));
+    assert!(text.contains("just prose"));
+}
+
+#[test]
+fn dump_emits_aliases_when_present() {
+    let dir = tempdir().unwrap();
+    let brain = dir.path().join("brain");
+    let mut mem = Memory::new();
     add(
         &mut mem,
         EntryKind::Note,
@@ -69,19 +86,14 @@ fn dump_emits_refs_section_only_when_aliases_exist() {
     );
 
     mem.dump(&brain).unwrap();
-
-    let plain = fs::read_to_string(brain.join("notes/plain.md")).unwrap();
-    assert!(!plain.contains("## Refs"));
-    assert_eq!(plain.trim(), "just prose");
-
-    let tagged = fs::read_to_string(brain.join("notes/tagged.md")).unwrap();
-    assert!(tagged.contains("## Refs"));
-    assert!(tagged.contains("- ship"));
-    assert!(tagged.contains("- release"));
+    let text = fs::read_to_string(brain.join("notes/tagged.md")).unwrap();
+    assert!(text.contains("<dt>Aliases</dt>"));
+    assert!(text.contains("<li>ship</li>"));
+    assert!(text.contains("<li>release</li>"));
 }
 
 #[test]
-fn round_trip_preserves_content_and_aliases() {
+fn round_trip_preserves_content_aliases_and_timestamp() {
     let dir = tempdir().unwrap();
     let brain = dir.path().join("brain");
     let mut mem = Memory::new();
@@ -100,6 +112,7 @@ fn round_trip_preserves_content_and_aliases() {
         "curated overview",
         &[],
     );
+    let created_before: Vec<_> = mem.list().map(|e| (e.name.clone(), e.created_at)).collect();
     mem.dump(&brain).unwrap();
 
     let mut loaded = Memory::new();
@@ -118,6 +131,10 @@ fn round_trip_preserves_content_and_aliases() {
 
     let global = loaded.get("global").unwrap();
     assert_eq!(global.kind, EntryKind::Prompt);
+
+    for (name, ts) in created_before {
+        assert_eq!(loaded.get(&name).unwrap().created_at, ts);
+    }
 }
 
 #[test]
@@ -173,28 +190,7 @@ fn load_ignores_summary_and_non_markdown() {
 }
 
 #[test]
-fn refs_heading_mid_content_is_respected() {
-    // A file that has `## Refs` both as content text and as a trailing
-    // section. The trailing one wins; the earlier occurrence stays in
-    // the content.
-    let dir = tempdir().unwrap();
-    let brain = dir.path().join("brain");
-    fs::create_dir_all(brain.join("notes")).unwrap();
-    fs::write(
-        brain.join("notes/quirky.md"),
-        "prose mentioning ## Refs inline\nmore prose\n\n## Refs\n\n- real-alias\n",
-    )
-    .unwrap();
-
-    let mut mem = Memory::new();
-    mem.load(&brain).unwrap();
-    let e = mem.get("quirky").unwrap();
-    assert!(e.content.contains("## Refs inline"));
-    assert_eq!(e.aliases, vec!["real-alias"]);
-}
-
-#[test]
-fn entry_without_refs_section_has_no_aliases() {
+fn entry_without_meta_block_is_pure_content() {
     let dir = tempdir().unwrap();
     let brain = dir.path().join("brain");
     fs::create_dir_all(brain.join("notes")).unwrap();
@@ -208,22 +204,45 @@ fn entry_without_refs_section_has_no_aliases() {
 }
 
 #[test]
-fn alias_verbatim_parses_annotations() {
+fn malformed_meta_falls_back_to_content_only() {
+    // Opens a meta div but never closes it — treat the file as pure
+    // content, no metadata.
     let dir = tempdir().unwrap();
     let brain = dir.path().join("brain");
     fs::create_dir_all(brain.join("notes")).unwrap();
     fs::write(
-        brain.join("notes/annotated.md"),
-        "content\n\n## Refs\n\n- ship (legacy)\n- release\n",
+        brain.join("notes/bad.md"),
+        "<div id=\"meta\">\nmissing close\nhello\n",
     )
     .unwrap();
 
     let mut mem = Memory::new();
     mem.load(&brain).unwrap();
-    assert_eq!(
-        mem.get("annotated").unwrap().aliases,
-        vec!["ship (legacy)", "release"]
+    let e = mem.get("bad").unwrap();
+    assert!(e.content.contains("missing close"));
+    assert!(e.aliases.is_empty());
+}
+
+#[test]
+fn html_entities_round_trip_in_aliases() {
+    let dir = tempdir().unwrap();
+    let brain = dir.path().join("brain");
+    let mut mem = Memory::new();
+    add(
+        &mut mem,
+        EntryKind::Note,
+        "weird",
+        "content",
+        &["a<b", "x&y"],
     );
+    mem.dump(&brain).unwrap();
+    let text = fs::read_to_string(brain.join("notes/weird.md")).unwrap();
+    assert!(text.contains("a&lt;b"));
+    assert!(text.contains("x&amp;y"));
+
+    let mut loaded = Memory::new();
+    loaded.load(&brain).unwrap();
+    assert_eq!(loaded.get("weird").unwrap().aliases, vec!["a<b", "x&y"]);
 }
 
 #[test]
@@ -260,7 +279,6 @@ fn load_duplicate_leaves_state_untouched() {
     let mut mem = Memory::new();
     add(&mut mem, EntryKind::Note, "survivor", "stays put", &[]);
     assert!(mem.load(&brain).is_err());
-    // Failed load must not have wiped the existing entry.
     assert!(mem.get("survivor").is_some());
 }
 
@@ -288,4 +306,31 @@ fn persistent_db_dumps_and_reloads_through_tree() {
     let e = reopened.get("persistent").unwrap();
     assert_eq!(e.content, "stays");
     assert_eq!(e.aliases, vec!["alias"]);
+}
+
+#[test]
+fn hand_written_meta_loads_created_at() {
+    let dir = tempdir().unwrap();
+    let brain = dir.path().join("brain");
+    fs::create_dir_all(brain.join("notes")).unwrap();
+    // 2020-01-01T00:00:00Z = 1577836800
+    fs::write(
+        brain.join("notes/dated.md"),
+        concat!(
+            "<div id=\"meta\">\n",
+            "<dl>\n",
+            "  <dt>Created</dt>\n",
+            "  <dd><time datetime=\"2020-01-01T00:00:00Z\">2020-01-01</time></dd>\n",
+            "</dl>\n",
+            "</div>\n\n",
+            "historical content\n",
+        ),
+    )
+    .unwrap();
+
+    let mut mem = Memory::new();
+    mem.load(&brain).unwrap();
+    let e = mem.get("dated").unwrap();
+    assert_eq!(e.created_at, 1577836800);
+    assert_eq!(e.content, "historical content");
 }

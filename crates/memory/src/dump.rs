@@ -9,38 +9,52 @@
 //!   prompts/{name}.md         ← EntryKind::Prompt
 //! ```
 //!
-//! Entry file format: raw content, then an optional trailing refs section:
+//! Entry file format: an HTML metadata block at the top, then the
+//! entry's content as pure markdown:
+//!
 //! ```markdown
-//! whatever the content is.
+//! <div id="meta">
+//! <dl>
+//!   <dt>Created</dt>
+//!   <dd><time datetime="2026-04-14T10:23:45Z">2026-04-14T10:23:45Z</time></dd>
+//!   <dt>Aliases</dt>
+//!   <dd>
+//!     <ul>
+//!       <li>ship</li>
+//!       <li>release</li>
+//!     </ul>
+//!   </dd>
+//! </dl>
+//! </div>
 //!
-//! ## Refs
-//!
-//! - ship
-//! - release
+//! prod rollout steps ...
 //! ```
 //!
-//! On load we scan backwards for the last `## Refs` heading; everything
-//! above it is content, bullets below it are aliases (verbatim — users
-//! who annotate like `- ship (legacy)` see their annotation preserved).
-//!
-//! `created_at` is not round-tripped through the tree — the db file is
-//! the canonical backup. Loading an entry gives it a fresh `created_at`.
+//! Uses `<dl>` / `<dt>` / `<dd>` — the semantic HTML for key-value
+//! metadata. Browsers render it as a labeled info card; mdbook doesn't
+//! pull the labels into its heading tree, so they can't collide with
+//! any headings the content itself uses. The `<time datetime="...">`
+//! attribute round-trips the exact unix timestamp. The `Aliases` row
+//! is omitted when the entry has none. A file that does not start
+//! with `<div id="meta">` is treated as pure content with no metadata.
 
 use crate::{
     entry::{Entry, EntryKind},
     error::{Error, Result},
 };
+use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use std::{collections::HashMap, fs, path::Path};
 
-pub(crate) const REFS_HEADING: &str = "## Refs";
-
 /// All kinds that the dump tree knows about, paired with their
-/// subdirectory name. Single source of truth for both dump and load.
+/// subdirectory name and SUMMARY section title.
 pub(crate) const KIND_SECTIONS: &[(EntryKind, &str, &str)] = &[
     (EntryKind::Note, "notes", "Notes"),
     (EntryKind::Archive, "archives", "Archives"),
     (EntryKind::Prompt, "prompts", "Prompts"),
 ];
+
+const META_OPEN: &str = "<div id=\"meta\">";
+const META_CLOSE: &str = "</div>";
 
 /// Reject names that aren't safe as filesystem basenames. POSIX-friendly;
 /// does not check Windows-reserved basenames (CON, NUL, etc.) — the dump
@@ -64,77 +78,120 @@ pub(crate) fn validate_name(name: &str) -> Result<()> {
 }
 
 pub(crate) fn serialize_entry(e: &Entry) -> String {
-    if e.aliases.is_empty() {
-        let mut out = e.content.clone();
-        if !out.ends_with('\n') {
-            out.push('\n');
+    let iso = format_ts(e.created_at);
+    let mut out = String::new();
+    out.push_str(META_OPEN);
+    out.push('\n');
+    out.push_str("<dl>\n");
+    out.push_str("  <dt>Created</dt>\n");
+    out.push_str(&format!(
+        "  <dd><time datetime=\"{iso}\">{iso}</time></dd>\n"
+    ));
+    if !e.aliases.is_empty() {
+        out.push_str("  <dt>Aliases</dt>\n");
+        out.push_str("  <dd>\n    <ul>\n");
+        for a in &e.aliases {
+            out.push_str(&format!("      <li>{}</li>\n", html_escape(a)));
         }
-        return out;
+        out.push_str("    </ul>\n  </dd>\n");
     }
-
-    let content = e.content.trim_end_matches('\n');
-    let mut out = String::with_capacity(
-        content.len() + 32 + e.aliases.iter().map(|a| a.len() + 4).sum::<usize>(),
-    );
-    out.push_str(content);
+    out.push_str("</dl>\n");
+    out.push_str(META_CLOSE);
     out.push_str("\n\n");
-    out.push_str(REFS_HEADING);
-    out.push_str("\n\n");
-    for a in &e.aliases {
-        out.push_str("- ");
-        out.push_str(a);
+    let body = e.content.trim_start_matches('\n');
+    out.push_str(body);
+    if !out.ends_with('\n') {
         out.push('\n');
     }
     out
 }
 
-/// Parse a dumped entry markdown file into `(content, aliases)`.
-pub(crate) fn parse_entry(text: &str) -> (String, Vec<String>) {
-    // Find the last line that is exactly `## Refs` (ignoring trailing
-    // whitespace). Everything above = content; bullets below = aliases.
-    let mut idx = None;
-    for (i, _) in text.match_indices(REFS_HEADING) {
-        if is_heading_line(text, i) {
-            idx = Some(i);
-        }
-    }
-    let Some(idx) = idx else {
-        return (text.trim_end().to_owned(), Vec::new());
-    };
-
-    let content = text[..idx].trim_end().to_owned();
-    let rest = &text[idx + REFS_HEADING.len()..];
-    let mut aliases = Vec::new();
-    for line in rest.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if let Some(rest) = trimmed.strip_prefix("- ") {
-            aliases.push(rest.trim().to_owned());
-        } else {
-            // Something other than a bullet after Refs — stop parsing so
-            // unrelated trailing content doesn't get swallowed.
-            break;
-        }
-    }
-    (content, aliases)
+pub(crate) struct Parsed {
+    pub(crate) created_at: Option<u64>,
+    pub(crate) aliases: Vec<String>,
+    pub(crate) content: String,
 }
 
-/// True if `idx` begins at a line boundary and the match ends the line
-/// (allowing trailing whitespace). Guards against "## Refs" appearing
-/// mid-line in user prose.
-fn is_heading_line(text: &str, idx: usize) -> bool {
-    let before_ok = idx == 0 || text[..idx].ends_with('\n');
-    let after = &text[idx + REFS_HEADING.len()..];
-    let after_ok = match after.chars().next() {
-        None => true,
-        Some('\n') => true,
-        Some(c) => {
-            c.is_whitespace() && after.lines().next().map(str::trim).unwrap_or("").is_empty()
-        }
+/// Parse a dumped entry markdown file.
+pub(crate) fn parse_entry(text: &str) -> Parsed {
+    let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
+    let Some(rest) = text.strip_prefix(META_OPEN) else {
+        return Parsed {
+            created_at: None,
+            aliases: Vec::new(),
+            content: text.trim_end().to_owned(),
+        };
     };
-    before_ok && after_ok
+    let Some(end) = rest.find(META_CLOSE) else {
+        return Parsed {
+            created_at: None,
+            aliases: Vec::new(),
+            content: text.trim_end().to_owned(),
+        };
+    };
+    let meta = &rest[..end];
+    let body = rest[end + META_CLOSE.len()..].trim_start().trim_end();
+
+    Parsed {
+        created_at: extract_created(meta),
+        aliases: extract_aliases(meta),
+        content: body.to_owned(),
+    }
+}
+
+fn extract_created(meta: &str) -> Option<u64> {
+    let attr_start = meta.find("datetime=\"")? + "datetime=\"".len();
+    let attr_len = meta[attr_start..].find('"')?;
+    let iso = &meta[attr_start..attr_start + attr_len];
+    let dt = DateTime::parse_from_rfc3339(iso).ok()?;
+    let secs = dt.timestamp();
+    if secs < 0 { None } else { Some(secs as u64) }
+}
+
+fn extract_aliases(meta: &str) -> Vec<String> {
+    let Some(header) = meta.find("<dt>Aliases</dt>") else {
+        return Vec::new();
+    };
+    let after = &meta[header..];
+    // Bound the scan to this row — aliases end at the next <dt>.
+    let bound = after[1..]
+        .find("<dt>")
+        .map(|i| i + 1)
+        .unwrap_or(after.len());
+    let row = &after[..bound];
+
+    let mut out = Vec::new();
+    let mut rest = row;
+    while let Some(li_start) = rest.find("<li>") {
+        let open_end = li_start + "<li>".len();
+        let Some(li_end) = rest[open_end..].find("</li>") else {
+            break;
+        };
+        let inner = &rest[open_end..open_end + li_end];
+        out.push(html_unescape(inner.trim()));
+        rest = &rest[open_end + li_end + "</li>".len()..];
+    }
+    out
+}
+
+fn format_ts(secs: u64) -> String {
+    let dt: DateTime<Utc> = Utc
+        .timestamp_opt(secs as i64, 0)
+        .single()
+        .unwrap_or_else(|| Utc.timestamp_opt(0, 0).unwrap());
+    dt.to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn html_unescape(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
 }
 
 pub(crate) fn build_summary(by_kind: &HashMap<EntryKind, Vec<&Entry>>) -> String {
@@ -164,6 +221,7 @@ pub(crate) struct Loaded {
     pub(crate) name: String,
     pub(crate) content: String,
     pub(crate) aliases: Vec<String>,
+    pub(crate) created_at: Option<u64>,
 }
 
 /// Walk the tree and collect every markdown file as a [`Loaded`].
@@ -188,12 +246,13 @@ pub(crate) fn read_tree(dir: &Path) -> Result<Vec<Loaded>> {
                 continue;
             }
             let raw = fs::read_to_string(&p)?;
-            let (content, aliases) = parse_entry(&raw);
+            let parsed = parse_entry(&raw);
             out.push(Loaded {
                 kind: *kind,
                 name,
-                content,
-                aliases,
+                content: parsed.content,
+                aliases: parsed.aliases,
+                created_at: parsed.created_at,
             });
         }
     }
