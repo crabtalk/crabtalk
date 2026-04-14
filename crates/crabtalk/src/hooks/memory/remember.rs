@@ -4,8 +4,9 @@ use super::{Memory, MemoryHook, is_reserved};
 use memory::{EntryKind, Op};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use wcore::{ToolDispatch, agent::ToolDescription};
+use wcore::ToolDispatch;
 
+/// Save or update a memory entry. Aliases are searchable alternative terms.
 #[derive(Deserialize, JsonSchema)]
 pub struct Remember {
     /// Short name for this memory entry (used as identifier).
@@ -15,11 +16,6 @@ pub struct Remember {
     /// Optional alternative search terms / related note names.
     #[serde(default)]
     pub aliases: Vec<String>,
-}
-
-impl ToolDescription for Remember {
-    const DESCRIPTION: &'static str =
-        "Save or update a memory entry. Aliases are searchable alternative terms.";
 }
 
 impl Memory {

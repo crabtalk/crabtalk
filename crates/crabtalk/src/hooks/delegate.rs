@@ -14,11 +14,12 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
 };
-use wcore::{
-    ToolDispatch, ToolFuture,
-    agent::{AsTool, ToolDescription},
-};
+use wcore::{ToolDispatch, ToolFuture, agent::AsTool};
 
+/// Delegate tasks to other agents. Runs all tasks in parallel.
+///
+/// Set `background=true` to return immediately with task IDs — results
+/// arrive via agent completion events.
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct Delegate {
     /// List of tasks to run in parallel. Each task has an agent name and a message.
@@ -41,10 +42,6 @@ pub struct DelegateTask {
     /// Working directory for this task. Defaults to the parent's CWD.
     #[serde(default)]
     pub cwd: Option<String>,
-}
-
-impl ToolDescription for Delegate {
-    const DESCRIPTION: &'static str = "Delegate tasks to other agents. Runs all tasks in parallel. Set background=true to return immediately with task IDs — results arrive via agent completion events.";
 }
 
 /// Delegate subsystem: dispatch tasks to other agents.

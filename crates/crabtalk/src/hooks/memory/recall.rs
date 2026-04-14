@@ -7,21 +7,16 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use wcore::{
     ToolDispatch,
-    agent::ToolDescription,
     model::{HistoryEntry, Role},
 };
 
+/// Search your memory entries by keyword. Returns ranked results.
 #[derive(Deserialize, JsonSchema)]
 pub struct Recall {
     /// Keyword or phrase to search your memory entries for.
     pub query: String,
     /// Maximum number of results to return. Defaults to 5.
     pub limit: Option<usize>,
-}
-
-impl ToolDescription for Recall {
-    const DESCRIPTION: &'static str =
-        "Search your memory entries by keyword. Returns ranked results.";
 }
 
 impl Memory {

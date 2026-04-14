@@ -10,17 +10,14 @@ use super::{GLOBAL_PROMPT_NAME, MEMORY_PROMPT, Memory, MemoryHook};
 use memory::{EntryKind, Op};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use wcore::{ToolDispatch, agent::ToolDescription};
+use wcore::ToolDispatch;
 
+/// Overwrite MEMORY.md — your curated overview injected every session. Read it before overwriting.
 #[derive(Deserialize, JsonSchema)]
 #[schemars(rename = "Memory")]
 pub struct Prompt {
     /// The full content to write to MEMORY.md — your curated overview.
     pub content: String,
-}
-
-impl ToolDescription for Prompt {
-    const DESCRIPTION: &'static str = "Overwrite MEMORY.md — your curated overview injected every session. Read it before overwriting.";
 }
 
 impl Memory {

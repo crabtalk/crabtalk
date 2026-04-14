@@ -4,16 +4,13 @@ use super::{Memory, MemoryHook, is_reserved};
 use memory::Op;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use wcore::{ToolDispatch, agent::ToolDescription};
+use wcore::ToolDispatch;
 
+/// Delete a memory entry by name.
 #[derive(Deserialize, JsonSchema)]
 pub struct Forget {
     /// Name of the memory entry to delete.
     pub name: String,
-}
-
-impl ToolDescription for Forget {
-    const DESCRIPTION: &'static str = "Delete a memory entry by name.";
 }
 
 impl Memory {

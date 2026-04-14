@@ -4,11 +4,12 @@ use super::{MAX_FILE_SIZE, OsHook};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::fmt::Write;
-use wcore::{ToolDispatch, agent::ToolDescription};
+use wcore::ToolDispatch;
 
 /// Default maximum number of lines to return per read.
 const DEFAULT_LIMIT: usize = 2000;
 
+/// Read a file with line numbers. Supports offset/limit for pagination.
 #[derive(Deserialize, JsonSchema)]
 pub struct Read {
     /// Absolute or relative file path to read.
@@ -19,11 +20,6 @@ pub struct Read {
     /// Maximum number of lines to read. Defaults to 2000.
     #[serde(default)]
     pub limit: Option<usize>,
-}
-
-impl ToolDescription for Read {
-    const DESCRIPTION: &'static str =
-        "Read a file with line numbers. Supports offset/limit for pagination.";
 }
 
 impl OsHook {

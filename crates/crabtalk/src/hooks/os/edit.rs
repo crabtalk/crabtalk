@@ -3,8 +3,9 @@
 use super::{MAX_FILE_SIZE, OsHook};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use wcore::{ToolDispatch, agent::ToolDescription};
+use wcore::ToolDispatch;
 
+/// Replace an exact string in a file. Fails if the string is not found or appears more than once.
 #[derive(Deserialize, JsonSchema)]
 pub struct Edit {
     /// Path to the file to edit.
@@ -13,10 +14,6 @@ pub struct Edit {
     pub old_string: String,
     /// Replacement string.
     pub new_string: String,
-}
-
-impl ToolDescription for Edit {
-    const DESCRIPTION: &'static str = "Replace an exact string in a file. Fails if the string is not found or appears more than once.";
 }
 
 impl OsHook {

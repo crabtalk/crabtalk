@@ -9,11 +9,9 @@ use std::{
     collections::BTreeMap,
     sync::{Arc, RwLock},
 };
-use wcore::{
-    ToolDispatch, ToolFuture,
-    agent::{AsTool, ToolDescription},
-};
+use wcore::{ToolDispatch, ToolFuture, agent::AsTool};
 
+/// Call an MCP tool by name, or list available tools if no exact match.
 #[derive(Deserialize, JsonSchema)]
 pub struct Mcp {
     /// Tool name to call. If no exact match, returns fuzzy matches.
@@ -22,11 +20,6 @@ pub struct Mcp {
     /// JSON-encoded arguments string (only used when calling a tool).
     #[serde(default)]
     pub args: Option<String>,
-}
-
-impl ToolDescription for Mcp {
-    const DESCRIPTION: &'static str =
-        "Call an MCP tool by name, or list available tools if no exact match.";
 }
 
 /// MCP subsystem: routes tool calls to MCP servers.

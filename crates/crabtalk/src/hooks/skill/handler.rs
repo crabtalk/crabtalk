@@ -9,21 +9,14 @@ use std::{
     collections::BTreeMap,
     sync::{Arc, RwLock},
 };
-use wcore::{
-    ToolDispatch, ToolFuture,
-    agent::{AsTool, ToolDescription},
-    storage::Storage,
-};
+use wcore::{ToolDispatch, ToolFuture, agent::AsTool, storage::Storage};
 
+/// Load a skill by name. Returns its instructions on exact match, or lists matching skills otherwise.
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct SkillTool {
     /// Skill name to load. If no exact match, returns fuzzy matches.
     /// Leave empty to list all available skills.
     pub name: String,
-}
-
-impl ToolDescription for SkillTool {
-    const DESCRIPTION: &'static str = "Load a skill by name. Returns its instructions on exact match, or lists matching skills otherwise.";
 }
 
 /// Skill subsystem: tool dispatch + slash-skill preprocessing.
