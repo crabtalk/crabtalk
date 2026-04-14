@@ -10,7 +10,7 @@ use std::{
 use wcore::MemoryConfig;
 use wcore::model::{HistoryEntry, Role};
 
-/// Shared handle to the underlying memory store. Clonable because the
+/// Shared handle to the underlying memory store. Cloneable because the
 /// runtime needs a reference of its own for writing archives during
 /// compaction and reading them back on session resume.
 pub type SharedStore = Arc<RwLock<Store>>;
@@ -221,7 +221,7 @@ fn import_legacy(store: &mut Store, dir: &Path) -> Result<()> {
                         tracing::warn!(?path, "legacy import: {e}");
                     }
                 }
-                None => tracing::warn!(?path, "legacy import: unparseable entry"),
+                None => tracing::warn!(?path, "legacy import: unparsable entry"),
             }
         }
     }
