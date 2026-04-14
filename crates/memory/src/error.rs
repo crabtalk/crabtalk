@@ -8,6 +8,8 @@ pub enum Error {
     NotFound(String),
     #[error("entry already exists: {0}")]
     Duplicate(String),
+    #[error("bad memory file format: {0}")]
+    BadFormat(&'static str),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }

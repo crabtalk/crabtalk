@@ -2,16 +2,19 @@ use crate::{
     bm25::{Index, tokenize},
     entry::{Entry, EntryId, EntryKind},
     error::{Error, Result},
+    file,
     op::Op,
 };
 use std::{
     collections::HashMap,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-/// In-RAM memory connection. Persistence, dump/load, and file-path
-/// semantics land in later phases.
+/// Memory connection. `open(path)` is persistent (auto-flushes every
+/// `apply` via atomic write); `new()` is in-RAM only.
 pub struct Memory {
+    path: Option<PathBuf>,
     entries: HashMap<EntryId, Entry>,
     by_name: HashMap<String, EntryId>,
     index: Index,
@@ -31,8 +34,10 @@ impl Default for Memory {
 }
 
 impl Memory {
+    /// In-RAM memory. Nothing is persisted.
     pub fn new() -> Self {
         Self {
+            path: None,
             entries: HashMap::new(),
             by_name: HashMap::new(),
             index: Index::new(),
@@ -40,6 +45,33 @@ impl Memory {
         }
     }
 
+    /// Open (or create) a memory db at `path`. Reads the file if it
+    /// exists; otherwise the db starts empty and the file is created on
+    /// the first write.
+    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref().to_path_buf();
+        let mut mem = Self {
+            path: Some(path.clone()),
+            entries: HashMap::new(),
+            by_name: HashMap::new(),
+            index: Index::new(),
+            next_id: 1,
+        };
+        if let Some(snap) = file::read(&path)? {
+            mem.next_id = snap.next_id;
+            for entry in snap.entries {
+                mem.by_name.insert(entry.name.clone(), entry.id);
+                mem.reindex(&entry);
+                mem.entries.insert(entry.id, entry);
+            }
+        }
+        Ok(mem)
+    }
+
+    /// Apply a write op and persist. RAM is mutated before `flush`, so a
+    /// flush failure leaves RAM ahead of disk until the next successful
+    /// op (or the next `open`, which re-reads the file). WAL will close
+    /// this window in v2.
     pub fn apply(&mut self, op: Op) -> Result<()> {
         match op {
             Op::Add {
@@ -47,15 +79,16 @@ impl Memory {
                 content,
                 aliases,
                 kind,
-            } => self.add(name, content, aliases, kind),
+            } => self.add(name, content, aliases, kind)?,
             Op::Update {
                 name,
                 content,
                 aliases,
-            } => self.update(&name, content, aliases),
-            Op::Alias { name, aliases } => self.set_aliases(&name, aliases),
-            Op::Remove { name } => self.remove(&name),
+            } => self.update(&name, content, aliases)?,
+            Op::Alias { name, aliases } => self.set_aliases(&name, aliases)?,
+            Op::Remove { name } => self.remove(&name)?,
         }
+        self.flush()
     }
 
     pub fn get(&self, name: &str) -> Option<&Entry> {
@@ -150,5 +183,14 @@ impl Memory {
             terms.extend(tokenize(alias));
         }
         self.index.insert(entry.id, &terms);
+    }
+
+    fn flush(&self) -> Result<()> {
+        let Some(path) = &self.path else {
+            return Ok(());
+        };
+        let mut entries: Vec<&Entry> = self.entries.values().collect();
+        entries.sort_by_key(|e| e.id);
+        file::write(path, self.next_id, &entries)
     }
 }

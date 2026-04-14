@@ -643,6 +643,7 @@ name = "crabtalk-memory"
 version = "0.0.20"
 dependencies = [
  "anyhow",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 

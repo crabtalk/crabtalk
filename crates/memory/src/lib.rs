@@ -7,6 +7,7 @@
 mod bm25;
 mod entry;
 mod error;
+mod file;
 mod memory;
 mod op;
 
