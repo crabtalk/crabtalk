@@ -12,6 +12,7 @@
 - [Runtime](spec/04-runtime.md)
 - [Daemon](spec/05-daemon.md)
 - [Providers](spec/06-providers.md)
+- [Multi-agent](spec/07-multi-agent.md)
 
 # RFCs
 
