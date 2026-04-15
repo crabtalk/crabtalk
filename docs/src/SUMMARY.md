@@ -8,6 +8,7 @@
 
 - [Conversations](spec/01-conversations.md)
 - [Dispatch](spec/02-dispatch.md)
+- [Memory](spec/03-memory.md)
 
 # RFCs
 
