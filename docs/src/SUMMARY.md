@@ -4,6 +4,12 @@
 
 - [Manifesto](manifesto.md)
 
+# Specification
+
+- [Conversations](spec/01-conversations.md)
+
+# RFCs
+
 - [0000 - Compaction](rfcs/0000-compaction.md)
 - [0009 - Transport](rfcs/0009-transport.md)
 - [0018 - Protocol](rfcs/0018-protocol.md)
