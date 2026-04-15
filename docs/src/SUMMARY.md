@@ -10,6 +10,7 @@
 - [Dispatch](spec/02-dispatch.md)
 - [Memory](spec/03-memory.md)
 - [Runtime](spec/04-runtime.md)
+- [Daemon](spec/05-daemon.md)
 
 # RFCs
 
