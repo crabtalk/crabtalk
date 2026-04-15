@@ -6,13 +6,13 @@
 
 # Specification
 
-- [Conversations](spec/01-conversations.md)
-- [Dispatch](spec/02-dispatch.md)
-- [Memory](spec/03-memory.md)
-- [Runtime](spec/04-runtime.md)
-- [Daemon](spec/05-daemon.md)
-- [Providers](spec/06-providers.md)
-- [Multi-agent](spec/07-multi-agent.md)
+- [Conversations](spec/conversations.md)
+- [Dispatch](spec/dispatch.md)
+- [Multi-agent](spec/multi-agent.md)
+- [Memory](spec/memory.md)
+- [Runtime](spec/runtime.md)
+- [Daemon](spec/daemon.md)
+- [Providers](spec/providers.md)
 
 # RFCs
 
