@@ -24,6 +24,13 @@ use wcore::{Agent, ToolRegistry, model::Model};
 /// back as the replayed prefix.
 pub type SharedMemory = Arc<parking_lot::RwLock<Memory>>;
 
+#[derive(Clone)]
+pub(super) struct ConvSlot {
+    pub(super) agent: String,
+    pub(super) created_by: String,
+    pub(super) inner: Arc<Mutex<Conversation>>,
+}
+
 /// The crabtalk runtime.
 pub struct Runtime<C: Config> {
     pub model: Model<C::Provider>,
@@ -32,8 +39,7 @@ pub struct Runtime<C: Config> {
     memory: SharedMemory,
     agents: parking_lot::RwLock<BTreeMap<String, Agent<C::Provider>>>,
     ephemeral_agents: RwLock<BTreeMap<String, Agent<C::Provider>>>,
-    conversations: RwLock<BTreeMap<u64, Arc<Mutex<Conversation>>>>,
-    conversation_index: RwLock<BTreeMap<(String, String), u64>>,
+    conversations: RwLock<BTreeMap<u64, ConvSlot>>,
     next_conversation_id: AtomicU64,
     pub tools: ToolRegistry,
     steering: RwLock<BTreeMap<u64, watch::Sender<Option<String>>>>,
@@ -56,7 +62,6 @@ impl<C: Config> Runtime<C> {
             agents: parking_lot::RwLock::new(BTreeMap::new()),
             ephemeral_agents: RwLock::new(BTreeMap::new()),
             conversations: RwLock::new(BTreeMap::new()),
-            conversation_index: RwLock::new(BTreeMap::new()),
             next_conversation_id: AtomicU64::new(1),
             tools,
             steering: RwLock::new(BTreeMap::new()),

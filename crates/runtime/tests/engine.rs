@@ -102,10 +102,10 @@ async fn register_and_unregister_tool() {
 // --- Conversation management ---
 
 #[tokio::test]
-async fn create_conversation_requires_registered_agent() {
+async fn get_or_create_conversation_requires_registered_agent() {
     let runtime = runtime(TestProvider::with_chunks(vec![]));
     let err = runtime
-        .create_conversation("nonexistent", "user")
+        .get_or_create_conversation("nonexistent", "user")
         .await
         .unwrap_err();
     assert!(err.to_string().contains("not registered"));
@@ -116,7 +116,10 @@ async fn create_and_close_conversation() {
     let runtime = runtime(TestProvider::with_chunks(vec![]));
     runtime.add_agent(AgentConfig::new("crab"));
 
-    let id = runtime.create_conversation("crab", "user").await.unwrap();
+    let id = runtime
+        .get_or_create_conversation("crab", "user")
+        .await
+        .unwrap();
     assert!(runtime.conversation(id).await.is_some());
 
     assert!(runtime.close_conversation(id).await);
@@ -129,8 +132,14 @@ async fn conversations_lists_all() {
     let runtime = runtime(TestProvider::with_chunks(vec![]));
     runtime.add_agent(AgentConfig::new("crab"));
 
-    runtime.create_conversation("crab", "test-a").await.unwrap();
-    runtime.create_conversation("crab", "test-b").await.unwrap();
+    runtime
+        .get_or_create_conversation("crab", "test-a")
+        .await
+        .unwrap();
+    runtime
+        .get_or_create_conversation("crab", "test-b")
+        .await
+        .unwrap();
 
     let conversations = runtime.conversations().await;
     assert_eq!(conversations.len(), 2);
@@ -154,48 +163,6 @@ async fn get_or_create_conversation_returns_existing() {
 }
 
 #[tokio::test]
-async fn find_conversation_id_uses_identity_lookup() {
-    let runtime = runtime(TestProvider::with_chunks(vec![]));
-    runtime.add_agent(AgentConfig::new("crab"));
-
-    let id = runtime
-        .create_conversation("crab", "indexed-user")
-        .await
-        .unwrap();
-
-    assert_eq!(
-        runtime.find_conversation_id("crab", "indexed-user").await,
-        Some(id)
-    );
-}
-
-#[tokio::test]
-async fn closing_indexed_conversation_falls_back_to_duplicate() {
-    let runtime = runtime(TestProvider::with_chunks(vec![]));
-    runtime.add_agent(AgentConfig::new("crab"));
-
-    let first = runtime
-        .create_conversation("crab", "same-user")
-        .await
-        .unwrap();
-    let second = runtime
-        .create_conversation("crab", "same-user")
-        .await
-        .unwrap();
-
-    assert_eq!(
-        runtime.find_conversation_id("crab", "same-user").await,
-        Some(first)
-    );
-
-    assert!(runtime.close_conversation(first).await);
-    assert_eq!(
-        runtime.find_conversation_id("crab", "same-user").await,
-        Some(second)
-    );
-}
-
-#[tokio::test]
 async fn get_or_create_conversation_rejects_unknown_agent() {
     let runtime = runtime(TestProvider::with_chunks(vec![]));
     let err = runtime
@@ -210,7 +177,7 @@ async fn transfer_conversations_moves_all() {
     let runtime1 = runtime(TestProvider::with_chunks(vec![]));
     runtime1.add_agent(AgentConfig::new("crab"));
     let id = runtime1
-        .create_conversation("crab", "test-xfer")
+        .get_or_create_conversation("crab", "test-xfer")
         .await
         .unwrap();
 
@@ -231,7 +198,7 @@ async fn send_to_returns_response() {
     runtime.add_agent(AgentConfig::new("crab"));
 
     let conversation_id = runtime
-        .create_conversation("crab", "test-send")
+        .get_or_create_conversation("crab", "test-send")
         .await
         .unwrap();
     let response = runtime
@@ -260,7 +227,7 @@ async fn send_to_appends_to_history() {
     runtime.add_agent(AgentConfig::new("crab"));
 
     let conversation_id = runtime
-        .create_conversation("crab", "test-history")
+        .get_or_create_conversation("crab", "test-history")
         .await
         .unwrap();
     runtime
@@ -285,7 +252,7 @@ async fn stream_to_yields_correct_content() {
     runtime.add_agent(AgentConfig::new("crab"));
 
     let conversation_id = runtime
-        .create_conversation("crab", "test-stream")
+        .get_or_create_conversation("crab", "test-stream")
         .await
         .unwrap();
 

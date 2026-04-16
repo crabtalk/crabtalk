@@ -14,12 +14,8 @@ use wcore::{
 pub struct Conversation {
     /// Unique conversation identifier (monotonic counter, runtime-only).
     pub id: u64,
-    /// Name of the agent this conversation is bound to.
-    pub agent: String,
     /// Conversation history (the working context for the LLM).
     pub history: Vec<HistoryEntry>,
-    /// Origin of this conversation (e.g. "user", "tg:12345").
-    pub created_by: String,
     /// Conversation title (set by the `set_title` tool).
     pub title: String,
     /// Accumulated active time in seconds.
@@ -33,12 +29,10 @@ pub struct Conversation {
 
 impl Conversation {
     /// Create a new conversation with an empty history.
-    pub fn new(id: u64, agent: impl Into<String>, created_by: impl Into<String>) -> Self {
+    pub fn new(id: u64) -> Self {
         Self {
             id,
-            agent: agent.into(),
             history: Vec::new(),
-            created_by: created_by.into(),
             title: String::new(),
             uptime_secs: 0,
             created_at: Instant::now(),
@@ -48,10 +42,10 @@ impl Conversation {
 
     /// Build a [`ConversationMeta`] snapshot from this conversation's
     /// current state.
-    pub fn meta(&self) -> ConversationMeta {
+    pub fn meta(&self, agent: &str, created_by: &str) -> ConversationMeta {
         ConversationMeta {
-            agent: self.agent.clone(),
-            created_by: self.created_by.clone(),
+            agent: agent.to_owned(),
+            created_by: created_by.to_owned(),
             created_at: chrono::Utc::now().to_rfc3339(),
             title: self.title.clone(),
             uptime_secs: self.uptime_secs,
