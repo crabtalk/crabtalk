@@ -115,14 +115,20 @@ fn load_after_compact() {
         ],
     )
     .unwrap();
-    s.append_session_compact(&handle, "summary of conversation")
+    // Archive marker points by name only — summary content now lives
+    // in the memory db, not in session storage.
+    s.append_session_compact(&handle, "archive-session-42")
         .unwrap();
     s.append_session_messages(&handle, &[HistoryEntry::user("new")])
         .unwrap();
 
     let snapshot = s.load_session(&handle).unwrap().unwrap();
-    assert_eq!(snapshot.history.len(), 2);
-    assert_eq!(snapshot.history[0].text(), "summary of conversation");
+    assert_eq!(snapshot.archive.as_deref(), Some("archive-session-42"));
+    // History returned from storage no longer includes the compact
+    // prefix — the caller is responsible for resolving the archive
+    // name against memory.
+    assert_eq!(snapshot.history.len(), 1);
+    assert_eq!(snapshot.history[0].text(), "new");
 }
 
 #[test]

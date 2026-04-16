@@ -14,19 +14,12 @@ impl<C: Config> Runtime<C> {
     pub fn upsert_agent(&self, config: AgentConfig) -> AgentConfig {
         let (name, agent) = self.build_agent(config);
         let registered = agent.config.clone();
-        self.agents
-            .write()
-            .expect("agents lock poisoned")
-            .insert(name, agent);
+        self.agents.write().insert(name, agent);
         registered
     }
 
     pub fn remove_agent(&self, name: &str) -> bool {
-        self.agents
-            .write()
-            .expect("agents lock poisoned")
-            .remove(name)
-            .is_some()
+        self.agents.write().remove(name).is_some()
     }
 
     fn build_agent(&self, config: AgentConfig) -> (String, Agent<C::Provider>) {
@@ -43,17 +36,12 @@ impl<C: Config> Runtime<C> {
     }
 
     pub fn agent(&self, name: &str) -> Option<AgentConfig> {
-        self.agents
-            .read()
-            .expect("agents lock poisoned")
-            .get(name)
-            .map(|a| a.config.clone())
+        self.agents.read().get(name).map(|a| a.config.clone())
     }
 
     pub fn agents(&self) -> Vec<AgentConfig> {
         self.agents
             .read()
-            .expect("agents lock poisoned")
             .values()
             .map(|a| a.config.clone())
             .collect()
@@ -71,12 +59,7 @@ impl<C: Config> Runtime<C> {
     }
 
     pub(crate) async fn resolve_agent(&self, name: &str) -> Option<Agent<C::Provider>> {
-        let persistent = self
-            .agents
-            .read()
-            .expect("agents lock poisoned")
-            .get(name)
-            .cloned();
+        let persistent = self.agents.read().get(name).cloned();
         if persistent.is_some() {
             return persistent;
         }
@@ -84,11 +67,7 @@ impl<C: Config> Runtime<C> {
     }
 
     pub(crate) async fn has_agent(&self, name: &str) -> bool {
-        let has_persistent = self
-            .agents
-            .read()
-            .expect("agents lock poisoned")
-            .contains_key(name);
+        let has_persistent = self.agents.read().contains_key(name);
         if has_persistent {
             return true;
         }

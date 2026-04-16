@@ -3,11 +3,26 @@
 use crate::{Config, Conversation};
 use anyhow::{Result, bail};
 use crabllm_core::{ChatCompletionRequest, Message, Role};
-use std::sync::{Arc, atomic::Ordering};
+use memory::{EntryKind, Op};
+use std::{
+    sync::{Arc, atomic::Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::Mutex;
-use wcore::storage::{SessionHandle, Storage};
+use wcore::{
+    model::HistoryEntry,
+    storage::{SessionHandle, Storage},
+};
 
 use super::Runtime;
+
+fn archive_base_name(session_slug: &str) -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("archive-{session_slug}-{nanos}")
+}
 
 impl<C: Config> Runtime<C> {
     fn conversation_key(agent: &str, created_by: &str) -> (String, String) {
@@ -54,7 +69,8 @@ impl<C: Config> Runtime<C> {
         {
             let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
             let mut conversation = Conversation::new(id, agent, created_by);
-            conversation.history = snapshot.history;
+            conversation.history =
+                self.resumed_history(snapshot.archive.as_deref(), snapshot.history);
             conversation.title = snapshot.meta.title;
             conversation.uptime_secs = snapshot.meta.uptime_secs;
             conversation.handle = Some(handle);
@@ -98,7 +114,7 @@ impl<C: Config> Runtime<C> {
         let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
         let mut conversation =
             Conversation::new(id, &snapshot.meta.agent, &snapshot.meta.created_by);
-        conversation.history = snapshot.history;
+        conversation.history = self.resumed_history(snapshot.archive.as_deref(), snapshot.history);
         conversation.title = snapshot.meta.title;
         conversation.uptime_secs = snapshot.meta.uptime_secs;
         conversation.handle = Some(handle);
@@ -196,12 +212,7 @@ impl<C: Config> Runtime<C> {
             }
             (conversation.agent.clone(), conversation.history.clone())
         };
-        let persistent = self
-            .agents
-            .read()
-            .expect("agents lock poisoned")
-            .get(&agent_name)
-            .cloned();
+        let persistent = self.agents.read().get(&agent_name).cloned();
         if let Some(a) = persistent {
             return a.compact(&history).await;
         }
@@ -226,6 +237,51 @@ impl<C: Config> Runtime<C> {
         }
         let next = self.next_conversation_id.load(Ordering::Relaxed);
         dest.next_conversation_id.store(next, Ordering::Relaxed);
+    }
+
+    /// Build the conversation's replay history from storage's post-compact
+    /// messages plus the Archive entry's content. A missing archive entry
+    /// (memory wiped, different machine, etc.) injects a visible placeholder
+    /// so the model can acknowledge the gap instead of silently truncating
+    /// the user's context.
+    fn resumed_history(
+        &self,
+        archive: Option<&str>,
+        mut history: Vec<HistoryEntry>,
+    ) -> Vec<HistoryEntry> {
+        let Some(name) = archive else { return history };
+        let content = {
+            let mem = self.memory.read();
+            mem.get(name).map(|e| e.content.clone())
+        };
+        let prefix = content.unwrap_or_else(|| {
+            tracing::warn!("resume: archive '{name}' missing from memory");
+            format!("[archived context unavailable: {name}]")
+        });
+        let mut out = Vec::with_capacity(history.len() + 1);
+        out.push(HistoryEntry::user(prefix));
+        out.append(&mut history);
+        out
+    }
+
+    /// Write a compaction summary to memory as an `Archive` entry and
+    /// return the generated entry name. `None` on failure — the caller
+    /// must skip the compact marker so a resume can't dangle.
+    fn write_archive(&self, session_slug: &str, summary: String) -> Option<String> {
+        let name = archive_base_name(session_slug);
+        let mut mem = self.memory.write();
+        match mem.apply(Op::Add {
+            name: name.clone(),
+            content: summary,
+            aliases: vec![],
+            kind: EntryKind::Archive,
+        }) {
+            Ok(()) => Some(name),
+            Err(e) => {
+                tracing::error!("archive write failed: {e}");
+                None
+            }
+        }
     }
 
     /// Ensure the conversation has a session handle, creating one via
@@ -257,14 +313,18 @@ impl<C: Config> Runtime<C> {
         let storage = self.storage();
 
         if let Some(summary) = compact_summary {
-            let _ = storage.append_session_compact(handle, &summary);
-            if conversation.history.len() > 1 {
-                let tail: Vec<_> = conversation.history[1..]
-                    .iter()
-                    .filter(|e| !e.auto_injected)
-                    .cloned()
-                    .collect();
-                let _ = storage.append_session_messages(handle, &tail);
+            // Archive first — if this fails, don't write a dangling
+            // marker that points at nothing.
+            if let Some(archive_name) = self.write_archive(handle.as_str(), summary) {
+                let _ = storage.append_session_compact(handle, &archive_name);
+                if conversation.history.len() > 1 {
+                    let tail: Vec<_> = conversation.history[1..]
+                        .iter()
+                        .filter(|e| !e.auto_injected)
+                        .cloned()
+                        .collect();
+                    let _ = storage.append_session_messages(handle, &tail);
+                }
             }
         } else {
             let new_entries: Vec<_> = conversation.history[pre_run_len..]
@@ -291,7 +351,6 @@ impl<C: Config> Runtime<C> {
         let model_name = self
             .agents
             .read()
-            .expect("agents lock poisoned")
             .get(agent_name)
             .and_then(|a| a.config.model.clone())
             .unwrap_or_default();

@@ -5,12 +5,13 @@ pub mod config;
 pub mod serve;
 
 use api::WeixinMessage;
+use parking_lot::Mutex;
 pub use sdk::*;
 use std::{
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 use tokio::sync::mpsc;
 
@@ -131,13 +132,9 @@ pub async fn poll_loop(
                     if let Some(ref ct) = msg.context_token {
                         ctx_tokens
                             .lock()
-                            .unwrap()
                             .insert(msg.from_user_id.clone(), ct.clone());
                     }
-                    user_ids
-                        .lock()
-                        .unwrap()
-                        .insert(chat_id, msg.from_user_id.clone());
+                    user_ids.lock().insert(chat_id, msg.from_user_id.clone());
 
                     let gateway_msg = GatewayMessage {
                         chat_id,

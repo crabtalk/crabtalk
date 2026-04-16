@@ -3,13 +3,14 @@
 use crate::daemon::ConversationCwds;
 use bash::Bash;
 use edit::Edit;
+use parking_lot::Mutex;
 use read::Read;
 use runtime::Hook;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Write,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 use wcore::{BashConfig, ToolDispatch, ToolFuture, agent::AsTool, model::HistoryEntry};
 
@@ -70,7 +71,6 @@ impl OsHook {
         let path = std::fs::canonicalize(&path).unwrap_or(path);
         self.read_files
             .lock()
-            .expect("read_files lock poisoned")
             .entry(conversation_id)
             .or_default()
             .insert(path);
@@ -84,7 +84,6 @@ impl OsHook {
         let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         self.read_files
             .lock()
-            .expect("read_files lock poisoned")
             .get(&id)
             .is_some_and(|set| set.contains(&path))
     }

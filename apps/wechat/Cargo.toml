@@ -21,6 +21,7 @@ command.workspace = true
 anyhow.workspace = true
 base64.workspace = true
 clap.workspace = true
+parking_lot.workspace = true
 qr2term.workspace = true
 rand.workspace = true
 reqwest.workspace = true

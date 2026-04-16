@@ -4,6 +4,18 @@
 
 - [Manifesto](manifesto.md)
 
+# Specification
+
+- [Conversations](spec/conversations.md)
+- [Dispatch](spec/dispatch.md)
+- [Multi-agent](spec/multi-agent.md)
+- [Memory](spec/memory.md)
+- [Runtime](spec/runtime.md)
+- [Daemon](spec/daemon.md)
+- [Providers](spec/providers.md)
+
+# RFCs
+
 - [0000 - Compaction](rfcs/0000-compaction.md)
 - [0009 - Transport](rfcs/0009-transport.md)
 - [0018 - Protocol](rfcs/0018-protocol.md)
@@ -16,4 +28,5 @@
 - [0082 - Scoping](rfcs/0082-scoping.md)
 - [0121 - Event Bus](rfcs/0121-event-bus.md)
 - [0135 - Agent-First Protocol](rfcs/0135-agent-first.md)
+- [0150 - Memory Store](rfcs/0150-memory-store.md)
 - [Superseded](rfcs/superseded.md)

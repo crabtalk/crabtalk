@@ -4,11 +4,9 @@
 //! (os, memory, skill, delegate, ask_user, mcp), the dispatch map, scope
 //! enforcement, agent descriptions, and the event sink.
 
+use parking_lot::RwLock;
 use runtime::Hook;
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, RwLock},
-};
+use std::{collections::BTreeMap, sync::Arc};
 use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture, model::HistoryEntry};
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
@@ -57,10 +55,9 @@ impl DaemonHook {
         if name != wcore::paths::DEFAULT_AGENT && !config.description.is_empty() {
             self.agent_descriptions
                 .write()
-                .expect("agent_descriptions lock poisoned")
                 .insert(name.clone(), config.description.clone());
         }
-        self.scopes.write().expect("scopes lock poisoned").insert(
+        self.scopes.write().insert(
             name,
             AgentScope {
                 tools: config.tools.clone(),
@@ -73,19 +70,13 @@ impl DaemonHook {
 
     /// Drop an agent's scope entry.
     pub fn unregister_scope(&self, name: &str) {
-        self.scopes
-            .write()
-            .expect("scopes lock poisoned")
-            .remove(name);
-        self.agent_descriptions
-            .write()
-            .expect("agent_descriptions lock poisoned")
-            .remove(name);
+        self.scopes.write().remove(name);
+        self.agent_descriptions.write().remove(name);
     }
 
     /// Install the late-bound event sink for `agent:{name}:done` events.
     pub fn set_event_sink(&self, sink: EventSink) {
-        *self.event_sink.write().expect("event_sink lock poisoned") = Some(sink);
+        *self.event_sink.write() = Some(sink);
     }
 
     /// Apply scoped tool whitelist and scope prompt for sub-agents.
@@ -154,14 +145,10 @@ impl Hook for DaemonHook {
         let has_members = self
             .scopes
             .read()
-            .expect("scopes lock poisoned")
             .get(agent)
             .is_some_and(|s| !s.members.is_empty());
         if has_members {
-            let descriptions = self
-                .agent_descriptions
-                .read()
-                .expect("agent_descriptions lock poisoned");
+            let descriptions = self.agent_descriptions.read();
             if !descriptions.is_empty() {
                 let mut block = String::from("<agents>\n");
                 for (name, desc) in descriptions.iter() {
@@ -185,11 +172,7 @@ impl Hook for DaemonHook {
         }
 
         if let AgentEvent::Done(response) = event
-            && let Some(sink) = self
-                .event_sink
-                .read()
-                .expect("event_sink lock poisoned")
-                .clone()
+            && let Some(sink) = self.event_sink.read().clone()
         {
             let source = format!("agent:{agent}:done");
             let payload = response.final_response.clone().unwrap_or_default();
@@ -209,7 +192,7 @@ impl Hook for DaemonHook {
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
         // Scope enforcement.
         {
-            let scopes = self.scopes.read().expect("scopes lock poisoned");
+            let scopes = self.scopes.read();
             if let Some(scope) = scopes.get(&call.agent)
                 && !scope.tools.is_empty()
                 && !scope.tools.iter().any(|t| t.as_str() == name)

@@ -134,24 +134,22 @@ impl ToolRegistry {
     }
 }
 
-/// Trait to provide a description for a tool.
-pub trait ToolDescription {
-    /// The description of the tool.
-    const DESCRIPTION: &'static str;
-}
-
-/// Trait to convert a type into a `crabllm_core::Tool`.
-pub trait AsTool: ToolDescription {
+/// Trait to convert a type into a `crabllm_core::Tool`. The tool's
+/// description is read from the `///` doc comment on the struct —
+/// schemars puts it in the schema's top-level `description` field.
+pub trait AsTool {
     /// Convert the type into a `crabllm_core::Tool` (the enveloped
     /// `{kind, function}` wire shape).
     fn as_tool() -> Tool;
 }
 
-impl<T> AsTool for T
-where
-    T: JsonSchema + ToolDescription,
-{
+impl<T: JsonSchema> AsTool for T {
     fn as_tool() -> Tool {
+        let schema = schemars::schema_for!(T);
+        let description = schema
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned);
         // `strict: None` matches the prior wire behavior: the wcore
         // `Tool.strict: bool` field was set to `true` by every `AsTool` impl
         // but silently dropped by the converter (old convert::to_ct_tool
@@ -163,10 +161,8 @@ where
             kind: ToolType::Function,
             function: FunctionDef {
                 name: T::schema_name().to_snake_case(),
-                description: Some(Self::DESCRIPTION.into()),
-                parameters: Some(
-                    serde_json::to_value(schemars::schema_for!(T)).unwrap_or_default(),
-                ),
+                description,
+                parameters: Some(serde_json::to_value(&schema).unwrap_or_default()),
             },
             strict: None,
         }

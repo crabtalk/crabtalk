@@ -20,11 +20,9 @@ use crabllm_core::{
     ChunkChoice, Delta, Error, FinishReason, FunctionCallDelta, Message, Provider, Role, ToolCall,
     ToolCallDelta, ToolType,
 };
+use parking_lot::Mutex;
 use serde_json::{Map, Value};
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
-};
+use std::{collections::VecDeque, sync::Arc};
 
 /// A mock provider that returns scripted responses in order.
 ///
@@ -73,7 +71,7 @@ impl Provider for TestProvider {
         &self,
         _request: &ChatCompletionRequest,
     ) -> Result<ChatCompletionResponse, Error> {
-        let mut responses = self.responses.lock().unwrap();
+        let mut responses = self.responses.lock();
         responses.pop_front().ok_or_else(|| {
             Error::Internal("TestProvider: no more scripted responses for chat_completion".into())
         })
@@ -84,7 +82,7 @@ impl Provider for TestProvider {
         _request: &ChatCompletionRequest,
     ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
         let batch = {
-            let mut all = self.chunks.lock().unwrap();
+            let mut all = self.chunks.lock();
             all.pop_front()
         };
         match batch {

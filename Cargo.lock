@@ -550,12 +550,14 @@ dependencies = [
  "crabllm-provider",
  "crabtalk-command",
  "crabtalk-core",
+ "crabtalk-memory",
  "crabtalk-plugins",
  "crabtalk-runtime",
  "crabtalk-transport",
  "cron",
  "futures-core",
  "futures-util",
+ "parking_lot",
  "rand 0.9.2",
  "reqwest 0.13.2",
  "schemars 1.2.1",
@@ -577,6 +579,7 @@ dependencies = [
  "crabllm-core",
  "crabtalk",
  "crabtalk-core",
+ "crabtalk-memory",
  "crabtalk-runtime",
  "criterion",
  "futures-util",
@@ -626,6 +629,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "heck",
+ "parking_lot",
  "prost",
  "prost-build",
  "schemars 1.2.1",
@@ -636,6 +640,16 @@ dependencies = [
  "toml",
  "tracing",
  "ulid",
+]
+
+[[package]]
+name = "crabtalk-memory"
+version = "0.0.20"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "tempfile",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -682,8 +696,10 @@ dependencies = [
  "chrono",
  "crabllm-core",
  "crabtalk-core",
+ "crabtalk-memory",
  "futures-core",
  "futures-util",
+ "parking_lot",
  "tokio",
  "tracing",
 ]
@@ -800,6 +816,7 @@ dependencies = [
  "crabtalk-core",
  "crabtalk-sdk",
  "crabtalk-transport",
+ "parking_lot",
  "qr2term",
  "rand 0.9.2",
  "reqwest 0.13.2",

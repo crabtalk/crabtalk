@@ -53,7 +53,7 @@ pub struct Daemon<P: Provider + 'static = DefaultProvider> {
     pub(crate) config_dir: PathBuf,
     pub(crate) started_at: std::time::Instant,
     pub(crate) crons: Arc<Mutex<CronStore<P>>>,
-    pub(crate) events: Arc<std::sync::Mutex<EventBus>>,
+    pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<crate::mcp::McpHandler>,
     /// OS tools hook — owns conversation CWDs and bash policy.

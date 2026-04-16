@@ -5,10 +5,7 @@ use runtime::Hook;
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::sync::oneshot;
-use wcore::{
-    ToolDispatch, ToolFuture,
-    agent::{AsTool, ToolDescription},
-};
+use wcore::{ToolDispatch, ToolFuture, agent::AsTool};
 
 /// Timeout for waiting on user reply (5 minutes).
 const ASK_USER_TIMEOUT: Duration = Duration::from_secs(300);
@@ -36,15 +33,18 @@ pub struct Question {
     pub multi_select: bool,
 }
 
-/// Ask the user one or more structured questions and wait for their reply.
+/// Ask the user one or more structured questions with predefined options.
+///
+/// Each question needs a short UI header, the full question text, and options
+/// with labels and descriptions. The user picks from the options or types a
+/// free-text "Other" answer.
+///
+/// Returns JSON mapping question text to selected label. For `multi_select`,
+/// the answer is a comma-joined string like "Option A, Option B".
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct AskUser {
     /// The questions to ask the user.
     pub questions: Vec<Question>,
-}
-
-impl ToolDescription for AskUser {
-    const DESCRIPTION: &'static str = r#"Ask the user one or more structured questions with predefined options. Each question needs a short UI header, the full question text, and options with labels and descriptions. The user picks from the options or types a free-text "Other" answer. Returns JSON mapping question text to selected label. For multi_select, the answer is a comma-joined string like "Option A, Option B"."#;
 }
 
 /// Ask-user subsystem.

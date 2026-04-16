@@ -88,7 +88,7 @@ impl<P: Provider + 'static> Daemon<P> {
         let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
 
         let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
-        let node_hook = DaemonHook::new(Arc::new(std::sync::RwLock::new(BTreeMap::new())));
+        let node_hook = DaemonHook::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
         let (runtime, mcp, node_hook, os_hook, ask_hook) = Self::build_all(
             config,
@@ -140,16 +140,13 @@ impl<P: Provider + 'static> Daemon<P> {
             });
         });
         let event_bus = event::EventBus::load(config_dir.to_path_buf(), fire);
-        let events = Arc::new(std::sync::Mutex::new(event_bus));
+        let events = Arc::new(parking_lot::Mutex::new(event_bus));
 
         {
             let events_for_sink = events.clone();
             let sink: crate::daemon::hook::EventSink =
                 Arc::new(move |source: &str, payload: &str| {
-                    events_for_sink
-                        .lock()
-                        .expect("event bus lock poisoned")
-                        .publish(source, payload);
+                    events_for_sink.lock().publish(source, payload);
                 });
             node_hook.set_event_sink(sink);
         }
@@ -200,10 +197,7 @@ impl<P: Provider + 'static> Daemon<P> {
             let events_for_sink = self.events.clone();
             let sink: crate::daemon::hook::EventSink =
                 Arc::new(move |source: &str, payload: &str| {
-                    events_for_sink
-                        .lock()
-                        .expect("event bus lock poisoned")
-                        .publish(source, payload);
+                    events_for_sink.lock().publish(source, payload);
                 });
             new_hook.set_event_sink(sink);
         }
@@ -238,16 +232,17 @@ impl<P: Provider + 'static> Daemon<P> {
         let servers = mcp_servers(config, &manifest);
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::load(&servers).await);
         let storage = Self::build_storage(config_dir, &manifest);
-        let (os_hook, ask_hook) = Self::register_tools(
+        let (os_hook, ask_hook, shared_memory) = Self::register_tools(
             &mut node_hook,
             storage.clone(),
             config,
+            config_dir,
             mcp_handler.clone(),
             runtime_once,
             cwd.clone(),
             conversation_cwds.clone(),
             pending_asks,
-        );
+        )?;
         let node_hook = Arc::new(node_hook);
 
         // Build DaemonEnv.
@@ -264,7 +259,7 @@ impl<P: Provider + 'static> Daemon<P> {
         for schema in Hook::schema(node_hook.as_ref()) {
             tools.insert(schema);
         }
-        let mut runtime = Runtime::new(model, env, storage, tools);
+        let mut runtime = Runtime::new(model, env, storage, shared_memory, tools);
         Self::register_agents(&mut runtime, config, config_dir, &manifest)?;
         Ok((runtime, mcp_handler, node_hook, os_hook, ask_hook))
     }
@@ -279,7 +274,6 @@ impl<P: Provider + 'static> Daemon<P> {
 
         Arc::new(FsStorage::new(
             config_dir.to_path_buf(),
-            config_dir.join("memory"),
             config_dir.join("sessions"),
             skill_roots,
             manifest.disabled.skills.clone(),
@@ -292,16 +286,21 @@ impl<P: Provider + 'static> Daemon<P> {
         node_hook: &mut DaemonHook,
         storage: Arc<FsStorage>,
         config: &NodeConfig,
+        config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
         cwd: PathBuf,
         conversation_cwds: crate::daemon::ConversationCwds,
         pending_asks: crate::daemon::PendingAsks,
-    ) -> (
+    ) -> Result<(
         Arc<crate::hooks::os::OsHook>,
         Arc<crate::hooks::ask_user::AskUserHook>,
-    ) {
-        let memory = Arc::new(Memory::open(config.system.memory.clone(), storage.clone()));
+        runtime::SharedMemory,
+    )> {
+        let memory_wrapper =
+            Memory::open(config.system.memory.clone(), config_dir.join("memory.db"))?;
+        let shared_memory = memory_wrapper.shared();
+        let memory = Arc::new(memory_wrapper);
         let scopes = node_hook.scopes.clone();
         let read_files: crate::hooks::os::ReadFiles = Default::default();
         let mcp_server_list = mcp_handler.cached_list();
@@ -316,7 +315,7 @@ impl<P: Provider + 'static> Daemon<P> {
 
         node_hook.register_hook(
             "memory",
-            Arc::new(crate::hooks::memory::handlers::MemoryHook::new(memory)),
+            Arc::new(crate::hooks::memory::MemoryHook::new(memory)),
         );
 
         node_hook.register_hook(
@@ -356,7 +355,7 @@ impl<P: Provider + 'static> Daemon<P> {
                 )),
             );
         }
-        (os_hook, ask_hook)
+        Ok((os_hook, ask_hook, shared_memory))
     }
 
     fn register_agents(

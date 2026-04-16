@@ -19,7 +19,7 @@ use futures_util::{StreamExt, future::join_all, stream::FuturesUnordered};
 pub use id::AgentId;
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
-pub use tool::{AsTool, ToolDescription, ToolDispatcher};
+pub use tool::{AsTool, ToolDispatcher};
 
 mod builder;
 mod compact;

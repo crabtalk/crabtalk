@@ -25,10 +25,12 @@ impl Config for TestCfg {
 
 fn runtime(provider: TestProvider) -> Runtime<TestCfg> {
     let storage = Arc::new(InMemoryStorage::new());
+    let memory = Arc::new(parking_lot::RwLock::new(memory::Memory::new()));
     Runtime::new(
         Model::new(provider),
         Arc::new(()),
         storage,
+        memory,
         wcore::ToolRegistry::new(),
     )
 }
@@ -315,6 +317,98 @@ async fn stream_to_yields_correct_content() {
     let conversation_mutex = runtime.conversation(conversation_id).await.unwrap();
     let conversation = conversation_mutex.lock().await;
     assert_eq!(conversation.history.len(), 2); // user + assistant
+}
+
+#[tokio::test]
+async fn resume_prepends_archive_content_from_memory() {
+    use memory::{EntryKind, Op};
+    use wcore::{model::HistoryEntry, storage::Storage};
+
+    let storage = Arc::new(InMemoryStorage::new());
+    let mem = Arc::new(parking_lot::RwLock::new(memory::Memory::new()));
+    mem.write()
+        .apply(Op::Add {
+            name: "archive-test".into(),
+            content: "earlier context, compacted".into(),
+            aliases: vec![],
+            kind: EntryKind::Archive,
+        })
+        .unwrap();
+
+    let handle = storage.create_session("crab", "tester").unwrap();
+    storage
+        .append_session_messages(
+            &handle,
+            &[
+                HistoryEntry::user("pre-compact"),
+                HistoryEntry::assistant("pre-compact reply", None, None),
+            ],
+        )
+        .unwrap();
+    storage
+        .append_session_compact(&handle, "archive-test")
+        .unwrap();
+    storage
+        .append_session_messages(&handle, &[HistoryEntry::user("after-compact")])
+        .unwrap();
+
+    let runtime = Runtime::<TestCfg>::new(
+        Model::new(TestProvider::with_chunks(vec![])),
+        Arc::new(()),
+        storage,
+        mem,
+        wcore::ToolRegistry::new(),
+    );
+    runtime.add_agent(AgentConfig::new("crab"));
+
+    let conv_id = runtime
+        .get_or_create_conversation("crab", "tester")
+        .await
+        .unwrap();
+    let conversation = runtime.conversation(conv_id).await.unwrap();
+    let conv = conversation.lock().await;
+
+    assert_eq!(conv.history.len(), 2);
+    assert_eq!(conv.history[0].text(), "earlier context, compacted");
+    assert_eq!(conv.history[1].text(), "after-compact");
+}
+
+#[tokio::test]
+async fn resume_injects_placeholder_when_archive_missing() {
+    use wcore::{model::HistoryEntry, storage::Storage};
+
+    let storage = Arc::new(InMemoryStorage::new());
+    // Empty memory — the referenced archive doesn't exist.
+    let mem = Arc::new(parking_lot::RwLock::new(memory::Memory::new()));
+
+    let handle = storage.create_session("crab", "tester").unwrap();
+    storage
+        .append_session_compact(&handle, "archive-gone")
+        .unwrap();
+    storage
+        .append_session_messages(&handle, &[HistoryEntry::user("continuing")])
+        .unwrap();
+
+    let runtime = Runtime::<TestCfg>::new(
+        Model::new(TestProvider::with_chunks(vec![])),
+        Arc::new(()),
+        storage,
+        mem,
+        wcore::ToolRegistry::new(),
+    );
+    runtime.add_agent(AgentConfig::new("crab"));
+
+    let conv_id = runtime
+        .get_or_create_conversation("crab", "tester")
+        .await
+        .unwrap();
+    let conversation = runtime.conversation(conv_id).await.unwrap();
+    let conv = conversation.lock().await;
+
+    assert_eq!(conv.history.len(), 2);
+    assert!(conv.history[0].text().contains("archive-gone"));
+    assert!(conv.history[0].text().contains("unavailable"));
+    assert_eq!(conv.history[1].text(), "continuing");
 }
 
 #[tokio::test]

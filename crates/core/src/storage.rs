@@ -1,13 +1,13 @@
 //! Persistence trait and domain types.
 //!
 //! [`Storage`] is the unified persistence backend — one trait, one
-//! implementation per backend. Domain types ([`MemoryEntry`],
-//! [`SessionHandle`], [`Skill`]) live alongside the trait they serve.
+//! implementation per backend. Memory lives in its own `crabtalk-memory`
+//! crate and is not part of this trait.
 
 use crate::{
     AgentConfig, AgentEvent, AgentId, AgentStep, ManifestConfig, NodeConfig, model::HistoryEntry,
 };
-use anyhow::{Result, bail};
+use anyhow::Result;
 use crabllm_core::Usage;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -16,30 +16,10 @@ use std::collections::BTreeMap;
 
 /// Unified persistence backend.
 ///
-/// All read/write operations for memory, skills, sessions, and agents
-/// live here. Implementations own their encoding and storage layout —
-/// the trait speaks domain types only.
+/// All read/write operations for skills, sessions, and agents live
+/// here. Implementations own their encoding and storage layout — the
+/// trait speaks domain types only.
 pub trait Storage: Send + Sync + 'static {
-    // ── Memory ─────────────────────────────────────────────────────
-
-    /// List all memory entries.
-    fn list_memories(&self) -> Result<Vec<MemoryEntry>>;
-
-    /// Load a memory entry by name.
-    fn load_memory(&self, name: &str) -> Result<Option<MemoryEntry>>;
-
-    /// Create or replace a memory entry.
-    fn save_memory(&self, entry: &MemoryEntry) -> Result<()>;
-
-    /// Delete a memory entry by name. Returns `true` if it existed.
-    fn delete_memory(&self, name: &str) -> Result<bool>;
-
-    /// Load the curated MEMORY.md index content.
-    fn load_memory_index(&self) -> Result<Option<String>>;
-
-    /// Overwrite the MEMORY.md index content.
-    fn save_memory_index(&self, content: &str) -> Result<()>;
-
     // ── Skills (read-only — skills are discovered from disk, not
     //    created through the runtime) ───────────────────────────────
 
@@ -60,9 +40,6 @@ pub trait Storage: Send + Sync + 'static {
     /// Load a session's meta and working-context history.
     fn load_session(&self, handle: &SessionHandle) -> Result<Option<SessionSnapshot>>;
 
-    /// Load all archive segments (compact markers) for a session.
-    fn load_session_archives(&self, handle: &SessionHandle) -> Result<Vec<ArchiveSegment>>;
-
     /// List all sessions.
     fn list_sessions(&self) -> Result<Vec<SessionSummary>>;
 
@@ -76,8 +53,11 @@ pub trait Storage: Send + Sync + 'static {
     /// Append trace event entries.
     fn append_session_events(&self, handle: &SessionHandle, events: &[EventLine]) -> Result<()>;
 
-    /// Append a compact marker (archive boundary).
-    fn append_session_compact(&self, handle: &SessionHandle, summary: &str) -> Result<()>;
+    /// Append a compact marker (archive boundary). `archive_name`
+    /// references the `Archive`-kind entry in `memory` where the
+    /// summary content actually lives. The marker only carries the
+    /// pointer — session storage never sees the summary text.
+    fn append_session_compact(&self, handle: &SessionHandle, archive_name: &str) -> Result<()>;
 
     /// Overwrite session metadata.
     fn update_session_meta(&self, handle: &SessionHandle, meta: &ConversationMeta) -> Result<()>;
@@ -126,106 +106,6 @@ pub trait Storage: Send + Sync + 'static {
     fn scaffold(&self) -> Result<()>;
 }
 
-// ── Memory ──────────────────────────────────────────────────────────
-
-/// A single memory entry with YAML frontmatter metadata.
-#[derive(Debug, Clone)]
-pub struct MemoryEntry {
-    /// Human-readable name. Primary key for the repo (slugified for fs).
-    pub name: String,
-    /// One-line description used for relevance scoring.
-    pub description: String,
-    /// Entry body (markdown content).
-    pub content: String,
-}
-
-impl MemoryEntry {
-    /// Parse an entry from its frontmatter-based file content.
-    pub fn parse(raw: &str) -> Result<Self> {
-        let raw = raw.replace("\r\n", "\n");
-        let raw = raw.trim();
-        if !raw.starts_with("---") {
-            bail!("missing frontmatter opening ---");
-        }
-
-        let after_open = &raw[3..];
-        let Some(close_pos) = after_open.find("\n---") else {
-            bail!("missing frontmatter closing ---");
-        };
-
-        let frontmatter = &after_open[..close_pos];
-        let content = after_open[close_pos + 4..].trim().to_owned();
-
-        let mut name = None;
-        let mut description = None;
-
-        for line in frontmatter.lines() {
-            let line = line.trim();
-            if let Some(val) = line.strip_prefix("name:") {
-                name = Some(val.trim().to_owned());
-            } else if let Some(val) = line.strip_prefix("description:") {
-                description = Some(val.trim().to_owned());
-            }
-        }
-
-        let Some(name) = name else {
-            bail!("missing 'name' in frontmatter");
-        };
-        let description = description.unwrap_or_default();
-
-        Ok(Self {
-            name,
-            description,
-            content,
-        })
-    }
-
-    /// Serialize to the frontmatter file format.
-    pub fn serialize(&self) -> String {
-        let mut out = String::new();
-        out.push_str("---\n");
-        out.push_str(&format!("name: {}\n", self.name));
-        out.push_str(&format!("description: {}\n", self.description));
-        out.push_str("---\n\n");
-        out.push_str(&self.content);
-        out.push('\n');
-        out
-    }
-
-    /// Text for BM25 scoring — description + content concatenated.
-    pub fn search_text(&self) -> String {
-        format!("{} {}", self.description, self.content)
-    }
-}
-
-/// Convert a name to a filesystem-safe slug.
-pub fn slugify(name: &str) -> String {
-    let mut slug = String::with_capacity(name.len());
-    let mut prev_dash = true;
-
-    for ch in name.chars() {
-        if ch.is_alphanumeric() {
-            for lc in ch.to_lowercase() {
-                slug.push(lc);
-            }
-            prev_dash = false;
-        } else if !prev_dash {
-            slug.push('-');
-            prev_dash = true;
-        }
-    }
-
-    if slug.ends_with('-') {
-        slug.pop();
-    }
-
-    if slug.is_empty() {
-        slug.push_str("entry");
-    }
-
-    slug
-}
-
 // ── Sessions ────────────────────────────────────────────────────────
 
 /// Opaque handle identifying a persisted session. Created by the repo
@@ -252,6 +132,11 @@ impl SessionHandle {
 pub struct SessionSnapshot {
     pub meta: ConversationMeta,
     pub history: Vec<HistoryEntry>,
+    /// Name of the `Archive`-kind memory entry whose content represents
+    /// the compacted prefix of this session, if any. Callers that want
+    /// the full resumed context resolve this against `memory` and
+    /// prepend the entry's content to `history`.
+    pub archive: Option<String>,
 }
 
 /// Summary returned by [`Storage::list_sessions`] for enumeration.
@@ -370,14 +255,6 @@ fn sum_step_usage(steps: &[AgentStep]) -> Usage {
         }
         acc
     })
-}
-
-/// A compaction archive segment.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ArchiveSegment {
-    pub title: String,
-    pub summary: String,
-    pub archived_at: String,
 }
 
 /// Sanitize a string into a filesystem-safe slug for session naming.

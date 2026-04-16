@@ -4,21 +4,23 @@ use crate::daemon::ConversationCwds;
 use crate::daemon::hook::AgentScope;
 use crate::{daemon::SharedRuntime, hooks::os::ReadFiles};
 use crabllm_core::Provider;
+use parking_lot::RwLock;
 use runtime::Hook;
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
     path::PathBuf,
     sync::{
-        Arc, OnceLock, RwLock,
+        Arc, OnceLock,
         atomic::{AtomicU64, Ordering},
     },
 };
-use wcore::{
-    ToolDispatch, ToolFuture,
-    agent::{AsTool, ToolDescription},
-};
+use wcore::{ToolDispatch, ToolFuture, agent::AsTool};
 
+/// Delegate tasks to other agents. Runs all tasks in parallel.
+///
+/// Set `background=true` to return immediately with task IDs — results
+/// arrive via agent completion events.
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct Delegate {
     /// List of tasks to run in parallel. Each task has an agent name and a message.
@@ -41,10 +43,6 @@ pub struct DelegateTask {
     /// Working directory for this task. Defaults to the parent's CWD.
     #[serde(default)]
     pub cwd: Option<String>,
-}
-
-impl ToolDescription for Delegate {
-    const DESCRIPTION: &'static str = "Delegate tasks to other agents. Runs all tasks in parallel. Set background=true to return immediately with task IDs — results arrive via agent completion events.";
 }
 
 /// Delegate subsystem: dispatch tasks to other agents.
@@ -103,7 +101,7 @@ impl<P: Provider + 'static> Hook for DelegateHook<P> {
                 return Err("no tasks provided".to_owned());
             }
             {
-                let scopes = self.scopes.read().expect("scopes lock poisoned");
+                let scopes = self.scopes.read();
                 if let Some(scope) = scopes.get(&call.agent)
                     && !scope.members.is_empty()
                 {
@@ -256,10 +254,7 @@ fn spawn_agent_task<P: Provider + 'static>(
         };
 
         conversation_cwds.lock().await.remove(&conversation_id);
-        read_files
-            .lock()
-            .expect("read_files lock poisoned")
-            .remove(&conversation_id);
+        read_files.lock().remove(&conversation_id);
         rt.close_conversation(conversation_id).await;
 
         (result_content, error_msg)

@@ -31,8 +31,8 @@ pub async fn run(node_client: NodeClient, config: &WechatConfig) -> anyhow::Resu
 
 async fn spawn_wechat(wc: &WechatConfig, agent: String, client: Arc<NodeClient>) {
     let (tx, rx) = mpsc::unbounded_channel::<GatewayMessage>();
-    let ctx_tokens: ContextTokens = Arc::new(std::sync::Mutex::new(HashMap::new()));
-    let user_ids: UserIdMap = Arc::new(std::sync::Mutex::new(HashMap::new()));
+    let ctx_tokens: ContextTokens = Arc::new(parking_lot::Mutex::new(HashMap::new()));
+    let user_ids: UserIdMap = Arc::new(parking_lot::Mutex::new(HashMap::new()));
 
     let http = reqwest::Client::new();
     let base_url = wc.base_url.clone();
@@ -96,7 +96,7 @@ async fn wechat_loop(
 
         // User whitelist check (using original user ID from reverse map).
         if !allowed_users.is_empty() {
-            let user_id = user_ids.lock().unwrap().get(&chat_id).cloned();
+            let user_id = user_ids.lock().get(&chat_id).cloned();
             if let Some(ref uid) = user_id
                 && !allowed_users.contains(uid)
             {
@@ -118,12 +118,7 @@ async fn wechat_loop(
             }
         }
 
-        let sender = user_ids
-            .lock()
-            .unwrap()
-            .get(&chat_id)
-            .cloned()
-            .unwrap_or_default();
+        let sender = user_ids.lock().get(&chat_id).cloned().unwrap_or_default();
 
         let (reply_tx, reply_rx) = mpsc::unbounded_channel();
         let handle = {
@@ -200,8 +195,8 @@ async fn wx_stream(
                                 .collect::<Vec<_>>()
                                 .join("\n");
 
-                            let to_user = user_ids.lock().unwrap().get(&chat_id).cloned();
-                            let ctx = ctx_tokens.lock().unwrap().get(
+                            let to_user = user_ids.lock().get(&chat_id).cloned();
+                            let ctx = ctx_tokens.lock().get(
                                 to_user.as_deref().unwrap_or("")
                             ).cloned();
 
@@ -241,10 +236,9 @@ async fn wx_stream(
     // Send final response.
     if let Some(err) = acc.error() {
         tracing::warn!(agent, chat_id, "stream error: {err}");
-        let to_user = user_ids.lock().unwrap().get(&chat_id).cloned();
+        let to_user = user_ids.lock().get(&chat_id).cloned();
         let ctx = ctx_tokens
             .lock()
-            .unwrap()
             .get(to_user.as_deref().unwrap_or(""))
             .cloned();
         if let (Some(to), Some(ct)) = (to_user, ctx) {
@@ -258,10 +252,9 @@ async fn wx_stream(
     let final_text = acc.render();
     if !final_text.is_empty() {
         tracing::info!(agent, chat_id, len = final_text.len(), "sending reply");
-        let to_user = user_ids.lock().unwrap().get(&chat_id).cloned();
+        let to_user = user_ids.lock().get(&chat_id).cloned();
         let ctx = ctx_tokens
             .lock()
-            .unwrap()
             .get(to_user.as_deref().unwrap_or(""))
             .cloned();
         if let (Some(to), Some(ct)) = (to_user, ctx) {

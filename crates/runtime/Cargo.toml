@@ -12,6 +12,7 @@ keywords.workspace = true
 
 [dependencies]
 wcore.workspace = true
+memory.workspace = true
 crabllm-core.workspace = true
 
 # crates.io
@@ -20,6 +21,7 @@ anyhow.workspace = true
 async-stream.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
+parking_lot.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 

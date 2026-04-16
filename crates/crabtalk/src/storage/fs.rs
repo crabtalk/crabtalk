@@ -4,19 +4,17 @@
 //! separate Fs*Repo structs and the FsStorage composite.
 
 use anyhow::Result;
+use parking_lot::Mutex;
 use std::{
     collections::{HashMap, HashSet},
     fs,
     io::ErrorKind,
     path::PathBuf,
-    sync::Mutex,
 };
 use wcore::{
-    AgentConfig, AgentId, ArchiveSegment, ConversationMeta, EventLine, ManifestConfig, NodeConfig,
+    AgentConfig, AgentId, ConversationMeta, EventLine, ManifestConfig, NodeConfig,
     model::HistoryEntry,
-    storage::{
-        MemoryEntry, SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage, slugify,
-    },
+    storage::{SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage},
 };
 
 use super::atomic_write;
@@ -25,8 +23,6 @@ use super::atomic_write;
 pub struct FsStorage {
     /// Config directory root (for agent prompt storage under `agents/<ulid>/`).
     config_dir: PathBuf,
-    /// Root for memory entries and MEMORY.md index.
-    memory_root: PathBuf,
     /// Root for session directories.
     sessions_root: PathBuf,
     /// Ordered skill roots to scan (local first, then packages).
@@ -42,7 +38,6 @@ pub struct FsStorage {
 impl FsStorage {
     pub fn new(
         config_dir: PathBuf,
-        memory_root: PathBuf,
         sessions_root: PathBuf,
         skill_roots: Vec<PathBuf>,
         disabled_skills: Vec<String>,
@@ -50,28 +45,12 @@ impl FsStorage {
     ) -> Self {
         Self {
             config_dir,
-            memory_root,
             sessions_root,
             skill_roots,
             disabled_skills,
             agent_dirs,
             session_counters: Mutex::new(HashMap::new()),
         }
-    }
-
-    // ── Memory helpers ─────────────────────────────────────────────
-
-    fn memory_entries_dir(&self) -> PathBuf {
-        self.memory_root.join("entries")
-    }
-
-    fn memory_entry_path(&self, name: &str) -> PathBuf {
-        self.memory_entries_dir()
-            .join(format!("{}.md", slugify(name)))
-    }
-
-    fn memory_index_path(&self) -> PathBuf {
-        self.memory_root.join("MEMORY.md")
     }
 
     // ── Session helpers ────────────────────────────────────────────
@@ -89,7 +68,7 @@ impl FsStorage {
     }
 
     fn next_step(&self, slug: &str) -> u64 {
-        let mut counters = self.session_counters.lock().unwrap();
+        let mut counters = self.session_counters.lock();
         let counter = counters
             .entry(slug.to_owned())
             .or_insert_with(|| recover_step_counter(&self.session_dir(slug)));
@@ -126,84 +105,36 @@ use serde::{Deserialize, Serialize};
 #[serde(untagged)]
 enum StepLine {
     Compact {
+        /// Name of the `Archive`-kind entry in `memory` whose content
+        /// is the compacted prefix of the session up to this point.
+        archive_name: String,
+        archived_at: String,
+    },
+    /// Pre-Phase-5 compact marker that stored the summary inline.
+    /// Still recognized on read so older sessions keep their replay
+    /// boundary; the inline summary is no longer available, but the
+    /// boundary itself prevents stale pre-compact history from being
+    /// replayed.
+    LegacyCompact {
         compact: String,
-        #[serde(default, skip_serializing_if = "String::is_empty")]
+        #[serde(default)]
         title: String,
-        #[serde(default, skip_serializing_if = "String::is_empty")]
+        #[serde(default)]
         archived_at: String,
     },
     Event(EventLine),
     Entry(HistoryEntry),
 }
 
+impl StepLine {
+    fn is_compact_boundary(&self) -> bool {
+        matches!(self, Self::Compact { .. } | Self::LegacyCompact { .. })
+    }
+}
+
 // ── Storage implementation ─────────────────────────────────────────
 
 impl Storage for FsStorage {
-    // ── Memory ─────────────────────────────────────────────────────
-
-    fn list_memories(&self) -> Result<Vec<MemoryEntry>> {
-        let dir = self.memory_entries_dir();
-        if !dir.exists() {
-            return Ok(Vec::new());
-        }
-        let mut entries = Vec::new();
-        for entry in fs::read_dir(&dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "md") {
-                let content = fs::read_to_string(&path)?;
-                match MemoryEntry::parse(&content) {
-                    Ok(parsed) => entries.push(parsed),
-                    Err(e) => tracing::warn!("failed to parse {}: {e}", path.display()),
-                }
-            }
-        }
-        Ok(entries)
-    }
-
-    fn load_memory(&self, name: &str) -> Result<Option<MemoryEntry>> {
-        let path = self.memory_entry_path(name);
-        match fs::read_to_string(&path) {
-            Ok(content) => Ok(Some(MemoryEntry::parse(&content)?)),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    fn save_memory(&self, entry: &MemoryEntry) -> Result<()> {
-        let path = self.memory_entry_path(&entry.name);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        atomic_write(&path, entry.serialize().as_bytes())
-    }
-
-    fn delete_memory(&self, name: &str) -> Result<bool> {
-        let path = self.memory_entry_path(name);
-        match fs::remove_file(&path) {
-            Ok(()) => Ok(true),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    fn load_memory_index(&self) -> Result<Option<String>> {
-        let path = self.memory_index_path();
-        match fs::read_to_string(&path) {
-            Ok(s) => Ok(Some(s)),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    fn save_memory_index(&self, content: &str) -> Result<()> {
-        let path = self.memory_index_path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        atomic_write(&path, content.as_bytes())
-    }
-
     // ── Skills ─────────────────────────────────────────────────────
 
     fn list_skills(&self) -> Result<Vec<Skill>> {
@@ -347,7 +278,7 @@ impl Storage for FsStorage {
             let bytes = fs::read(entry.path())?;
             match serde_json::from_slice::<StepLine>(&bytes) {
                 Ok(line) => {
-                    if matches!(line, StepLine::Compact { .. }) {
+                    if line.is_compact_boundary() {
                         last_compact_idx = Some(lines.len());
                     }
                     lines.push(line);
@@ -360,51 +291,22 @@ impl Storage for FsStorage {
 
         let start = last_compact_idx.unwrap_or(0);
         let mut history = Vec::new();
+        let mut archive = None;
         for (i, line) in lines[start..].iter().enumerate() {
             match line {
-                StepLine::Compact { compact, .. } if i == 0 && last_compact_idx.is_some() => {
-                    history.push(HistoryEntry::user(compact));
+                StepLine::Compact { archive_name, .. } if i == 0 && last_compact_idx.is_some() => {
+                    archive = Some(archive_name.clone());
                 }
                 StepLine::Entry(entry) => history.push(entry.clone()),
-                StepLine::Event(_) | StepLine::Compact { .. } => {}
+                StepLine::Event(_) | StepLine::Compact { .. } | StepLine::LegacyCompact { .. } => {}
             }
         }
 
-        Ok(Some(SessionSnapshot { meta, history }))
-    }
-
-    fn load_session_archives(&self, handle: &SessionHandle) -> Result<Vec<ArchiveSegment>> {
-        let dir = self.session_dir(handle.as_str());
-        if !dir.exists() {
-            return Ok(Vec::new());
-        }
-        let mut step_files: Vec<_> = fs::read_dir(&dir)?
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_name()
-                    .to_str()
-                    .is_some_and(|n| n.starts_with("step-"))
-            })
-            .collect();
-        step_files.sort_by_key(|e| e.file_name());
-
-        let mut archives = Vec::new();
-        for entry in step_files {
-            let bytes = fs::read(entry.path())?;
-            if let Ok(StepLine::Compact {
-                compact,
-                title,
-                archived_at,
-            }) = serde_json::from_slice(&bytes)
-            {
-                archives.push(ArchiveSegment {
-                    title,
-                    summary: compact,
-                    archived_at,
-                });
-            }
-        }
-        Ok(archives)
+        Ok(Some(SessionSnapshot {
+            meta,
+            history,
+            archive,
+        }))
     }
 
     fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
@@ -449,10 +351,9 @@ impl Storage for FsStorage {
         Ok(())
     }
 
-    fn append_session_compact(&self, handle: &SessionHandle, summary: &str) -> Result<()> {
+    fn append_session_compact(&self, handle: &SessionHandle, archive_name: &str) -> Result<()> {
         let line = StepLine::Compact {
-            compact: summary.to_owned(),
-            title: compact_title(summary),
+            archive_name: archive_name.to_owned(),
             archived_at: chrono::Utc::now().to_rfc3339(),
         };
         self.write_step(handle.as_str(), line)
@@ -575,7 +476,6 @@ impl Storage for FsStorage {
         fs::create_dir_all(self.config_dir.join(wcore::paths::LOCAL_DIR))?;
         fs::create_dir_all(self.config_dir.join(wcore::paths::SKILLS_DIR))?;
         fs::create_dir_all(self.config_dir.join(wcore::paths::AGENTS_DIR))?;
-        fs::create_dir_all(&self.memory_root)?;
         fs::create_dir_all(&self.sessions_root)?;
         Ok(())
     }
@@ -613,14 +513,4 @@ fn next_session_seq(root: &PathBuf, prefix: &str) -> u32 {
         }
     }
     max + 1
-}
-
-fn compact_title(summary: &str) -> String {
-    let end = summary
-        .find(['.', '!', '?'])
-        .map(|i| i + 1)
-        .unwrap_or(summary.len())
-        .min(60);
-    let title = summary[..summary.floor_char_boundary(end)].trim();
-    title.to_string()
 }

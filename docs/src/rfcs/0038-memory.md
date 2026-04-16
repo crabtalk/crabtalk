@@ -1,5 +1,8 @@
 # 0038 - Memory
 
+> **Superseded by [0150 - Memory Store](0150-memory-store.md).**
+> The file-per-entry premise was replaced by a single binary db file with a markdown dump tree for humans. `description` is gone; `aliases` and `EntryKind` (Note / Archive / Prompt) are new; the reserved `global` Prompt entry replaces `MEMORY.md`.
+
 - Feature Name: Memory System
 - Start Date: 2026-02-10
 - Discussion: [#38](https://github.com/crabtalk/crabtalk/issues/38)

@@ -3,27 +3,18 @@
 //! Provides skill loading/discovery and slash-skill preprocessing.
 
 use crate::daemon::hook::AgentScope;
+use parking_lot::RwLock;
 use runtime::Hook;
 use serde::Deserialize;
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, RwLock},
-};
-use wcore::{
-    ToolDispatch, ToolFuture,
-    agent::{AsTool, ToolDescription},
-    storage::Storage,
-};
+use std::{collections::BTreeMap, sync::Arc};
+use wcore::{ToolDispatch, ToolFuture, agent::AsTool, storage::Storage};
 
+/// Load a skill by name. Returns its instructions on exact match, or lists matching skills otherwise.
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct SkillTool {
     /// Skill name to load. If no exact match, returns fuzzy matches.
     /// Leave empty to list all available skills.
     pub name: String,
-}
-
-impl ToolDescription for SkillTool {
-    const DESCRIPTION: &'static str = "Load a skill by name. Returns its instructions on exact match, or lists matching skills otherwise.";
 }
 
 /// Skill subsystem: tool dispatch + slash-skill preprocessing.
@@ -79,7 +70,7 @@ impl<S: Storage + 'static> Hook for SkillHook<S> {
 
         // Enforce skill scope.
         {
-            let scopes = self.scopes.read().expect("scopes lock poisoned");
+            let scopes = self.scopes.read();
             if let Some(scope) = scopes.get(agent)
                 && !scope.skills.is_empty()
                 && !scope.skills.iter().any(|s| s == name)
@@ -113,7 +104,7 @@ impl<S: Storage + 'static> Hook for SkillHook<S> {
 
             // Enforce skill scope.
             {
-                let scopes = self.scopes.read().expect("scopes lock poisoned");
+                let scopes = self.scopes.read();
                 if let Some(scope) = scopes.get(&call.agent)
                     && !scope.skills.is_empty()
                     && !scope.skills.iter().any(|s| s == name)
@@ -138,7 +129,6 @@ impl<S: Storage + 'static> Hook for SkillHook<S> {
             let allowed: Vec<String> = self
                 .scopes
                 .read()
-                .expect("scopes lock poisoned")
                 .get(&call.agent)
                 .map(|s| s.skills.clone())
                 .unwrap_or_default();

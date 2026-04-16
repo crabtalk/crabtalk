@@ -106,11 +106,7 @@ pub(super) async fn subscribe_event<P: Provider + 'static>(
         target_agent: req.target_agent,
         once: req.once,
     };
-    let created = node
-        .events
-        .lock()
-        .expect("event bus lock poisoned")
-        .subscribe(sub);
+    let created = node.events.lock().subscribe(sub);
     Ok(subscription_to_info(&created))
 }
 
@@ -118,17 +114,13 @@ pub(super) async fn unsubscribe_event<P: Provider + 'static>(
     node: &Daemon<P>,
     id: u64,
 ) -> Result<bool> {
-    Ok(node
-        .events
-        .lock()
-        .expect("event bus lock poisoned")
-        .unsubscribe(id))
+    Ok(node.events.lock().unsubscribe(id))
 }
 
 pub(super) async fn list_subscriptions<P: Provider + 'static>(
     node: &Daemon<P>,
 ) -> Result<SubscriptionList> {
-    let subs = node.events.lock().expect("event bus lock poisoned").list();
+    let subs = node.events.lock().list();
     Ok(SubscriptionList {
         subscriptions: subs.iter().map(subscription_to_info).collect(),
     })
@@ -138,10 +130,7 @@ pub(super) async fn publish_event<P: Provider + 'static>(
     node: &Daemon<P>,
     req: PublishEventMsg,
 ) -> Result<()> {
-    node.events
-        .lock()
-        .expect("event bus lock poisoned")
-        .publish(&req.source, &req.payload);
+    node.events.lock().publish(&req.source, &req.payload);
     Ok(())
 }
 

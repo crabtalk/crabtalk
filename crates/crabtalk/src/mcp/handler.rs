@@ -1,14 +1,15 @@
 //! Crabtalk MCP handler — initial load and read access.
 
 use crate::mcp::{McpBridge, config::McpServerConfig};
-use std::sync::{Arc, RwLock as StdRwLock};
+use parking_lot::RwLock as SyncRwLock;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// MCP bridge owner.
 pub struct McpHandler {
     bridge: RwLock<Arc<McpBridge>>,
     /// Sync cache of server names → tool names, populated at load/reload.
-    server_cache: StdRwLock<Vec<(String, Vec<String>)>>,
+    server_cache: SyncRwLock<Vec<(String, Vec<String>)>>,
 }
 
 impl McpHandler {
@@ -16,7 +17,7 @@ impl McpHandler {
     pub fn empty() -> Self {
         Self {
             bridge: RwLock::new(Arc::new(McpBridge::new())),
-            server_cache: StdRwLock::new(Vec::new()),
+            server_cache: SyncRwLock::new(Vec::new()),
         }
     }
 
@@ -119,7 +120,7 @@ impl McpHandler {
         let servers = bridge.list_servers().await;
         Self {
             bridge: RwLock::new(Arc::new(bridge)),
-            server_cache: StdRwLock::new(servers),
+            server_cache: SyncRwLock::new(servers),
         }
     }
 
@@ -130,7 +131,7 @@ impl McpHandler {
 
     /// Sync access to the cached server→tools list (populated at load time).
     pub fn cached_list(&self) -> Vec<(String, Vec<String>)> {
-        self.server_cache.read().unwrap().clone()
+        self.server_cache.read().clone()
     }
 
     /// Get a clone of the current bridge Arc.

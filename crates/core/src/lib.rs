@@ -23,7 +23,7 @@ pub use config::{
     check_skill_conflicts, external_source_name, filter_disabled_external, load_agents_dir,
     load_agents_dirs, repo_slug, resolve_manifests, scan_skill_names, validate_providers,
 };
-pub use storage::{ArchiveSegment, ConversationMeta, EventLine, sender_slug};
+pub use storage::{ConversationMeta, EventLine, sender_slug};
 
 pub mod agent;
 pub mod config;
