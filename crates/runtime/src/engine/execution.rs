@@ -9,7 +9,7 @@ use futures_util::StreamExt;
 use tokio::sync::{mpsc, watch};
 use wcore::{AgentEvent, AgentResponse, AgentStopReason, model::HistoryEntry};
 
-use super::Runtime;
+use super::{ConvSlot, Runtime};
 
 impl<C: Config> Runtime<C> {
     fn prepare_history(
@@ -18,7 +18,7 @@ impl<C: Config> Runtime<C> {
         agent: &str,
         content: &str,
         sender: &str,
-    ) -> String {
+    ) {
         let content = self
             .env
             .hook()
@@ -34,11 +34,10 @@ impl<C: Config> Runtime<C> {
 
         conversation.history.retain(|e| !e.auto_injected);
 
-        let agent_name = agent.to_owned();
-        let mut recall_msgs =
-            self.env
-                .hook()
-                .on_before_run(&agent_name, conversation.id, &conversation.history);
+        let mut recall_msgs = self
+            .env
+            .hook()
+            .on_before_run(agent, conversation.id, &conversation.history);
 
         // Layered instructions (Crab.md).
         let cwd = self.env.effective_cwd(conversation.id);
@@ -66,7 +65,6 @@ impl<C: Config> Runtime<C> {
                 conversation.history.insert(insert_pos + i, entry);
             }
         }
-        agent_name
     }
 
     pub async fn send_to(
@@ -81,19 +79,13 @@ impl<C: Config> Runtime<C> {
             .read()
             .await
             .get(&conversation_id)
-            .map(|slot| {
-                (
-                    slot.agent.clone(),
-                    slot.created_by.clone(),
-                    slot.inner.clone(),
-                )
-            })
+            .map(ConvSlot::parts)
             .ok_or_else(|| anyhow::anyhow!("conversation {conversation_id} not found"))?;
         let (agent_name, created_by, conversation_mutex) = conversation_mutex;
 
         let mut conversation = conversation_mutex.lock().await;
         let pre_run_len = conversation.history.len();
-        let prepared_agent = self.prepare_history(&mut conversation, &agent_name, content, sender);
+        self.prepare_history(&mut conversation, &agent_name, content, sender);
         let agent = self
             .resolve_agent(&agent_name)
             .await
@@ -113,9 +105,9 @@ impl<C: Config> Runtime<C> {
             }
             self.env
                 .hook()
-                .on_event(&prepared_agent, conversation_id, &event);
+                .on_event(&agent_name, conversation_id, &event);
             self.env
-                .on_agent_event(&prepared_agent, conversation_id, &event);
+                .on_agent_event(&agent_name, conversation_id, &event);
         }
 
         self.persist_messages(
@@ -153,13 +145,7 @@ impl<C: Config> Runtime<C> {
                 .read()
                 .await
                 .get(&conversation_id)
-                .map(|slot| {
-                    (
-                        slot.agent.clone(),
-                        slot.created_by.clone(),
-                        slot.inner.clone(),
-                    )
-                })
+                .map(ConvSlot::parts)
             else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("conversation {conversation_id} not found"),
@@ -170,7 +156,7 @@ impl<C: Config> Runtime<C> {
 
             let mut conversation = conversation_mutex.lock().await;
             let pre_run_len = conversation.history.len();
-            let prepared_agent = self.prepare_history(&mut conversation, &agent_name, &content, &sender);
+            self.prepare_history(&mut conversation, &agent_name, &content, &sender);
             let Some(agent) = self.resolve_agent(&agent_name).await else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("agent '{}' not registered", agent_name),
@@ -190,8 +176,8 @@ impl<C: Config> Runtime<C> {
                     if let AgentEvent::Compact { ref summary } = event {
                         compact_summary = Some(summary.clone());
                     }
-                    self.env.hook().on_event(&prepared_agent, conversation_id, &event);
-                    self.env.on_agent_event(&prepared_agent, conversation_id, &event);
+                    self.env.hook().on_event(&agent_name, conversation_id, &event);
+                    self.env.on_agent_event(&agent_name, conversation_id, &event);
                     if let Some(line) = wcore::EventLine::from_agent_event(&event) {
                         event_trace.push(line);
                     }
@@ -250,13 +236,7 @@ impl<C: Config> Runtime<C> {
                 .read()
                 .await
                 .get(&conversation_id)
-                .map(|slot| {
-                    (
-                        slot.agent.clone(),
-                        slot.created_by.clone(),
-                        slot.inner.clone(),
-                    )
-                })
+                .map(ConvSlot::parts)
             else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("conversation {conversation_id} not found"),

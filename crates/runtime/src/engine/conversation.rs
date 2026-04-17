@@ -33,54 +33,46 @@ impl<C: Config> Runtime<C> {
         }
     }
 
-    async fn create_conversation_inner(&self, agent: &str, created_by: &str) -> Result<u64> {
-        if !self.has_agent(agent).await {
-            bail!("agent '{agent}' not registered");
-        }
-        let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
-        self.conversations
-            .write()
-            .await
-            .insert(id, Self::new_slot(id, agent, created_by));
-        Ok(id)
-    }
-
     /// Get or create a conversation for the given (agent, created_by) identity.
     pub async fn get_or_create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.has_agent(agent).await {
             bail!("agent '{agent}' not registered");
         }
 
-        // 1. In-memory lookup.
-        {
-            let conversations = self.conversations.read().await;
-            for (id, slot) in conversations.iter() {
-                if slot.agent == agent && slot.created_by == created_by {
-                    return Ok(*id);
-                }
+        // 1. Storage lookup outside lock to avoid holding runtime locks over I/O.
+        let storage = self.storage();
+        let loaded = storage
+            .find_latest_session(agent, created_by)
+            .ok()
+            .flatten()
+            .and_then(|handle| {
+                storage
+                    .load_session(&handle)
+                    .ok()
+                    .flatten()
+                    .map(|s| (handle, s))
+            });
+
+        // 2. Atomic scan + insert under one write lock.
+        let mut conversations = self.conversations.write().await;
+        for (id, slot) in conversations.iter() {
+            if slot.agent == agent && slot.created_by == created_by {
+                return Ok(*id);
             }
         }
 
-        // 2. Storage lookup — find latest persisted session for this identity.
-        let storage = self.storage();
-        if let Ok(Some(handle)) = storage.find_latest_session(agent, created_by)
-            && let Ok(Some(snapshot)) = storage.load_session(&handle)
-        {
-            let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
-            let slot = Self::new_slot(id, agent, created_by);
+        let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
+        let slot = Self::new_slot(id, agent, created_by);
+        if let Some((handle, snapshot)) = loaded {
             let mut conversation = slot.inner.lock().await;
             conversation.history =
                 self.resumed_history(snapshot.archive.as_deref(), snapshot.history);
             conversation.title = snapshot.meta.title;
             conversation.uptime_secs = snapshot.meta.uptime_secs;
             conversation.handle = Some(handle);
-            drop(conversation);
-            self.conversations.write().await.insert(id, slot);
-            return Ok(id);
         }
-
-        // 3. Create new.
-        self.create_conversation_inner(agent, created_by).await
+        conversations.insert(id, slot);
+        Ok(id)
     }
 
     /// Load a specific conversation by session handle.
@@ -170,18 +162,16 @@ impl<C: Config> Runtime<C> {
 
     pub async fn compact_conversation(&self, conversation_id: u64) -> Option<String> {
         let (agent_name, history) = {
-            let slot = self
-                .conversations
-                .read()
-                .await
-                .get(&conversation_id)?
-                .clone();
+            let conversations = self.conversations.read().await;
+            let slot = conversations.get(&conversation_id)?;
+            let agent_name = slot.agent.clone();
             let conversation_mutex = slot.inner.clone();
+            drop(conversations);
             let conversation = conversation_mutex.lock().await;
             if conversation.history.is_empty() {
                 return None;
             }
-            (slot.agent, conversation.history.clone())
+            (agent_name, conversation.history.clone())
         };
         let persistent = self.agents.read().get(&agent_name).cloned();
         if let Some(a) = persistent {

@@ -31,6 +31,16 @@ pub(super) struct ConvSlot {
     pub(super) inner: Arc<Mutex<Conversation>>,
 }
 
+impl ConvSlot {
+    pub(super) fn parts(&self) -> (String, String, Arc<Mutex<Conversation>>) {
+        (
+            self.agent.clone(),
+            self.created_by.clone(),
+            self.inner.clone(),
+        )
+    }
+}
+
 /// The crabtalk runtime.
 pub struct Runtime<C: Config> {
     pub model: Model<C::Provider>,
