@@ -34,10 +34,10 @@ impl<C: Config> Runtime<C> {
 
         conversation.history.retain(|e| !e.auto_injected);
 
-        let mut recall_msgs = self
-            .env
-            .hook()
-            .on_before_run(agent, conversation.id, &conversation.history);
+        let mut recall_msgs =
+            self.env
+                .hook()
+                .on_before_run(agent, conversation.id, &conversation.history);
 
         // Layered instructions (Crab.md).
         let cwd = self.env.effective_cwd(conversation.id);
