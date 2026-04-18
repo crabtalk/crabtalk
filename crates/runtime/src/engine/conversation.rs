@@ -11,7 +11,7 @@ use wcore::{
     storage::{SessionHandle, Storage},
 };
 
-use super::{ConvSlot, Runtime};
+use super::{ConvSlot, Runtime, TopicRouter};
 
 /// Outcome of `switch_active_topic`. `resumed = true` means the topic
 /// already existed (in the router or on disk); `false` means it was
@@ -49,17 +49,14 @@ impl<C: Config> Runtime<C> {
         // Read-first: the common case is a hit on an existing tmp or
         // active-topic conversation. Avoid allocating a `TopicRouter`
         // until we actually need to insert one.
+        if let Some(id) = self
+            .topics
+            .read()
+            .await
+            .get(&key)
+            .and_then(TopicRouter::active_conversation)
         {
-            let topics = self.topics.read().await;
-            if let Some(router) = topics.get(&key)
-                && let Some(id) = router
-                    .active
-                    .as_ref()
-                    .and_then(|t| router.by_title.get(t).copied())
-                    .or(router.tmp)
-            {
-                return Ok(id);
-            }
+            return Ok(id);
         }
 
         let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
@@ -67,12 +64,7 @@ impl<C: Config> Runtime<C> {
         let mut topics = self.topics.write().await;
         let router = topics.entry(key).or_default();
         // Re-check under write lock in case another task raced us.
-        if let Some(existing) = router
-            .active
-            .as_ref()
-            .and_then(|t| router.by_title.get(t).copied())
-            .or(router.tmp)
-        {
+        if let Some(existing) = router.active_conversation() {
             return Ok(existing);
         }
         router.tmp = Some(id);
@@ -176,18 +168,9 @@ impl<C: Config> Runtime<C> {
                     // Stamp meta so the new session carries its topic
                     // from the first write — a missing `topic` here
                     // would make the session invisible to future
-                    // `find_topic_session` scans.
-                    storage.update_session_meta(
-                        &handle,
-                        &wcore::storage::ConversationMeta {
-                            agent: agent.to_owned(),
-                            created_by: sender.to_owned(),
-                            created_at: chrono::Utc::now().to_rfc3339(),
-                            title: String::new(),
-                            uptime_secs: 0,
-                            topic: Some(title.to_owned()),
-                        },
-                    )?;
+                    // `find_topic_session` scans. `conversation.meta`
+                    // already reflects the topic we set above.
+                    storage.update_session_meta(&handle, &conversation.meta(agent, sender))?;
                     conversation.handle = Some(handle);
                 }
             }
@@ -347,6 +330,21 @@ impl<C: Config> Runtime<C> {
             .map(|slot| slot.inner.clone())
     }
 
+    /// Look up a conversation slot's `(agent, sender, mutex)` triple.
+    /// Returns `None` when the conversation id is not registered — the
+    /// execution paths all need this handshake before locking the
+    /// conversation mutex.
+    pub(crate) async fn acquire_slot(
+        &self,
+        id: u64,
+    ) -> Option<(String, String, Arc<Mutex<Conversation>>)> {
+        self.conversations
+            .read()
+            .await
+            .get(&id)
+            .map(ConvSlot::parts)
+    }
+
     pub async fn conversations(&self) -> Vec<Arc<Mutex<Conversation>>> {
         self.conversations
             .read()
@@ -383,17 +381,10 @@ impl<C: Config> Runtime<C> {
             }
             (agent_name, conversation.history.clone())
         };
-        let persistent = self.agents.read().get(&agent_name).cloned();
-        if let Some(a) = persistent {
-            return a.compact(&history).await;
-        }
-        let a = self
-            .ephemeral_agents
-            .read()
+        self.resolve_agent(&agent_name)
+            .await?
+            .compact(&history)
             .await
-            .get(&agent_name)
-            .cloned()?;
-        a.compact(&history).await
     }
 
     pub async fn transfer_conversations<C2: Config>(&self, dest: &mut Runtime<C2>) {
@@ -484,6 +475,36 @@ impl<C: Config> Runtime<C> {
         match storage.create_session(agent, created_by) {
             Ok(handle) => conversation.handle = Some(handle),
             Err(e) => tracing::warn!("failed to create session: {e}"),
+        }
+    }
+
+    /// Post-run tail shared by `send_to`, `stream_to`, and
+    /// `guest_stream_to`: update uptime, persist, and kick off title
+    /// generation if the conversation has a titleable exchange and no
+    /// title yet.
+    pub(crate) fn finalize_run(
+        &self,
+        conversation_id: u64,
+        conversation: &mut Conversation,
+        conversation_mutex: Arc<Mutex<Conversation>>,
+        agent: &str,
+        created_by: &str,
+        run_start: std::time::Instant,
+        pre_run_len: usize,
+        compact_summary: Option<String>,
+        event_trace: &[wcore::EventLine],
+    ) {
+        conversation.uptime_secs += run_start.elapsed().as_secs();
+        self.persist_messages(
+            conversation,
+            agent,
+            created_by,
+            pre_run_len,
+            compact_summary,
+            event_trace,
+        );
+        if conversation.title.is_empty() && conversation.history.len() >= 2 {
+            self.spawn_title_generation(conversation_id, agent, created_by, conversation_mutex);
         }
     }
 

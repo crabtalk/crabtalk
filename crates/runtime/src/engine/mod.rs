@@ -53,6 +53,18 @@ pub(super) struct TopicRouter {
     pub(super) tmp: Option<u64>,
 }
 
+impl TopicRouter {
+    /// Resolve the conversation this router currently routes to:
+    /// the active topic's conversation if one is set, otherwise the
+    /// tmp conversation if one exists.
+    pub(super) fn active_conversation(&self) -> Option<u64> {
+        self.active
+            .as_ref()
+            .and_then(|t| self.by_title.get(t).copied())
+            .or(self.tmp)
+    }
+}
+
 /// The crabtalk runtime.
 pub struct Runtime<C: Config> {
     pub model: Model<C::Provider>,

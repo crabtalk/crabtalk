@@ -9,7 +9,7 @@ use futures_util::StreamExt;
 use tokio::sync::{mpsc, watch};
 use wcore::{AgentEvent, AgentResponse, AgentStopReason, model::HistoryEntry};
 
-use super::{ConvSlot, Runtime};
+use super::Runtime;
 
 impl<C: Config> Runtime<C> {
     fn prepare_history(
@@ -74,14 +74,10 @@ impl<C: Config> Runtime<C> {
         sender: &str,
         tool_choice: Option<ToolChoice>,
     ) -> Result<AgentResponse> {
-        let conversation_mutex = self
-            .conversations
-            .read()
+        let (agent_name, created_by, conversation_mutex) = self
+            .acquire_slot(conversation_id)
             .await
-            .get(&conversation_id)
-            .map(ConvSlot::parts)
             .ok_or_else(|| anyhow::anyhow!("conversation {conversation_id} not found"))?;
-        let (agent_name, created_by, conversation_mutex) = conversation_mutex;
 
         let mut conversation = conversation_mutex.lock().await;
         let pre_run_len = conversation.history.len();
@@ -96,7 +92,6 @@ impl<C: Config> Runtime<C> {
         let response = agent
             .run(&mut conversation.history, tx, None, tool_choice)
             .await;
-        conversation.uptime_secs += run_start.elapsed().as_secs();
 
         let mut compact_summary: Option<String> = None;
         while let Ok(event) = rx.try_recv() {
@@ -110,23 +105,17 @@ impl<C: Config> Runtime<C> {
                 .on_agent_event(&agent_name, conversation_id, &event);
         }
 
-        self.persist_messages(
+        self.finalize_run(
+            conversation_id,
             &mut conversation,
+            conversation_mutex.clone(),
             &agent_name,
             &created_by,
+            run_start,
             pre_run_len,
             compact_summary,
             &[],
         );
-
-        if conversation.title.is_empty() && conversation.history.len() >= 2 {
-            self.spawn_title_generation(
-                conversation_id,
-                &agent_name,
-                &created_by,
-                conversation_mutex.clone(),
-            );
-        }
         Ok(response)
     }
 
@@ -140,19 +129,14 @@ impl<C: Config> Runtime<C> {
         let content = content.to_owned();
         let sender = sender.to_owned();
         stream! {
-            let Some(conversation_mutex) = self
-                .conversations
-                .read()
-                .await
-                .get(&conversation_id)
-                .map(ConvSlot::parts)
+            let Some((agent_name, created_by, conversation_mutex)) =
+                self.acquire_slot(conversation_id).await
             else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("conversation {conversation_id} not found"),
                 ));
                 return;
             };
-            let (agent_name, created_by, conversation_mutex) = conversation_mutex;
 
             let mut conversation = conversation_mutex.lock().await;
             let pre_run_len = conversation.history.len();
@@ -189,24 +173,17 @@ impl<C: Config> Runtime<C> {
                 }
             }
             self.steering.write().await.remove(&conversation_id);
-            conversation.uptime_secs += run_start.elapsed().as_secs();
-            self.persist_messages(
+            self.finalize_run(
+                conversation_id,
                 &mut conversation,
+                conversation_mutex.clone(),
                 &agent_name,
                 &created_by,
+                run_start,
                 pre_run_len,
                 compact_summary,
                 &event_trace,
             );
-
-            if conversation.title.is_empty() && conversation.history.len() >= 2 {
-                self.spawn_title_generation(
-                    conversation_id,
-                    &agent_name,
-                    &created_by,
-                    conversation_mutex.clone(),
-                );
-            }
             if let Some(event) = done_event {
                 yield event;
             }
@@ -231,19 +208,14 @@ impl<C: Config> Runtime<C> {
                 return;
             };
 
-            let Some(conversation_mutex) = self
-                .conversations
-                .read()
-                .await
-                .get(&conversation_id)
-                .map(ConvSlot::parts)
+            let Some((agent_name, created_by, conversation_mutex)) =
+                self.acquire_slot(conversation_id).await
             else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("conversation {conversation_id} not found"),
                 ));
                 return;
             };
-            let (agent_name, created_by, conversation_mutex) = conversation_mutex;
 
             let mut conversation = conversation_mutex.lock().await;
             let pre_run_len = conversation.history.len();
@@ -343,24 +315,17 @@ impl<C: Config> Runtime<C> {
             response_entry.agent = guest.clone();
             conversation.history.push(response_entry);
 
-            conversation.uptime_secs += run_start.elapsed().as_secs();
-            self.persist_messages(
+            self.finalize_run(
+                conversation_id,
                 &mut conversation,
+                conversation_mutex.clone(),
                 &agent_name,
                 &created_by,
+                run_start,
                 pre_run_len,
                 None,
                 &[],
             );
-
-            if conversation.title.is_empty() && conversation.history.len() >= 2 {
-                self.spawn_title_generation(
-                    conversation_id,
-                    &agent_name,
-                    &created_by,
-                    conversation_mutex.clone(),
-                );
-            }
 
             yield AgentEvent::Done(AgentResponse {
                 final_response: Some(response_text),
