@@ -287,9 +287,12 @@ async fn stream_to_yields_correct_content() {
 }
 
 #[tokio::test]
-async fn resume_prepends_archive_content_from_memory() {
+async fn switch_active_topic_resumes_archive_from_memory() {
     use memory::{EntryKind, Op};
-    use wcore::{model::HistoryEntry, storage::Storage};
+    use wcore::{
+        model::HistoryEntry,
+        storage::{ConversationMeta, Storage},
+    };
 
     let storage = Arc::new(InMemoryStorage::new());
     let mem = Arc::new(parking_lot::RwLock::new(memory::Memory::new()));
@@ -303,6 +306,15 @@ async fn resume_prepends_archive_content_from_memory() {
         .unwrap();
 
     let handle = storage.create_session("crab", "tester").unwrap();
+    let topic_meta = ConversationMeta {
+        agent: "crab".into(),
+        created_by: "tester".into(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+        title: String::new(),
+        uptime_secs: 0,
+        topic: Some("auth".into()),
+    };
+    storage.update_session_meta(&handle, &topic_meta).unwrap();
     storage
         .append_session_messages(
             &handle,
@@ -328,6 +340,10 @@ async fn resume_prepends_archive_content_from_memory() {
     );
     runtime.add_agent(AgentConfig::new("crab"));
 
+    runtime
+        .switch_active_topic("crab", "tester", "auth", None)
+        .await
+        .unwrap();
     let conv_id = runtime
         .get_or_create_conversation("crab", "tester")
         .await
@@ -335,20 +351,33 @@ async fn resume_prepends_archive_content_from_memory() {
     let conversation = runtime.conversation(conv_id).await.unwrap();
     let conv = conversation.lock().await;
 
+    assert_eq!(conv.topic.as_deref(), Some("auth"));
     assert_eq!(conv.history.len(), 2);
     assert_eq!(conv.history[0].text(), "earlier context, compacted");
     assert_eq!(conv.history[1].text(), "after-compact");
 }
 
 #[tokio::test]
-async fn resume_injects_placeholder_when_archive_missing() {
-    use wcore::{model::HistoryEntry, storage::Storage};
+async fn switch_active_topic_injects_placeholder_when_archive_missing() {
+    use wcore::{
+        model::HistoryEntry,
+        storage::{ConversationMeta, Storage},
+    };
 
     let storage = Arc::new(InMemoryStorage::new());
     // Empty memory — the referenced archive doesn't exist.
     let mem = Arc::new(parking_lot::RwLock::new(memory::Memory::new()));
 
     let handle = storage.create_session("crab", "tester").unwrap();
+    let topic_meta = ConversationMeta {
+        agent: "crab".into(),
+        created_by: "tester".into(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+        title: String::new(),
+        uptime_secs: 0,
+        topic: Some("ghost".into()),
+    };
+    storage.update_session_meta(&handle, &topic_meta).unwrap();
     storage
         .append_session_compact(&handle, "archive-gone")
         .unwrap();
@@ -365,6 +394,10 @@ async fn resume_injects_placeholder_when_archive_missing() {
     );
     runtime.add_agent(AgentConfig::new("crab"));
 
+    runtime
+        .switch_active_topic("crab", "tester", "ghost", None)
+        .await
+        .unwrap();
     let conv_id = runtime
         .get_or_create_conversation("crab", "tester")
         .await

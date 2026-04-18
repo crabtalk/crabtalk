@@ -10,10 +10,12 @@ mod agents;
 mod conversation;
 mod execution;
 
+pub use conversation::SwitchOutcome;
+
 use crate::{Config, Conversation};
 use memory::Memory;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     sync::{Arc, atomic::AtomicU64},
 };
 use tokio::sync::{Mutex, RwLock, watch};
@@ -41,6 +43,16 @@ impl ConvSlot {
     }
 }
 
+/// Per-(agent, sender) topic routing. `active = None` means the caller
+/// is on a tmp chat (no topic). Tmp chats have their own `ConvSlot` but
+/// are not tracked here.
+#[derive(Default)]
+pub(super) struct TopicRouter {
+    pub(super) by_title: HashMap<String, u64>,
+    pub(super) active: Option<String>,
+    pub(super) tmp: Option<u64>,
+}
+
 /// The crabtalk runtime.
 pub struct Runtime<C: Config> {
     pub model: Model<C::Provider>,
@@ -50,6 +62,7 @@ pub struct Runtime<C: Config> {
     agents: parking_lot::RwLock<BTreeMap<String, Agent<C::Provider>>>,
     ephemeral_agents: RwLock<BTreeMap<String, Agent<C::Provider>>>,
     conversations: RwLock<BTreeMap<u64, ConvSlot>>,
+    pub(super) topics: RwLock<BTreeMap<(String, String), TopicRouter>>,
     next_conversation_id: AtomicU64,
     pub tools: ToolRegistry,
     steering: RwLock<BTreeMap<u64, watch::Sender<Option<String>>>>,
@@ -72,6 +85,7 @@ impl<C: Config> Runtime<C> {
             agents: parking_lot::RwLock::new(BTreeMap::new()),
             ephemeral_agents: RwLock::new(BTreeMap::new()),
             conversations: RwLock::new(BTreeMap::new()),
+            topics: RwLock::new(BTreeMap::new()),
             next_conversation_id: AtomicU64::new(1),
             tools,
             steering: RwLock::new(BTreeMap::new()),
