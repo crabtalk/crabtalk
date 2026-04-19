@@ -34,7 +34,7 @@ impl<P: Provider + 'static> TopicHook<P> {
             .ok_or_else(|| "switch_topic: runtime not initialized".to_owned())?;
         let rt = shared.read().await.clone();
         let outcome = rt
-            .switch_active_topic(
+            .switch_topic(
                 &call.agent,
                 &call.sender,
                 &input.title,

@@ -2,7 +2,7 @@
 //! `(agent, sender)` into parallel conversation threads; see RFC #171.
 //!
 //! The hook itself owns no state — it holds a late-bind runtime handle
-//! (to drive `switch_active_topic`) and a shared memory handle (to BM25
+//! (to drive `switch_topic`) and a shared memory handle (to BM25
 //! over `EntryKind::Topic` entries).
 
 use crabllm_core::Provider;

@@ -178,13 +178,10 @@ pub(super) async fn compact<P: Provider + 'static>(
     sender: String,
 ) -> Result<String> {
     let rt = node.runtime.read().await.clone();
-    let conversation_id = rt
-        .find_conversation_id(&agent, &sender)
-        .await
-        .ok_or_else(|| {
-            anyhow::anyhow!("conversation not found for agent='{agent}' sender='{sender}'")
-        })?;
-    rt.compact_conversation(conversation_id)
+    let conversation_id = rt.conversation_id(&agent, &sender).await.ok_or_else(|| {
+        anyhow::anyhow!("conversation not found for agent='{agent}' sender='{sender}'")
+    })?;
+    rt.compact(conversation_id)
         .await
         .ok_or_else(|| anyhow::anyhow!("compact failed for agent='{agent}' sender='{sender}'"))
 }
@@ -193,7 +190,7 @@ pub(super) async fn list_active<P: Provider + 'static>(
     node: &Daemon<P>,
 ) -> Result<Vec<wcore::protocol::message::ActiveConversationInfo>> {
     let rt = node.runtime.read().await.clone();
-    Ok(rt.active_conversation_infos().await)
+    Ok(rt.list_active().await)
 }
 
 pub(super) async fn kill<P: Provider + 'static>(
@@ -202,7 +199,7 @@ pub(super) async fn kill<P: Provider + 'static>(
     sender: String,
 ) -> Result<bool> {
     let rt = node.runtime.read().await.clone();
-    let Some(conversation_id) = rt.find_conversation_id(&agent, &sender).await else {
+    let Some(conversation_id) = rt.conversation_id(&agent, &sender).await else {
         return Ok(false);
     };
     node.os_hook
@@ -210,7 +207,7 @@ pub(super) async fn kill<P: Provider + 'static>(
         .lock()
         .await
         .remove(&conversation_id);
-    Ok(rt.close_conversation(conversation_id).await)
+    Ok(rt.close(conversation_id).await)
 }
 
 pub(super) async fn reply_to_ask<P: Provider + 'static>(
@@ -220,12 +217,9 @@ pub(super) async fn reply_to_ask<P: Provider + 'static>(
     content: String,
 ) -> Result<()> {
     let rt = node.runtime.read().await.clone();
-    let conversation_id = rt
-        .find_conversation_id(&agent, &sender)
-        .await
-        .ok_or_else(|| {
-            anyhow::anyhow!("conversation not found for agent='{agent}' sender='{sender}'")
-        })?;
+    let conversation_id = rt.conversation_id(&agent, &sender).await.ok_or_else(|| {
+        anyhow::anyhow!("conversation not found for agent='{agent}' sender='{sender}'")
+    })?;
     if let Some(tx) = node
         .ask_hook
         .pending_asks()
@@ -263,7 +257,7 @@ pub(super) async fn steer<P: Provider + 'static>(
         &req.sender
     };
     let conversation_id = rt
-        .find_conversation_id(&req.agent, sender)
+        .conversation_id(&req.agent, sender)
         .await
         .ok_or_else(|| {
             anyhow::anyhow!(

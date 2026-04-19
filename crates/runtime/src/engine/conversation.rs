@@ -29,7 +29,7 @@ impl<C: Config> Runtime<C> {
     ///    conversation.
     /// 2. Otherwise return/create the tmp conversation for this pair —
     ///    in-memory only, no storage I/O, no resume. Topic-bound chats
-    ///    reach storage via `switch_active_topic`.
+    ///    reach storage via `switch_topic`.
     pub async fn get_or_create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.has_agent(agent).await {
             bail!("agent '{agent}' not registered");
@@ -65,7 +65,7 @@ impl<C: Config> Runtime<C> {
     }
 
     /// Load a specific conversation by session handle.
-    pub async fn load_specific_conversation(&self, handle: SessionHandle) -> Result<u64> {
+    pub async fn load_session(&self, handle: SessionHandle) -> Result<u64> {
         let storage = self.storage();
         let snapshot = storage
             .load_session(&handle)?
@@ -85,9 +85,7 @@ impl<C: Config> Runtime<C> {
         Ok(id)
     }
 
-    pub async fn active_conversation_infos(
-        &self,
-    ) -> Vec<wcore::protocol::message::ActiveConversationInfo> {
+    pub async fn list_active(&self) -> Vec<wcore::protocol::message::ActiveConversationInfo> {
         let conversations = self.conversations.read().await;
         let mut infos = Vec::with_capacity(conversations.len());
         for (_, conv_slot) in conversations.iter() {
@@ -103,7 +101,7 @@ impl<C: Config> Runtime<C> {
         infos
     }
 
-    pub async fn close_conversation(&self, id: u64) -> bool {
+    pub async fn close(&self, id: u64) -> bool {
         self.steering.write().await.remove(&id);
         let removed = self.conversations.write().await.remove(&id);
         if let Some(slot) = &removed {
@@ -175,7 +173,7 @@ impl<C: Config> Runtime<C> {
         self.conversations.read().await.len()
     }
 
-    pub async fn find_conversation_id(&self, agent: &str, sender: &str) -> Option<u64> {
+    pub async fn conversation_id(&self, agent: &str, sender: &str) -> Option<u64> {
         let conversations = self.conversations.read().await;
         for (id, slot) in conversations.iter() {
             if slot.agent == agent && slot.created_by == sender {
@@ -185,7 +183,7 @@ impl<C: Config> Runtime<C> {
         None
     }
 
-    pub async fn compact_conversation(&self, conversation_id: u64) -> Option<String> {
+    pub async fn compact(&self, conversation_id: u64) -> Option<String> {
         let (agent_name, history) = {
             let conversations = self.conversations.read().await;
             let slot = conversations.get(&conversation_id)?;
@@ -204,7 +202,7 @@ impl<C: Config> Runtime<C> {
             .await
     }
 
-    pub async fn transfer_conversations<C2: Config>(&self, dest: &mut Runtime<C2>) {
+    pub async fn transfer_to<C2: Config>(&self, dest: &mut Runtime<C2>) {
         let conversations = self.conversations.read().await;
         let dest_conversations = dest.conversations.get_mut();
         for (id, slot) in conversations.iter() {

@@ -27,7 +27,7 @@ pub struct Conversation {
     /// that never enter a topic.
     pub handle: Option<SessionHandle>,
     /// Topic this conversation belongs to, if any. `None` = tmp chat
-    /// (no storage, no resume). Set by `switch_active_topic`.
+    /// (no storage, no resume). Set by `switch_topic`.
     pub topic: Option<String>,
 }
 

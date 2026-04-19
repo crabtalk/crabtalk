@@ -35,7 +35,7 @@ impl TopicRouter {
     }
 }
 
-/// Outcome of `switch_active_topic`. `resumed = true` means the topic
+/// Outcome of `switch_topic`. `resumed = true` means the topic
 /// already existed (in the router or on disk); `false` means it was
 /// freshly created.
 #[derive(Debug, Clone, Copy)]
@@ -54,7 +54,7 @@ impl<C: Config> Runtime<C> {
     /// Returns the target `conversation_id` in the outcome. The caller
     /// is responsible for telling the user which conversation to route
     /// the next message to — this call only updates runtime state.
-    pub async fn switch_active_topic(
+    pub async fn switch_topic(
         &self,
         agent: &str,
         sender: &str,
@@ -91,20 +91,20 @@ impl<C: Config> Runtime<C> {
         };
 
         match self
-            .finalize_topic_switch(agent, sender, title, description, id)
+            .finalize_switch(agent, sender, title, description, id)
             .await
         {
             Ok(outcome) => Ok(outcome),
             Err(e) => {
-                self.rollback_topic_reservation(&key, title).await;
+                self.rollback_reservation(&key, title).await;
                 Err(e)
             }
         }
     }
 
-    /// Cold-path body of `switch_active_topic`. Called after the slot
+    /// Cold-path body of `switch_topic`. Called after the slot
     /// has been reserved; any error here triggers a router rollback.
-    async fn finalize_topic_switch(
+    async fn finalize_switch(
         &self,
         agent: &str,
         sender: &str,
@@ -112,14 +112,14 @@ impl<C: Config> Runtime<C> {
         description: Option<&str>,
         id: u64,
     ) -> Result<SwitchOutcome> {
-        let existing = self.find_topic_session(agent, sender, title);
+        let existing = self.find_session(agent, sender, title);
         let resumed = existing.is_some();
 
         if !resumed {
             let desc = description.ok_or_else(|| {
                 anyhow::anyhow!("description required when creating a new topic '{title}'")
             })?;
-            self.ensure_topic_entry(title, desc);
+            self.ensure_entry(title, desc);
         }
 
         let slot = Self::new_slot(id, agent, sender);
@@ -140,7 +140,7 @@ impl<C: Config> Runtime<C> {
                     // Stamp meta so the new session carries its topic
                     // from the first write — a missing `topic` here
                     // would make the session invisible to future
-                    // `find_topic_session` scans. `conversation.meta`
+                    // `find_session` scans. `conversation.meta`
                     // already reflects the topic we set above.
                     storage.update_session_meta(&handle, &conversation.meta(agent, sender))?;
                     conversation.handle = Some(handle);
@@ -155,7 +155,7 @@ impl<C: Config> Runtime<C> {
         })
     }
 
-    async fn rollback_topic_reservation(&self, key: &(String, String), title: &str) {
+    async fn rollback_reservation(&self, key: &(String, String), title: &str) {
         let mut topics = self.topics.write().await;
         let Some(router) = topics.get_mut(key) else {
             return;
@@ -171,7 +171,7 @@ impl<C: Config> Runtime<C> {
 
     /// Scan storage for a session matching `(agent, sender, topic)`.
     /// Blocking I/O; call from outside the runtime locks.
-    fn find_topic_session(
+    fn find_session(
         &self,
         agent: &str,
         sender: &str,
@@ -204,7 +204,7 @@ impl<C: Config> Runtime<C> {
     /// Write the Topic memory entry if it doesn't already exist.
     /// Duplicate-name errors are ignored — a prior process may have
     /// created the same topic.
-    fn ensure_topic_entry(&self, title: &str, description: &str) {
+    fn ensure_entry(&self, title: &str, description: &str) {
         let mut mem = self.memory.write();
         if mem.get(title).is_some() {
             return;

@@ -112,7 +112,7 @@ async fn get_or_create_conversation_requires_registered_agent() {
 }
 
 #[tokio::test]
-async fn create_and_close_conversation() {
+async fn create_and_close() {
     let runtime = runtime(TestProvider::with_chunks(vec![]));
     runtime.add_agent(AgentConfig::new("crab"));
 
@@ -122,9 +122,9 @@ async fn create_and_close_conversation() {
         .unwrap();
     assert!(runtime.conversation(id).await.is_some());
 
-    assert!(runtime.close_conversation(id).await);
+    assert!(runtime.close(id).await);
     assert!(runtime.conversation(id).await.is_none());
-    assert!(!runtime.close_conversation(id).await);
+    assert!(!runtime.close(id).await);
 }
 
 #[tokio::test]
@@ -173,7 +173,7 @@ async fn get_or_create_conversation_rejects_unknown_agent() {
 }
 
 #[tokio::test]
-async fn transfer_conversations_moves_all() {
+async fn transfer_to_moves_all() {
     let runtime1 = runtime(TestProvider::with_chunks(vec![]));
     runtime1.add_agent(AgentConfig::new("crab"));
     let id = runtime1
@@ -183,7 +183,7 @@ async fn transfer_conversations_moves_all() {
 
     let mut runtime2 = runtime(TestProvider::with_chunks(vec![]));
     runtime2.add_agent(AgentConfig::new("crab"));
-    runtime1.transfer_conversations(&mut runtime2).await;
+    runtime1.transfer_to(&mut runtime2).await;
 
     // Conversation should exist in runtime2
     assert!(runtime2.conversation(id).await.is_some());
@@ -287,7 +287,7 @@ async fn stream_to_yields_correct_content() {
 }
 
 #[tokio::test]
-async fn switch_active_topic_resumes_archive_from_memory() {
+async fn switch_topic_resumes_archive_from_memory() {
     use memory::{EntryKind, Op};
     use wcore::{
         model::HistoryEntry,
@@ -341,7 +341,7 @@ async fn switch_active_topic_resumes_archive_from_memory() {
     runtime.add_agent(AgentConfig::new("crab"));
 
     runtime
-        .switch_active_topic("crab", "tester", "auth", None)
+        .switch_topic("crab", "tester", "auth", None)
         .await
         .unwrap();
     let conv_id = runtime
@@ -358,7 +358,7 @@ async fn switch_active_topic_resumes_archive_from_memory() {
 }
 
 #[tokio::test]
-async fn switch_active_topic_injects_placeholder_when_archive_missing() {
+async fn switch_topic_injects_placeholder_when_archive_missing() {
     use wcore::{
         model::HistoryEntry,
         storage::{ConversationMeta, Storage},
@@ -395,7 +395,7 @@ async fn switch_active_topic_injects_placeholder_when_archive_missing() {
     runtime.add_agent(AgentConfig::new("crab"));
 
     runtime
-        .switch_active_topic("crab", "tester", "ghost", None)
+        .switch_topic("crab", "tester", "ghost", None)
         .await
         .unwrap();
     let conv_id = runtime

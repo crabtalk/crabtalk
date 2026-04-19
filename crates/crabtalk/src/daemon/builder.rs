@@ -189,9 +189,7 @@ impl<P: Provider + 'static> Daemon<P> {
         .await?;
         {
             let old_runtime = self.runtime.read().await;
-            (**old_runtime)
-                .transfer_conversations(&mut new_runtime)
-                .await;
+            (**old_runtime).transfer_to(&mut new_runtime).await;
         }
         {
             let events_for_sink = self.events.clone();
