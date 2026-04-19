@@ -1,10 +1,9 @@
 //! Agent registry — persistent and ephemeral agent management.
 
+use super::Runtime;
 use crate::{Config, Env, Hook};
 use std::sync::Arc;
 use wcore::{Agent, AgentBuilder, AgentConfig, ToolDispatcher};
-
-use super::Runtime;
 
 impl<C: Config> Runtime<C> {
     pub fn add_agent(&self, config: AgentConfig) {

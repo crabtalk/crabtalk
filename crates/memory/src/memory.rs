@@ -114,6 +114,30 @@ impl Memory {
             .collect()
     }
 
+    /// BM25 search restricted to a single `EntryKind`. The inner search
+    /// runs unbounded so the kind filter can't truncate matches mid-list;
+    /// we clone only the survivors that fit inside `limit`.
+    pub fn search_kind(&self, query: &str, limit: usize, kind: EntryKind) -> Vec<SearchHit> {
+        if limit == 0 {
+            return Vec::new();
+        }
+        self.index
+            .search(query, usize::MAX)
+            .into_iter()
+            .filter_map(|(id, score)| {
+                let entry = self.entries.get(&id)?;
+                if entry.kind != kind {
+                    return None;
+                }
+                Some(SearchHit {
+                    entry: entry.clone(),
+                    score,
+                })
+            })
+            .take(limit)
+            .collect()
+    }
+
     fn add(
         &mut self,
         name: String,

@@ -1,11 +1,10 @@
 //! Node configuration loaded from `config.toml`.
 
+use super::system::SystemConfig;
 use crate::{McpServerConfig, ProviderDef, config::DisabledItems};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-
-use super::system::SystemConfig;
 
 /// Top-level node configuration (`config.toml`).
 ///

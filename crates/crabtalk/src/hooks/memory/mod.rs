@@ -4,8 +4,11 @@
 //! for the design.
 
 use anyhow::Result;
+use forget::Forget;
 use memory::Memory as Store;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use recall::Recall;
+use remember::Remember;
 use runtime::Hook;
 use std::{path::PathBuf, sync::Arc};
 use wcore::{
@@ -17,10 +20,6 @@ use wcore::{
 mod forget;
 mod recall;
 mod remember;
-
-use forget::Forget;
-use recall::Recall;
-use remember::Remember;
 
 /// Shared handle to the underlying memory store. Cloneable because the
 /// runtime needs a reference of its own for writing archives during

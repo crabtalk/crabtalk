@@ -255,7 +255,7 @@ fn spawn_agent_task<P: Provider + 'static>(
 
         conversation_cwds.lock().await.remove(&conversation_id);
         read_files.lock().remove(&conversation_id);
-        rt.close_conversation(conversation_id).await;
+        rt.close(conversation_id).await;
 
         (result_content, error_msg)
     })

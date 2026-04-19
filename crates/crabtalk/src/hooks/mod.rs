@@ -5,5 +5,6 @@ pub mod delegate;
 pub mod memory;
 pub mod os;
 pub mod skill;
+pub mod topic;
 
 pub use memory::Memory;

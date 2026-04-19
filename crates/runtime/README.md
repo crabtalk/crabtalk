@@ -1,11 +1,12 @@
 # crabtalk-runtime
 
-Agent runtime — tool dispatch, MCP bridge, skills, memory, and session management.
+Agent runtime — agent registry, conversation management, and hook orchestration.
 
-Provides `Session` for stateful agent execution, `McpBridge` for connecting to
-MCP servers (stdio and HTTP transports), `SkillRegistry` for loading skill
-directories, and `MemoryStore` for agent memory. Includes an inline MCP client
-that implements `initialize`, `tools/list`, and `tools/call` over JSON-RPC 2.0.
+Exposes `Runtime<C>` (the main entry point), `Conversation` (in-memory
+conversation state), and the `Env` and `Hook` traits used to extend the runtime
+with tools, event sinks, and environment-specific behavior. Persistence is
+delegated to the `Storage` trait from `crabtalk-core`; memory is delegated to
+`crabtalk-memory` via `SharedMemory`.
 
 ## License
 

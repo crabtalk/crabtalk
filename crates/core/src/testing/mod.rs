@@ -5,11 +5,10 @@
 //! for a minimal [`Tool`] schema.
 
 use crabllm_core::{FunctionDef, Tool, ToolType};
+pub use mem::InMemoryStorage;
 
 mod mem;
 pub mod provider;
-
-pub use mem::InMemoryStorage;
 
 /// Create a minimal tool schema for testing.
 pub fn test_schema(name: &str) -> Tool {

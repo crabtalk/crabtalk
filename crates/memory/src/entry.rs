@@ -4,6 +4,7 @@ pub type EntryId = u64;
 pub enum EntryKind {
     Note,
     Archive,
+    Topic,
 }
 
 #[derive(Clone, Debug)]

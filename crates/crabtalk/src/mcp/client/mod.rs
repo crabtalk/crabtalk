@@ -4,7 +4,6 @@
 //! `initialize`, `tools/list`, and `tools/call`.
 
 use anyhow::{Context, Result};
-
 pub use jsonrpc::{CallToolResult, ContentItem, McpTool};
 use jsonrpc::{ClientInfo, InitializeParams, ListToolsResult};
 

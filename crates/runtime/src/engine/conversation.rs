@@ -1,31 +1,16 @@
 //! Conversation management — lifecycle, persistence, and title generation.
 
-use crate::{Config, Conversation};
+use super::{ConvSlot, Runtime, TopicRouter};
+use crate::{Config, Conversation, ConversationHandle};
 use anyhow::{Result, bail};
 use crabllm_core::{ChatCompletionRequest, Message, Role};
 use memory::{EntryKind, Op};
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::sync::{Arc, atomic::Ordering};
 use tokio::sync::Mutex;
-use wcore::{
-    model::HistoryEntry,
-    storage::{SessionHandle, Storage},
-};
-
-use super::{ConvSlot, Runtime};
-
-fn archive_base_name(session_slug: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("archive-{session_slug}-{nanos}")
-}
+use wcore::{model::HistoryEntry, storage::Storage};
 
 impl<C: Config> Runtime<C> {
-    fn new_slot(id: u64, agent: &str, created_by: &str) -> ConvSlot {
+    pub(super) fn new_slot(id: u64, agent: &str, created_by: &str) -> ConvSlot {
         ConvSlot {
             agent: agent.to_owned(),
             created_by: created_by.to_owned(),
@@ -33,37 +18,63 @@ impl<C: Config> Runtime<C> {
         }
     }
 
-    /// Get or create a conversation for the given (agent, created_by) identity.
+    /// Get or create a conversation for the given (agent, created_by)
+    /// identity. Routing order:
+    ///
+    /// 1. If `(agent, sender)` has an active topic, return that topic's
+    ///    conversation.
+    /// 2. Otherwise return/create the tmp conversation for this pair —
+    ///    in-memory only, no storage I/O, no resume. Topic-bound chats
+    ///    reach storage via `switch_topic`.
     pub async fn get_or_create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.has_agent(agent).await {
             bail!("agent '{agent}' not registered");
         }
 
-        // 1. Storage lookup outside lock to avoid holding runtime locks over I/O.
-        let storage = self.storage();
-        let loaded = storage
-            .find_latest_session(agent, created_by)
-            .ok()
-            .flatten()
-            .and_then(|handle| {
-                storage
-                    .load_session(&handle)
-                    .ok()
-                    .flatten()
-                    .map(|s| (handle, s))
-            });
+        let key = (agent.to_owned(), created_by.to_owned());
 
-        // 2. Atomic scan + insert under one write lock.
-        let mut conversations = self.conversations.write().await;
-        for (id, slot) in conversations.iter() {
-            if slot.agent == agent && slot.created_by == created_by {
-                return Ok(*id);
-            }
+        // Read-first: the common case is a hit on an existing tmp or
+        // active-topic conversation. Avoid allocating a `TopicRouter`
+        // until we actually need to insert one.
+        if let Some(id) = self
+            .topics
+            .read()
+            .await
+            .get(&key)
+            .and_then(TopicRouter::active_conversation)
+        {
+            return Ok(id);
         }
 
-        let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
+        // Reserve an id under the router write lock; release it before
+        // taking the conversations write lock to keep hold-times short.
+        let id = {
+            let mut topics = self.topics.write().await;
+            let router = topics.entry(key).or_default();
+            if let Some(existing) = router.active_conversation() {
+                return Ok(existing);
+            }
+            let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
+            router.tmp = Some(id);
+            id
+        };
         let slot = Self::new_slot(id, agent, created_by);
-        if let Some((handle, snapshot)) = loaded {
+        self.conversations.write().await.insert(id, slot);
+        Ok(id)
+    }
+
+    /// Load a specific conversation by persistent handle.
+    pub async fn load(&self, handle: ConversationHandle) -> Result<u64> {
+        let storage = self.storage();
+        let snapshot = storage
+            .load_session(&handle)?
+            .ok_or_else(|| anyhow::anyhow!("conversation '{}' not found", handle.as_str()))?;
+        if !self.has_agent(&snapshot.meta.agent).await {
+            bail!("agent '{}' not registered", snapshot.meta.agent);
+        }
+        let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
+        let slot = Self::new_slot(id, &snapshot.meta.agent, &snapshot.meta.created_by);
+        {
             let mut conversation = slot.inner.lock().await;
             conversation.history =
                 self.resumed_history(snapshot.archive.as_deref(), snapshot.history);
@@ -71,41 +82,28 @@ impl<C: Config> Runtime<C> {
             conversation.uptime_secs = snapshot.meta.uptime_secs;
             conversation.handle = Some(handle);
         }
-        conversations.insert(id, slot);
-        Ok(id)
-    }
-
-    /// Load a specific conversation by session handle.
-    pub async fn load_specific_conversation(&self, handle: SessionHandle) -> Result<u64> {
-        let storage = self.storage();
-        let snapshot = storage
-            .load_session(&handle)?
-            .ok_or_else(|| anyhow::anyhow!("session '{}' not found", handle.as_str()))?;
-        if !self.has_agent(&snapshot.meta.agent).await {
-            bail!("agent '{}' not registered", snapshot.meta.agent);
-        }
-        let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
-        let slot = Self::new_slot(id, &snapshot.meta.agent, &snapshot.meta.created_by);
-        let mut conversation = slot.inner.lock().await;
-        conversation.history = self.resumed_history(snapshot.archive.as_deref(), snapshot.history);
-        conversation.title = snapshot.meta.title;
-        conversation.uptime_secs = snapshot.meta.uptime_secs;
-        conversation.handle = Some(handle);
-        drop(conversation);
         self.conversations.write().await.insert(id, slot);
         Ok(id)
     }
 
-    pub async fn active_conversation_infos(
-        &self,
-    ) -> Vec<wcore::protocol::message::ActiveConversationInfo> {
-        let conversations = self.conversations.read().await;
-        let mut infos = Vec::with_capacity(conversations.len());
-        for (_, conv_slot) in conversations.iter() {
-            let c = conv_slot.inner.lock().await;
+    pub async fn list_active(&self) -> Vec<wcore::protocol::message::ActiveConversationInfo> {
+        // Snapshot the slot metadata and mutex handles first so the
+        // outer read guard isn't held across per-conversation locks —
+        // otherwise a slow conversation would block readers of the
+        // whole map.
+        let slots: Vec<_> = {
+            let conversations = self.conversations.read().await;
+            conversations
+                .values()
+                .map(|s| (s.agent.clone(), s.created_by.clone(), s.inner.clone()))
+                .collect()
+        };
+        let mut infos = Vec::with_capacity(slots.len());
+        for (agent, sender, mutex) in slots {
+            let c = mutex.lock().await;
             infos.push(wcore::protocol::message::ActiveConversationInfo {
-                agent: conv_slot.agent.clone(),
-                sender: conv_slot.created_by.clone(),
+                agent,
+                sender,
                 message_count: c.history.len() as u64,
                 alive_secs: c.uptime_secs,
                 title: c.title.clone(),
@@ -114,9 +112,30 @@ impl<C: Config> Runtime<C> {
         infos
     }
 
-    pub async fn close_conversation(&self, id: u64) -> bool {
+    pub async fn close(&self, id: u64) -> bool {
         self.steering.write().await.remove(&id);
-        self.conversations.write().await.remove(&id).is_some()
+        let removed = self.conversations.write().await.remove(&id);
+        if let Some(slot) = &removed {
+            let key = (slot.agent.clone(), slot.created_by.clone());
+            let mut topics = self.topics.write().await;
+            if let Some(router) = topics.get_mut(&key) {
+                if router.tmp == Some(id) {
+                    router.tmp = None;
+                }
+                router.by_title.retain(|_, cid| *cid != id);
+                if router
+                    .active
+                    .as_ref()
+                    .is_some_and(|t| !router.by_title.contains_key(t))
+                {
+                    router.active = None;
+                }
+                if router.tmp.is_none() && router.by_title.is_empty() {
+                    topics.remove(&key);
+                }
+            }
+        }
+        removed.is_some()
     }
 
     pub async fn steer(&self, conversation_id: u64, content: String) -> Result<()> {
@@ -137,6 +156,21 @@ impl<C: Config> Runtime<C> {
             .map(|slot| slot.inner.clone())
     }
 
+    /// Look up a conversation slot's `(agent, sender, mutex)` triple.
+    /// Returns `None` when the conversation id is not registered — the
+    /// execution paths all need this handshake before locking the
+    /// conversation mutex.
+    pub(crate) async fn acquire_slot(
+        &self,
+        id: u64,
+    ) -> Option<(String, String, Arc<Mutex<Conversation>>)> {
+        self.conversations
+            .read()
+            .await
+            .get(&id)
+            .map(ConvSlot::parts)
+    }
+
     pub async fn conversations(&self) -> Vec<Arc<Mutex<Conversation>>> {
         self.conversations
             .read()
@@ -150,7 +184,7 @@ impl<C: Config> Runtime<C> {
         self.conversations.read().await.len()
     }
 
-    pub async fn find_conversation_id(&self, agent: &str, sender: &str) -> Option<u64> {
+    pub async fn conversation_id(&self, agent: &str, sender: &str) -> Option<u64> {
         let conversations = self.conversations.read().await;
         for (id, slot) in conversations.iter() {
             if slot.agent == agent && slot.created_by == sender {
@@ -160,33 +194,29 @@ impl<C: Config> Runtime<C> {
         None
     }
 
-    pub async fn compact_conversation(&self, conversation_id: u64) -> Option<String> {
-        let (agent_name, history) = {
+    pub async fn compact(&self, conversation_id: u64) -> Option<String> {
+        // Release the conversations read lock before the per-conversation
+        // mutex await — otherwise readers queue behind a potentially
+        // contended inner lock.
+        let (agent_name, conversation_mutex) = {
             let conversations = self.conversations.read().await;
             let slot = conversations.get(&conversation_id)?;
-            let agent_name = slot.agent.clone();
-            let conversation_mutex = slot.inner.clone();
-            drop(conversations);
+            (slot.agent.clone(), slot.inner.clone())
+        };
+        let history = {
             let conversation = conversation_mutex.lock().await;
             if conversation.history.is_empty() {
                 return None;
             }
-            (agent_name, conversation.history.clone())
+            conversation.history.clone()
         };
-        let persistent = self.agents.read().get(&agent_name).cloned();
-        if let Some(a) = persistent {
-            return a.compact(&history).await;
-        }
-        let a = self
-            .ephemeral_agents
-            .read()
+        self.resolve_agent(&agent_name)
+            .await?
+            .compact(&history)
             .await
-            .get(&agent_name)
-            .cloned()?;
-        a.compact(&history).await
     }
 
-    pub async fn transfer_conversations<C2: Config>(&self, dest: &mut Runtime<C2>) {
+    pub async fn transfer_to<C2: Config>(&self, dest: &mut Runtime<C2>) {
         let conversations = self.conversations.read().await;
         let dest_conversations = dest.conversations.get_mut();
         for (id, slot) in conversations.iter() {
@@ -201,7 +231,7 @@ impl<C: Config> Runtime<C> {
     /// (memory wiped, different machine, etc.) injects a visible placeholder
     /// so the model can acknowledge the gap instead of silently truncating
     /// the user's context.
-    fn resumed_history(
+    pub(super) fn resumed_history(
         &self,
         archive: Option<&str>,
         mut history: Vec<HistoryEntry>,
@@ -221,12 +251,34 @@ impl<C: Config> Runtime<C> {
         out
     }
 
-    /// Write a compaction summary to memory as an `Archive` entry and
-    /// return the generated entry name. `None` on failure — the caller
-    /// must skip the compact marker so a resume can't dangle.
-    fn write_archive(&self, session_slug: &str, summary: String) -> Option<String> {
-        let name = archive_base_name(session_slug);
+    /// Write a compaction summary to memory as an `Archive` entry,
+    /// named `{topic-slug}-{n}` where `n` is the next free sequence
+    /// number for this topic. Older archives stay searchable via
+    /// `recall`, so a long-running topic's phases don't get
+    /// overwritten. Returns the generated name, or `None` on failure
+    /// — the caller must skip the compact marker so a resume can't
+    /// dangle.
+    fn write_archive(&self, topic: &str, summary: String) -> Option<String> {
+        let slug = wcore::sender_slug(topic);
+        let prefix = format!("{slug}-");
         let mut mem = self.memory.write();
+        // Scan and insert under the same write lock — two concurrent
+        // compactions can't both pick `seq` and collide.
+        let next_seq = mem
+            .list()
+            .filter(|e| e.kind == EntryKind::Archive && e.name.starts_with(&prefix))
+            .filter_map(|e| {
+                let suffix = &e.name[prefix.len()..];
+                let n: u32 = suffix.parse().ok()?;
+                // Reject non-canonical forms ("02", "+1", etc.) so a
+                // future `{slug}-2` can't collide with a historic
+                // `{slug}-02`.
+                (n.to_string() == suffix).then_some(n)
+            })
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let name = format!("{slug}-{next_seq}");
         match mem.apply(Op::Add {
             name: name.clone(),
             content: summary,
@@ -241,16 +293,48 @@ impl<C: Config> Runtime<C> {
         }
     }
 
-    /// Ensure the conversation has a session handle, creating one via
-    /// the repo if needed. Called before the first persist.
+    /// Ensure a topic-bound conversation has a session handle, creating
+    /// one via the repo if needed. Tmp chats (no topic) are in-memory
+    /// only — never persisted, never assigned a handle.
     fn ensure_handle(&self, conversation: &mut Conversation, agent: &str, created_by: &str) {
-        if conversation.handle.is_some() {
+        if conversation.handle.is_some() || conversation.topic.is_none() {
             return;
         }
         let storage = self.storage();
         match storage.create_session(agent, created_by) {
             Ok(handle) => conversation.handle = Some(handle),
             Err(e) => tracing::warn!("failed to create session: {e}"),
+        }
+    }
+
+    /// Post-run tail shared by `send_to`, `stream_to`, and
+    /// `guest_stream_to`: update uptime, persist, and kick off title
+    /// generation if the conversation has a titleable exchange and no
+    /// title yet.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finalize_run(
+        &self,
+        conversation_id: u64,
+        conversation: &mut Conversation,
+        conversation_mutex: Arc<Mutex<Conversation>>,
+        agent: &str,
+        created_by: &str,
+        run_start: std::time::Instant,
+        pre_run_len: usize,
+        compact_summary: Option<String>,
+        event_trace: &[wcore::EventLine],
+    ) {
+        conversation.uptime_secs += run_start.elapsed().as_secs();
+        self.persist_messages(
+            conversation,
+            agent,
+            created_by,
+            pre_run_len,
+            compact_summary,
+            event_trace,
+        );
+        if conversation.title.is_empty() && conversation.history.len() >= 2 {
+            self.spawn_title_generation(conversation_id, agent, created_by, conversation_mutex);
         }
     }
 
@@ -272,9 +356,15 @@ impl<C: Config> Runtime<C> {
         let storage = self.storage();
 
         if let Some(summary) = compact_summary {
+            // A persisted conversation is always topic-bound —
+            // `ensure_handle` refuses to create a handle for tmp chats.
+            let topic = conversation
+                .topic
+                .clone()
+                .expect("persisted conversation without a topic");
             // Archive first — if this fails, don't write a dangling
             // marker that points at nothing.
-            if let Some(archive_name) = self.write_archive(handle.as_str(), summary) {
+            if let Some(archive_name) = self.write_archive(&topic, summary) {
                 let _ = storage.append_session_compact(handle, &archive_name);
                 if conversation.history.len() > 1 {
                     let tail: Vec<_> = conversation.history[1..]

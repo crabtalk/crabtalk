@@ -218,6 +218,7 @@ impl Storage for FsStorage {
             created_at: chrono::Utc::now().to_rfc3339(),
             title: String::new(),
             uptime_secs: 0,
+            topic: None,
         };
         let meta_bytes = serde_json::to_vec(&meta)?;
         atomic_write(&self.session_meta_path(&slug), &meta_bytes)?;

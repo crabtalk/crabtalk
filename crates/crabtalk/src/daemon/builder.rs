@@ -189,9 +189,7 @@ impl<P: Provider + 'static> Daemon<P> {
         .await?;
         {
             let old_runtime = self.runtime.read().await;
-            (**old_runtime)
-                .transfer_conversations(&mut new_runtime)
-                .await;
+            (**old_runtime).transfer_to(&mut new_runtime).await;
         }
         {
             let events_for_sink = self.events.clone();
@@ -316,6 +314,14 @@ impl<P: Provider + 'static> Daemon<P> {
         node_hook.register_hook(
             "memory",
             Arc::new(crate::hooks::memory::MemoryHook::new(memory)),
+        );
+
+        node_hook.register_hook(
+            "topic",
+            Arc::new(crate::hooks::topic::TopicHook::<P>::new(
+                runtime_once.clone(),
+                shared_memory.clone(),
+            )),
         );
 
         node_hook.register_hook(
