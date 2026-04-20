@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Daemon - The Crabtalk RFC Book</title>
+        <title>0171 - Topic Switching - The Crabtalk RFC Book</title>
 
 
         <!-- Custom HTML head -->
@@ -146,7 +146,7 @@
                         <a href="https://github.com/crabtalk/crabtalk" title="Git repository" aria-label="Git repository">
                             <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
                         </a>
-                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/spec/daemon.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/rfcs/0171-topic-switching.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
                         </a>
 
@@ -180,62 +180,82 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="daemon"><a class="header" href="#daemon">Daemon</a></h1>
-<p>The daemon is the long-lived process that hosts the runtime, owns transports, and persists state. Clients are transient; the daemon is not. A single daemon process serves all configured agents, all active conversations, and all connected clients.</p>
-<h2 id="responsibilities"><a class="header" href="#responsibilities">Responsibilities</a></h2>
-<p>The daemon owns:</p>
+                        <h1 id="0171---topic-switching"><a class="header" href="#0171---topic-switching">0171 - Topic Switching</a></h1>
 <ul>
-<li><strong>Transports</strong> — UDS and TCP listeners. Listening endpoints belong to the daemon, not to individual clients or agents.</li>
-<li><strong>Runtime</strong> — a single shared runtime instance behind <code>RwLock</code>. Agents share the runtime; the runtime is never cloned per conversation.</li>
-<li><strong>Hooks</strong> — the composite <code>Hook</code> assembled from sub-hooks (OS tools, <code>ask_user</code>, delegation, event subscription, memory).</li>
-<li><strong>Event bus</strong> — subscription table and fire callback. File-backed by <code>events/subscriptions.toml</code> under the config directory.</li>
-<li><strong>Cron</strong> — schedule store and per-entry timer tasks. File-backed by <code>cron/crons.toml</code>.</li>
-<li><strong>MCP handler</strong> — connections to external MCP servers and routing to the tools they advertise.</li>
-<li><strong>Configuration</strong> — current <code>NodeConfig</code>, reloaded in place on explicit reload.</li>
+<li>Feature Name: Topic Switching</li>
+<li>Start Date: 2026-04-19</li>
+<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/171">#171</a></li>
+<li>Crates: memory, runtime, crabtalk</li>
+<li>Updates: <a href="0135-agent-first.html">0135 (Agent-First)</a>, <a href="0150-memory-store.html">0150 (Memory Store)</a></li>
 </ul>
-<p>The daemon does not interpret tool semantics. Tool dispatch is the runtime’s responsibility, routed through the composite hook.</p>
-<h2 id="process-model"><a class="header" href="#process-model">Process model</a></h2>
-<p>The daemon runs as a single OS process. All work happens on a single Tokio runtime. There is one listener task per configured transport, one reply task per connected client, one task per in-flight dispatch, and one task per active cron timer. Shutdown is initiated by a broadcast channel; every long-lived task subscribes and exits when the channel fires.</p>
-<p>A daemon process owns at most one configuration directory and at most one set of transport endpoints.</p>
-<h2 id="config-directory"><a class="header" href="#config-directory">Config directory</a></h2>
-<p>The daemon is rooted at a configuration directory supplied at startup. The directory holds:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Path</th><th>Contents</th></tr>
-</thead>
-<tbody>
-<tr><td><code>config.toml</code></td><td>Node configuration.</td></tr>
-<tr><td><code>agents/</code></td><td>Agent definitions.</td></tr>
-<tr><td><code>sessions/</code></td><td>Conversation JSONL logs, one file per conversation.</td></tr>
-<tr><td><code>memory/</code></td><td>Per-agent memory databases, one file per agent.</td></tr>
-<tr><td><code>skills/</code></td><td>Skill bundles loadable by agents.</td></tr>
-<tr><td><code>cron/crons.toml</code></td><td>Cron schedule recovery file.</td></tr>
-<tr><td><code>events/subscriptions.toml</code></td><td>Event subscription recovery file.</td></tr>
-</tbody>
-</table>
-</div>
-<p>All paths are resolved relative to the configuration directory. The daemon writes nothing outside this directory.</p>
-<h2 id="lifecycle"><a class="header" href="#lifecycle">Lifecycle</a></h2>
-<p><strong>Startup.</strong> The daemon reads <code>config.toml</code>, constructs the provider, assembles hooks, opens storage, builds the shared runtime, loads cron and event subscriptions from disk, binds transports, and begins accepting client messages.</p>
-<p><strong>Runtime.</strong> The daemon serves the <code>Server</code> trait. Each client message is dispatched into a spawned task that produces a stream of server messages.</p>
-<p><strong>Reload.</strong> A <code>ReloadMsg</code> causes the daemon to re-read <code>config.toml</code> and rebuild the shared runtime in place. Existing in-flight dispatches complete against the previous runtime; new dispatches see the reloaded runtime. Transports are not re-bound.</p>
-<p><strong>Shutdown.</strong> The daemon broadcasts a shutdown signal. Transport listeners stop accepting new connections. Active dispatches complete or cancel at the next await point. The daemon writes no final state on shutdown; state is persisted on each mutating operation, not at exit.</p>
-<h2 id="persistence-boundary"><a class="header" href="#persistence-boundary">Persistence boundary</a></h2>
-<p>The daemon persists state through the <code>Storage</code> trait. Operations that mutate conversations, memory, or agent definitions write synchronously through storage before acknowledging the caller. Cron and event subscription files are written directly by the daemon.</p>
-<p>A daemon restart recovers all state from the config directory. No state is held only in the process.</p>
-<h2 id="client-addressing"><a class="header" href="#client-addressing">Client addressing</a></h2>
-<p>Clients do not address the daemon. Clients connect to a transport and send <code>ClientMessage</code> values. The transport’s reply channel delivers <code>ServerMessage</code> values back until the connection closes. A client that reconnects and addresses the same <code>(agent, sender)</code> pair resumes the same conversation; no client-side resume token is required.</p>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p>Topic switching is a first-class conversation boundary: the agent can partition its work with a person into parallel threads, each with its own history and compaction archive. Agent-First (0135) established <code>(agent, sender)</code> as the conversation key; this RFC layers <code>topic</code> on top so one <code>(agent, sender)</code> pair maps to N conversations keyed by title, plus an active-topic pointer. A new tool pair — <code>search_topics</code> and <code>switch_topic</code> — lets the agent drive it. Untopicked chats are tmp: in-memory only, no storage I/O, dropped at the end of the run.</p>
+<h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
+<p>Compaction is the only conversation boundary we had before this work, and it’s the wrong tool for the job. Compaction is context-window management — it fires when the transcript gets full, not when the topic changes. Work on auth and work on the deploy pipeline end up in the same conversation history, competing for the same context window, confusing each other.</p>
+<p>Compact and topic-switch are different mechanisms:</p>
+<ul>
+<li><strong>Compact</strong> is intra-conversation. Summarize the current thread, archive the summary, keep going. Same conversation id, same active state.</li>
+<li><strong>Topic switch</strong> is inter-conversation. Pause this thread (full context preserved), pick up another. No summarization, no archive. Each topic is a conversation with its own compaction history.</li>
+</ul>
+<h2 id="design"><a class="header" href="#design">Design</a></h2>
+<h3 id="tools"><a class="header" href="#tools">Tools</a></h3>
+<p>Two new agent tools:</p>
+<ul>
+<li><code>search_topics(query)</code> — BM25 search over existing topics. Returns ranked <code>(title, description)</code> pairs. Not a <code>list_topics</code> dump — the agent searches, not browses, same as <code>recall</code>.</li>
+<li><code>switch_topic(title, description?)</code> — exact title match resumes that conversation and makes it active; no match creates a new conversation with this title. <code>description</code> is required on create, ignored on resume.</li>
+</ul>
+<p>Free-form titles, agent-chosen. The title <em>is</em> the key.</p>
+<h3 id="agent-written-descriptions"><a class="header" href="#agent-written-descriptions">Agent-written descriptions</a></h3>
+<p>When the agent creates a new topic, it supplies a short description — one to three sentences on what the topic is about. That description becomes the <code>content</code> of the memory entry and is what BM25 actually indexes. Title alone is too short for useful recall; auto-summarization from conversation content would need an LLM round-trip per switch and drift as the conversation evolves. The description is immutable after creation — if the focus shifts, the agent switches to a new topic rather than rewriting the label.</p>
+<h3 id="memory-integration"><a class="header" href="#memory-integration">Memory integration</a></h3>
+<p>Topics piggyback on the memory crate. A new <code>EntryKind::Topic</code> variant joins <code>Note</code> and <code>Archive</code>. Each topic materializes as a memory entry:</p>
+<ul>
+<li><code>name</code> = the topic title</li>
+<li><code>content</code> = the agent-written description</li>
+<li><code>kind</code> = <code>EntryKind::Topic</code></li>
+</ul>
+<p><code>search_topics</code> is implemented as <code>Memory::search_kind(query, limit, EntryKind::Topic)</code> — one BM25 index, one ranking story. When the scope-weighting work in #170 lands, recency decay means recently-touched topics rank above stale ones for free.</p>
+<h3 id="runtime-routing"><a class="header" href="#runtime-routing">Runtime routing</a></h3>
+<p>The daemon tracks, per <code>(agent, sender)</code>:</p>
+<ul>
+<li><code>TopicRouter { by_title: HashMap&lt;String, ConversationId&gt;, active: Option&lt;String&gt;, tmp: Option&lt;ConversationId&gt; }</code></li>
+</ul>
+<p><code>get_or_create_conversation(agent, sender)</code> routes in order:</p>
+<ol>
+<li>If <code>router.active = Some(title)</code> and the title is in <code>by_title</code>, return that conversation.</li>
+<li>Otherwise, return or create the tmp conversation.</li>
+</ol>
+<p>Protocol surface is unchanged: clients still address <code>(agent, sender)</code> and <code>StreamMsg</code> gains no topic field. The daemon routes to the active topic’s conversation; the agent owns topic decisions; the user just talks to the agent.</p>
+<h3 id="tmp-chats-are-not-persisted"><a class="header" href="#tmp-chats-are-not-persisted">Tmp chats are not persisted</a></h3>
+<p>A conversation with no topic has no session handle. <code>ensure_handle</code> refuses to create one for tmp chats, and <code>persist_messages</code> no-ops without a handle. This is a deliberate, backward-incompatible break from Agent-First, which always auto-resumed the latest session on first message. Under the new model:</p>
+<ul>
+<li>A user who never switches to a topic never persists anything. Their work is in-memory for the life of the run, then gone.</li>
+<li>A user who wants continuity calls <code>switch_topic</code>. That session is persisted; prior topic sessions for the same <code>(agent, sender, title)</code> are resumed via a <code>list_sessions()</code> scan on cold switch.</li>
+</ul>
+<p>This trades reflexive persistence for agent-controlled persistence. The agent now has to decide what’s worth keeping, which is the right place for that decision.</p>
+<h3 id="cold-path-concurrency"><a class="header" href="#cold-path-concurrency">Cold-path concurrency</a></h3>
+<p><code>switch_active_topic</code> on an unknown title would otherwise race: two callers both miss the fast path, both do storage I/O, both <code>create_session</code>, second clobbers first. Fix: reserve the conversation id under the router’s write lock <em>before</em> any I/O. Any concurrent caller sees the reservation and resumes to the same conversation instead of creating a duplicate. If the I/O subsequently fails, the reservation is rolled back.</p>
+<h3 id="compaction-per-topic"><a class="header" href="#compaction-per-topic">Compaction per topic</a></h3>
+<p>Each topic compacts independently. The existing <code>AgentConfig::compact_threshold</code> fires on the active topic’s conversation and writes an <code>EntryKind::Archive</code> entry scoped to that topic — exactly as today, just per-topic instead of per-<code>(agent, sender)</code>.</p>
+<p>Archives are named <code>{topic-slug}-{n}</code> where <code>n</code> is the next free sequence number for this topic. Older archives stay searchable via <code>recall</code> instead of being overwritten, so the agent can surface older phases of a long-running topic when they’re relevant. Scan and insert happen under one memory write lock so two concurrent compactions can’t pick the same sequence.</p>
+<p>Resume auto-prepends the right archive: <code>load_session</code> returns the most recent compact marker, <code>resumed_history</code> looks that archive up in memory and injects its content as the replayed prefix. Topic switching just changes which conversation is active; the resume mechanism is unchanged.</p>
+<p><code>switch_topic</code> does <strong>not</strong> implicitly compact. If a resumed topic is close to threshold, normal auto-compaction fires on the next turn — late enough to stay cheap, early enough to matter.</p>
+<p>Downstream ranking work lives in <a href="https://github.com/crabtalk/crabtalk/issues/170">#170</a>: topic becomes a new scope dimension (same-topic boost, related-topic BM25 similarity) when that RFC lands.</p>
+<h2 id="open-questions"><a class="header" href="#open-questions">Open questions</a></h2>
+<ul>
+<li><strong>Deletion.</strong> Forgetting a topic entry via <code>forget</code> orphans the underlying conversation (runtime keeps the router until process exit). Whether a topic should be truly deletable — and what happens to its archive history — is deferred.</li>
+<li><strong>Cross-restart active-topic memory.</strong> The active-topic pointer lives only in the running process. On restart, every <code>(agent, sender)</code> starts in tmp until the agent re-enters a topic. Rebuilding “last active topic per pair” from storage is doable but not part of this RFC.</li>
+</ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../spec/runtime.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rfcs/0150-memory-store.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../spec/providers.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../rfcs/superseded.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -245,11 +265,11 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../spec/runtime.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rfcs/0150-memory-store.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../spec/providers.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../rfcs/superseded.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

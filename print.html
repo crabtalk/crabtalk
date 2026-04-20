@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-4e3917c0.js";
+            window.path_to_searchindex_js = "searchindex-a7001dfe.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-740b34d7.js"></script>
+        <script src="toc-65cc29f9.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -1994,6 +1994,73 @@ prod rollout steps ...
 <li>WAL for crash safety in the window between the RAM mutation and the atomic flush.</li>
 <li>Should <code>load()</code> merge instead of replace?</li>
 <li>Should archives expire or be garbage-collected past some age / count?</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="0171---topic-switching"><a class="header" href="#0171---topic-switching">0171 - Topic Switching</a></h1>
+<ul>
+<li>Feature Name: Topic Switching</li>
+<li>Start Date: 2026-04-19</li>
+<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/171">#171</a></li>
+<li>Crates: memory, runtime, crabtalk</li>
+<li>Updates: <a href="#0135---agent-first-protocol">0135 (Agent-First)</a>, <a href="#0150---memory-store">0150 (Memory Store)</a></li>
+</ul>
+<h2 id="summary-13"><a class="header" href="#summary-13">Summary</a></h2>
+<p>Topic switching is a first-class conversation boundary: the agent can partition its work with a person into parallel threads, each with its own history and compaction archive. Agent-First (0135) established <code>(agent, sender)</code> as the conversation key; this RFC layers <code>topic</code> on top so one <code>(agent, sender)</code> pair maps to N conversations keyed by title, plus an active-topic pointer. A new tool pair — <code>search_topics</code> and <code>switch_topic</code> — lets the agent drive it. Untopicked chats are tmp: in-memory only, no storage I/O, dropped at the end of the run.</p>
+<h2 id="motivation-13"><a class="header" href="#motivation-13">Motivation</a></h2>
+<p>Compaction is the only conversation boundary we had before this work, and it’s the wrong tool for the job. Compaction is context-window management — it fires when the transcript gets full, not when the topic changes. Work on auth and work on the deploy pipeline end up in the same conversation history, competing for the same context window, confusing each other.</p>
+<p>Compact and topic-switch are different mechanisms:</p>
+<ul>
+<li><strong>Compact</strong> is intra-conversation. Summarize the current thread, archive the summary, keep going. Same conversation id, same active state.</li>
+<li><strong>Topic switch</strong> is inter-conversation. Pause this thread (full context preserved), pick up another. No summarization, no archive. Each topic is a conversation with its own compaction history.</li>
+</ul>
+<h2 id="design-13"><a class="header" href="#design-13">Design</a></h2>
+<h3 id="tools-2"><a class="header" href="#tools-2">Tools</a></h3>
+<p>Two new agent tools:</p>
+<ul>
+<li><code>search_topics(query)</code> — BM25 search over existing topics. Returns ranked <code>(title, description)</code> pairs. Not a <code>list_topics</code> dump — the agent searches, not browses, same as <code>recall</code>.</li>
+<li><code>switch_topic(title, description?)</code> — exact title match resumes that conversation and makes it active; no match creates a new conversation with this title. <code>description</code> is required on create, ignored on resume.</li>
+</ul>
+<p>Free-form titles, agent-chosen. The title <em>is</em> the key.</p>
+<h3 id="agent-written-descriptions"><a class="header" href="#agent-written-descriptions">Agent-written descriptions</a></h3>
+<p>When the agent creates a new topic, it supplies a short description — one to three sentences on what the topic is about. That description becomes the <code>content</code> of the memory entry and is what BM25 actually indexes. Title alone is too short for useful recall; auto-summarization from conversation content would need an LLM round-trip per switch and drift as the conversation evolves. The description is immutable after creation — if the focus shifts, the agent switches to a new topic rather than rewriting the label.</p>
+<h3 id="memory-integration"><a class="header" href="#memory-integration">Memory integration</a></h3>
+<p>Topics piggyback on the memory crate. A new <code>EntryKind::Topic</code> variant joins <code>Note</code> and <code>Archive</code>. Each topic materializes as a memory entry:</p>
+<ul>
+<li><code>name</code> = the topic title</li>
+<li><code>content</code> = the agent-written description</li>
+<li><code>kind</code> = <code>EntryKind::Topic</code></li>
+</ul>
+<p><code>search_topics</code> is implemented as <code>Memory::search_kind(query, limit, EntryKind::Topic)</code> — one BM25 index, one ranking story. When the scope-weighting work in #170 lands, recency decay means recently-touched topics rank above stale ones for free.</p>
+<h3 id="runtime-routing"><a class="header" href="#runtime-routing">Runtime routing</a></h3>
+<p>The daemon tracks, per <code>(agent, sender)</code>:</p>
+<ul>
+<li><code>TopicRouter { by_title: HashMap&lt;String, ConversationId&gt;, active: Option&lt;String&gt;, tmp: Option&lt;ConversationId&gt; }</code></li>
+</ul>
+<p><code>get_or_create_conversation(agent, sender)</code> routes in order:</p>
+<ol>
+<li>If <code>router.active = Some(title)</code> and the title is in <code>by_title</code>, return that conversation.</li>
+<li>Otherwise, return or create the tmp conversation.</li>
+</ol>
+<p>Protocol surface is unchanged: clients still address <code>(agent, sender)</code> and <code>StreamMsg</code> gains no topic field. The daemon routes to the active topic’s conversation; the agent owns topic decisions; the user just talks to the agent.</p>
+<h3 id="tmp-chats-are-not-persisted"><a class="header" href="#tmp-chats-are-not-persisted">Tmp chats are not persisted</a></h3>
+<p>A conversation with no topic has no session handle. <code>ensure_handle</code> refuses to create one for tmp chats, and <code>persist_messages</code> no-ops without a handle. This is a deliberate, backward-incompatible break from Agent-First, which always auto-resumed the latest session on first message. Under the new model:</p>
+<ul>
+<li>A user who never switches to a topic never persists anything. Their work is in-memory for the life of the run, then gone.</li>
+<li>A user who wants continuity calls <code>switch_topic</code>. That session is persisted; prior topic sessions for the same <code>(agent, sender, title)</code> are resumed via a <code>list_sessions()</code> scan on cold switch.</li>
+</ul>
+<p>This trades reflexive persistence for agent-controlled persistence. The agent now has to decide what’s worth keeping, which is the right place for that decision.</p>
+<h3 id="cold-path-concurrency"><a class="header" href="#cold-path-concurrency">Cold-path concurrency</a></h3>
+<p><code>switch_active_topic</code> on an unknown title would otherwise race: two callers both miss the fast path, both do storage I/O, both <code>create_session</code>, second clobbers first. Fix: reserve the conversation id under the router’s write lock <em>before</em> any I/O. Any concurrent caller sees the reservation and resumes to the same conversation instead of creating a duplicate. If the I/O subsequently fails, the reservation is rolled back.</p>
+<h3 id="compaction-per-topic"><a class="header" href="#compaction-per-topic">Compaction per topic</a></h3>
+<p>Each topic compacts independently. The existing <code>AgentConfig::compact_threshold</code> fires on the active topic’s conversation and writes an <code>EntryKind::Archive</code> entry scoped to that topic — exactly as today, just per-topic instead of per-<code>(agent, sender)</code>.</p>
+<p>Archives are named <code>{topic-slug}-{n}</code> where <code>n</code> is the next free sequence number for this topic. Older archives stay searchable via <code>recall</code> instead of being overwritten, so the agent can surface older phases of a long-running topic when they’re relevant. Scan and insert happen under one memory write lock so two concurrent compactions can’t pick the same sequence.</p>
+<p>Resume auto-prepends the right archive: <code>load_session</code> returns the most recent compact marker, <code>resumed_history</code> looks that archive up in memory and injects its content as the replayed prefix. Topic switching just changes which conversation is active; the resume mechanism is unchanged.</p>
+<p><code>switch_topic</code> does <strong>not</strong> implicitly compact. If a resumed topic is close to threshold, normal auto-compaction fires on the next turn — late enough to stay cheap, early enough to matter.</p>
+<p>Downstream ranking work lives in <a href="https://github.com/crabtalk/crabtalk/issues/170">#170</a>: topic becomes a new scope dimension (same-topic boost, related-topic BM25 similarity) when that RFC lands.</p>
+<h2 id="open-questions"><a class="header" href="#open-questions">Open questions</a></h2>
+<ul>
+<li><strong>Deletion.</strong> Forgetting a topic entry via <code>forget</code> orphans the underlying conversation (runtime keeps the router until process exit). Whether a topic should be truly deletable — and what happens to its archive history — is deferred.</li>
+<li><strong>Cross-restart active-topic memory.</strong> The active-topic pointer lives only in the running process. On restart, every <code>(agent, sender)</code> starts in tmp until the agent re-enters a topic. Rebuilding “last active topic per pair” from storage is doable but not part of this RFC.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="superseded-rfcs"><a class="header" href="#superseded-rfcs">Superseded RFCs</a></h1>
