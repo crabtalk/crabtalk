@@ -12,7 +12,7 @@ use std::{
     path::PathBuf,
 };
 use wcore::{
-    AgentConfig, AgentId, ConversationMeta, EventLine, ManifestConfig, NodeConfig,
+    AgentConfig, AgentId, ConversationMeta, DaemonConfig, EventLine, ManifestConfig,
     model::HistoryEntry,
     storage::{SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage},
 };
@@ -458,15 +458,15 @@ impl Storage for FsStorage {
         atomic_write(&dir.join("CrabTalk.toml"), content.as_bytes())
     }
 
-    fn load_config(&self) -> Result<NodeConfig> {
+    fn load_config(&self) -> Result<DaemonConfig> {
         let path = self.config_dir.join(wcore::paths::CONFIG_FILE);
         if !path.exists() {
-            return Ok(NodeConfig::default());
+            return Ok(DaemonConfig::default());
         }
-        NodeConfig::load(&path)
+        DaemonConfig::load(&path)
     }
 
-    fn save_config(&self, config: &NodeConfig) -> Result<()> {
+    fn save_config(&self, config: &DaemonConfig) -> Result<()> {
         let path = self.config_dir.join(wcore::paths::CONFIG_FILE);
         let content = toml::to_string_pretty(config)?;
         atomic_write(&path, content.as_bytes())

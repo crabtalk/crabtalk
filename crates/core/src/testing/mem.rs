@@ -1,7 +1,7 @@
 //! In-memory [`Storage`] implementation for tests.
 
 use crate::{
-    AgentConfig, AgentId, ManifestConfig, NodeConfig,
+    AgentConfig, AgentId, DaemonConfig, ManifestConfig,
     model::HistoryEntry,
     storage::{
         ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage,
@@ -27,7 +27,7 @@ pub struct InMemoryStorage {
     next_session_seq: Mutex<u32>,
     agents: Mutex<HashMap<String, (AgentConfig, String)>>,
     manifest: Mutex<ManifestConfig>,
-    config: Mutex<NodeConfig>,
+    config: Mutex<DaemonConfig>,
 }
 
 impl Default for InMemoryStorage {
@@ -38,7 +38,7 @@ impl Default for InMemoryStorage {
             next_session_seq: Mutex::new(0),
             agents: Mutex::new(HashMap::new()),
             manifest: Mutex::new(ManifestConfig::default()),
-            config: Mutex::new(NodeConfig::default()),
+            config: Mutex::new(DaemonConfig::default()),
         }
     }
 }
@@ -253,11 +253,11 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    fn load_config(&self) -> Result<NodeConfig> {
+    fn load_config(&self) -> Result<DaemonConfig> {
         Ok(self.config.lock().clone())
     }
 
-    fn save_config(&self, config: &NodeConfig) -> Result<()> {
+    fn save_config(&self, config: &DaemonConfig) -> Result<()> {
         *self.config.lock() = config.clone();
         Ok(())
     }

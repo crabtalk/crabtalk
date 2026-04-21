@@ -211,7 +211,7 @@ impl Cli {
 pub fn ensure_config() -> Result<()> {
     crabtalk::storage::scaffold_config_dir(&wcore::paths::CONFIG_DIR)?;
     let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
-    let config = crabtalk::NodeConfig::load(&config_path)?;
+    let config = crabtalk::DaemonConfig::load(&config_path)?;
     if config.provider.is_empty() {
         attach::setup_provider(&config_path)?;
     }

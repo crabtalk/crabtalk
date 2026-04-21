@@ -41,7 +41,7 @@
 # url = "http://localhost:8080/mcp"
 
 # ---------------------------------------------------------------------------
-# System — core agent, task executor, and memory settings.
+# System — core agent and task executor settings.
 # ---------------------------------------------------------------------------
 
 [system.crab]
@@ -56,7 +56,7 @@ max_concurrent = 4
 viewable_window = 16
 task_timeout = 300
 
-[system.memory]
+[hooks.memory]
 recall_limit = 5
 
 # ---------------------------------------------------------------------------

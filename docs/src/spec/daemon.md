@@ -12,7 +12,7 @@ The daemon owns:
 - **Event bus** — subscription table and fire callback. File-backed by `events/subscriptions.toml` under the config directory.
 - **Cron** — schedule store and per-entry timer tasks. File-backed by `cron/crons.toml`.
 - **MCP handler** — connections to external MCP servers and routing to the tools they advertise.
-- **Configuration** — current `NodeConfig`, reloaded in place on explicit reload.
+- **Configuration** — current `DaemonConfig`, reloaded in place on explicit reload.
 
 The daemon does not interpret tool semantics. Tool dispatch is the runtime's responsibility, routed through the composite hook.
 

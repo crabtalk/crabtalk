@@ -1,6 +1,6 @@
 //! Daemon — the core struct composing runtime, transports, and lifecycle.
 
-use crate::{NodeConfig, hooks, storage::FsStorage};
+use crate::{DaemonConfig, hooks, storage::FsStorage};
 use anyhow::Result;
 use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
@@ -82,12 +82,12 @@ impl<P: Provider + 'static> Clone for Daemon<P> {
 impl Daemon<DefaultProvider> {
     pub async fn start(config_dir: &Path) -> Result<DaemonHandle<DefaultProvider>> {
         let config_path = config_dir.join(wcore::paths::CONFIG_FILE);
-        let config = NodeConfig::load(&config_path)?;
+        let config = DaemonConfig::load(&config_path)?;
         tracing::info!("loaded configuration from {}", config_path.display());
 
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
         let build_provider: BuildProvider<DefaultProvider> =
-            Arc::new(|config: &NodeConfig| build_default_provider(config));
+            Arc::new(|config: &DaemonConfig| build_default_provider(config));
 
         let daemon =
             Daemon::build(&config, config_dir, shutdown_tx.clone(), build_provider).await?;
@@ -101,7 +101,7 @@ impl Daemon<DefaultProvider> {
 }
 
 pub struct DaemonHandle<P: Provider + 'static = DefaultProvider> {
-    pub config: NodeConfig,
+    pub config: DaemonConfig,
     pub shutdown_tx: broadcast::Sender<()>,
     pub daemon: Daemon<P>,
 }

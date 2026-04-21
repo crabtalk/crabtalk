@@ -1,7 +1,7 @@
 //! Daemon construction and lifecycle methods.
 
 use crate::{
-    Daemon, NodeConfig,
+    Daemon, DaemonConfig,
     daemon::{SharedRuntime, hook::DaemonHook},
     daemon::{cron, event, host::DaemonEnv},
     hooks::{Memory, delegate},
@@ -23,9 +23,9 @@ use wcore::{AgentConfig, ResolvedManifest, model::Model, resolve_manifests, stor
 pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
 
 pub type BuildProvider<P> =
-    Arc<dyn Fn(&NodeConfig) -> Result<wcore::model::Model<P>> + Send + Sync>;
+    Arc<dyn Fn(&DaemonConfig) -> Result<wcore::model::Model<P>> + Send + Sync>;
 
-pub fn build_default_provider(config: &NodeConfig) -> Result<Model<DefaultProvider>> {
+pub fn build_default_provider(config: &DaemonConfig) -> Result<Model<DefaultProvider>> {
     build_providers(config)
 }
 
@@ -34,7 +34,7 @@ pub(crate) const SYSTEM_AGENT: &str = crate::hooks::memory::DEFAULT_SOUL;
 /// Build the `AgentConfig` for a single named agent.
 pub(crate) fn build_single_agent_config(
     name: &str,
-    config: &NodeConfig,
+    config: &DaemonConfig,
     manifest: &ResolvedManifest,
     storage: &impl Storage,
 ) -> Result<AgentConfig> {
@@ -76,7 +76,7 @@ pub(crate) fn build_single_agent_config(
 
 impl<P: Provider + 'static> Daemon<P> {
     pub(crate) async fn build(
-        config: &NodeConfig,
+        config: &DaemonConfig,
         config_dir: &Path,
         shutdown_tx: broadcast::Sender<()>,
         build_provider: BuildProvider<P>,
@@ -166,7 +166,7 @@ impl<P: Provider + 'static> Daemon<P> {
     }
 
     pub async fn reload(&self) -> Result<()> {
-        let config = NodeConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
+        let config = DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
         let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
         runtime_once
             .set(self.runtime.clone())
@@ -207,7 +207,7 @@ impl<P: Provider + 'static> Daemon<P> {
     /// Build DaemonHook, DaemonEnv, and Runtime in one shot.
     #[allow(clippy::too_many_arguments)]
     async fn build_all(
-        config: &NodeConfig,
+        config: &DaemonConfig,
         config_dir: &Path,
         build_provider: &BuildProvider<P>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
@@ -283,7 +283,7 @@ impl<P: Provider + 'static> Daemon<P> {
     fn register_tools(
         node_hook: &mut DaemonHook,
         storage: Arc<FsStorage>,
-        config: &NodeConfig,
+        config: &DaemonConfig,
         config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
@@ -296,7 +296,7 @@ impl<P: Provider + 'static> Daemon<P> {
         runtime::SharedMemory,
     )> {
         let memory_wrapper =
-            Memory::open(config.system.memory.clone(), config_dir.join("memory.db"))?;
+            Memory::open(config.hooks.memory.clone(), config_dir.join("memory.db"))?;
         let shared_memory = memory_wrapper.shared();
         let memory = Arc::new(memory_wrapper);
         let scopes = node_hook.scopes.clone();
@@ -307,7 +307,7 @@ impl<P: Provider + 'static> Daemon<P> {
             cwd,
             conversation_cwds.clone(),
             read_files.clone(),
-            config.system.bash.clone(),
+            config.hooks.bash.clone(),
         ));
         node_hook.register_hook("os", os_hook.clone());
 
@@ -366,7 +366,7 @@ impl<P: Provider + 'static> Daemon<P> {
 
     fn register_agents(
         runtime: &mut Runtime<crate::daemon::DaemonCfg<P>>,
-        config: &NodeConfig,
+        config: &DaemonConfig,
         config_dir: &Path,
         manifest: &ResolvedManifest,
     ) -> Result<()> {
@@ -448,7 +448,7 @@ fn resolve_agent_prompt(
     prompt_map.get(name).cloned()
 }
 
-fn build_providers(config: &NodeConfig) -> Result<Model<DefaultProvider>> {
+fn build_providers(config: &DaemonConfig) -> Result<Model<DefaultProvider>> {
     let providers: std::collections::HashMap<String, _> = config
         .provider
         .iter()
@@ -471,7 +471,7 @@ fn build_providers(config: &NodeConfig) -> Result<Model<DefaultProvider>> {
     Ok(Model::new(retrying))
 }
 
-fn mcp_servers(config: &NodeConfig, manifest: &ResolvedManifest) -> Vec<wcore::McpServerConfig> {
+fn mcp_servers(config: &DaemonConfig, manifest: &ResolvedManifest) -> Vec<wcore::McpServerConfig> {
     manifest
         .mcps
         .iter()

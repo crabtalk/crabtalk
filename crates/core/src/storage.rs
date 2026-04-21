@@ -5,7 +5,7 @@
 //! crate and is not part of this trait.
 
 use crate::{
-    AgentConfig, AgentEvent, AgentId, AgentStep, ManifestConfig, NodeConfig, model::HistoryEntry,
+    AgentConfig, AgentEvent, AgentId, AgentStep, DaemonConfig, ManifestConfig, model::HistoryEntry,
 };
 use anyhow::Result;
 use crabllm_core::Usage;
@@ -96,11 +96,11 @@ pub trait Storage: Send + Sync + 'static {
 
     // ── Config ──────────────────────────────────────────────────────
 
-    /// Load the node configuration (`config.toml`).
-    fn load_config(&self) -> Result<NodeConfig>;
+    /// Load the daemon configuration (`config.toml`).
+    fn load_config(&self) -> Result<DaemonConfig>;
 
-    /// Overwrite the node configuration.
-    fn save_config(&self, config: &NodeConfig) -> Result<()>;
+    /// Overwrite the daemon configuration.
+    fn save_config(&self, config: &DaemonConfig) -> Result<()>;
 
     /// Create the initial config directory structure if it doesn't exist.
     fn scaffold(&self) -> Result<()>;

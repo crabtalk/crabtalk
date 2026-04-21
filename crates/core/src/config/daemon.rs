@@ -1,27 +1,36 @@
-//! Node configuration loaded from `config.toml`.
+//! Daemon configuration loaded from `config.toml`.
 
-use super::system::SystemConfig;
-use crate::{McpServerConfig, ProviderDef, config::DisabledItems};
+use crate::{
+    McpServerConfig, ProviderDef,
+    config::{
+        DisabledItems,
+        hooks::{BashConfig, HooksConfig, MemoryConfig},
+        system::SystemConfig,
+    },
+};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Top-level node configuration (`config.toml`).
+/// Top-level daemon configuration (`config.toml`).
 ///
 /// Providers, system settings, and env vars for MCP processes.
 /// MCPs and agent configs live in manifests (`local/CrabTalk.toml`
 /// and `plugins/*.toml`), loaded via `resolve_manifests`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct NodeConfig {
+pub struct DaemonConfig {
     /// Provider definitions (`[provider.<name>]`).
     #[serde(default)]
     pub provider: BTreeMap<String, ProviderDef>,
     /// **Deprecated**: MCP configs migrated to `local/CrabTalk.toml`.
     #[serde(default)]
     pub mcps: BTreeMap<String, McpServerConfig>,
-    /// System configuration (tasks + memory).
+    /// System configuration (default agent + task executor).
     #[serde(default)]
     pub system: SystemConfig,
+    /// Built-in hook defaults (bash, memory).
+    #[serde(default)]
+    pub hooks: HooksConfig,
     /// Environment variables passed to all MCP server processes.
     #[serde(default)]
     pub env: BTreeMap<String, String>,
@@ -30,8 +39,8 @@ pub struct NodeConfig {
     pub disabled: DisabledItems,
 }
 
-impl NodeConfig {
-    /// Parse a TOML string into a `NodeConfig`.
+impl DaemonConfig {
+    /// Parse a TOML string into a `DaemonConfig`.
     pub fn from_toml(toml_str: &str) -> Result<Self> {
         let mut config: Self = toml::from_str(toml_str)?;
         config.mcps.iter_mut().for_each(|(name, server)| {
@@ -41,6 +50,24 @@ impl NodeConfig {
         });
         if !config.mcps.is_empty() {
             tracing::warn!("[mcps] in config.toml is deprecated — move to local/CrabTalk.toml");
+        }
+        if let Some(bash) = config.system.legacy_bash.take() {
+            tracing::warn!("[system.bash] in config.toml is deprecated — rename to [hooks.bash]");
+            if config.hooks.bash == BashConfig::default() {
+                config.hooks.bash = bash;
+            } else {
+                tracing::warn!("[hooks.bash] also set — ignoring deprecated [system.bash]");
+            }
+        }
+        if let Some(memory) = config.system.legacy_memory.take() {
+            tracing::warn!(
+                "[system.memory] in config.toml is deprecated — rename to [hooks.memory]"
+            );
+            if config.hooks.memory == MemoryConfig::default() {
+                config.hooks.memory = memory;
+            } else {
+                tracing::warn!("[hooks.memory] also set — ignoring deprecated [system.memory]");
+            }
         }
         validate_providers(&config.provider)?;
         Ok(config)

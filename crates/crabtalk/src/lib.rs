@@ -10,4 +10,4 @@ pub mod storage;
 #[cfg(unix)]
 pub use daemon::setup_socket;
 pub use daemon::{Daemon, DaemonHandle, bridge_shutdown, setup_tcp};
-pub use wcore::NodeConfig;
+pub use wcore::DaemonConfig;

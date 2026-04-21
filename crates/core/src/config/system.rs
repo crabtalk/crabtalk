@@ -1,5 +1,6 @@
-//! System subsystem — default agent, task executor, and memory configuration.
+//! System subsystem — default agent and task executor configuration.
 
+use crate::config::hooks::{BashConfig, MemoryConfig};
 use serde::{Deserialize, Serialize};
 
 /// Top-level `[system]` configuration.
@@ -10,10 +11,13 @@ pub struct SystemConfig {
     pub crab: crate::AgentConfig,
     /// Task executor pool configuration (`[system.tasks]`).
     pub tasks: TasksConfig,
-    /// Built-in memory configuration (`[system.memory]`).
-    pub memory: MemoryConfig,
-    /// Bash tool configuration (`[system.bash]`).
-    pub bash: BashConfig,
+    /// **Deprecated**: moved to `[hooks.bash]`. Captured here only for
+    /// one-release migration; consumers must read from `DaemonConfig::hooks`.
+    #[serde(rename = "bash", skip_serializing)]
+    pub legacy_bash: Option<BashConfig>,
+    /// **Deprecated**: moved to `[hooks.memory]`. See `legacy_bash` above.
+    #[serde(rename = "memory", skip_serializing)]
+    pub legacy_memory: Option<MemoryConfig>,
 }
 
 /// Task executor pool configuration.
@@ -35,31 +39,5 @@ impl Default for TasksConfig {
             viewable_window: 16,
             task_timeout: 300,
         }
-    }
-}
-
-/// Bash tool configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct BashConfig {
-    /// Disable the bash tool entirely.
-    #[serde(default)]
-    pub disabled: bool,
-    /// Reject commands containing any of these strings (e.g. `".ssh"`).
-    #[serde(default)]
-    pub deny: Vec<String>,
-}
-
-/// Built-in memory configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct MemoryConfig {
-    /// Maximum entries returned by auto-recall (default 5).
-    pub recall_limit: usize,
-}
-
-impl Default for MemoryConfig {
-    fn default() -> Self {
-        Self { recall_limit: 5 }
     }
 }

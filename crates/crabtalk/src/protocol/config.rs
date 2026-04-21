@@ -302,7 +302,7 @@ pub(super) async fn set_enabled<P: Provider + 'static>(
 
 pub(super) async fn load_config<P: Provider + 'static>(
     node: &Daemon<P>,
-) -> Result<wcore::NodeConfig> {
+) -> Result<wcore::DaemonConfig> {
     let rt = node.runtime.read().await.clone();
     rt.storage().load_config()
 }
