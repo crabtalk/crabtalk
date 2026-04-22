@@ -207,8 +207,8 @@ impl Storage for FsStorage {
         config::save_config(self, config)
     }
 
-    fn scaffold(&self) -> Result<()> {
-        scaffold::scaffold(self)
+    fn scaffold(&self, default_model: &str) -> Result<()> {
+        scaffold::scaffold(self, default_model)
     }
 
     fn list_mcps(&self) -> Result<BTreeMap<String, McpServerConfig>> {

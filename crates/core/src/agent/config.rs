@@ -35,9 +35,10 @@ pub struct AgentConfig {
     /// System prompt sent before each LLM request. Loaded from .md file.
     #[serde(skip)]
     pub system_prompt: String,
-    /// Model to use from the registry. None = registry's active/default.
+    /// Model to use from the registry. Required — every agent runs against
+    /// a specific model. Empty string is rejected by the provider registry.
     #[serde(default)]
-    pub model: Option<String>,
+    pub model: String,
     /// Maximum iterations before stopping.
     #[serde(default = "default_max_iterations")]
     pub max_iterations: usize,
@@ -94,7 +95,7 @@ impl Default for AgentConfig {
             name: String::new(),
             description: String::new(),
             system_prompt: String::new(),
-            model: None,
+            model: String::new(),
             max_iterations: DEFAULT_MAX_ITERATIONS,
             tool_choice: ToolChoice::Auto,
             thinking: false,
@@ -134,7 +135,7 @@ impl AgentConfig {
 
     /// Set the model to use from the registry.
     pub fn model(mut self, name: impl Into<String>) -> Self {
-        self.model = Some(name.into());
+        self.model = name.into();
         self
     }
 

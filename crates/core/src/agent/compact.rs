@@ -12,7 +12,7 @@ impl<P: Provider + 'static> super::Agent<P> {
     /// it, then sends the history with the enriched prompt as system message.
     /// Returns the summary text, or `None` if the model produces no content.
     pub async fn compact(&self, history: &[HistoryEntry]) -> Option<String> {
-        let model_name = self.config.model.clone().unwrap_or_default();
+        let model_name = self.config.model.clone();
         let prompt = COMPACT_PROMPT.to_owned();
 
         let mut messages = Vec::with_capacity(2 + history.len());

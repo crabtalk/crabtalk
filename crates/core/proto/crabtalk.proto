@@ -561,7 +561,7 @@ message AgentInfo {
   string name = 1;
   string description = 2;
   string config = 3; // full AgentConfig as JSON — round-trip with CreateAgentMsg/UpdateAgentMsg
-  optional string model = 4;
+  string model = 4;
   uint32 max_iterations = 5;
   bool thinking = 6;
   repeated string members = 7;

@@ -57,7 +57,7 @@ impl Agent {
                 }
                 let name_w = agents.iter().map(|a| a.name.len()).max().unwrap_or(0);
                 for a in agents {
-                    let model = a.model.as_deref().unwrap_or("-");
+                    let model = if a.model.is_empty() { "-" } else { &a.model };
                     println!("{:<name_w$}  {}", a.name, model);
                 }
             }

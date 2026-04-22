@@ -98,7 +98,12 @@ pub trait Storage: Send + Sync + 'static {
 
     /// Create the initial config directory structure and seed the
     /// default `crab` agent if no agent is stored yet.
-    fn scaffold(&self) -> Result<()>;
+    ///
+    /// `default_model` is the model assigned to the seeded crab agent.
+    /// Callers pick it from the configured providers; an empty string
+    /// here would produce an unusable agent, so callers must ensure a
+    /// provider is configured first.
+    fn scaffold(&self, default_model: &str) -> Result<()>;
 
     // ── MCP servers ────────────────────────────────────────────────
 

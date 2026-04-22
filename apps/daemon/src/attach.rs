@@ -71,18 +71,6 @@ pub fn setup_provider(config_path: &Path) -> Result<()> {
     let content = std::fs::read_to_string(config_path)?;
     let mut doc: DocumentMut = content.parse()?;
 
-    if !doc.contains_key("system") {
-        doc.insert("system", Item::Table(Table::new()));
-    }
-    if doc["system"]
-        .as_table()
-        .and_then(|s| s.get("crab"))
-        .is_none()
-    {
-        doc["system"]["crab"] = Item::Table(Table::new());
-    }
-    doc["system"]["crab"]["model"] = value(&model);
-
     if !doc.contains_key("provider") {
         doc.insert("provider", Item::Table(Table::new()));
     }

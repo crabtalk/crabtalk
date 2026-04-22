@@ -92,9 +92,9 @@ pub(super) async fn set_active_model<P: Provider + 'static>(
 
     let mut crab = storage
         .load_agent_by_name(wcore::paths::DEFAULT_AGENT)?
-        .unwrap_or_else(crate::storage::default_crab);
+        .unwrap_or_else(|| crate::storage::default_crab(&model));
     let prompt = std::mem::take(&mut crab.system_prompt);
-    crab.model = Some(model);
+    crab.model = model;
     storage.upsert_agent(&crab, &prompt)?;
     node.reload().await
 }
@@ -259,16 +259,15 @@ pub(super) async fn load_config<P: Provider + 'static>(
     rt.storage().load_config()
 }
 
-/// Active model = the crab agent's `model` field. Falls back to the
-/// first model from any provider if crab is unset (fresh install before
-/// the user picks a default).
+/// Active model = the crab agent's `model` field. Empty string if the
+/// crab agent is missing (which only happens before scaffold runs).
 pub(super) async fn active_model<P: Provider + 'static>(node: &Daemon<P>) -> String {
     let rt = node.runtime.read().await.clone();
     rt.storage()
         .load_agent_by_name(wcore::paths::DEFAULT_AGENT)
         .ok()
         .flatten()
-        .and_then(|c| c.model)
+        .map(|c| c.model)
         .unwrap_or_default()
 }
 

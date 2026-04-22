@@ -175,7 +175,12 @@ impl<P: Provider + 'static> Daemon<P> {
     )> {
         let dirs = resolve_dirs(config_dir);
         let storage = Self::build_storage(config_dir, &dirs);
-        storage.scaffold()?;
+        let default_model = first_provider_model(config).ok_or_else(|| {
+            anyhow::anyhow!(
+                "no model configured — add at least one model under [provider.<name>] in config.toml"
+            )
+        })?;
+        storage.scaffold(&default_model)?;
 
         let model = build_provider(config)?;
         let servers = mcp_servers(config, storage.as_ref(), &dirs)?;
@@ -327,6 +332,10 @@ impl<P: Provider + 'static> Daemon<P> {
                 tracing::warn!(name = %agent.name, "stored agent has no prompt — skipping");
                 continue;
             }
+            if agent.model.is_empty() {
+                tracing::warn!(name = %agent.name, "stored agent has no model — skipping");
+                continue;
+            }
             runtime.add_agent(agent);
         }
 
@@ -342,11 +351,26 @@ impl<P: Provider + 'static> Daemon<P> {
                 tracing::warn!(name = %name, "plugin agent has no prompt — skipping");
                 continue;
             }
+            if agent.model.is_empty() {
+                tracing::warn!(name = %name, "plugin agent has no model — skipping");
+                continue;
+            }
             runtime.add_agent(agent);
         }
 
         Ok(())
     }
+}
+
+/// First model declared by any provider. Used to seed the default
+/// crab agent when no agent is stored yet.
+fn first_provider_model(config: &DaemonConfig) -> Option<String> {
+    config
+        .provider
+        .values()
+        .flat_map(|def| def.models.iter())
+        .next()
+        .cloned()
 }
 
 fn build_providers(config: &DaemonConfig) -> Result<Model<DefaultProvider>> {

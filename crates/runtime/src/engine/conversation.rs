@@ -404,7 +404,7 @@ impl<C: Config> Runtime<C> {
             .agents
             .read()
             .get(agent_name.as_str())
-            .and_then(|a| a.config.model.clone())
+            .map(|a| a.config.model.clone())
             .unwrap_or_default();
         if model_name.is_empty() {
             return;

@@ -258,7 +258,7 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    fn scaffold(&self) -> Result<()> {
+    fn scaffold(&self, _default_model: &str) -> Result<()> {
         Ok(())
     }
 

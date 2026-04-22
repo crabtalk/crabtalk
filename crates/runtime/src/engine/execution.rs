@@ -245,7 +245,7 @@ impl<C: Config> Runtime<C> {
             conversation.history.insert(insert_pos, framing);
 
             let run_start = std::time::Instant::now();
-            let model_name = guest_agent.config.model.clone().unwrap_or_default();
+            let model_name = guest_agent.config.model.clone();
 
             let mut messages = Vec::with_capacity(1 + conversation.history.len());
             if !guest_agent.config.system_prompt.is_empty() {

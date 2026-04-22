@@ -96,14 +96,8 @@ impl<P: Provider + 'static> Clone for Agent<P> {
 
 impl<P: Provider + 'static> Agent<P> {
     /// Resolve the model name from agent config.
-    ///
-    /// `config.model` is filled at config load time (defaulting from
-    /// `system.crab.model` when an agent doesn't set its own), so this is
-    /// always `Some` at runtime. The `unwrap_or_default` here is purely
-    /// defensive — a missing model would surface as an empty model name in
-    /// the request, which the registry will reject with a clear error.
     fn model_name(&self) -> String {
-        self.config.model.clone().unwrap_or_default()
+        self.config.model.clone()
     }
 
     /// Build a `ChatCompletionRequest` from config state (system prompt +
