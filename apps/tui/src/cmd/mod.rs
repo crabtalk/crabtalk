@@ -232,7 +232,11 @@ async fn connect_or_start(use_tcp: bool, verbose: u8) -> Result<Runner> {
         Err(e) => {
             tracing::debug!("daemon not reachable, starting: {e}");
             crabtalkd::ensure_config()?;
-            crabtalkd::service::install(verbose, false)?;
+            // We just confirmed the daemon isn't reachable. Force a clean
+            // reinstall — without this, a stale plist (zombie daemon, crashed
+            // before opening the socket) makes `service::install` no-op with
+            // "daemon is already running" and we loop until the 5s timeout.
+            crabtalkd::service::install(verbose, true)?;
             for _ in 0..20 {
                 tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                 if let Ok(runner) = connect(use_tcp).await {
