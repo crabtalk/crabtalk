@@ -454,8 +454,6 @@ impl<C: Config> Runtime<C> {
                 seed: None,
                 user: None,
                 reasoning_effort: None,
-                thinking: None,
-                anthropic_max_tokens: None,
                 extra: Default::default(),
             };
 

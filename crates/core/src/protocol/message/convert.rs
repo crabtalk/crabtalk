@@ -117,9 +117,6 @@ impl From<ApiStandard> for ProviderKind {
             ApiStandard::Bedrock => Self::Bedrock,
             ApiStandard::Ollama => Self::Ollama,
             ApiStandard::Azure => Self::Azure,
-            // Self-defined kinds dispatch through the OpenAI-compatible
-            // path; the proto enum has no Custom variant, so report Openai.
-            ApiStandard::Custom(_) => Self::Openai,
         }
     }
 }

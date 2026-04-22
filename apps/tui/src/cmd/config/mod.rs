@@ -351,11 +351,15 @@ impl AuthState {
     }
 
     pub(crate) fn add_preset(&mut self, preset: &ProviderPreset, name: Option<&str>) {
+        let kind_str = serde_json::to_value(preset.kind)
+            .ok()
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_else(|| "openai".to_string());
         self.providers.push(ProviderData {
             name: name.unwrap_or(preset.name).to_string(),
             api_key: String::new(),
             base_url: preset.base_url.to_string(),
-            kind: preset.kind.as_str().to_string(),
+            kind: kind_str,
             models: Vec::new(),
         });
         let new_idx = self.tree_len().saturating_sub(1);

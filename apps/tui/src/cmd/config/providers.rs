@@ -259,7 +259,11 @@ fn toggle_kind(state: &mut AuthState, pi: usize) {
         .position(|s| *s == cur_kind)
         .unwrap_or(0);
     let next = (cur + 1) % API_STANDARDS.len();
-    p.kind = API_STANDARDS[next].as_str().to_string();
+    let next_str = serde_json::to_value(API_STANDARDS[next])
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| "openai".to_string());
+    p.kind = next_str;
     state.edit_buf.clone_from(&state.providers[pi].kind);
     state.cursor = state.edit_buf.chars().count();
 }
