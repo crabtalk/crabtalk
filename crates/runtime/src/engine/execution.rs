@@ -272,6 +272,8 @@ impl<C: Config> Runtime<C> {
                 } else {
                     None
                 },
+                thinking: None,
+                anthropic_max_tokens: None,
                 extra: Default::default(),
             };
 

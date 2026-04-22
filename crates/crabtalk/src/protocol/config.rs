@@ -104,7 +104,7 @@ pub(super) async fn list_provider_presets() -> Result<Vec<ProviderPresetInfo>> {
         .iter()
         .map(|p| ProviderPresetInfo {
             name: p.name.to_string(),
-            kind: ProviderKind::from(p.kind).into(),
+            kind: ProviderKind::from(p.kind.clone()).into(),
             base_url: p.base_url.to_string(),
             fixed_base_url: p.fixed_base_url.to_string(),
             default_model: p.default_model.to_string(),
@@ -237,7 +237,7 @@ pub(super) async fn list_models<P: Provider + 'static>(node: &Daemon<P>) -> Resu
 
     let mut models = Vec::new();
     for (provider_name, def) in &config.provider {
-        let kind: i32 = ProviderKind::from(def.kind).into();
+        let kind: i32 = ProviderKind::from(def.kind.clone()).into();
         for model_name in &def.models {
             models.push(ModelInfo {
                 name: model_name.clone(),
