@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-a7001dfe.js";
+            window.path_to_searchindex_js = "searchindex-f7baf788.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-65cc29f9.js"></script>
@@ -481,7 +481,7 @@ architecture must be right. Everything else follows.</p>
 <li><strong>Event bus</strong> — subscription table and fire callback. File-backed by <code>events/subscriptions.toml</code> under the config directory.</li>
 <li><strong>Cron</strong> — schedule store and per-entry timer tasks. File-backed by <code>cron/crons.toml</code>.</li>
 <li><strong>MCP handler</strong> — connections to external MCP servers and routing to the tools they advertise.</li>
-<li><strong>Configuration</strong> — current <code>NodeConfig</code>, reloaded in place on explicit reload.</li>
+<li><strong>Configuration</strong> — current <code>DaemonConfig</code>, reloaded in place on explicit reload.</li>
 </ul>
 <p>The daemon does not interpret tool semantics. Tool dispatch is the runtime’s responsibility, routed through the composite hook.</p>
 <h2 id="process-model"><a class="header" href="#process-model">Process model</a></h2>
