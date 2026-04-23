@@ -55,7 +55,7 @@ pub struct Daemon<P: Provider + 'static = DefaultProvider> {
     pub(crate) crons: Arc<Mutex<CronStore<P>>>,
     pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
-    pub(crate) mcp: Arc<crate::mcp::McpHandler>,
+    pub(crate) mcp: Arc<mcp::McpHandler>,
     /// OS tools hook — owns conversation CWDs and bash policy.
     pub(crate) os_hook: Arc<hooks::os::OsHook>,
     /// Ask-user hook — owns pending ask oneshots.

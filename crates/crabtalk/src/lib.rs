@@ -2,7 +2,6 @@
 
 pub mod daemon;
 pub mod hooks;
-pub mod mcp;
 mod protocol;
 pub mod provider;
 pub mod storage;

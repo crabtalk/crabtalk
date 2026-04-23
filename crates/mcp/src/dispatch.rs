@@ -4,7 +4,7 @@
 //! agent's MCP scope. Owns tool resolution, scope enforcement, fuzzy
 //! matching, and bridge call routing.
 
-use crate::mcp::McpHandler;
+use crate::McpHandler;
 use serde::Deserialize;
 
 #[derive(Deserialize)]

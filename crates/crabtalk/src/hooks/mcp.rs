@@ -1,7 +1,7 @@
 //! MCP tool — as a Hook implementation.
 
-use super::McpHandler;
 use crate::daemon::hook::AgentScope;
+use mcp::{McpHandler, dispatch::dispatch_mcp};
 use parking_lot::RwLock;
 use runtime::Hook;
 use schemars::JsonSchema;
@@ -76,7 +76,7 @@ impl Hook for McpHook {
                 .filter(|s| !s.mcps.is_empty())
                 .map(|s| s.mcps.clone())
                 .unwrap_or_default();
-            super::dispatch::dispatch_mcp(&self.mcp, &call.args, &allowed_mcps).await
+            dispatch_mcp(&self.mcp, &call.args, &allowed_mcps).await
         }))
     }
 }

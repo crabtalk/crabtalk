@@ -5,12 +5,12 @@ use crate::{
     daemon::{SharedRuntime, hook::DaemonHook},
     daemon::{cron, event, host::DaemonEnv},
     hooks::{Memory, delegate},
-    mcp::McpHandler,
     storage::FsStorage,
 };
 use anyhow::Result;
 use crabllm_core::Provider;
 use crabllm_provider::{ProviderRegistry, RemoteProvider};
+use mcp::McpHandler;
 use runtime::{Hook, Runtime};
 use std::{
     collections::BTreeMap,
@@ -305,7 +305,7 @@ impl<P: Provider + 'static> Daemon<P> {
             );
             node_hook.register_hook(
                 "mcp",
-                Arc::new(crate::mcp::tool::McpHook::new(
+                Arc::new(crate::hooks::mcp::McpHook::new(
                     mcp_handler,
                     scopes,
                     mcp_prompt,

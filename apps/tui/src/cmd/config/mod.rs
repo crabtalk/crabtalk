@@ -351,7 +351,7 @@ impl AuthState {
     }
 
     pub(crate) fn add_preset(&mut self, preset: &ProviderPreset, name: Option<&str>) {
-        let kind_str = serde_json::to_value(preset.kind)
+        let kind_str = serde_json::to_value(&preset.kind)
             .ok()
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or_else(|| "openai".to_string());

@@ -512,9 +512,9 @@ dependencies = [
 
 [[package]]
 name = "crabllm-core"
-version = "0.0.15"
+version = "0.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4b63b152bc207b11dc57870afccd011bd7f5afae1b662306f298ecb0647a2f9"
+checksum = "49861760df0b7e2f915ad3b68a71f74d3351766cf50f60707d0ac47bfb603776"
 dependencies = [
  "bytes",
  "futures-core",
@@ -524,18 +524,26 @@ dependencies = [
 
 [[package]]
 name = "crabllm-provider"
-version = "0.0.15"
+version = "0.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87367f01d98f5adb905c0eef9248d3af4a26b8c78c6cd0ae22acd1d12594f967"
+checksum = "d473d59a71e05d819f05abb867a1d011c072860819be446f2af8bbf4b2052e7c"
 dependencies = [
  "bytes",
  "crabllm-core",
  "futures",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-tls",
+ "hyper-util",
+ "native-tls",
  "rand 0.9.2",
  "reqwest 0.13.2",
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -550,6 +558,7 @@ dependencies = [
  "crabllm-provider",
  "crabtalk-command",
  "crabtalk-core",
+ "crabtalk-mcp",
  "crabtalk-memory",
  "crabtalk-plugins",
  "crabtalk-runtime",
@@ -559,7 +568,6 @@ dependencies = [
  "futures-util",
  "parking_lot",
  "rand 0.9.2",
- "reqwest 0.13.2",
  "schemars 1.2.1",
  "serde",
  "serde_json",
@@ -640,6 +648,27 @@ dependencies = [
  "toml",
  "tracing",
  "ulid",
+]
+
+[[package]]
+name = "crabtalk-mcp"
+version = "0.0.21"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "crabtalk-core",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-tls",
+ "hyper-util",
+ "parking_lot",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1636,7 +1665,9 @@ dependencies = [
  "http",
  "hyper",
  "hyper-util",
+ "log",
  "rustls",
+ "rustls-native-certs",
  "rustls-pki-types",
  "tokio",
  "tokio-rustls",
@@ -3101,6 +3132,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "758025cb5fccfd3bc2fd74708fd4682be41d99e5dff73c377c0646c6012c73a4"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",

@@ -1,6 +1,6 @@
 //! Crabtalk MCP bridge — connects to MCP servers and dispatches tool calls.
 
-use crate::mcp::client::{self, McpPeer};
+use crate::client::{self, McpPeer};
 use anyhow::Result;
 use std::collections::BTreeMap;
 use tokio::sync::Mutex;

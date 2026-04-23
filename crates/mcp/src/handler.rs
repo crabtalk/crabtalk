@@ -1,9 +1,10 @@
 //! Crabtalk MCP handler — initial load and read access.
 
-use crate::mcp::{McpBridge, config::McpServerConfig};
+use crate::McpBridge;
 use parking_lot::RwLock as SyncRwLock;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use wcore::McpServerConfig;
 
 /// MCP bridge owner.
 pub struct McpHandler {

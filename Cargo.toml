@@ -22,14 +22,15 @@ runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.
 transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.21" }
 wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.21" }
 memory = { path = "crates/memory", package = "crabtalk-memory", version = "0.0.21" }
+mcp = { path = "crates/mcp", package = "crabtalk-mcp", version = "0.0.21", default-features = false }
 command = { path = "plugins/command", package = "crabtalk-command", version = "0.0.21" }
 command-codegen = { path = "plugins/command-codegen", package = "crabtalk-command-codegen", version = "0.0.21" }
 outlook = { path = "plugins/outlook", package = "crabtalk-outlook", version = "0.0.21", default-features = false }
 search = { path = "plugins/search", package = "crabtalk-search", version = "0.0.21", default-features = false }
 
 # crabllm
-crabllm-core = "0.0.15"
-crabllm-provider = "0.0.15"
+crabllm-core = "0.0.18"
+crabllm-provider = { version = "0.0.18", default-features = false }
 
 # bench
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -69,6 +70,12 @@ reqwest = { version = "0.13", default-features = false, features = [
 ] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rmcp = { version = "1.3", default-features = false }
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1"] }
+http = "1"
+http-body-util = "0.1"
+hyper-tls = "0.6"
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "ring", "webpki-tokio"] }
 axum = { version = "0.8", default-features = false, features = [
     "http1",
     "query",

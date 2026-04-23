@@ -1,5 +1,6 @@
-//! HTTP transport — POST JSON-RPC with SSE response support.
+//! HTTP transport (reqwest backend) — POST JSON-RPC with SSE response support.
 
+use crate::client::sse;
 use anyhow::{Context, Result, bail};
 
 pub struct HttpTransport {
@@ -47,7 +48,7 @@ impl HttpTransport {
         }
 
         if content_type.contains("text/event-stream") {
-            parse_sse_response(&body)
+            sse::parse(&body)
         } else {
             serde_json::from_str(&body).context("invalid JSON response")
         }
@@ -64,22 +65,4 @@ impl HttpTransport {
         req.json(&msg).send().await.context("HTTP notify failed")?;
         Ok(())
     }
-}
-
-/// Extract the last JSON-RPC message from an SSE response body.
-/// Takes only the final `data:` line — intermediate messages (progress
-/// notifications, etc.) are intentionally skipped since we only use
-/// request/response methods, not streaming notifications.
-fn parse_sse_response(body: &str) -> Result<serde_json::Value> {
-    let mut last_data = None;
-    for line in body.lines() {
-        if let Some(data) = line.strip_prefix("data:") {
-            let data = data.trim();
-            if !data.is_empty() {
-                last_data = Some(data);
-            }
-        }
-    }
-    let data = last_data.context("no data in SSE response")?;
-    serde_json::from_str(data).context("invalid JSON in SSE data")
 }

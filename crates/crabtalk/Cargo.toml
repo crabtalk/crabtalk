@@ -14,7 +14,8 @@ keywords.workspace = true
 plugin.workspace = true
 command.workspace = true
 crabllm-core.workspace = true
-crabllm-provider.workspace = true
+crabllm-provider = { workspace = true, features = ["hyper"] }
+mcp = { workspace = true, default-features = false, features = ["hyper"] }
 memory.workspace = true
 runtime.workspace = true
 transport.workspace = true
@@ -30,7 +31,6 @@ futures-core.workspace = true
 futures-util.workspace = true
 parking_lot.workspace = true
 rand.workspace = true
-reqwest.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -43,8 +43,8 @@ ulid.workspace = true
 
 [features]
 default = ["native-tls"]
-native-tls = ["reqwest/native-tls", "crabllm-provider/native-tls"]
-rustls = ["reqwest/rustls", "crabllm-provider/rustls"]
+native-tls = ["crabllm-provider/native-tls", "mcp/native-tls"]
+rustls = ["crabllm-provider/rustls", "mcp/rustls"]
 
 [dev-dependencies]
 tempfile.workspace = true

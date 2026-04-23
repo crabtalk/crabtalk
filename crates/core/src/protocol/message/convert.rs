@@ -108,8 +108,8 @@ impl TryFrom<ServerMessage> for stream_event::Event {
     }
 }
 
-impl From<ApiStandard> for ProviderKind {
-    fn from(kind: ApiStandard) -> Self {
+impl From<&ApiStandard> for ProviderKind {
+    fn from(kind: &ApiStandard) -> Self {
         match kind {
             ApiStandard::Openai => Self::Openai,
             ApiStandard::Anthropic => Self::Anthropic,
@@ -117,6 +117,8 @@ impl From<ApiStandard> for ProviderKind {
             ApiStandard::Bedrock => Self::Bedrock,
             ApiStandard::Ollama => Self::Ollama,
             ApiStandard::Azure => Self::Azure,
+            // Custom providers are dispatched through the OpenAI-compatible path.
+            ApiStandard::Custom(_) => Self::Openai,
         }
     }
 }
