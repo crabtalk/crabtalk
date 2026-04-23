@@ -143,6 +143,8 @@ impl<P: Provider + 'static> Agent<P> {
             seed: None,
             user: None,
             reasoning_effort: self.config.thinking.then(|| "high".to_string()),
+            thinking: None,
+            anthropic_max_tokens: None,
             extra: Default::default(),
         }
     }

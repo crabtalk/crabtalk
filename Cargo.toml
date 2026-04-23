@@ -29,8 +29,8 @@ outlook = { path = "plugins/outlook", package = "crabtalk-outlook", version = "0
 search = { path = "plugins/search", package = "crabtalk-search", version = "0.0.21", default-features = false }
 
 # crabllm
-crabllm-core = "0.0.15"
-crabllm-provider = "0.0.15"
+crabllm-core = "0.0.17"
+crabllm-provider = "0.0.17"
 
 # bench
 criterion = { version = "0.5", features = ["html_reports"] }

@@ -95,7 +95,7 @@ pub fn setup_provider(config_path: &Path) -> Result<()> {
     if !base_url.is_empty() {
         entry.insert("base_url", value(base_url.as_str()));
     }
-    let kind_str = serde_json::to_value(preset.kind)
+    let kind_str = serde_json::to_value(&preset.kind)
         .ok()
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_else(|| "openai".to_string());
