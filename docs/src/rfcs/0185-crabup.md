@@ -76,7 +76,7 @@ The `command` crate already renders `launchd.plist`, `systemd.service`, and `sch
 `crabup <name> start` is:
 
 1. Find the binary on `PATH` (fail fast if not installed).
-2. Ask the binary for its service metadata — name, label, description — via a convention (`--service-info` prints TOML) or via a `Service` trait impl linked into a small `crabtalk-service` helper crate each gateway depends on. Pick one when we implement; the RFC doesn't need to.
+2. Look up service metadata in crabup's name table — the same table that resolves short names to crates also carries `label` (mechanical: `ai.crabtalk.<name>`) and `description`. crabup is the package manager; it owns this metadata, the binaries don't need to expose it.
 3. Render the platform unit via `command` and load it.
 
 `crabup ps` is the one piece that needs more than wrapping: it scans `~/.crabtalk/run/*.port` (the same directory RFC 0043 already defines) and checks each listener, then cross-references with whatever the platform's service manager reports for `ai.crabtalk.*` labels. One view, all services.
@@ -106,7 +106,7 @@ None of those are pressing yet. When one is, `crabtalk-llmd` becomes another cra
 | `ensure_config` + `attach::setup_llm` on first start | `crabup daemon start` first-run flow |
 | Duplicate forwarding in TUI (`--start`, `--stop`) | Removed |
 
-After this, `crabtalkd`'s CLI is `--foreground`, `reload`, `events`, and the runtime plugin ops (`pull`/`rm`, which are live-daemon operations, not install).
+After this, `crabtalkd`'s CLI is `run` (the long-running process the service unit invokes, equivalent to today's `--foreground`), `reload`, `events`, and the runtime plugin ops (`pull`/`rm`, which are live-daemon operations, not install).
 
 ## Alternatives
 
@@ -120,7 +120,6 @@ After this, `crabtalkd`'s CLI is `--foreground`, `reload`, `events`, and the run
 
 ## Unresolved Questions
 
-- **Service metadata convention.** `--service-info` printing TOML vs. a linked `Service` trait. Either works; pick when implementing.
 - **Windows service layer.** `schtasks` is weaker than `launchd`/`systemd` (no restart-on-failure, limited log routing). Acceptable for v1, or not?
 - **`rm` scope.** Should `crabup rm daemon` also remove `~/.crabtalk/config/`? Leaning no (`rm` is binary-only; data stays); confirm.
 - **Multiple daemon instances.** If two `crabtalkd` instances run on one machine, what owns `~/.crabtalk/`? Out of scope for v1.
