@@ -4,8 +4,6 @@ use crate::repl::runner::Runner;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 #[cfg(feature = "daemon")]
-use std::ffi::OsString;
-
 pub mod agent;
 pub mod console;
 pub mod mcp;
@@ -93,10 +91,6 @@ pub enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         tail_args: Vec<String>,
     },
-    /// Forward to an external `crabtalk-{name}` binary.
-    #[cfg(feature = "daemon")]
-    #[command(external_subcommand)]
-    External(Vec<OsString>),
 }
 
 impl Cli {
@@ -203,16 +197,6 @@ impl Cli {
                     verbose: 0,
                     tcp: self.tcp,
                     command: Some(crabtalkd::Command::Logs { tail_args }),
-                };
-                daemon.run().await
-            }
-            #[cfg(feature = "daemon")]
-            Some(Command::External(args)) => {
-                let daemon = crabtalkd::Cli {
-                    foreground: false,
-                    verbose: 0,
-                    tcp: self.tcp,
-                    command: Some(crabtalkd::Command::External(args)),
                 };
                 daemon.run().await
             }

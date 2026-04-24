@@ -870,7 +870,6 @@ dependencies = [
  "crabtalk-core",
  "crabtalk-transport",
  "dialoguer",
- "dirs",
  "futures-core",
  "futures-util",
  "serde_json",

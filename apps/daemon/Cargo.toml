@@ -25,7 +25,6 @@ anyhow.workspace = true
 async-stream.workspace = true
 clap.workspace = true
 dialoguer.workspace = true
-dirs.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
 

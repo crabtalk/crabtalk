@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use futures_util::StreamExt;
-use std::{collections::HashMap, ffi::OsString};
+use std::collections::HashMap;
 use transport::Transport;
 use wcore::protocol::{
     api::Client,
@@ -11,7 +11,6 @@ use wcore::protocol::{
 };
 
 pub mod attach;
-pub mod external;
 pub mod foreground;
 pub mod service;
 
@@ -73,9 +72,6 @@ pub enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         tail_args: Vec<String>,
     },
-    /// Forward to an external `crabtalk-{name}` binary.
-    #[command(external_subcommand)]
-    External(Vec<OsString>),
 }
 
 impl Cli {
@@ -204,7 +200,6 @@ impl Cli {
                 Ok(())
             }
             Command::Logs { tail_args } => command::view_logs("daemon", &tail_args),
-            Command::External(args) => external::run(args),
         }
     }
 }
