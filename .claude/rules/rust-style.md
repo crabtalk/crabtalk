@@ -37,3 +37,13 @@
 - No generics, type parameters, or abstractions "for future use."
 - Never wrap a field access or inner method call — make the field `pub` or use `Deref`/`DerefMut`. Exception: when the wrapper changes semantics (e.g., different return type).
 - When a conversion maps to a std trait (`From`, `TryFrom`, `Display`, `Deref`, etc.), implement the trait — don't write a custom method.
+
+## Object-Based, Not Go-Style
+
+Rust is not Go. Do not write Go-style "package function with receiver as first arg." If a function operates on a type's state, it is a method on that type — not a free function that takes `&Self` as its first parameter.
+
+- **Ban:** `fn list(node: &Daemon<P>, req: Foo) -> Bar` — this is Go masquerading as Rust.
+- **Required:** `impl<P> Daemon<P> { fn list(&self, req: Foo) -> Bar }` — state access through `self`.
+- Free functions are only correct when the logic is genuinely stateless (pure transforms, validators without owned state). If the function reaches into one type repeatedly, make it a method.
+- Splitting logic across files for organization is fine — use multiple `impl` blocks on the same type, one per file. That's the idiomatic Rust pattern; a Go-style `pub(super) fn x(node: &T)` is not.
+- If a "god struct" ends up with dozens of methods across many concerns, that is a decomposition problem (split into smaller services), not a license to revert to free functions.
