@@ -158,7 +158,7 @@ impl<P: Provider + 'static> Server for Daemon<P> {
 
     async fn list_providers(&self) -> Result<Vec<ProviderInfo>> {
         let rt = self.runtime.read().await.clone();
-        config::list_providers(&rt)
+        rt.list_providers()
     }
 
     fn install_plugin(

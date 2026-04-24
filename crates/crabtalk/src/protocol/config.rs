@@ -1,6 +1,5 @@
 //! Daemon-level configuration mutations: provider / model / MCP / skill.
-//! Pure storage-backed queries (list_providers, list_models, active_model,
-//! provider_name_for_model) live on `Runtime<C>` directly.
+//! Pure storage-backed queries live on `Runtime<C>` directly.
 
 use crate::daemon::Daemon;
 use anyhow::{Context, Result};
@@ -21,7 +20,7 @@ impl<P: Provider + 'static> Daemon<P> {
         self.reload().await?;
 
         let rt = self.runtime.read().await.clone();
-        list_providers(&rt)?
+        rt.list_providers()?
             .into_iter()
             .find(|p| p.name == name)
             .ok_or_else(|| anyhow::anyhow!("provider '{name}' missing after configure"))
@@ -67,46 +66,36 @@ impl<P: Provider + 'static> Daemon<P> {
             .into_iter()
             .map(|(name, tools)| (name, tools.len()))
             .collect();
-
-        let mut mcps = Vec::new();
-
-        // Storage wins over manifest on name conflict.
         let storage_mcps = {
             let rt = self.runtime.read().await.clone();
             rt.storage().list_mcps()?
         };
-        for (name, cfg) in &storage_mcps {
-            let (status, tool_count) = mcp_status(&connected, name);
-            mcps.push(mcp_to_info(
-                name,
-                cfg,
-                "local",
-                SourceKind::Local,
-                status,
-                tool_count,
-            ));
-        }
-
-        for (plugin_name, plugin_manifest) in super::plugin::scan_plugin_manifests(&self.config_dir)
-        {
-            for (name, mcp_res) in &plugin_manifest.mcps {
-                if mcps.iter().any(|m| m.name == *name) {
-                    continue;
-                }
-                let (status, tool_count) = mcp_status(&connected, name);
-                let cfg = mcp_res.to_server_config();
-                mcps.push(mcp_to_info(
-                    name,
-                    &cfg,
-                    &plugin_name,
-                    SourceKind::Plugin,
-                    status,
-                    tool_count,
-                ));
+        // Storage wins over manifest on name conflict — seed the map from
+        // storage first, then `entry(..).or_insert_with` for manifest entries
+        // skips names already present. Output is alphabetical by name.
+        let mut by_name: std::collections::BTreeMap<String, McpInfo> = storage_mcps
+            .iter()
+            .map(|(name, cfg)| {
+                (
+                    name.clone(),
+                    mcp_info(name, cfg, "local", SourceKind::Local, &connected),
+                )
+            })
+            .collect();
+        for (plugin_name, manifest) in super::plugin::scan_plugin_manifests(&self.config_dir) {
+            for (name, mcp_res) in manifest.mcps {
+                by_name.entry(name.clone()).or_insert_with(|| {
+                    mcp_info(
+                        &name,
+                        &mcp_res.to_server_config(),
+                        &plugin_name,
+                        SourceKind::Plugin,
+                        &connected,
+                    )
+                });
             }
         }
-
-        Ok(mcps)
+        Ok(by_name.into_values().collect())
     }
 
     pub(crate) async fn upsert_mcp(&self, config_json: String) -> Result<McpInfo> {
@@ -175,25 +164,6 @@ impl<P: Provider + 'static> Daemon<P> {
     }
 }
 
-/// Build the protocol-facing provider list. Lives here (not on Runtime)
-/// because the `ProviderInfo.config` field carries the `ProviderDef`
-/// serialized as JSON — a wire-format concern, not a runtime concern.
-pub(super) fn list_providers<C: runtime::Config>(
-    rt: &runtime::Runtime<C>,
-) -> Result<Vec<ProviderInfo>> {
-    let config = rt.storage().load_config()?;
-    let active_model = rt.active_model();
-    Ok(config
-        .provider
-        .iter()
-        .map(|(name, def)| ProviderInfo {
-            name: name.clone(),
-            active: !active_model.is_empty() && def.models.contains(&active_model),
-            config: serde_json::to_string(def).unwrap_or_default(),
-        })
-        .collect())
-}
-
 pub(super) fn provider_presets() -> Vec<ProviderPresetInfo> {
     wcore::config::PROVIDER_PRESETS
         .iter()
@@ -207,24 +177,17 @@ pub(super) fn provider_presets() -> Vec<ProviderPresetInfo> {
         .collect()
 }
 
-fn mcp_status(
-    connected: &std::collections::BTreeMap<String, usize>,
-    name: &str,
-) -> (McpStatus, u32) {
-    match connected.get(name) {
-        Some(&count) => (McpStatus::Connected, count as u32),
-        None => (McpStatus::Failed, 0),
-    }
-}
-
-fn mcp_to_info(
+fn mcp_info(
     name: &str,
     cfg: &wcore::McpServerConfig,
     source: &str,
     source_kind: SourceKind,
-    status: McpStatus,
-    tool_count: u32,
+    connected: &std::collections::BTreeMap<String, usize>,
 ) -> McpInfo {
+    let (status, tool_count) = match connected.get(name) {
+        Some(&count) => (McpStatus::Connected, count as u32),
+        None => (McpStatus::Failed, 0),
+    };
     McpInfo {
         name: name.to_string(),
         command: cfg.command.clone(),

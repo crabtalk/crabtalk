@@ -1,15 +1,11 @@
 //! Storage-backed configuration queries — providers, models, active agent.
-//!
-//! Only runtime-shaped data lives here. Wire-format conversions (e.g.
-//! JSON-ifying `ProviderDef` into a string field) belong in the protocol
-//! layer — runtime returns typed Rust values.
 
 use super::Runtime;
 use crate::Config;
 use anyhow::Result;
 use wcore::{
     paths,
-    protocol::message::{ModelInfo, ProviderKind},
+    protocol::message::{ModelInfo, ProviderInfo, ProviderKind},
     storage::Storage,
 };
 
@@ -38,6 +34,23 @@ impl<C: Config> Runtime<C> {
                     .map(|(name, _)| name.clone())
             })
             .unwrap_or_default()
+    }
+
+    /// List configured providers with an `active` flag per provider and the
+    /// provider's `ProviderDef` serialized as JSON in `ProviderInfo.config`
+    /// (the wire protocol carries the def as a JSON blob).
+    pub fn list_providers(&self) -> Result<Vec<ProviderInfo>> {
+        let config = self.storage().load_config()?;
+        let active_model = self.active_model();
+        Ok(config
+            .provider
+            .iter()
+            .map(|(name, def)| ProviderInfo {
+                name: name.clone(),
+                active: !active_model.is_empty() && def.models.contains(&active_model),
+                config: serde_json::to_string(def).unwrap_or_default(),
+            })
+            .collect())
     }
 
     /// List every model across every provider, with an `active` flag for
