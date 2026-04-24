@@ -12,13 +12,12 @@ use wcore::protocol::{
 
 pub mod attach;
 pub mod foreground;
-pub mod service;
 
 /// Crabtalk — AI agent platform.
 #[derive(Parser, Debug)]
 #[command(name = "crabtalk", about = "Crabtalk — AI agent daemon")]
 pub struct Cli {
-    /// Run the daemon in the foreground.
+    /// Run the daemon in the foreground (legacy alias for `run`).
     #[arg(long)]
     pub foreground: bool,
     /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
@@ -28,7 +27,7 @@ pub struct Cli {
     #[arg(long)]
     pub tcp: bool,
     /// Subcommand to execute. Optional so `--foreground` can run the
-    /// daemon without one (the launchd/systemd unit invokes us as
+    /// daemon without one (legacy launchd/systemd units invoke us as
     /// `crabtalkd --foreground -v`).
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -39,16 +38,8 @@ pub struct Cli {
 pub enum Command {
     /// Run the daemon in the foreground (what launchd/systemd invokes).
     Run,
-    /// Install and start the daemon service.
-    Start {
-        /// Re-install even if already running.
-        #[arg(long)]
-        force: bool,
-    },
-    /// Stop the daemon service.
-    Stop,
-    /// Restart the daemon service.
-    Restart,
+    /// Scaffold config and prompt for LLM endpoint on first run.
+    Setup,
     /// Hot-reload daemon config.
     Reload,
     /// Stream daemon events.
@@ -66,14 +57,6 @@ pub enum Command {
         /// Plugin name.
         plugin: String,
     },
-    /// List running services.
-    Ps,
-    /// View daemon logs.
-    Logs {
-        /// Arguments passed through to `tail` (e.g. `-f`, `-n 100`).
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        tail_args: Vec<String>,
-    },
 }
 
 impl Cli {
@@ -89,16 +72,7 @@ impl Cli {
 
         match command {
             Command::Run => foreground::start().await,
-            Command::Start { force } => {
-                ensure_config()?;
-                service::install(self.verbose.max(1), force)
-            }
-            Command::Stop => service::uninstall(),
-            Command::Restart => {
-                let _ = service::uninstall();
-                ensure_config()?;
-                service::install(self.verbose.max(1), true)
-            }
+            Command::Setup => ensure_config(),
             Command::Reload => {
                 let mut conn = connect(self.tcp).await?;
                 use wcore::protocol::message::{ClientMessage, client_message};
@@ -172,43 +146,12 @@ impl Cli {
                 println!("Done: {plugin}");
                 Ok(())
             }
-            Command::Ps => {
-                let run_dir = &*wcore::paths::RUN_DIR;
-                let mut found = false;
-                if let Ok(entries) = std::fs::read_dir(run_dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.extension().and_then(|e| e.to_str()) != Some("port") {
-                            continue;
-                        }
-                        let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
-                            continue;
-                        };
-                        if name == "crabtalk" {
-                            continue;
-                        }
-                        if let Ok(contents) = std::fs::read_to_string(&path)
-                            && let Ok(port) = contents.trim().parse::<u16>()
-                        {
-                            let alive = std::net::TcpStream::connect(("127.0.0.1", port)).is_ok();
-                            let status = if alive { "running" } else { "stale" };
-                            println!("{name}\t:{port}\t{status}");
-                            found = true;
-                        }
-                    }
-                }
-                if !found {
-                    println!("no services running");
-                }
-                Ok(())
-            }
-            Command::Logs { tail_args } => command::view_logs("daemon", &tail_args),
         }
     }
 }
 
 /// Scaffold config dir and prompt for LLM endpoint if none configured.
-pub fn ensure_config() -> Result<()> {
+fn ensure_config() -> Result<()> {
     crabtalk::storage::scaffold_config_dir(&wcore::paths::CONFIG_DIR)?;
     let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
     let config = crabtalk::DaemonConfig::load(&config_path)?;

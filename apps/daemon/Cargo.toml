@@ -15,7 +15,6 @@ name = "crabtalkd"
 path = "src/bin/main.rs"
 
 [dependencies]
-command.workspace = true
 crabtalk.workspace = true
 transport.workspace = true
 wcore.workspace = true

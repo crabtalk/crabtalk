@@ -15,22 +15,10 @@ pub mod mcp;
     about = "Crabtalk TUI — interactive agent client"
 )]
 pub struct Cli {
-    /// Run the daemon in the foreground.
+    /// Run the daemon in the foreground (all-in-one mode).
     #[cfg(feature = "daemon")]
     #[arg(long)]
     pub foreground: bool,
-    /// Start the daemon service without entering chat.
-    #[cfg(feature = "daemon")]
-    #[arg(long, group = "daemon_op")]
-    pub start: bool,
-    /// Stop and restart the daemon service.
-    #[cfg(feature = "daemon")]
-    #[arg(long, group = "daemon_op")]
-    pub restart: bool,
-    /// Stop the daemon service.
-    #[cfg(feature = "daemon")]
-    #[arg(long, group = "daemon_op")]
-    pub stop: bool,
     /// Hot-reload daemon config.
     #[cfg(feature = "daemon")]
     #[arg(long, group = "daemon_op")]
@@ -39,10 +27,6 @@ pub struct Cli {
     #[cfg(feature = "daemon")]
     #[arg(long, group = "daemon_op")]
     pub events: bool,
-    /// Increase log verbosity (-v = info, -vv = debug, -vvv = trace).
-    #[cfg(feature = "daemon")]
-    #[arg(short, long, action = clap::ArgAction::Count)]
-    pub verbose: u8,
     /// Connect via TCP instead of Unix domain socket.
     #[arg(long)]
     pub tcp: bool,
@@ -81,36 +65,15 @@ pub enum Command {
         /// Plugin name.
         plugin: String,
     },
-    /// List running services.
-    #[cfg(feature = "daemon")]
-    Ps,
-    /// View daemon logs.
-    #[cfg(feature = "daemon")]
-    Logs {
-        /// Arguments passed through to `tail` (e.g. `-f`, `-n 100`).
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        tail_args: Vec<String>,
-    },
 }
 
 impl Cli {
     /// Parse and dispatch the CLI command.
     pub async fn run(self) -> Result<()> {
-        // Daemon flags take priority.
         #[cfg(feature = "daemon")]
         {
             if self.foreground {
                 return crabtalkd::foreground::start().await;
-            }
-            if self.start || self.restart {
-                if self.restart {
-                    let _ = crabtalkd::service::uninstall();
-                }
-                crabtalkd::ensure_config()?;
-                return crabtalkd::service::install(self.verbose.max(1), self.restart);
-            }
-            if self.stop {
-                return crabtalkd::service::uninstall();
             }
             if self.reload {
                 let daemon = crabtalkd::Cli {
@@ -134,9 +97,6 @@ impl Cli {
 
         match self.command {
             None => {
-                #[cfg(feature = "daemon")]
-                let runner = connect_or_start(self.tcp, self.verbose.max(1)).await?;
-                #[cfg(not(feature = "daemon"))]
                 let runner = connect(self.tcp).await?;
                 let mut repl = crate::repl::ChatRepl::new(runner, self.agent)?;
                 repl.run().await
@@ -180,55 +140,11 @@ impl Cli {
                 };
                 daemon.run().await
             }
-            #[cfg(feature = "daemon")]
-            Some(Command::Ps) => {
-                let daemon = crabtalkd::Cli {
-                    foreground: false,
-                    verbose: 0,
-                    tcp: self.tcp,
-                    command: Some(crabtalkd::Command::Ps),
-                };
-                daemon.run().await
-            }
-            #[cfg(feature = "daemon")]
-            Some(Command::Logs { tail_args }) => {
-                let daemon = crabtalkd::Cli {
-                    foreground: false,
-                    verbose: 0,
-                    tcp: self.tcp,
-                    command: Some(crabtalkd::Command::Logs { tail_args }),
-                };
-                daemon.run().await
-            }
         }
     }
 }
 
-/// Connect to daemon, auto-starting it if not reachable.
-#[cfg(feature = "daemon")]
-async fn connect_or_start(use_tcp: bool, verbose: u8) -> Result<Runner> {
-    match connect(use_tcp).await {
-        Ok(runner) => Ok(runner),
-        Err(e) => {
-            tracing::debug!("daemon not reachable, starting: {e}");
-            crabtalkd::ensure_config()?;
-            // We just confirmed the daemon isn't reachable. Force a clean
-            // reinstall — without this, a stale plist (zombie daemon, crashed
-            // before opening the socket) makes `service::install` no-op with
-            // "daemon is already running" and we loop until the 5s timeout.
-            crabtalkd::service::install(verbose, true)?;
-            for _ in 0..20 {
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                if let Ok(runner) = connect(use_tcp).await {
-                    return Ok(runner);
-                }
-            }
-            anyhow::bail!("daemon started but not reachable after 5s")
-        }
-    }
-}
-
-/// Connect to daemon, failing if not reachable.
+/// Connect to daemon, failing with a clear message pointing at crabup if down.
 async fn connect(use_tcp: bool) -> Result<Runner> {
     if use_tcp {
         connect_tcp().await
@@ -244,7 +160,7 @@ pub(crate) async fn connect_default() -> Result<Runner> {
         let socket_path = &*wcore::paths::SOCKET_PATH;
         Runner::connect(socket_path).await.with_context(|| {
             format!(
-                "daemon not running — start with: crabtalk start\n  (tried {})",
+                "daemon not running — start with: crabup daemon start\n  (tried {})",
                 socket_path.display()
             )
         })
@@ -272,7 +188,7 @@ pub(crate) async fn connect_tcp() -> Result<Runner> {
     let tcp_port_file = &*wcore::paths::TCP_PORT_FILE;
     let port_str = std::fs::read_to_string(tcp_port_file).with_context(|| {
         format!(
-            "daemon not running — start with: crabtalk start\n  (no port file at {})",
+            "daemon not running — start with: crabup daemon start\n  (no port file at {})",
             tcp_port_file.display()
         )
     })?;

@@ -866,7 +866,6 @@ dependencies = [
  "async-stream",
  "clap",
  "crabtalk",
- "crabtalk-command",
  "crabtalk-core",
  "crabtalk-transport",
  "dialoguer",

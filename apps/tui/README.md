@@ -8,12 +8,13 @@ or TCP.
 
 ## Features
 
-- `daemon` — embeds daemon lifecycle commands (start/stop/foreground, plugin
-  management, admin). With this feature, the TUI auto-starts the daemon and
-  works as an all-in-one binary.
+- `daemon` — embeds the daemon crate so `crabtalk-tui --foreground` can run
+  the daemon in-process (all-in-one mode) and `--reload` / `--events` /
+  `pull` / `rm` can drive a running daemon over the socket.
 
-Without the `daemon` feature, the TUI is a pure client that requires a
-running daemon (`crabtalk start` or `crabtalk foreground`).
+The TUI never installs or starts the daemon as a service — that's `crabup`'s
+job (`crabup daemon start`). Without a running daemon, the TUI exits with a
+hint pointing at crabup.
 
 ## License
 
