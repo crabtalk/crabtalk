@@ -1,6 +1,6 @@
 //! `crabtalk-cron` — cron scheduler service.
 //!
-//! Admin is direct edits to `$CRABTALK_HOME/cron/crons.toml`. The running
+//! Admin is direct edits to `$CRABTALK_HOME/config/crons.toml`. The running
 //! scheduler polls the file's mtime and reconciles timers on change.
 
 use clap::Parser;

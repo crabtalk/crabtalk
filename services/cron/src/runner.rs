@@ -1,6 +1,7 @@
 //! Scheduler loop — spawns one timer task per schedule, polls the store
 //! file for external edits, and fires `/{skill}` into the daemon on cue.
 
+use crate::entry::{CronEntry, is_quiet};
 use crate::store::Store;
 use anyhow::Result;
 use sdk::NodeClient;
@@ -15,10 +16,7 @@ use tokio::{
     sync::{Mutex, broadcast},
     task::JoinHandle,
 };
-use wcore::{
-    protocol::message::{ClientMessage, StreamMsg},
-    trigger::cron::{CronEntry, is_quiet},
-};
+use wcore::protocol::message::{ClientMessage, StreamMsg};
 
 const FILE_POLL_INTERVAL: Duration = Duration::from_secs(2);
 

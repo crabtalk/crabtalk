@@ -634,7 +634,6 @@ dependencies = [
  "chrono",
  "crabllm-core",
  "crabtalk-core",
- "cron",
  "dirs",
  "futures-core",
  "futures-util",

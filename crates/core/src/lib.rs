@@ -32,5 +32,4 @@ pub mod protocol;
 pub mod storage;
 #[cfg(feature = "testing")]
 pub mod testing;
-pub mod trigger;
 pub mod utils;

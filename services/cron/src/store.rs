@@ -1,9 +1,9 @@
 //! TOML-backed schedule store — load and mutate `CronEntry` rows.
 
+use crate::entry::{CronEntry, validate_schedule};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use wcore::trigger::cron::{CronEntry, validate_schedule};
 
 /// TOML wrapper: `[[cron]]` array of tables.
 #[derive(Debug, Default, Serialize, Deserialize)]

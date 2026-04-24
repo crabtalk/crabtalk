@@ -1,8 +1,4 @@
-//! Cron trigger — pure data + validators.
-//!
-//! Consumers choose their own storage: the desktop binary writes TOML files;
-//! a multi-tenant scheduler stores rows in a database. Both serialize
-//! [`CronEntry`] the same way.
+//! Cron entry data type and validators.
 
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -36,8 +32,8 @@ pub fn validate_schedule(schedule: &str) -> Result<(), String> {
 /// Is now inside the quiet window? Requires both `start` and `end` to be set
 /// and parseable as `%H:%M`; otherwise returns false (no suppression).
 ///
-/// Windows wrapping midnight are supported: `quiet_start="23:00"`,
-/// `quiet_end="07:00"` suppresses from 23:00 through 06:59.
+/// Windows wrapping midnight are supported: `start="23:00"`, `end="07:00"`
+/// suppresses from 23:00 through 06:59.
 pub fn is_quiet(start: Option<&str>, end: Option<&str>) -> bool {
     let (Some(qs), Some(qe)) = (start, end) else {
         return false;
