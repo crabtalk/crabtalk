@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>0018 - Protocol - The Crabtalk RFC Book</title>
+        <title>0185 - crabup - The Crabtalk RFC Book</title>
 
 
         <!-- Custom HTML head -->
@@ -146,7 +146,7 @@
                         <a href="https://github.com/crabtalk/crabtalk" title="Git repository" aria-label="Git repository">
                             <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
                         </a>
-                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/rfcs/0018-protocol.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/rfcs/0185-crabup.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
                         </a>
 
@@ -180,161 +180,121 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="0018---protocol"><a class="header" href="#0018---protocol">0018 - Protocol</a></h1>
+                        <h1 id="0185---crabup"><a class="header" href="#0185---crabup">0185 - crabup</a></h1>
 <ul>
-<li>Feature Name: Wire Protocol</li>
-<li>Start Date: 2026-03-27</li>
-<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/pull/18">#18</a></li>
-<li>Crates: core</li>
+<li>Feature Name: crabup</li>
+<li>Start Date: 2026-04-24</li>
+<li>Discussion: TBD</li>
+<li>Crates: new <code>crabup</code> binary; consumes <code>command</code>; shrinks <code>crabtalkd</code></li>
+<li>Updates: <a href="0043-component.html">0043 (Component System)</a></li>
 </ul>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
-<p>A protobuf-based wire protocol defining all client-server communication for the
-crabtalk daemon, with a <code>Server</code> trait for dispatch and a <code>Client</code> trait for
-typed request methods.</p>
+<p><code>crabup</code> is a thin wrapper over <code>cargo install</code> that also owns <code>launchd</code>/<code>systemd</code>/<code>schtasks</code> lifecycle for every crabtalk binary. <code>crabup install crabtalkd</code> spawns <code>cargo install crabtalkd</code>. The value add is service management — the one thing <code>cargo install</code> doesn’t do — not distribution, not version coordination, not a registry.</p>
 <h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
-<p>The daemon mediates between multiple clients (CLI, Telegram, web) and multiple
-agents. A well-defined wire protocol decouples client and server implementations
-and makes the contract explicit. Protobuf was chosen for compact binary
-encoding, language-neutral schema, and generated code via <code>prost</code>.</p>
+<p>Two real problems today, both about service management, not about distribution:</p>
+<ol>
+<li><strong>The daemon is its own installer.</strong> <code>crabtalkd start</code> generates and loads a platform unit for itself via the <code>command</code> crate; every other binary (<code>crabtalk-telegram</code>, <code>crabtalk-wechat</code>, …) does the same thing with the same code. A daemon shouldn’t install itself, and the install path shouldn’t live in three places.</li>
+<li><strong>No one-stop service surface.</strong> <code>ps</code>, <code>logs</code>, <code>start</code>, <code>stop</code> are duplicated per binary and absent for most. Users need a single tool that knows about all crabtalk services on the machine, not one subcommand per binary.</li>
+</ol>
+<p>Distribution is already handled: every crabtalk crate publishes to crates.io with <code>version.workspace = true</code>, so <code>cargo install crabtalkd</code> is the install story today. It will remain the install story under crabup — crabup just renames the command and wraps service management around it.</p>
+<p>RFC <a href="0043-component.html">0043</a> defined <em>how</em> components talk to the daemon (port-file discovery, MCP contract). This RFC defines <em>how they get installed and stay alive</em>.</p>
 <h2 id="design"><a class="header" href="#design">Design</a></h2>
-<h3 id="wire-messages-crabtalkproto"><a class="header" href="#wire-messages-crabtalkproto">Wire messages (<code>crabtalk.proto</code>)</a></h3>
-<p>Two top-level envelopes using <code>oneof</code>:</p>
-<p><strong>ClientMessage</strong> — 15 variants:</p>
+<h3 id="command-surface"><a class="header" href="#command-surface">Command surface</a></h3>
+<pre><code>crabup pull &lt;name&gt; [--version X]      # cargo install crabtalk-&lt;name&gt; (or crabtalkd)
+crabup rm &lt;name&gt;                      # cargo uninstall
+crabup update                         # bump every installed crabtalk-* crate to latest
+crabup list                           # installed crabtalk-* crates
+crabup ps                             # all crabtalk services, one view
+
+crabup &lt;name&gt; start                   # install + load platform unit
+crabup &lt;name&gt; stop
+crabup &lt;name&gt; restart
+crabup &lt;name&gt; logs [-f]
+</code></pre>
+<p><code>&lt;name&gt;</code> is a short name from the resolution table below, so <code>crabup daemon start</code>, <code>crabup telegram start</code>, <code>crabup search logs -f</code>. Each short name is both a pull/rm target and a service-command namespace. <code>pull</code>/<code>rm</code> mirror the existing <code>crabtalkd pull</code>/<code>rm</code> verbs for runtime plugins so the vocabulary is consistent across the user’s two install surfaces (binary-level and runtime-plugin-level).</p>
+<p><code>crabup update</code> is always batch — it bumps every installed <code>crabtalk-*</code> crate to the latest version on crates.io, same shape as <code>rustup update</code> over its components. There is no per-component update verb: if you only want to change one crate, that’s <code>crabup pull &lt;name&gt; --version &lt;X&gt;</code>. This makes “keep the set aligned” the default behavior of the only tool users will reach for when they want newer bits, without needing atomic-set machinery to enforce it.</p>
+<p>That’s it. No <code>pin</code>, no <code>doctor</code>, no <code>component add</code> vs <code>pull</code> split — <code>cargo install</code> already handles versions; a component is just a crate you can run as a service. No atomic-set enforcement; if a user mixes versions and breaks the wire, the fix is <code>crabup pull &lt;name&gt; --version &lt;matching&gt;</code> for the mismatched one or <code>crabup update</code> to bump everything.</p>
+<h3 id="pull-is-a-pass-through"><a class="header" href="#pull-is-a-pass-through"><code>pull</code> is a pass-through</a></h3>
+<pre><code>crabup pull &lt;name&gt;
+  ↓ resolve name → crate ("tui" → "crabtalk-tui"; "daemon" → "crabtalkd")
+  ↓ cargo install &lt;crate&gt; [--version X]
+</code></pre>
+<p>Name resolution is a small table compiled into crabup:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Variant</th><th>Purpose</th></tr>
+<tr><th>Short name</th><th>crates.io crate</th><th>Role</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Send</code></td><td>Run agent, return complete response</td></tr>
-<tr><td><code>Stream</code></td><td>Run agent, stream response events</td></tr>
-<tr><td><code>Ping</code></td><td>Keepalive</td></tr>
-<tr><td><code>Sessions</code></td><td>List active sessions</td></tr>
-<tr><td><code>Kill</code></td><td>Close a session</td></tr>
-<tr><td><code>GetConfig</code></td><td>Read daemon config</td></tr>
-<tr><td><code>SetConfig</code></td><td>Replace daemon config</td></tr>
-<tr><td><code>Reload</code></td><td>Hot-reload runtime</td></tr>
-<tr><td><code>SubscribeEvents</code></td><td>Stream agent events</td></tr>
-<tr><td><code>ReplyToAsk</code></td><td>Answer a pending <code>ask_user</code> prompt</td></tr>
-<tr><td><code>GetStats</code></td><td>Daemon stats</td></tr>
-<tr><td><code>CreateCron</code></td><td>Create cron entry</td></tr>
-<tr><td><code>DeleteCron</code></td><td>Delete cron entry</td></tr>
-<tr><td><code>ListCrons</code></td><td>List cron entries</td></tr>
-<tr><td><code>Compact</code></td><td>Compact session history</td></tr>
+<tr><td><code>daemon</code></td><td><code>crabtalkd</code></td><td>daemon</td></tr>
+<tr><td><code>tui</code></td><td><code>crabtalk-tui</code></td><td>REPL client</td></tr>
+<tr><td><code>telegram</code></td><td><code>crabtalk-telegram</code></td><td>Telegram gateway</td></tr>
+<tr><td><code>wechat</code></td><td><code>crabtalk-wechat</code></td><td>WeChat gateway</td></tr>
+<tr><td><code>search</code></td><td><code>crabtalk-search</code></td><td>meta-search plugin</td></tr>
+<tr><td><code>outlook</code></td><td><code>crabtalk-outlook</code></td><td>Outlook plugin</td></tr>
 </tbody>
 </table>
 </div>
-<p><strong>ServerMessage</strong> — 11 variants:</p>
+<p><code>crabup pull &lt;short&gt;</code> resolves via the table; <code>crabup pull &lt;anything-else&gt;</code> passes through verbatim so <code>crabup pull some-third-party-crabtalk-gateway</code> still works without a table edit. New first-party binaries get a row added when they ship.</p>
+<p>Binaries land in <code>~/.cargo/bin</code>, where <code>cargo install</code> has always put them. <code>crabup list</code> reads <code>~/.cargo/.crates.toml</code> and filters for <code>crabtalk*</code>. There is no parallel state file; if <code>.crates.toml</code> is wrong, <code>cargo</code> is wrong, and crabup being wrong with it is the correct behavior.</p>
+<p>Prerequisite: <code>cargo</code> on <code>PATH</code>. If missing, crabup prints one line pointing at <code>https://rustup.rs</code> and exits. No auto-install, no curl-pipe — the daemon doing that was part of what motivated this RFC.</p>
+<h3 id="service-management-the-real-content"><a class="header" href="#service-management-the-real-content">Service management (the real content)</a></h3>
+<p>The <code>command</code> crate already renders <code>launchd.plist</code>, <code>systemd.service</code>, and <code>schtasks.xml</code> and exposes install/uninstall/log-tail helpers. It stays. What changes is the caller: today each binary calls <code>command::install</code> from its own CLI; after this RFC only <code>crabup</code> calls into <code>command</code>. <code>crabtalkd start/stop/ps/logs</code> are deleted; so are the mirrored flags in <code>crabtalk-tui</code>.</p>
+<p><code>crabup &lt;name&gt; start</code> is:</p>
+<ol>
+<li>Find the binary on <code>PATH</code> (fail fast if not installed).</li>
+<li>Look up service metadata in crabup’s name table — the same table that resolves short names to crates also carries <code>label</code> (mechanical: <code>ai.crabtalk.&lt;name&gt;</code>) and <code>description</code>. crabup is the package manager; it owns this metadata, the binaries don’t need to expose it.</li>
+<li>Render the platform unit via <code>command</code> and load it.</li>
+</ol>
+<p><code>crabup ps</code> is the one piece that needs more than wrapping: it scans <code>~/.crabtalk/run/*.port</code> (the same directory RFC 0043 already defines) and checks each listener, then cross-references with whatever the platform’s service manager reports for <code>ai.crabtalk.*</code> labels. One view, all services.</p>
+<h3 id="component-model"><a class="header" href="#component-model">Component model</a></h3>
+<p>RFC 0043 stands unchanged. A component is a binary that writes a port file on startup and serves MCP on that port. crabup doesn’t alter the contract — it just installs and service-manages those binaries the same way it does <code>crabtalkd</code>. “Install a component” and “install the daemon” are the same operation under different names.</p>
+<h3 id="crabllm-as-a-managed-service-optional-motivated"><a class="header" href="#crabllm-as-a-managed-service-optional-motivated">crabllm as a managed service (optional, motivated)</a></h3>
+<p>Today <code>crabllm-provider</code> is a library linked into <code>crabtalkd</code>. Making <code>crabllm</code> a separate service is worth doing only if at least one of these is concrete:</p>
+<ul>
+<li>One set of provider credentials serves multiple daemons on the same machine.</li>
+<li>Central place for provider fallback, rate-limit smoothing, or caching.</li>
+<li>Swap models or provider SDKs without restarting <code>crabtalkd</code>.</li>
+</ul>
+<p>None of those are pressing yet. When one is, <code>crabtalk-llmd</code> becomes another crate crabup installs and service-manages, same as any gateway. The RFC doesn’t need to anticipate it.</p>
+<h2 id="impact-on-crabtalkd"><a class="header" href="#impact-on-crabtalkd">Impact on <code>crabtalkd</code></a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Variant</th><th>Purpose</th></tr>
+<tr><th>Removed from <code>crabtalkd</code></th><th>Replaced by</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Response</code></td><td>Complete agent response</td></tr>
-<tr><td><code>Stream</code></td><td>Streaming event (see below)</td></tr>
-<tr><td><code>Error</code></td><td>Error with code and message</td></tr>
-<tr><td><code>Pong</code></td><td>Keepalive ack</td></tr>
-<tr><td><code>Sessions</code></td><td>Session list</td></tr>
-<tr><td><code>Config</code></td><td>Config JSON</td></tr>
-<tr><td><code>AgentEvent</code></td><td>Agent event (for subscriptions)</td></tr>
-<tr><td><code>Stats</code></td><td>Daemon stats</td></tr>
-<tr><td><code>CronInfo</code></td><td>Created cron entry</td></tr>
-<tr><td><code>CronList</code></td><td>All cron entries</td></tr>
-<tr><td><code>Compact</code></td><td>Compaction summary</td></tr>
+<tr><td><code>Command::Start { force }</code></td><td><code>crabup daemon start</code> (first install: <code>crabup pull daemon</code>)</td></tr>
+<tr><td><code>Command::Stop</code>, <code>Restart</code></td><td><code>crabup daemon stop</code> / <code>crabup daemon restart</code></td></tr>
+<tr><td><code>Command::Ps</code></td><td><code>crabup ps</code> (all services, one place)</td></tr>
+<tr><td><code>Command::Logs</code></td><td><code>crabup daemon logs</code></td></tr>
+<tr><td><code>ensure_config</code> + <code>attach::setup_llm</code> on first start</td><td><code>crabup daemon start</code> first-run flow</td></tr>
+<tr><td>Duplicate forwarding in TUI (<code>--start</code>, <code>--stop</code>)</td><td>Removed</td></tr>
 </tbody>
 </table>
 </div>
-<h3 id="streaming-events"><a class="header" href="#streaming-events">Streaming events</a></h3>
-<p><code>StreamEvent</code> is itself a <code>oneof</code> with 8 variants representing the lifecycle of
-a streamed agent response:</p>
-<ul>
-<li><code>Start { agent, session }</code> — stream opened.</li>
-<li><code>Chunk { content }</code> — text delta.</li>
-<li><code>Thinking { content }</code> — thinking/reasoning delta.</li>
-<li><code>ToolStart { calls[] }</code> — tool invocations beginning.</li>
-<li><code>ToolResult { call_id, output, duration_ms, is_error }</code> — single tool result. <code>is_error</code> signals the handler reported failure; <code>output</code> carries the text in either case so clients can render it. UIs use the flag to style errors distinctly; agents can use it for retry decisions without string-matching on error messages.</li>
-<li><code>ToolsComplete</code> — all pending tool calls finished.</li>
-<li><code>AskUser { questions[] }</code> — agent needs user input.</li>
-<li><code>End { agent, error }</code> — stream closed (error is empty on success).</li>
-</ul>
-<p>The client reads <code>StreamEvent</code>s until it receives <code>End</code>, which is the terminal
-sentinel.</p>
-<p><strong>Tool result ordering.</strong> When a single agent step produces N tool calls, the runtime dispatches them concurrently and emits <code>ToolResult</code> events in <strong>completion order</strong> — fast tools are reported as soon as they finish, slow siblings report later. The event stream is therefore not ordered by the call index in <code>ToolStart.calls[]</code>. Clients correlate by <code>call_id</code>, which is the primary key; do not assume positional alignment with the <code>ToolStart</code> call list.</p>
-<h3 id="agent-events"><a class="header" href="#agent-events">Agent events</a></h3>
-<p><code>AgentEventMsg</code> carries a <code>kind</code> enum (<code>TEXT_DELTA</code>, <code>THINKING_DELTA</code>,
-<code>TOOL_START</code>, <code>TOOL_RESULT</code>, <code>TOOLS_COMPLETE</code>, <code>DONE</code>) plus agent name, session
-ID, content, and timestamp. Used by <code>SubscribeEvents</code> for live monitoring of all
-agent activity across sessions. For <code>TOOL_RESULT</code> events, the <code>tool_is_error</code> field mirrors the streaming protocol’s <code>is_error</code> — monitoring clients use it to aggregate error rates per tool type without parsing output strings.</p>
-<p><code>AgentEventMsg</code> overlaps with <code>StreamEvent</code> — both represent the agent execution
-lifecycle. <code>StreamEvent</code> is the per-request streaming format (rich, typed
-variants). <code>AgentEventMsg</code> is the cross-session monitoring format (flat, single
-struct with a kind tag). The duplication exists because monitoring clients need a
-simpler, uniform shape to filter and display events from multiple agents.</p>
-<h3 id="server-trait"><a class="header" href="#server-trait">Server trait</a></h3>
-<p>One async method per <code>ClientMessage</code> variant. Implementations receive typed
-request structs and return typed responses:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>trait Server: Sync {
-    fn send(&amp;self, req: SendMsg) -&gt; Future&lt;Output = Result&lt;SendResponse&gt;&gt;;
-    fn stream(&amp;self, req: StreamMsg) -&gt; Stream&lt;Item = Result&lt;StreamEvent&gt;&gt;;
-    fn ping(&amp;self) -&gt; Future&lt;Output = Result&lt;()&gt;&gt;;
-    // ... one method per operation
-}
-<span class="boring">}</span></code></pre>
-<p>The provided <code>dispatch(&amp;self, msg: ClientMessage) -&gt; Stream&lt;Item = ServerMessage&gt;</code> method routes a raw <code>ClientMessage</code> to the correct handler.
-Request-response operations yield exactly one <code>ServerMessage</code>; streaming
-operations yield many. Errors are mapped to <code>ErrorMsg { code, message }</code> using HTTP status codes with
-their standard semantics: 400 (bad request), 404 (not found), 500 (internal
-error).</p>
-<h3 id="client-trait"><a class="header" href="#client-trait">Client trait</a></h3>
-<p>Two required transport primitives:</p>
-<ul>
-<li><code>request(ClientMessage) -&gt; Result&lt;ServerMessage&gt;</code> — single round-trip.</li>
-<li><code>request_stream(ClientMessage) -&gt; Stream&lt;Item = Result&lt;ServerMessage&gt;&gt;</code> —
-raw streaming read.</li>
-</ul>
-<p>Typed provided methods (<code>send</code>, <code>stream</code>, <code>ping</code>, <code>get_config</code>, <code>set_config</code>)
-handle message construction, response unwrapping, and sentinel detection. The
-<code>stream()</code> method consumes events via <code>take_while</code> until <code>StreamEnd</code> and maps
-each frame through <code>TryFrom&lt;ServerMessage&gt;</code> for type-safe event extraction.</p>
-<h3 id="conversions-messageconvert"><a class="header" href="#conversions-messageconvert">Conversions (<code>message::convert</code>)</a></h3>
-<p><code>From</code> impls wrap typed messages into envelopes (<code>SendMsg -&gt; ClientMessage</code>,
-<code>SendResponse -&gt; ServerMessage</code>). <code>TryFrom</code> impls unwrap in the other direction,
-returning an error for unexpected variants. This keeps call sites clean — no
-manual enum construction.</p>
+<p>After this, <code>crabtalkd</code>’s CLI is <code>run</code> (the long-running process the service unit invokes, equivalent to today’s <code>--foreground</code>), <code>reload</code>, <code>events</code>, and the runtime plugin ops (<code>pull</code>/<code>rm</code>, which are live-daemon operations, not install).</p>
 <h2 id="alternatives"><a class="header" href="#alternatives">Alternatives</a></h2>
-<p><strong>JSON over WebSocket.</strong> Simpler to debug with <code>curl</code>, but larger payloads and
-no schema enforcement. Protobuf catches schema mismatches at compile time.</p>
-<p><strong>gRPC service definitions.</strong> Would provide streaming and code generation out of
-the box, but brings HTTP/2, tower middleware, and tonic as dependencies. The
-current approach is lighter: raw protobuf frames over a length-prefixed stream,
-with hand-written trait dispatch.</p>
-<p><strong>Separate request/response ID correlation.</strong> The protocol is connection-scoped
-and sequential — one outstanding request per connection at a time. This is a
-fundamental design constraint: clients must wait for a response before sending
-the next request. No need for request IDs or multiplexing. If multiplexing is
-needed later, it belongs in the transport layer, not the protocol.</p>
+<p><strong>Plain <code>cargo install</code>, no crabup.</strong> Installs are one command, but users hand-write <code>launchd</code>/<code>systemd</code> units per binary, and <code>ps</code>/<code>logs</code> across services don’t exist. The service-management gap is the whole reason crabup is a separate tool.</p>
+<p><strong>A real package manager with its own manifest, signed pre-built binaries, version coordination, atomic-set installs.</strong> Previously drafted; cut. Infrastructure we don’t need — crates.io is the registry, workspace-version inheritance is the coordination, and the non-developer audience that would need pre-built binaries doesn’t exist yet. If that audience materializes, pre-built becomes a second <code>crabup pull</code> backend alongside the <code>cargo install</code> path.</p>
+<p><strong>Keep each binary’s <code>start/stop/logs</code> subcommand, just delete the cross-binary dispatcher.</strong> Leaves three copies of the same install code and no one-stop service view. Cuts nothing meaningful.</p>
+<p><strong>Dynamic plugin loading (shared objects).</strong> Rejected by RFC 0043 — shared fate with the daemon is the exact thing the component model avoids.</p>
 <h2 id="unresolved-questions"><a class="header" href="#unresolved-questions">Unresolved Questions</a></h2>
 <ul>
-<li>Should the protocol negotiate a version on connect to detect client/server
-mismatches?</li>
-<li>Should <code>StreamEnd</code> carry structured error information (code + message) instead
-of a plain string?</li>
-<li>Should there be a <code>ClientMessage</code> variant for subscribing to a specific
-session’s events rather than all events?</li>
+<li><strong>Windows service layer.</strong> <code>schtasks</code> is weaker than <code>launchd</code>/<code>systemd</code> (no restart-on-failure, limited log routing). Acceptable for v1, or not?</li>
+<li><strong><code>rm</code> scope.</strong> Should <code>crabup rm daemon</code> also remove <code>~/.crabtalk/config/</code>? Leaning no (<code>rm</code> is binary-only; data stays); confirm.</li>
+<li><strong>Multiple daemon instances.</strong> If two <code>crabtalkd</code> instances run on one machine, what owns <code>~/.crabtalk/</code>? Out of scope for v1.</li>
 </ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../rfcs/0009-transport.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rfcs/0171-topic-switching.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../rfcs/0027-model.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../rfcs/superseded.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -344,11 +304,11 @@ session’s events rather than all events?</li>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../rfcs/0009-transport.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rfcs/0171-topic-switching.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../rfcs/0027-model.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../rfcs/superseded.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
