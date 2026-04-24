@@ -20,6 +20,10 @@ message ClientMessage {
   reserved 8, 9, 10, 12;
   reserved "list_providers", "set_provider", "delete_provider",
       "list_provider_presets";
+  // Tags 27-29 were the cron management RPCs (CreateCron/DeleteCron/ListCrons).
+  // Removed — cron now lives as a standalone service outside the daemon.
+  reserved 27, 28, 29;
+  reserved "create_cron", "delete_cron", "list_crons";
 
   oneof msg {
     // Execution
@@ -62,10 +66,6 @@ message ClientMessage {
     StartServiceMsg start_service = 24;
     StopServiceMsg stop_service = 25;
     ServiceLogsMsg service_logs = 26;
-    // Cron
-    CreateCronMsg create_cron = 27;
-    DeleteCronMsg delete_cron = 28;
-    ListCronsMsg list_crons = 29;
     // Daemon lifecycle
     Ping ping = 30;
     GetConfig get_config = 31;
@@ -118,22 +118,6 @@ message KillMsg {
 }
 
 message ReloadMsg {}
-
-message CreateCronMsg {
-  string schedule = 1;
-  string skill = 2;
-  string agent = 3;
-  optional string quiet_start = 4;
-  optional string quiet_end = 5;
-  bool once = 6;
-  string sender = 7;
-}
-
-message DeleteCronMsg {
-  uint64 id = 1;
-}
-
-message ListCronsMsg {}
 
 // ── Event Bus ───────────────────────────────────────────────────
 
@@ -299,6 +283,9 @@ message ServerMessage {
   reserved "setting_value", "setting_list";
   reserved 8, 9;
   reserved "provider_list", "provider_preset_list";
+  // Tags 17, 18 were CronInfo/CronList — removed with the cron extraction.
+  reserved 17, 18;
+  reserved "cron_info", "cron_list";
 
   oneof msg {
     // Common
@@ -329,9 +316,6 @@ message ServerMessage {
     ConversationHistory conversation_history = 24;
     // Services
     ServiceLogOutput service_log_output = 16;
-    // Cron
-    CronInfo cron_info = 17;
-    CronList cron_list = 18;
     // Daemon lifecycle
     ConfigMsg config = 19;
     DaemonStats stats = 20;
@@ -533,21 +517,6 @@ message ActiveConversationList {
 
 message ConfigMsg {
   string config = 1;
-}
-
-message CronInfo {
-  uint64 id = 1;
-  string schedule = 2;
-  string skill = 3;
-  string agent = 4;
-  string quiet_start = 5;
-  string quiet_end = 6;
-  bool once = 7;
-  string sender = 8;
-}
-
-message CronList {
-  repeated CronInfo crons = 1;
 }
 
 message AgentInfo {

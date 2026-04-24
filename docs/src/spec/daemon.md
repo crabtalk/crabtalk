@@ -10,7 +10,6 @@ The daemon owns:
 - **Runtime** — a single shared runtime instance behind `RwLock`. Agents share the runtime; the runtime is never cloned per conversation.
 - **Hooks** — the composite `Hook` assembled from sub-hooks (OS tools, `ask_user`, delegation, event subscription, memory).
 - **Event bus** — subscription table and fire callback. File-backed by `events/subscriptions.toml` under the config directory.
-- **Cron** — schedule store and per-entry timer tasks. File-backed by `cron/crons.toml`.
 - **MCP handler** — connections to external MCP servers and routing to the tools they advertise.
 - **Configuration** — current `DaemonConfig`, reloaded in place on explicit reload.
 
@@ -18,7 +17,7 @@ The daemon does not interpret tool semantics. Tool dispatch is the runtime's res
 
 ## Process model
 
-The daemon runs as a single OS process. All work happens on a single Tokio runtime. There is one listener task per configured transport, one reply task per connected client, one task per in-flight dispatch, and one task per active cron timer. Shutdown is initiated by a broadcast channel; every long-lived task subscribes and exits when the channel fires.
+The daemon runs as a single OS process. All work happens on a single Tokio runtime. There is one listener task per configured transport, one reply task per connected client, and one task per in-flight dispatch. Shutdown is initiated by a broadcast channel; every long-lived task subscribes and exits when the channel fires.
 
 A daemon process owns at most one configuration directory and at most one set of transport endpoints.
 
@@ -33,14 +32,13 @@ The daemon is rooted at a configuration directory supplied at startup. The direc
 | `sessions/`                    | Conversation JSONL logs, one file per conversation. |
 | `memory/`                      | Per-agent memory databases, one file per agent.     |
 | `skills/`                      | Skill bundles loadable by agents.                   |
-| `cron/crons.toml`              | Cron schedule recovery file.                        |
 | `events/subscriptions.toml`    | Event subscription recovery file.                   |
 
 All paths are resolved relative to the configuration directory. The daemon writes nothing outside this directory.
 
 ## Lifecycle
 
-**Startup.** The daemon reads `config.toml`, constructs the provider, assembles hooks, opens storage, builds the shared runtime, loads cron and event subscriptions from disk, binds transports, and begins accepting client messages.
+**Startup.** The daemon reads `config.toml`, constructs the provider, assembles hooks, opens storage, builds the shared runtime, loads event subscriptions from disk, binds transports, and begins accepting client messages.
 
 **Runtime.** The daemon serves the `Server` trait. Each client message is dispatched into a spawned task that produces a stream of server messages.
 

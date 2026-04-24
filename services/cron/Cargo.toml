@@ -1,0 +1,30 @@
+[package]
+name = "crabtalk-cron"
+description = "Cron scheduler for Crabtalk — fires skills into agents on schedule"
+keywords = ["cron", "scheduler", "crabtalk"]
+categories = ["command-line-utilities"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "crabtalk-cron"
+path = "src/bin/main.rs"
+
+[dependencies]
+# workspace crates
+command.workspace = true
+sdk.workspace = true
+wcore.workspace = true
+
+# crates.io
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+cron.workspace = true
+serde.workspace = true
+toml.workspace = true
+tokio.workspace = true
+tracing.workspace = true

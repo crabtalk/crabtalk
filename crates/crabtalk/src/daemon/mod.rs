@@ -14,7 +14,6 @@ use tokio::sync::{Mutex, RwLock, broadcast, mpsc, oneshot};
 use wcore::protocol::{api::Server, message::ClientMessage};
 use {
     builder::{BuildProvider, DefaultProvider, build_default_provider},
-    cron::CronStore,
     event::EventBus,
     host::DaemonEnv,
 };
@@ -26,7 +25,6 @@ pub type ConversationCwds = Arc<Mutex<HashMap<u64, PathBuf>>>;
 pub type PendingAsks = Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>;
 
 pub mod builder;
-pub mod cron;
 pub mod event;
 pub mod hook;
 pub mod host;
@@ -52,7 +50,6 @@ pub struct Daemon<P: Provider + 'static = DefaultProvider> {
     pub hook: Arc<hook::DaemonHook>,
     pub(crate) config_dir: PathBuf,
     pub(crate) started_at: std::time::Instant,
-    pub(crate) crons: Arc<Mutex<CronStore<P>>>,
     pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<mcp::McpHandler>,
@@ -69,7 +66,6 @@ impl<P: Provider + 'static> Clone for Daemon<P> {
             hook: self.hook.clone(),
             config_dir: self.config_dir.clone(),
             started_at: self.started_at,
-            crons: self.crons.clone(),
             events: self.events.clone(),
             build_provider: Arc::clone(&self.build_provider),
             mcp: self.mcp.clone(),
@@ -91,8 +87,7 @@ impl Daemon<DefaultProvider> {
                 build_default_provider(config, models)
             });
 
-        let daemon =
-            Daemon::build(&config, config_dir, shutdown_tx.clone(), build_provider).await?;
+        let daemon = Daemon::build(&config, config_dir, build_provider).await?;
 
         Ok(DaemonHandle {
             config,

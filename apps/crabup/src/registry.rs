@@ -56,7 +56,14 @@ pub const OUTLOOK: Entry = Entry {
     description: "Outlook integration for Crabtalk",
 };
 
-const TABLE: &[&Entry] = &[&DAEMON, &TUI, &TELEGRAM, &WECHAT, &SEARCH, &OUTLOOK];
+pub const CRON: Entry = Entry {
+    short: "cron",
+    krate: "crabtalk-cron",
+    label: Some("ai.crabtalk.cron"),
+    description: "Cron scheduler for Crabtalk",
+};
+
+const TABLE: &[&Entry] = &[&DAEMON, &TUI, &TELEGRAM, &WECHAT, &SEARCH, &OUTLOOK, &CRON];
 
 impl Entry {
     /// Look up a table entry by short name.

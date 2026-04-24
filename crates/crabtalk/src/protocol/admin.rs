@@ -1,8 +1,8 @@
-//! Daemon-level administrative operations: stats, crons, events, services.
+//! Daemon-level administrative operations: stats, events, services.
 //! `reload` is defined alongside the daemon builder (crates/crabtalk/src/daemon/builder.rs).
 
 use crate::daemon::Daemon;
-use crate::daemon::{cron::CronEntry, event::EventSubscription};
+use crate::daemon::event::EventSubscription;
 use anyhow::Result;
 use crabllm_core::Provider;
 use runtime::Env;
@@ -23,41 +23,6 @@ impl<P: Provider + 'static> Daemon<P> {
             registered_agents: agents,
             active_model,
         })
-    }
-
-    pub(crate) async fn create_cron(&self, req: CreateCronMsg) -> Result<CronInfo> {
-        let rt = self.runtime.read().await.clone();
-        if rt.agent(&req.agent).is_none() {
-            anyhow::bail!("agent '{}' not found", req.agent);
-        }
-        let entry = CronEntry {
-            id: 0,
-            schedule: req.schedule,
-            skill: req.skill,
-            agent: req.agent,
-            sender: req.sender,
-            quiet_start: req.quiet_start,
-            quiet_end: req.quiet_end,
-            once: req.once,
-        };
-        let created = self
-            .crons
-            .lock()
-            .await
-            .create(entry, self.crons.clone())
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-        Ok(CronInfo::from(&created))
-    }
-
-    pub(crate) async fn delete_cron(&self, id: u64) -> bool {
-        self.crons.lock().await.delete(id)
-    }
-
-    pub(crate) async fn list_crons(&self) -> CronList {
-        let entries = self.crons.lock().await.list();
-        CronList {
-            crons: entries.iter().map(CronInfo::from).collect(),
-        }
     }
 
     pub(crate) fn subscribe_events(

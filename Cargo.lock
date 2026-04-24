@@ -652,6 +652,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabtalk-cron"
+version = "0.0.21"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "crabtalk-command",
+ "crabtalk-core",
+ "crabtalk-sdk",
+ "cron",
+ "serde",
+ "tokio",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "crabtalk-mcp"
 version = "0.0.21"
 dependencies = [

@@ -3,7 +3,7 @@
 use crate::{
     Daemon, DaemonConfig,
     daemon::{SharedRuntime, hook::DaemonHook},
-    daemon::{cron, event, host::DaemonEnv},
+    daemon::{event, host::DaemonEnv},
     hooks::{Memory, delegate},
     storage::FsStorage,
 };
@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, OnceLock},
 };
-use tokio::sync::{Mutex, RwLock, broadcast};
+use tokio::sync::{RwLock, broadcast};
 use wcore::{LlmConfig, ResolvedDirs, model::Model, resolve_dirs, storage::Storage};
 
 pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
@@ -38,7 +38,6 @@ impl<P: Provider + 'static> Daemon<P> {
     pub(crate) async fn build(
         config: &DaemonConfig,
         config_dir: &Path,
-        shutdown_tx: broadcast::Sender<()>,
         build_provider: BuildProvider<P>,
     ) -> Result<Self> {
         let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
@@ -61,13 +60,6 @@ impl<P: Provider + 'static> Daemon<P> {
         runtime_once
             .set(shared_runtime.clone())
             .unwrap_or_else(|_| panic!("runtime already initialized"));
-        let cron_store = cron::CronStore::load(
-            config_dir.to_path_buf(),
-            shared_runtime.clone(),
-            shutdown_tx,
-        );
-        let crons = Arc::new(Mutex::new(cron_store));
-        crons.lock().await.start_all(crons.clone());
 
         let fire_runtime = shared_runtime.clone();
         let fire: event::FireCallback = Arc::new(move |sub, payload| {
@@ -112,7 +104,6 @@ impl<P: Provider + 'static> Daemon<P> {
             hook: node_hook,
             config_dir: config_dir.to_path_buf(),
             started_at: std::time::Instant::now(),
-            crons,
             events,
             build_provider,
             mcp,

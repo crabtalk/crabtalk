@@ -70,18 +70,6 @@ impl<P: Provider + 'static> Server for Daemon<P> {
         self.get_stats().await
     }
 
-    async fn create_cron(&self, req: CreateCronMsg) -> Result<CronInfo> {
-        self.create_cron(req).await
-    }
-
-    async fn delete_cron(&self, id: u64) -> Result<bool> {
-        Ok(self.delete_cron(id).await)
-    }
-
-    async fn list_crons(&self) -> Result<CronList> {
-        Ok(self.list_crons().await)
-    }
-
     async fn subscribe_event(&self, req: SubscribeEventMsg) -> Result<SubscriptionInfo> {
         self.subscribe_event(req).await
     }

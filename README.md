@@ -31,7 +31,7 @@ Full config reference: [`crates/crabtalk/config.toml`](crates/crabtalk/config.to
 The daemon ships with built-in tools (shell, task delegation, memory),
 MCP server integration, and skills (Markdown prompt files).
 
-Heavier capabilities live outside the daemon as [plugins](plugins/) —
+Heavier capabilities live outside the daemon as [services](services/) —
 independent binaries that connect via auto-discovery. [Apps](apps/)
 are agent-powered experiences built on top of the daemon.
 

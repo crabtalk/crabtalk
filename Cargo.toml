@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/*", "crates/*", "plugins/*"]
+members = ["apps/*", "crates/*", "services/*"]
 
 [workspace.package]
 version = "0.0.21"
@@ -11,7 +11,7 @@ repository = "https://github.com/crabtalk/crabtalk"
 keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
-plugin = { path = "plugins/plugins", package = "crabtalk-plugins", version = "0.0.21" }
+plugin = { path = "crates/plugins", package = "crabtalk-plugins", version = "0.0.21" }
 telegram = { path = "apps/telegram", package = "crabtalk-telegram", version = "0.0.21" }
 wechat = { path = "apps/wechat", package = "crabtalk-wechat", version = "0.0.21" }
 sdk = { path = "crates/sdk", package = "crabtalk-sdk", version = "0.0.21" }
@@ -24,10 +24,11 @@ transport = { path = "crates/transport", package = "crabtalk-transport", version
 wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.21" }
 memory = { path = "crates/memory", package = "crabtalk-memory", version = "0.0.21" }
 mcp = { path = "crates/mcp", package = "crabtalk-mcp", version = "0.0.21", default-features = false }
-command = { path = "plugins/command", package = "crabtalk-command", version = "0.0.21" }
-command-codegen = { path = "plugins/command-codegen", package = "crabtalk-command-codegen", version = "0.0.21" }
-outlook = { path = "plugins/outlook", package = "crabtalk-outlook", version = "0.0.21", default-features = false }
-search = { path = "plugins/search", package = "crabtalk-search", version = "0.0.21", default-features = false }
+command = { path = "crates/command", package = "crabtalk-command", version = "0.0.21" }
+command-codegen = { path = "crates/command-codegen", package = "crabtalk-command-codegen", version = "0.0.21" }
+outlook = { path = "services/outlook", package = "crabtalk-outlook", version = "0.0.21", default-features = false }
+search = { path = "services/search", package = "crabtalk-search", version = "0.0.21", default-features = false }
+crabtalk-cron = { path = "services/cron", version = "0.0.21" }
 
 # crabllm
 crabllm-core = "0.0.18"
