@@ -14,7 +14,7 @@ keywords = ["llm", "agent", "ai"]
 plugin = { path = "plugins/plugins", package = "crabtalk-plugins", version = "0.0.21" }
 telegram = { path = "apps/telegram", package = "crabtalk-telegram", version = "0.0.21" }
 wechat = { path = "apps/wechat", package = "crabtalk-wechat", version = "0.0.21" }
-sdk = { path = "apps/sdk", package = "crabtalk-sdk", version = "0.0.21" }
+sdk = { path = "crates/sdk", package = "crabtalk-sdk", version = "0.0.21" }
 tui = { path = "apps/tui", package = "crabtalk-tui", version = "0.0.21" }
 crabtalk = { path = "crates/crabtalk", package = "crabtalk", version = "0.0.21", default-features = false }
 crabtalkd = { path = "apps/daemon", package = "crabtalkd", version = "0.0.21" }
