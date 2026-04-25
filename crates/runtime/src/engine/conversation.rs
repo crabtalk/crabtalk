@@ -1,6 +1,6 @@
 //! Conversation management — lifecycle, persistence, and title generation.
 
-use super::{ConvSlot, Runtime, TopicRouter};
+use super::{ConvSlot, Runtime};
 use crate::{Config, Conversation, ConversationHandle};
 use anyhow::{Result, bail};
 use crabllm_core::{ChatCompletionRequest, Message, Role};
@@ -19,45 +19,21 @@ impl<C: Config> Runtime<C> {
     }
 
     /// Get or create a conversation for the given (agent, created_by)
-    /// identity. Routing order:
-    ///
-    /// 1. If `(agent, sender)` has an active topic, return that topic's
-    ///    conversation.
-    /// 2. Otherwise return/create the tmp conversation for this pair —
-    ///    in-memory only, no storage I/O, no resume. Topic-bound chats
-    ///    reach storage via `switch_topic`.
+    /// identity. Returns the existing conversation for this pair if one
+    /// is active, otherwise allocates a fresh id and persists.
     pub async fn get_or_create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.has_agent(agent).await {
             bail!("agent '{agent}' not registered");
         }
 
-        let key = (agent.to_owned(), created_by.to_owned());
-
-        // Read-first: the common case is a hit on an existing tmp or
-        // active-topic conversation. Avoid allocating a `TopicRouter`
-        // until we actually need to insert one.
-        if let Some(id) = self
-            .topics
-            .read()
-            .await
-            .get(&key)
-            .and_then(TopicRouter::active_conversation)
-        {
+        // Read-first: a single active conversation per (agent, sender)
+        // is the common case; only fall through to allocation if none
+        // is registered.
+        if let Some(id) = self.conversation_id(agent, created_by).await {
             return Ok(id);
         }
 
-        // Reserve an id under the router write lock; release it before
-        // taking the conversations write lock to keep hold-times short.
-        let id = {
-            let mut topics = self.topics.write().await;
-            let router = topics.entry(key).or_default();
-            if let Some(existing) = router.active_conversation() {
-                return Ok(existing);
-            }
-            let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
-            router.tmp = Some(id);
-            id
-        };
+        let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
         let slot = Self::new_slot(id, agent, created_by);
         self.conversations.write().await.insert(id, slot);
         Ok(id)
@@ -114,28 +90,7 @@ impl<C: Config> Runtime<C> {
 
     pub async fn close(&self, id: u64) -> bool {
         self.steering.write().await.remove(&id);
-        let removed = self.conversations.write().await.remove(&id);
-        if let Some(slot) = &removed {
-            let key = (slot.agent.clone(), slot.created_by.clone());
-            let mut topics = self.topics.write().await;
-            if let Some(router) = topics.get_mut(&key) {
-                if router.tmp == Some(id) {
-                    router.tmp = None;
-                }
-                router.by_title.retain(|_, cid| *cid != id);
-                if router
-                    .active
-                    .as_ref()
-                    .is_some_and(|t| !router.by_title.contains_key(t))
-                {
-                    router.active = None;
-                }
-                if router.tmp.is_none() && router.by_title.is_empty() {
-                    topics.remove(&key);
-                }
-            }
-        }
-        removed.is_some()
+        self.conversations.write().await.remove(&id).is_some()
     }
 
     pub async fn steer(&self, conversation_id: u64, content: String) -> Result<()> {
@@ -283,14 +238,14 @@ impl<C: Config> Runtime<C> {
     }
 
     /// Write a compaction summary to memory as an `Archive` entry,
-    /// named `{topic-slug}-{n}` where `n` is the next free sequence
-    /// number for this topic. Older archives stay searchable via
-    /// `recall`, so a long-running topic's phases don't get
+    /// named `{session-slug}-{n}` where `n` is the next free sequence
+    /// number for this session. Older archives stay searchable via
+    /// `recall`, so a long-running session's phases don't get
     /// overwritten. Returns the generated name, or `None` on failure
     /// — the caller must skip the compact marker so a resume can't
     /// dangle.
-    fn write_archive(&self, topic: &str, summary: String) -> Option<String> {
-        let slug = wcore::sender_slug(topic);
+    fn write_archive(&self, session_slug: &str, summary: String) -> Option<String> {
+        let slug = wcore::sender_slug(session_slug);
         let prefix = format!("{slug}-");
         let mut mem = self.memory.write();
         // Scan and insert under the same write lock — two concurrent
@@ -324,11 +279,11 @@ impl<C: Config> Runtime<C> {
         }
     }
 
-    /// Ensure a topic-bound conversation has a session handle, creating
-    /// one via the repo if needed. Tmp chats (no topic) are in-memory
-    /// only — never persisted, never assigned a handle.
+    /// Ensure the conversation has a session handle, creating one via
+    /// the repo if needed. Sessions persist unconditionally — every
+    /// conversation reaches storage on first persist call.
     fn ensure_handle(&self, conversation: &mut Conversation, agent: &str, created_by: &str) {
-        if conversation.handle.is_some() || conversation.topic.is_none() {
+        if conversation.handle.is_some() {
             return;
         }
         let storage = self.storage();
@@ -387,15 +342,11 @@ impl<C: Config> Runtime<C> {
         let storage = self.storage();
 
         if let Some(summary) = compact_summary {
-            // A persisted conversation is always topic-bound —
-            // `ensure_handle` refuses to create a handle for tmp chats.
-            let topic = conversation
-                .topic
-                .clone()
-                .expect("persisted conversation without a topic");
             // Archive first — if this fails, don't write a dangling
-            // marker that points at nothing.
-            if let Some(archive_name) = self.write_archive(&topic, summary) {
+            // marker that points at nothing. Archives are keyed by the
+            // session's storage slug so each session's phases stay
+            // grouped under one prefix in memory.
+            if let Some(archive_name) = self.write_archive(handle.as_str(), summary) {
                 let _ = storage.append_session_compact(handle, &archive_name);
                 if conversation.history.len() > 1 {
                     let tail: Vec<_> = conversation.history[1..]

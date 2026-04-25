@@ -81,7 +81,6 @@ impl Storage for InMemoryStorage {
                 created_at: chrono::Utc::now().to_rfc3339(),
                 title: String::new(),
                 uptime_secs: 0,
-                topic: None,
             },
             messages: Vec::new(),
             events: Vec::new(),

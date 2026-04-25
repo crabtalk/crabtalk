@@ -179,6 +179,11 @@ pub struct SessionSummary {
 }
 
 /// Conversation metadata persisted alongside the session.
+///
+/// Old session files may contain a `topic` field from the pre-0185
+/// design; serde silently ignores unknown keys (no
+/// `deny_unknown_fields`), so they read fine. The next meta rewrite
+/// (any `update_session_meta` call) drops the field from disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationMeta {
     pub agent: String,
@@ -188,11 +193,6 @@ pub struct ConversationMeta {
     pub title: String,
     #[serde(default)]
     pub uptime_secs: u64,
-    /// Topic this conversation belongs to, if any. `None` means the
-    /// conversation is a tmp chat and should not have been persisted —
-    /// only topic-bound conversations reach the Storage layer.
-    #[serde(default)]
-    pub topic: Option<String>,
 }
 
 /// A trace entry persisted alongside messages.

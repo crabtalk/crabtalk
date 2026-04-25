@@ -263,14 +263,6 @@ impl<P: Provider + 'static> Daemon<P> {
         );
 
         node_hook.register_hook(
-            "topic",
-            Arc::new(crate::hooks::topic::TopicHook::<P>::new(
-                runtime_once.clone(),
-                shared_memory.clone(),
-            )),
-        );
-
-        node_hook.register_hook(
             "skill",
             Arc::new(crate::hooks::skill::handler::SkillHook::new(
                 storage,
