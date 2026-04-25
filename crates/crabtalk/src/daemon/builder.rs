@@ -61,6 +61,22 @@ impl<P: Provider + 'static> Daemon<P> {
             .set(shared_runtime.clone())
             .unwrap_or_else(|_| panic!("runtime already initialized"));
 
+        // Rebuild the session search index in the background — it
+        // does N file reads per persisted session, which on real
+        // disks can take seconds to tens of seconds at scale. Until
+        // the rebuild completes, `search_sessions` returns whatever
+        // subset has already been indexed (live appends index
+        // immediately, so new work is always findable).
+        {
+            let rebuild_runtime = shared_runtime.clone();
+            tokio::task::spawn_blocking(move || {
+                let rt = rebuild_runtime.blocking_read().clone();
+                if let Err(e) = rt.rebuild_session_index() {
+                    tracing::warn!("session index rebuild failed: {e}");
+                }
+            });
+        }
+
         let fire_runtime = shared_runtime.clone();
         let fire: event::FireCallback = Arc::new(move |sub, payload| {
             let runtime = fire_runtime.clone();
@@ -263,10 +279,9 @@ impl<P: Provider + 'static> Daemon<P> {
         );
 
         node_hook.register_hook(
-            "topic",
-            Arc::new(crate::hooks::topic::TopicHook::<P>::new(
+            "sessions",
+            Arc::new(crate::hooks::sessions::SessionsHook::<P>::new(
                 runtime_once.clone(),
-                shared_memory.clone(),
             )),
         );
 

@@ -47,6 +47,7 @@ Layer 4 ─ Adapters
 ## Boundary Contracts
 
 - **Runtime** — never initiates I/O. It only responds. No sockets, timers, or listeners.
+- **Runtime owns mechanics, clients own UX.** The runtime exposes session primitives (`new_session`, `append_message`, `list_sessions`, `list_messages`, `get_session_meta`, `search_sessions`) and runs auto-compaction only as a context-window safety net. Discretionary lifecycle — `/clear`, `/new`, `/compact`, session selection, archival browsing, saved searches — is composed in the client from those primitives. See [RFC 0185](docs/src/rfcs/0185-session-search.md).
 - **Crabtalk (daemon core)** — never interprets tool semantics. It only routes. Cron and config are daemon concerns (process-lifetime, not session-lifetime).
 - **SDK** — no dependency on runtime or model. Adapter-centric, not agent-centric.
 - **Core** — defines traits and types only. If a core change pulls in runtime or daemon deps, the abstraction is wrong.

@@ -3,7 +3,7 @@
 //! Uses `Env<()>` with InMemoryStorage. Every test gets its own
 //! in-memory storage — no shared global state, no filesystem I/O, no node.
 
-use crabtalk_runtime::{Config, Runtime};
+use crabtalk_runtime::{Config, Runtime, sessions::SearchOptions};
 use futures_util::StreamExt;
 use std::sync::Arc;
 use wcore::{
@@ -287,131 +287,6 @@ async fn stream_to_yields_correct_content() {
 }
 
 #[tokio::test]
-async fn switch_topic_resumes_archive_from_memory() {
-    use memory::{EntryKind, Op};
-    use wcore::{
-        model::HistoryEntry,
-        storage::{ConversationMeta, Storage},
-    };
-
-    let storage = Arc::new(InMemoryStorage::new());
-    let mem = Arc::new(parking_lot::RwLock::new(memory::Memory::new()));
-    mem.write()
-        .apply(Op::Add {
-            name: "archive-test".into(),
-            content: "earlier context, compacted".into(),
-            aliases: vec![],
-            kind: EntryKind::Archive,
-        })
-        .unwrap();
-
-    let handle = storage.create_session("crab", "tester").unwrap();
-    let topic_meta = ConversationMeta {
-        agent: "crab".into(),
-        created_by: "tester".into(),
-        created_at: chrono::Utc::now().to_rfc3339(),
-        title: String::new(),
-        uptime_secs: 0,
-        topic: Some("auth".into()),
-    };
-    storage.update_session_meta(&handle, &topic_meta).unwrap();
-    storage
-        .append_session_messages(
-            &handle,
-            &[
-                HistoryEntry::user("pre-compact"),
-                HistoryEntry::assistant("pre-compact reply", None, None),
-            ],
-        )
-        .unwrap();
-    storage
-        .append_session_compact(&handle, "archive-test")
-        .unwrap();
-    storage
-        .append_session_messages(&handle, &[HistoryEntry::user("after-compact")])
-        .unwrap();
-
-    let runtime = Runtime::<TestCfg>::new(
-        Model::new(TestProvider::with_chunks(vec![])),
-        Arc::new(()),
-        storage,
-        mem,
-        wcore::ToolRegistry::new(),
-    );
-    runtime.add_agent(AgentConfig::new("crab"));
-
-    runtime
-        .switch_topic("crab", "tester", "auth", None)
-        .await
-        .unwrap();
-    let conv_id = runtime
-        .get_or_create_conversation("crab", "tester")
-        .await
-        .unwrap();
-    let conversation = runtime.conversation(conv_id).await.unwrap();
-    let conv = conversation.lock().await;
-
-    assert_eq!(conv.topic.as_deref(), Some("auth"));
-    assert_eq!(conv.history.len(), 2);
-    assert_eq!(conv.history[0].text(), "earlier context, compacted");
-    assert_eq!(conv.history[1].text(), "after-compact");
-}
-
-#[tokio::test]
-async fn switch_topic_injects_placeholder_when_archive_missing() {
-    use wcore::{
-        model::HistoryEntry,
-        storage::{ConversationMeta, Storage},
-    };
-
-    let storage = Arc::new(InMemoryStorage::new());
-    // Empty memory — the referenced archive doesn't exist.
-    let mem = Arc::new(parking_lot::RwLock::new(memory::Memory::new()));
-
-    let handle = storage.create_session("crab", "tester").unwrap();
-    let topic_meta = ConversationMeta {
-        agent: "crab".into(),
-        created_by: "tester".into(),
-        created_at: chrono::Utc::now().to_rfc3339(),
-        title: String::new(),
-        uptime_secs: 0,
-        topic: Some("ghost".into()),
-    };
-    storage.update_session_meta(&handle, &topic_meta).unwrap();
-    storage
-        .append_session_compact(&handle, "archive-gone")
-        .unwrap();
-    storage
-        .append_session_messages(&handle, &[HistoryEntry::user("continuing")])
-        .unwrap();
-
-    let runtime = Runtime::<TestCfg>::new(
-        Model::new(TestProvider::with_chunks(vec![])),
-        Arc::new(()),
-        storage,
-        mem,
-        wcore::ToolRegistry::new(),
-    );
-    runtime.add_agent(AgentConfig::new("crab"));
-
-    runtime
-        .switch_topic("crab", "tester", "ghost", None)
-        .await
-        .unwrap();
-    let conv_id = runtime
-        .get_or_create_conversation("crab", "tester")
-        .await
-        .unwrap();
-    let conversation = runtime.conversation(conv_id).await.unwrap();
-    let conv = conversation.lock().await;
-
-    assert_eq!(conv.history.len(), 2);
-    assert!(conv.history[0].text().contains("archive-gone"));
-    assert!(conv.history[0].text().contains("unavailable"));
-    assert_eq!(conv.history[1].text(), "continuing");
-}
-
-#[tokio::test]
 async fn stream_to_nonexistent_conversation_yields_error() {
     let runtime = runtime(TestProvider::with_chunks(vec![]));
 
@@ -430,4 +305,31 @@ async fn stream_to_nonexistent_conversation_yields_error() {
     } else {
         panic!("expected Done event");
     }
+}
+
+#[tokio::test]
+async fn send_to_indexes_messages_for_search() {
+    // Wires the full pipeline: Runtime::send_to → persist_messages →
+    // SessionIndex live insert → search_sessions returns the hit.
+    let provider = TestProvider::with_chunks(vec![text_chunks("deploys are wedged")]);
+    let runtime = runtime(provider);
+    runtime.add_agent(AgentConfig::new("crab"));
+
+    let conversation_id = runtime
+        .get_or_create_conversation("crab", "test-search")
+        .await
+        .unwrap();
+    runtime
+        .send_to(conversation_id, "why is the deploy stuck", "", None)
+        .await
+        .unwrap();
+
+    let hits = runtime.search_sessions("deploy", &SearchOptions::default());
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].agent, "crab");
+    assert_eq!(hits[0].sender, "test-search");
+    assert!(
+        hits[0].window.iter().any(|w| w.snippet.contains("deploy")),
+        "window must surface the matched message snippet"
+    );
 }

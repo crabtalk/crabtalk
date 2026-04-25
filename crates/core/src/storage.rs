@@ -179,6 +179,18 @@ pub struct SessionSummary {
 }
 
 /// Conversation metadata persisted alongside the session.
+///
+/// `created_at` is immutable — written once when the session is
+/// created. `updated_at` and `message_count` are bumped on every
+/// `append_session_messages` / `update_session_meta`. `summary` is
+/// emitted by overflow compaction and contributes to session search
+/// ranking (3× boost).
+///
+/// Old session files (pre-0185) may carry a `topic` or `uptime_secs`
+/// field. Serde silently ignores unknown keys (no
+/// `deny_unknown_fields`), and missing new keys default — so mixed
+/// versions deserialize cleanly. The next meta rewrite drops the
+/// removed fields from disk and stamps the new ones.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationMeta {
     pub agent: String,
@@ -187,12 +199,11 @@ pub struct ConversationMeta {
     #[serde(default)]
     pub title: String,
     #[serde(default)]
-    pub uptime_secs: u64,
-    /// Topic this conversation belongs to, if any. `None` means the
-    /// conversation is a tmp chat and should not have been persisted —
-    /// only topic-bound conversations reach the Storage layer.
+    pub updated_at: String,
     #[serde(default)]
-    pub topic: Option<String>,
+    pub message_count: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
 }
 
 /// A trace entry persisted alongside messages.

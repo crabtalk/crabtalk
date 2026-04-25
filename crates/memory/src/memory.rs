@@ -19,7 +19,7 @@ pub struct Memory {
     path: Option<PathBuf>,
     entries: HashMap<EntryId, Entry>,
     by_name: HashMap<String, EntryId>,
-    index: Index,
+    index: Index<EntryId>,
     next_id: EntryId,
 }
 
@@ -42,7 +42,7 @@ impl Memory {
             path: None,
             entries: HashMap::new(),
             by_name: HashMap::new(),
-            index: Index::new(),
+            index: Index::<EntryId>::new(),
             next_id: 1,
         }
     }
@@ -56,7 +56,7 @@ impl Memory {
             path: Some(path.clone()),
             entries: HashMap::new(),
             by_name: HashMap::new(),
-            index: Index::new(),
+            index: Index::<EntryId>::new(),
             next_id: 1,
         };
         if let Some(snap) = file::read(&path)? {
@@ -272,7 +272,7 @@ impl Memory {
 
         let mut entries: HashMap<EntryId, Entry> = HashMap::with_capacity(loaded.len());
         let mut by_name: HashMap<String, EntryId> = HashMap::with_capacity(loaded.len());
-        let mut index = Index::new();
+        let mut index = Index::<EntryId>::new();
         let mut next_id: EntryId = 1;
 
         for item in loaded {

@@ -5,7 +5,7 @@ pub mod delegate;
 pub mod mcp;
 pub mod memory;
 pub mod os;
+pub mod sessions;
 pub mod skill;
-pub mod topic;
 
 pub use memory::Memory;

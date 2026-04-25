@@ -6,15 +6,13 @@
 //! (`send_to`, `stream_to`) take a conversation ID, lock the conversation,
 //! clone the agent, and run with the conversation's history.
 
-use crate::{Config, Conversation};
+use crate::{Config, Conversation, sessions::SessionIndex};
 use memory::Memory;
 use std::{
     collections::BTreeMap,
     sync::{Arc, atomic::AtomicU64},
 };
 use tokio::sync::{Mutex, RwLock, watch};
-pub use topic::SwitchOutcome;
-pub(super) use topic::TopicRouter;
 use wcore::{Agent, ToolRegistry, model::Model};
 
 mod agents;
@@ -22,7 +20,7 @@ mod config;
 mod conversation;
 mod execution;
 mod history;
-mod topic;
+mod session_search;
 
 /// Shared handle to the standalone memory store. Used by compaction to
 /// write Archive entries and by session resume to pull their content
@@ -55,7 +53,7 @@ pub struct Runtime<C: Config> {
     agents: parking_lot::RwLock<BTreeMap<String, Agent<C::Provider>>>,
     ephemeral_agents: RwLock<BTreeMap<String, Agent<C::Provider>>>,
     conversations: RwLock<BTreeMap<u64, ConvSlot>>,
-    pub(super) topics: RwLock<BTreeMap<(String, String), TopicRouter>>,
+    pub(super) session_index: parking_lot::RwLock<SessionIndex>,
     next_conversation_id: AtomicU64,
     pub tools: ToolRegistry,
     steering: RwLock<BTreeMap<u64, watch::Sender<Option<String>>>>,
@@ -81,7 +79,7 @@ impl<C: Config> Runtime<C> {
             agents: parking_lot::RwLock::new(BTreeMap::new()),
             ephemeral_agents: RwLock::new(BTreeMap::new()),
             conversations: RwLock::new(BTreeMap::new()),
-            topics: RwLock::new(BTreeMap::new()),
+            session_index: parking_lot::RwLock::new(SessionIndex::new()),
             next_conversation_id: AtomicU64::new(1),
             tools,
             steering: RwLock::new(BTreeMap::new()),

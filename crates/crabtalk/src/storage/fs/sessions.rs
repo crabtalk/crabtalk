@@ -93,13 +93,15 @@ pub(super) fn create_session(
     let dir = session_dir(storage, &slug);
     fs::create_dir_all(&dir)?;
 
+    let now = chrono::Utc::now().to_rfc3339();
     let meta = ConversationMeta {
         agent: agent.to_owned(),
         created_by: created_by.to_owned(),
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: now.clone(),
         title: String::new(),
-        uptime_secs: 0,
-        topic: None,
+        updated_at: now,
+        message_count: 0,
+        summary: None,
     };
     let meta_bytes = serde_json::to_vec(&meta)?;
     atomic_write(&session_meta_path(storage, &slug), &meta_bytes)?;

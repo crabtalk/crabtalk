@@ -1,5 +1,10 @@
 # 0171 - Topic Switching
 
+> **Superseded by [0185 - Session Search and Storage Primitives](0185-session-search.md).**
+> The topic subsystem (router, tmp/promote split, `switch_topic` /
+> `search_topics` tools) is removed. Sessions persist unconditionally,
+> and content-derived BM25 over messages replaces tag-based partitioning.
+
 - Feature Name: Topic Switching
 - Start Date: 2026-04-19
 - Discussion: [#171](https://github.com/crabtalk/crabtalk/issues/171)

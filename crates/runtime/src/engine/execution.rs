@@ -87,7 +87,6 @@ impl<C: Config> Runtime<C> {
             .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", agent_name))?;
 
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let run_start = std::time::Instant::now();
         let response = agent
             .run(&mut conversation.history, tx, None, tool_choice)
             .await;
@@ -110,7 +109,6 @@ impl<C: Config> Runtime<C> {
             conversation_mutex.clone(),
             &agent_name,
             &created_by,
-            run_start,
             pre_run_len,
             compact_summary,
             &[],
@@ -147,7 +145,6 @@ impl<C: Config> Runtime<C> {
                 return;
             };
 
-            let run_start = std::time::Instant::now();
             let (steer_tx, steer_rx) = watch::channel(None::<String>);
             self.steering.write().await.insert(conversation_id, steer_tx);
             let mut compact_summary: Option<String> = None;
@@ -178,7 +175,6 @@ impl<C: Config> Runtime<C> {
                 conversation_mutex.clone(),
                 &agent_name,
                 &created_by,
-                run_start,
                 pre_run_len,
                 compact_summary,
                 &event_trace,
@@ -244,7 +240,6 @@ impl<C: Config> Runtime<C> {
             let insert_pos = conversation.history.len().saturating_sub(1);
             conversation.history.insert(insert_pos, framing);
 
-            let run_start = std::time::Instant::now();
             let model_name = guest_agent.config.model.clone();
 
             let mut messages = Vec::with_capacity(1 + conversation.history.len());
@@ -322,7 +317,6 @@ impl<C: Config> Runtime<C> {
                 conversation_mutex.clone(),
                 &agent_name,
                 &created_by,
-                run_start,
                 pre_run_len,
                 None,
                 &[],

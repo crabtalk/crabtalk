@@ -3,7 +3,7 @@
 use crabtalk_core::{
     model::HistoryEntry,
     sender_slug,
-    storage::{SessionHandle, Storage},
+    storage::{ConversationMeta, SessionHandle, Storage},
     testing::InMemoryStorage,
 };
 
@@ -180,4 +180,34 @@ fn create_assigns_distinct_handles() {
     let h1 = s.create_session("crab", "user").unwrap();
     let h2 = s.create_session("crab", "user").unwrap();
     assert_ne!(h1, h2);
+}
+
+/// Pre-0185 meta lines have `topic` and `uptime_secs` and lack
+/// `updated_at` / `message_count`. They must deserialize cleanly:
+/// `topic` and `uptime_secs` are silently ignored, the new fields
+/// default. The next write drops the legacy fields.
+#[test]
+fn old_meta_fields_round_trip_cleanly() {
+    let json = r#"{
+        "agent": "crab",
+        "created_by": "tester",
+        "created_at": "2026-01-01T00:00:00Z",
+        "title": "legacy",
+        "uptime_secs": 42,
+        "topic": "auth"
+    }"#;
+    let meta: ConversationMeta = serde_json::from_str(json).expect("legacy meta should parse");
+    assert_eq!(meta.agent, "crab");
+    assert_eq!(meta.created_by, "tester");
+    assert_eq!(meta.created_at, "2026-01-01T00:00:00Z");
+    assert_eq!(meta.title, "legacy");
+    assert_eq!(meta.message_count, 0);
+    assert!(meta.updated_at.is_empty());
+
+    // Re-serialize: removed fields are gone from disk.
+    let out = serde_json::to_string(&meta).unwrap();
+    assert!(!out.contains("uptime_secs"));
+    assert!(!out.contains("topic"));
+    assert!(out.contains("updated_at"));
+    assert!(out.contains("message_count"));
 }

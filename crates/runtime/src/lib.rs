@@ -2,9 +2,10 @@ mod conversation;
 mod engine;
 pub mod env;
 pub mod hook;
+pub mod sessions;
 
 pub use conversation::Conversation;
-pub use engine::{Runtime, SharedMemory, SwitchOutcome};
+pub use engine::{Runtime, SharedMemory};
 pub use env::Env;
 pub use hook::Hook;
 pub use wcore::{MemoryConfig, TasksConfig};

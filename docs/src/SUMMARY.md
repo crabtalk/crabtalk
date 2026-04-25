@@ -29,6 +29,6 @@
 - [0121 - Event Bus](rfcs/0121-event-bus.md)
 - [0135 - Agent-First Protocol](rfcs/0135-agent-first.md)
 - [0150 - Memory Store](rfcs/0150-memory-store.md)
-- [0171 - Topic Switching](rfcs/0171-topic-switching.md)
-- [0185 - crabup](rfcs/0185-crabup.md)
+- [0184 - crabup](rfcs/0184-crabup.md)
+- [0185 - Session Search and Storage Primitives](rfcs/0185-session-search.md)
 - [Superseded](rfcs/superseded.md)

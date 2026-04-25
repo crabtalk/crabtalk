@@ -16,17 +16,20 @@ pub struct Conversation {
     pub history: Vec<HistoryEntry>,
     /// Conversation title (set by the `set_title` tool).
     pub title: String,
-    /// Accumulated active time in seconds.
-    pub uptime_secs: u64,
     /// When this conversation was loaded/created in this process.
+    /// Process-local — resets across restarts.
     pub created_at: Instant,
+    /// Persisted RFC3339 creation timestamp. Populated at construction
+    /// and overwritten on resume from `ConversationMeta.created_at`;
+    /// never bumped after that.
+    pub created_at_iso: String,
+    /// Latest compaction summary, written by overflow compaction and
+    /// contributed to session search ranking (3× boost). `None` until
+    /// the first compaction.
+    pub summary: Option<String>,
     /// Persistent conversation identity, assigned by the storage layer.
-    /// `None` until the first persistence call — and remains `None` for
-    /// tmp chats that never enter a topic.
+    /// `None` until the first persistence call.
     pub handle: Option<ConversationHandle>,
-    /// Topic this conversation belongs to, if any. `None` = tmp chat
-    /// (no storage, no resume). Set by `switch_topic`.
-    pub topic: Option<String>,
 }
 
 impl Conversation {
@@ -36,23 +39,26 @@ impl Conversation {
             id,
             history: Vec::new(),
             title: String::new(),
-            uptime_secs: 0,
             created_at: Instant::now(),
+            created_at_iso: chrono::Utc::now().to_rfc3339(),
+            summary: None,
             handle: None,
-            topic: None,
         }
     }
 
     /// Build a [`ConversationMeta`] snapshot from this conversation's
-    /// current state.
+    /// current state. `created_at` is sourced from the persisted ISO
+    /// string (immutable across writes); `updated_at` is stamped now;
+    /// `message_count` reflects the current history length.
     pub fn meta(&self, agent: &str, created_by: &str) -> ConversationMeta {
         ConversationMeta {
             agent: agent.to_owned(),
             created_by: created_by.to_owned(),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: self.created_at_iso.clone(),
             title: self.title.clone(),
-            uptime_secs: self.uptime_secs,
-            topic: self.topic.clone(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            message_count: self.history.len() as u64,
+            summary: self.summary.clone(),
         }
     }
 }

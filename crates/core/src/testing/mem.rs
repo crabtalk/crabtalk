@@ -75,13 +75,17 @@ impl Storage for InMemoryStorage {
         *seq += 1;
         let slug = format!("{}_{}", agent, seq);
         let state = SessionState {
-            meta: ConversationMeta {
-                agent: agent.to_owned(),
-                created_by: created_by.to_owned(),
-                created_at: chrono::Utc::now().to_rfc3339(),
-                title: String::new(),
-                uptime_secs: 0,
-                topic: None,
+            meta: {
+                let now = chrono::Utc::now().to_rfc3339();
+                ConversationMeta {
+                    agent: agent.to_owned(),
+                    created_by: created_by.to_owned(),
+                    created_at: now.clone(),
+                    title: String::new(),
+                    updated_at: now,
+                    message_count: 0,
+                    summary: None,
+                }
             },
             messages: Vec::new(),
             events: Vec::new(),

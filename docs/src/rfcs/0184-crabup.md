@@ -1,8 +1,8 @@
-# 0185 - crabup
+# 0184 - crabup
 
 - Feature Name: crabup
 - Start Date: 2026-04-24
-- Discussion: TBD
+- Discussion: [#184](https://github.com/crabtalk/crabtalk/pull/184)
 - Crates: new `crabup` binary; consumes `command`; shrinks `crabtalkd`
 - Updates: [0043 (Component System)](0043-component.md)
 

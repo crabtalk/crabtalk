@@ -101,11 +101,10 @@ fn scan_sessions(storage: &impl Storage, agent: &str, sender: &str) -> Vec<Conve
             seq,
             title: meta.title.clone(),
             file_path: slug,
-            // 0 = unknown for persisted sessions — the count isn't in session
-            // meta today, and loading every history just to count would turn
-            // listing from O(N) into O(N·messages). Callers treat 0 as "unknown".
-            message_count: 0,
-            alive_secs: meta.uptime_secs,
+            message_count: meta.message_count,
+            // Wall-clock age between create and last update, in seconds.
+            // 0 marks "unknown" (no `updated_at` in pre-0185 meta files).
+            alive_secs: rfc3339_diff_secs(&meta.created_at, &meta.updated_at),
             // Raw RFC3339; callers format for display.
             date: meta.created_at.clone(),
         });
@@ -113,6 +112,22 @@ fn scan_sessions(storage: &impl Storage, agent: &str, sender: &str) -> Vec<Conve
 
     results.sort_by(|a, b| b.seq.cmp(&a.seq).then_with(|| a.agent.cmp(&b.agent)));
     results
+}
+
+/// Wall-clock seconds between two RFC3339 timestamps. Returns 0 if
+/// either is empty (pre-0185 meta lines have no `updated_at`) or if
+/// parsing fails — callers display 0 as "unknown."
+fn rfc3339_diff_secs(start: &str, end: &str) -> u64 {
+    if start.is_empty() || end.is_empty() {
+        return 0;
+    }
+    let Ok(s) = chrono::DateTime::parse_from_rfc3339(start) else {
+        return 0;
+    };
+    let Ok(e) = chrono::DateTime::parse_from_rfc3339(end) else {
+        return 0;
+    };
+    (e - s).num_seconds().max(0) as u64
 }
 
 fn parse_session_slug(slug: &str) -> Option<(String, String, u32)> {

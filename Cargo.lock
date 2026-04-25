@@ -592,6 +592,7 @@ dependencies = [
  "crabtalk-runtime",
  "criterion",
  "futures-util",
+ "parking_lot",
  "prost",
  "serde_json",
  "tempfile",
