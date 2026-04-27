@@ -17,7 +17,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 use sdk::{ConnectionInfo, OutputChunk, Transport};
-use std::{collections::VecDeque, path::PathBuf, pin::pin, time::Duration};
+use std::{collections::VecDeque, path::PathBuf, time::Duration};
 use tokio::sync::mpsc;
 use wcore::protocol::api::Client as _;
 use wcore::protocol::message::StreamMsg;
@@ -433,44 +433,20 @@ fn send_or_queue(
 }
 
 fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<OutputChunk>> {
-    let (tx, rx) = mpsc::unbounded_channel();
-    let conn_info = app.conn_info.clone();
-    let agent = app.agent.clone();
-    let content = content.to_string();
-    let sender = Some(app.os_user.clone());
-
+    let cwd = std::env::current_dir()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned());
+    let req = StreamMsg {
+        agent: app.agent.clone(),
+        content: content.to_string(),
+        sender: Some(app.os_user.clone()),
+        cwd,
+        guest: None,
+        tool_choice: None,
+    };
     app.streaming = true;
     app.renderer.start_waiting();
-
-    tokio::spawn(async move {
-        let mut runner = match sdk::connect_from(&conn_info).await {
-            Ok(r) => r,
-            Err(e) => {
-                let _ = tx.send(Err(e));
-                return;
-            }
-        };
-        let cwd = std::env::current_dir()
-            .ok()
-            .map(|p| p.to_string_lossy().into_owned());
-        let req = StreamMsg {
-            agent,
-            content,
-            sender,
-            cwd,
-            guest: None,
-            tool_choice: None,
-        };
-        let stream = sdk::stream_chunks(&mut runner, req);
-        let mut stream = pin!(stream);
-        while let Some(chunk) = stream.next().await {
-            if tx.send(chunk).is_err() {
-                break;
-            }
-        }
-    });
-
-    rx
+    sdk::spawn_stream(app.conn_info.clone(), req)
 }
 
 fn handle_chunk(chunk: OutputChunk, app: &mut App) {

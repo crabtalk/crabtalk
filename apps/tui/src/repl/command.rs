@@ -1,31 +1,7 @@
-//! Slash command dispatch and candidate collection for the REPL.
+//! TUI dispatch over [`sdk::Command`].
 
 use anyhow::Result;
-use sdk::{COMMANDS, Command, parse_command};
-
-/// Collect matching `/command` and `/skill` names for the typed prefix.
-pub fn collect_candidates(line: &str, pos: usize, skill_names: &[String]) -> Vec<String> {
-    let prefix = &line[..pos];
-    let Some(slash) = prefix.find('/') else {
-        return Vec::new();
-    };
-    let typed = &prefix[slash..];
-
-    let mut candidates: Vec<String> = COMMANDS
-        .iter()
-        .filter(|cmd| cmd.starts_with(typed))
-        .map(|cmd| cmd.to_string())
-        .collect();
-
-    let skill_prefix = &typed[1..];
-    for name in skill_names {
-        if name.starts_with(skill_prefix) {
-            candidates.push(format!("/{name}"));
-        }
-    }
-
-    candidates
-}
+use sdk::{Command, parse_command};
 
 /// Result of handling a slash command in the TUI.
 pub enum SlashResult {

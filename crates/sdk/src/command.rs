@@ -22,6 +22,33 @@ pub const COMMANDS: &[&str] = &["/clear", "/exit", "/help", "/resume"];
 /// Unknown-command hint shown to users.
 pub const COMMAND_HINT: &str = "Unknown command.";
 
+/// Collect autocompletion candidates for the typed prefix.
+///
+/// Returns matching built-in `/command` names plus `/<skill>` names from
+/// `skill_names`. Empty if there's no `/` in the prefix.
+pub fn collect_candidates(line: &str, pos: usize, skill_names: &[String]) -> Vec<String> {
+    let prefix = &line[..pos];
+    let Some(slash) = prefix.find('/') else {
+        return Vec::new();
+    };
+    let typed = &prefix[slash..];
+
+    let mut candidates: Vec<String> = COMMANDS
+        .iter()
+        .filter(|cmd| cmd.starts_with(typed))
+        .map(|cmd| cmd.to_string())
+        .collect();
+
+    let skill_prefix = &typed[1..];
+    for name in skill_names {
+        if name.starts_with(skill_prefix) {
+            candidates.push(format!("/{name}"));
+        }
+    }
+
+    candidates
+}
+
 /// Parse a chat-input line into a [`Command`]. Returns `None` for non-slash input.
 ///
 /// Unknown slash names map to [`Command::Forward`] — the daemon resolves them

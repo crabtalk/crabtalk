@@ -13,9 +13,9 @@ pub mod stream;
 pub use client::connect_uds;
 pub use client::{
     ConnectionInfo, MemConnection, OutputChunk, Transport, connect_from, connect_mem, connect_tcp,
-    stream_chunks,
+    spawn_stream, stream_chunks,
 };
-pub use command::{COMMAND_HINT, COMMANDS, Command, parse_command};
+pub use command::{COMMAND_HINT, COMMANDS, Command, collect_candidates, parse_command};
 pub use message::{Attachment, AttachmentKind, Message, attachment_summary};
 pub use stream::StreamAccumulator;
 

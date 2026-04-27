@@ -131,6 +131,36 @@ pub enum OutputChunk {
     },
 }
 
+/// Open a fresh connection from `conn_info` and stream chunks for `req` over
+/// an unbounded channel. The spawned task closes the connection when the
+/// daemon ends the stream or the receiver is dropped.
+///
+/// Suits non-blocking UI loops (TUI, gateway adapters) that consume chunks
+/// from a `select!` arm.
+pub fn spawn_stream(
+    conn_info: ConnectionInfo,
+    req: StreamMsg,
+) -> mpsc::UnboundedReceiver<Result<OutputChunk>> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        let mut transport = match connect_from(&conn_info).await {
+            Ok(t) => t,
+            Err(e) => {
+                let _ = tx.send(Err(e));
+                return;
+            }
+        };
+        let stream = stream_chunks(&mut transport, req);
+        tokio::pin!(stream);
+        while let Some(chunk) = stream.next().await {
+            if tx.send(chunk).is_err() {
+                break;
+            }
+        }
+    });
+    rx
+}
+
 /// Run a [`StreamMsg`] on `transport` and translate `stream_event::Event`
 /// into UI-friendly [`OutputChunk`]s. Filters telemetry-only events
 /// (`Start`, `End`, `ContextUsage`, `UserSteered`).
