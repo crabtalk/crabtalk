@@ -31,7 +31,7 @@ pub enum McpCmd {
 
 impl Mcp {
     pub async fn run(self, tcp: bool) -> Result<()> {
-        let mut runner = super::connect(tcp).await?;
+        let (mut runner, _) = super::connect(tcp).await?;
         match self.command {
             McpCmd::List => {
                 let mcps = runner.list_mcps().await?;

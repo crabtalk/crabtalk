@@ -4,13 +4,17 @@
 use std::{collections::HashSet, path::Path, sync::Arc};
 use tokio::sync::RwLock;
 
+pub mod client;
 pub mod command;
-pub mod daemon;
 pub mod message;
 pub mod stream;
 
+#[cfg(unix)]
+pub use client::connect_uds;
+pub use client::{
+    ConnectionInfo, OutputChunk, Transport, connect_from, connect_tcp, stream_chunks,
+};
 pub use command::{BotCommand, COMMAND_HINT, parse_command};
-pub use daemon::{Client, ConnectionInfo, OutputChunk, send_reply};
 pub use message::{Attachment, AttachmentKind, GatewayMessage, attachment_summary};
 pub use stream::StreamAccumulator;
 

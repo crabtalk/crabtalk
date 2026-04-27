@@ -1,17 +1,6 @@
 //! Client trait — transport primitives plus typed provided methods.
 
-use crate::protocol::message::{
-    AgentInfo, AgentList, ClientMessage, ConversationHistory, ConversationInfo, ConversationList,
-    CreateAgentMsg, DaemonStats, DeleteAgentMsg, DeleteConversationMsg, DeleteMcpMsg, ErrorMsg,
-    GetAgentMsg, GetConversationHistoryMsg, GetStats, InstallPluginMsg, ListAgentsMsg,
-    ListConversationsMsg, ListMcpsMsg, ListModelsMsg, ListPluginsMsg, ListSkillsMsg,
-    ListSubscriptionsMsg, McpInfo, McpList, ModelInfo, ModelList, Ping, PluginEvent, PluginInfo,
-    PluginList, PluginSearchList, PublishEventMsg, RenameAgentMsg, SearchPluginsMsg, SendMsg,
-    SendResponse, ServerMessage, ServiceLogOutput, ServiceLogsMsg, SetActiveModelMsg, SkillInfo,
-    SkillList, StartServiceMsg, StopServiceMsg, StreamEvent, StreamMsg, SubscribeEventMsg,
-    SubscriptionInfo, SubscriptionList, UninstallPluginMsg, UnsubscribeEventMsg, UpdateAgentMsg,
-    UpsertMcpMsg, client_message, plugin_event, server_message, stream_event,
-};
+use crate::protocol::message::*;
 use anyhow::Result;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -784,6 +773,202 @@ pub trait Client: Send {
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Deliver a user reply to a pending `ask_user` tool call.
+    fn reply_to_ask(
+        &mut self,
+        agent: String,
+        sender: String,
+        content: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(ClientMessage::from(ReplyToAsk {
+                    agent,
+                    sender,
+                    content,
+                }))
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => anyhow::bail!("server error ({code}): {message}"),
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// List active (in-memory) conversations on the daemon.
+    fn list_active_conversations(
+        &mut self,
+        agent: String,
+        sender: String,
+    ) -> impl std::future::Future<Output = Result<Vec<ActiveConversationInfo>>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::ListActiveConversations(
+                        ListActiveConversationsMsg { agent, sender },
+                    )),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg:
+                        Some(server_message::Msg::ActiveConversations(ActiveConversationList {
+                            conversations,
+                        })),
+                } => Ok(conversations),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => anyhow::bail!("server error ({code}): {message}"),
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Kill an active conversation by (agent, sender). Returns true if it existed.
+    fn kill_conversation(
+        &mut self,
+        agent: String,
+        sender: String,
+    ) -> impl std::future::Future<Output = Result<bool>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::Kill(KillMsg { agent, sender })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(true),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, .. })),
+                } if code == 404 => Ok(false),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => anyhow::bail!("server error ({code}): {message}"),
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Compact a conversation's history into a summary.
+    fn compact_conversation(
+        &mut self,
+        agent: String,
+        sender: String,
+    ) -> impl std::future::Future<Output = Result<String>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::Compact(CompactMsg { agent, sender })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Compact(CompactResponse { summary })),
+                } => Ok(summary),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => anyhow::bail!("server error ({code}): {message}"),
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Get the daemon's config snapshot as a JSON string.
+    fn get_config(&mut self) -> impl std::future::Future<Output = Result<String>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::GetConfig(GetConfig {})),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Config(ConfigMsg { config })),
+                } => Ok(config),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => anyhow::bail!("server error ({code}): {message}"),
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Hot-reload daemon runtime from disk.
+    fn reload(&mut self) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::Reload(ReloadMsg {})),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => anyhow::bail!("server error ({code}): {message}"),
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Subscribe to all agent events. Returns a stream that ends when the
+    /// connection drops.
+    fn subscribe_events(&mut self) -> impl Stream<Item = Result<AgentEventMsg>> + Send + '_ {
+        self.request_stream(ClientMessage {
+            msg: Some(client_message::Msg::SubscribeEvents(SubscribeEvents {})),
+        })
+        .filter_map(|r| async {
+            match r {
+                Ok(ServerMessage {
+                    msg: Some(server_message::Msg::AgentEvent(e)),
+                }) => Some(Ok(e)),
+                Ok(ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                }) => Some(Err(anyhow::anyhow!("server error ({code}): {message}"))),
+                Ok(_) => None,
+                Err(e) => Some(Err(e)),
+            }
+        })
+    }
+
+    /// Inject a user message into an active stream (steering).
+    fn steer_session(
+        &mut self,
+        agent: String,
+        sender: String,
+        content: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::SteerSession(SteerSessionMsg {
+                        agent,
+                        sender,
+                        content,
+                    })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
         }
