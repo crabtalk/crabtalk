@@ -16,6 +16,7 @@ path = "src/bin/main.rs"
 
 [dependencies]
 crabtalkd = { workspace = true, optional = true }
+sdk.workspace = true
 transport.workspace = true
 wcore.workspace = true
 

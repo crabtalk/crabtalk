@@ -1,4 +1,9 @@
-//! Gateway runner — connects to crabtalk daemon via Unix domain socket or TCP.
+//! Daemon client — long-lived connection to a crabtalk daemon over UDS or TCP.
+//!
+//! This is the canonical client used by the TUI, gateway adapters, and any
+//! third-party consumer that wants to drive an agent. It owns one
+//! [`Transport`] connection and exposes streaming + RPC helpers on top of
+//! the existing `crabtalk.proto` surface — no wire-protocol additions.
 
 use anyhow::Result;
 use futures_core::Stream;
@@ -8,7 +13,7 @@ use std::path::Path;
 #[cfg(unix)]
 use std::path::PathBuf;
 use wcore::protocol::{
-    api::Client,
+    api::Client as _,
     message::{
         ActiveConversationInfo, AgentEventMsg, AskQuestion, ClientMessage, InstallPluginMsg,
         KillMsg, ListActiveConversationsMsg, PluginEvent, ReplyToAsk, ServerMessage, StreamMsg,
@@ -16,6 +21,8 @@ use wcore::protocol::{
         stream_event,
     },
 };
+
+pub use transport::Transport;
 
 /// A typed chunk from the streaming response.
 pub enum OutputChunk {
@@ -45,9 +52,7 @@ pub enum OutputChunk {
     },
 }
 
-pub use transport::Transport;
-
-/// How to reconnect to the daemon (for sending ReplyToAsk on a separate connection).
+/// How to reconnect to the daemon (for sending follow-ups on a fresh connection).
 #[derive(Clone)]
 pub enum ConnectionInfo {
     #[cfg(unix)]
@@ -55,32 +60,33 @@ pub enum ConnectionInfo {
     Tcp(u16),
 }
 
-/// Runs agents via a crabtalk daemon connection (UDS or TCP).
+/// Daemon client — owns one [`Transport`] connection.
 ///
-/// Implements `DerefMut<Target = Transport>` so all [`Client`] trait methods
-/// (list_providers, set_provider, list_mcps, etc.) are callable directly.
-pub struct Runner {
+/// Implements `DerefMut<Target = Transport>` so all `wcore::protocol::api::Client`
+/// trait methods (list_conversations, list_skills, get_stats, etc.) are callable
+/// directly through deref.
+pub struct Client {
     transport: Transport,
     pub conn_info: ConnectionInfo,
 }
 
-impl std::ops::Deref for Runner {
+impl std::ops::Deref for Client {
     type Target = Transport;
     fn deref(&self) -> &Self::Target {
         &self.transport
     }
 }
 
-impl std::ops::DerefMut for Runner {
+impl std::ops::DerefMut for Client {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.transport
     }
 }
 
-impl Runner {
+impl Client {
     /// Connect to crabtalk daemon via Unix domain socket.
     #[cfg(unix)]
-    pub async fn connect(socket_path: &Path) -> Result<Self> {
+    pub async fn connect_uds(socket_path: &Path) -> Result<Self> {
         let config = transport::uds::ClientConfig {
             socket_path: socket_path.to_path_buf(),
         };
@@ -92,7 +98,7 @@ impl Runner {
         })
     }
 
-    /// Connect to crabtalk daemon via TCP.
+    /// Connect to crabtalk daemon via TCP on localhost.
     pub async fn connect_tcp(port: u16) -> Result<Self> {
         let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
         let connection = transport::tcp::TcpConnection::connect(addr).await?;
@@ -102,11 +108,11 @@ impl Runner {
         })
     }
 
-    /// Create a new connection from existing connection info.
+    /// Open a new connection from existing connection info.
     pub async fn connect_from(info: &ConnectionInfo) -> Result<Self> {
         match info {
             #[cfg(unix)]
-            ConnectionInfo::Uds(path) => Self::connect(path).await,
+            ConnectionInfo::Uds(path) => Self::connect_uds(path).await,
             ConnectionInfo::Tcp(port) => Self::connect_tcp(*port).await,
         }
     }
@@ -151,9 +157,7 @@ impl Runner {
                     Ok(ServerMessage {
                         msg: Some(server_message::Msg::Stream(e)),
                     }) => match &e.event {
-                        Some(stream_event::Event::Start(_)) => {
-                            None
-                        }
+                        Some(stream_event::Event::Start(_)) => None,
                         Some(stream_event::Event::Chunk(c)) => {
                             Some(Ok(OutputChunk::Text(c.content.clone())))
                         }
@@ -185,9 +189,7 @@ impl Runner {
                             Some(Err(anyhow::anyhow!("{}", end.error)))
                         }
                         Some(stream_event::Event::End(_)) => None,
-                        Some(stream_event::Event::TextStart(_)) => {
-                            Some(Ok(OutputChunk::TextStart))
-                        }
+                        Some(stream_event::Event::TextStart(_)) => Some(Ok(OutputChunk::TextStart)),
                         Some(stream_event::Event::TextEnd(_)) => Some(Ok(OutputChunk::TextEnd)),
                         Some(stream_event::Event::ThinkingStart(_)) => {
                             Some(Ok(OutputChunk::ThinkingStart))

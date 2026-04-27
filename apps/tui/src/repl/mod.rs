@@ -6,7 +6,6 @@ use crate::repl::{
     command::{SlashResult, handle_slash},
     input::{History, InputAction, InputState},
     render::MarkdownRenderer,
-    runner::{ConnectionInfo, OutputChunk, Runner, send_reply},
 };
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
@@ -17,20 +16,20 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use sdk::{Client, ConnectionInfo, OutputChunk, send_reply};
 use std::{collections::VecDeque, path::PathBuf, pin::pin, time::Duration};
 use tokio::sync::mpsc;
-use wcore::protocol::api::Client;
+use wcore::protocol::api::Client as _;
 
 mod ask;
 pub mod chat;
 pub mod command;
 pub mod input;
 pub mod render;
-pub mod runner;
 
 /// Interactive chat REPL.
 pub struct ChatRepl {
-    runner: Runner,
+    runner: Client,
     agent: String,
     history_path: Option<PathBuf>,
     history: History,
@@ -38,7 +37,7 @@ pub struct ChatRepl {
 
 impl ChatRepl {
     /// Create a new REPL with the given runner and agent name.
-    pub fn new(runner: Runner, agent: String) -> Result<Self> {
+    pub fn new(runner: Client, agent: String) -> Result<Self> {
         let history_path = history_file_path();
         let mut history = History::new();
         if let Some(ref path) = history_path {
@@ -357,7 +356,7 @@ async fn run_event_loop(
                                             let agent = app.agent.clone();
                                             let sender = app.os_user.clone();
                                             tokio::spawn(async move {
-                                                if let Ok(mut runner) = Runner::connect_from(&conn_info).await {
+                                                if let Ok(mut runner) = Client::connect_from(&conn_info).await {
                                                     let _ = runner.kill_conversation(&agent, &sender).await;
                                                 }
                                             });
@@ -437,7 +436,7 @@ fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<
     app.renderer.start_waiting();
 
     tokio::spawn(async move {
-        let runner = Runner::connect_from(&conn_info).await;
+        let runner = Client::connect_from(&conn_info).await;
         let mut runner = match runner {
             Ok(r) => r,
             Err(e) => {
