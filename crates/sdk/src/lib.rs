@@ -14,7 +14,7 @@ pub use client::connect_uds;
 pub use client::{
     ConnectionInfo, OutputChunk, Transport, connect_from, connect_tcp, stream_chunks,
 };
-pub use command::{BotCommand, COMMAND_HINT, parse_command};
+pub use command::{COMMAND_HINT, COMMANDS, Command, parse_command};
 pub use message::{Attachment, AttachmentKind, Message, attachment_summary};
 pub use stream::StreamAccumulator;
 
