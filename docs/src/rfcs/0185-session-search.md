@@ -7,6 +7,8 @@
 - Supersedes: [0171 (Topic Switching)](0171-topic-switching.md)
 - Updates: [0135 (Agent-First)](0135-agent-first.md), [0150 (Memory Store)](0150-memory-store.md)
 
+> **Updated by [0189](0189-policy-at-the-edge.md) (2026-04-28).** The "automatic compaction on overflow as a safety net" carve-out and auto-title generation were both removed; clients drive both via `compact_conversation` and a future `generate_title` RPC, gated on the new `AgentEvent::ContextUsage` events. See 0189 for the rationale.
+
 ## Summary
 
 Collapse the topic subsystem. Sessions persist unconditionally, always get auto-titled, and carry a small runtime-managed meta blob. Recall gains a second BM25 index — this one over conversation messages — returning windowed excerpts with bounded size. The runtime exposes narrow session primitives and two search tools; client UX owns `/clear`, `/new`, `/compact`, and session routing. The "topic" concept dissolves: content-derived session search (BM25) replaces tag-based grouping, and any curated grouping that survives is a client concern.
