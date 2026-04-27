@@ -12,6 +12,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
 #[cfg(unix)]
 use std::path::PathBuf;
+use tokio::sync::mpsc;
 use wcore::protocol::{
     api::Client as _,
     message::{
@@ -58,6 +59,50 @@ pub enum ConnectionInfo {
     #[cfg(unix)]
     Uds(PathBuf),
     Tcp(u16),
+}
+
+impl ConnectionInfo {
+    /// Resolve the platform default: UDS on Unix, TCP (from port file) on Windows.
+    pub fn platform_default() -> Result<Self> {
+        #[cfg(unix)]
+        {
+            Ok(Self::Uds(wcore::paths::SOCKET_PATH.to_path_buf()))
+        }
+        #[cfg(not(unix))]
+        {
+            let port_str = std::fs::read_to_string(&*wcore::paths::TCP_PORT_FILE)?;
+            let port: u16 = port_str.trim().parse()?;
+            Ok(Self::Tcp(port))
+        }
+    }
+
+    /// Open a fresh connection, send `msg`, and return a receiver of server
+    /// replies. The connection closes when the daemon ends the stream or the
+    /// receiver is dropped.
+    ///
+    /// Use this for short-lived consumers (cron fires, gateway stream-per-chat)
+    /// where a long-lived [`Client`] would just serialize concurrent senders.
+    pub async fn send(&self, msg: ClientMessage) -> Result<mpsc::UnboundedReceiver<ServerMessage>> {
+        let mut client = Client::connect_from(self).await?;
+        let (tx, rx) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut stream = std::pin::pin!(client.request_stream(msg));
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(server_msg) => {
+                        if tx.send(server_msg).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("daemon stream error: {e}");
+                        break;
+                    }
+                }
+            }
+        });
+        Ok(rx)
+    }
 }
 
 /// Daemon client — owns one [`Transport`] connection.

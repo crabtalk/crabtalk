@@ -10,8 +10,8 @@ struct CronService;
 
 impl CronService {
     async fn run(&self) -> anyhow::Result<()> {
-        let client = sdk::NodeClient::platform_default()?;
-        crabtalk_cron::run(schedule_path(), client).await
+        let conn_info = sdk::ConnectionInfo::platform_default()?;
+        crabtalk_cron::run(schedule_path(), conn_info).await
     }
 }
 

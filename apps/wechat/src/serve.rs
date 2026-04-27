@@ -2,7 +2,7 @@
 
 use crate::config::WechatConfig;
 use crate::{
-    ContextTokens, GatewayMessage, NodeClient, StreamAccumulator, StreamResult, UserIdMap,
+    ConnectionInfo, ContextTokens, GatewayMessage, StreamAccumulator, StreamResult, UserIdMap,
 };
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
@@ -11,9 +11,7 @@ use wcore::protocol::message::{
 };
 
 /// Run the WeChat gateway service.
-pub async fn run(node_client: NodeClient, config: &WechatConfig) -> anyhow::Result<()> {
-    let client = Arc::new(node_client);
-
+pub async fn run(conn_info: ConnectionInfo, config: &WechatConfig) -> anyhow::Result<()> {
     let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
     let default_agent = crate::resolve_default_agent(&agents_dir);
     tracing::info!(agent = %default_agent, "wechat gateway starting");
@@ -21,7 +19,7 @@ pub async fn run(node_client: NodeClient, config: &WechatConfig) -> anyhow::Resu
     if config.token.is_empty() {
         tracing::warn!(platform = "wechat", "token is empty, skipping");
     } else {
-        spawn_wechat(config, default_agent, client).await;
+        spawn_wechat(config, default_agent, conn_info).await;
     }
 
     tokio::signal::ctrl_c().await?;
@@ -29,7 +27,7 @@ pub async fn run(node_client: NodeClient, config: &WechatConfig) -> anyhow::Resu
     Ok(())
 }
 
-async fn spawn_wechat(wc: &WechatConfig, agent: String, client: Arc<NodeClient>) {
+async fn spawn_wechat(wc: &WechatConfig, agent: String, conn_info: ConnectionInfo) {
     let (tx, rx) = mpsc::unbounded_channel::<GatewayMessage>();
     let ctx_tokens: ContextTokens = Arc::new(parking_lot::Mutex::new(HashMap::new()));
     let user_ids: UserIdMap = Arc::new(parking_lot::Mutex::new(HashMap::new()));
@@ -55,7 +53,7 @@ async fn spawn_wechat(wc: &WechatConfig, agent: String, client: Arc<NodeClient>)
     let base_url = wc.base_url.clone();
     let token = wc.token.clone();
     tokio::spawn(wechat_loop(
-        rx, agent, client, ctx_tokens, user_ids, allowed, base_url, token,
+        rx, agent, conn_info, ctx_tokens, user_ids, allowed, base_url, token,
     ));
     tracing::info!(platform = "wechat", "channel transport started");
 }
@@ -80,7 +78,7 @@ async fn reap_chat(chat: ChatStream) -> bool {
 async fn wechat_loop(
     mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
     agent: String,
-    client: Arc<NodeClient>,
+    conn_info: ConnectionInfo,
     ctx_tokens: ContextTokens,
     user_ids: UserIdMap,
     allowed_users: std::collections::HashSet<String>,
@@ -122,7 +120,7 @@ async fn wechat_loop(
 
         let (reply_tx, reply_rx) = mpsc::unbounded_channel();
         let handle = {
-            let client = client.clone();
+            let conn_info = conn_info.clone();
             let agent = agent.clone();
             let http = http.clone();
             let base_url = base_url.clone();
@@ -133,7 +131,7 @@ async fn wechat_loop(
             tokio::spawn(async move {
                 wx_stream(
                     &http,
-                    &client,
+                    &conn_info,
                     &agent,
                     chat_id,
                     &content,
@@ -157,7 +155,7 @@ async fn wechat_loop(
 #[allow(clippy::too_many_arguments)]
 async fn wx_stream(
     http: &reqwest::Client,
-    client: &NodeClient,
+    conn_info: &ConnectionInfo,
     agent: &str,
     chat_id: i64,
     content: &str,
@@ -177,7 +175,13 @@ async fn wx_stream(
         guest: None,
         tool_choice: None,
     });
-    let mut server_rx = client.send(client_msg).await;
+    let mut server_rx = match conn_info.send(client_msg).await {
+        Ok(rx) => rx,
+        Err(e) => {
+            tracing::warn!(agent, chat_id, "failed to connect to daemon: {e}");
+            return StreamResult::Failed;
+        }
+    };
     let mut acc = StreamAccumulator::new();
 
     loop {
@@ -227,7 +231,7 @@ async fn wx_stream(
                         sender: sender.to_string(),
                         content: reply_content,
                     });
-                    let _ = client.send(reply_msg).await;
+                    let _ = conn_info.send(reply_msg).await;
                 }
             }
         }

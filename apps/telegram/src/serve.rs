@@ -2,10 +2,10 @@
 
 use crate::config::TelegramConfig;
 use crate::{
-    COMMAND_HINT, GatewayMessage, KnownBots, NodeClient, StreamAccumulator, StreamResult,
+    COMMAND_HINT, ConnectionInfo, GatewayMessage, KnownBots, StreamAccumulator, StreamResult,
     attachment_summary, parse_command,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 use teloxide::prelude::*;
 use teloxide::types::{ChatAction, InlineKeyboardButton, InlineKeyboardMarkup};
 use tokio::sync::mpsc;
@@ -14,15 +14,13 @@ use wcore::protocol::message::{
 };
 
 /// Run the Telegram gateway service.
-pub async fn run(node_client: NodeClient, config: &TelegramConfig) -> anyhow::Result<()> {
-    let client = Arc::new(node_client);
-
+pub async fn run(conn_info: ConnectionInfo, config: &TelegramConfig) -> anyhow::Result<()> {
     let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
     let default_agent = crate::resolve_default_agent(&agents_dir);
     tracing::info!(agent = %default_agent, "telegram gateway starting");
 
     let known_bots: KnownBots =
-        Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new()));
+        std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new()));
 
     if config.token.is_empty() {
         tracing::warn!(platform = "telegram", "token is empty, skipping");
@@ -31,7 +29,7 @@ pub async fn run(node_client: NodeClient, config: &TelegramConfig) -> anyhow::Re
             &config.token,
             &config.allowed_users,
             default_agent,
-            client,
+            conn_info,
             known_bots,
         )
         .await;
@@ -46,7 +44,7 @@ async fn spawn_telegram(
     token: &str,
     allowed_users: &[i64],
     agent: String,
-    client: Arc<NodeClient>,
+    conn_info: ConnectionInfo,
     known_bots: KnownBots,
 ) {
     let bot = Bot::new(token);
@@ -77,7 +75,9 @@ async fn spawn_telegram(
             "user whitelist active"
         );
     }
-    tokio::spawn(telegram_loop(rx, bot, agent, client, known_bots, allowed));
+    tokio::spawn(telegram_loop(
+        rx, bot, agent, conn_info, known_bots, allowed,
+    ));
     tracing::info!(platform = "telegram", "channel transport started");
 }
 
@@ -102,7 +102,7 @@ async fn telegram_loop(
     mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
     bot: Bot,
     agent: String,
-    client: Arc<NodeClient>,
+    conn_info: ConnectionInfo,
     known_bots: KnownBots,
     allowed_users: std::collections::HashSet<i64>,
 ) {
@@ -171,12 +171,12 @@ async fn telegram_loop(
         let (reply_tx, reply_rx) = mpsc::unbounded_channel();
         let handle = {
             let bot = bot.clone();
-            let client = client.clone();
+            let conn_info = conn_info.clone();
             let agent = agent.clone();
             tokio::spawn(async move {
                 tg_stream(
                     &bot,
-                    &client,
+                    &conn_info,
                     &agent,
                     chat_id,
                     msg.message_id,
@@ -198,7 +198,7 @@ async fn telegram_loop(
 #[allow(clippy::too_many_arguments)]
 async fn tg_stream(
     bot: &Bot,
-    client: &NodeClient,
+    conn_info: &ConnectionInfo,
     agent: &str,
     chat_id: i64,
     reply_to_msg_id: i64,
@@ -217,7 +217,13 @@ async fn tg_stream(
         guest: None,
         tool_choice: None,
     });
-    let mut server_rx = client.send(client_msg).await;
+    let mut server_rx = match conn_info.send(client_msg).await {
+        Ok(rx) => rx,
+        Err(e) => {
+            tracing::warn!(agent, chat_id, "failed to connect to daemon: {e}");
+            return StreamResult::Failed;
+        }
+    };
     let mut acc = StreamAccumulator::new();
     let mut msg_id: Option<teloxide::types::MessageId> = None;
     let mut last_sent_len: usize = 0;
@@ -321,7 +327,7 @@ async fn tg_stream(
                             sender: sender.to_string(),
                             content: json_reply,
                         });
-                        let _ = client.send(reply_msg).await;
+                        let _ = conn_info.send(reply_msg).await;
                         pending_ask_questions = None;
                         multi_select_state.clear();
                     }
