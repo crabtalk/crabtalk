@@ -10,13 +10,8 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use recall::Recall;
 use remember::Remember;
 use runtime::Hook;
-use std::{path::PathBuf, sync::Arc};
-use wcore::{
-    MemoryConfig, ToolDispatch, ToolFuture,
-    agent::AsTool,
-    model::{HistoryEntry, Tool},
-    storage::Storage,
-};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use wcore::{AgentConfig, MemoryConfig, ToolDispatch, ToolFuture, agent::AsTool, model::Tool};
 
 mod forget;
 mod recall;
@@ -65,28 +60,27 @@ impl Memory {
 
 pub struct MemoryHook {
     pub(super) memory: Arc<Memory>,
-    storage: Arc<dyn Storage>,
+    /// Per-agent recall limit cache, populated from `on_register_agent`.
+    /// Lives on the hook instead of being read from storage on every
+    /// `before_run` so the sync hook callbacks don't need an async
+    /// roundtrip.
+    configs: RwLock<BTreeMap<String, MemoryConfig>>,
 }
 
 impl MemoryHook {
-    pub fn new(memory: Arc<Memory>, storage: Arc<dyn Storage>) -> Self {
-        Self { memory, storage }
+    pub fn new(memory: Arc<Memory>) -> Self {
+        Self {
+            memory,
+            configs: RwLock::new(BTreeMap::new()),
+        }
     }
 
-    /// Effective recall limit for an agent. Reads
-    /// [`AgentConfig::hooks::memory`] from storage; falls back to the
-    /// [`MemoryConfig`] default when the agent is not yet persisted.
-    /// Storage errors are logged loudly so a transient I/O failure
-    /// doesn't silently degrade recall behavior.
-    pub fn recall_limit(&self, agent: &str) -> usize {
-        match self.storage.load_agent_by_name(agent) {
-            Ok(Some(cfg)) => cfg.hooks.memory.recall_limit,
-            Ok(None) => MemoryConfig::default().recall_limit,
-            Err(e) => {
-                tracing::error!(%agent, error = %e, "failed to load memory config — falling back to defaults");
-                MemoryConfig::default().recall_limit
-            }
-        }
+    fn recall_limit(&self, agent: &str) -> usize {
+        self.configs
+            .read()
+            .get(agent)
+            .map(|c| c.recall_limit)
+            .unwrap_or_else(|| MemoryConfig::default().recall_limit)
     }
 }
 
@@ -99,13 +93,14 @@ impl Hook for MemoryHook {
         Some(format!("\n\n{MEMORY_PROMPT}"))
     }
 
-    fn on_before_run(
-        &self,
-        agent: &str,
-        _conversation_id: u64,
-        history: &[HistoryEntry],
-    ) -> Vec<HistoryEntry> {
-        self.memory.before_run(history, self.recall_limit(agent))
+    fn on_register_agent(&self, name: &str, config: &AgentConfig) {
+        self.configs
+            .write()
+            .insert(name.to_owned(), config.hooks.memory.clone());
+    }
+
+    fn on_unregister_agent(&self, name: &str) {
+        self.configs.write().remove(name);
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {

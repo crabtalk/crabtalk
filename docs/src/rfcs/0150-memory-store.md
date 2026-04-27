@@ -6,6 +6,8 @@
 - Crates: memory, crabtalk, runtime
 - Supersedes: [0038 (Memory)](0038-memory.md)
 
+> **Updated by [0189](0189-policy-at-the-edge.md) (2026-04-28).** Auto-recall (`Memory::before_run`) was removed; `recall` is now strictly model-driven. See 0189 for the rationale.
+
 ## Summary
 
 A standalone `crabtalk-memory` crate backing agent memory with a single binary db file, atomic persistence, and BM25 recall. The markdown tree is a human-facing export — not the primary store. Entries come in two kinds: `Note` (agent-written via `remember`/`forget`) and `Archive` (compaction output). The agent's system prompt is human-managed via `Crab.md` (existing layered-instructions mechanism) — the memory store has no opinion on it.

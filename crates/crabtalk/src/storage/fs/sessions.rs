@@ -6,10 +6,10 @@ use super::{FsStorage, atomic_write};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
     io::ErrorKind,
     path::{Path, PathBuf},
 };
+use tokio::fs;
 use wcore::{
     ConversationMeta, EventLine,
     model::HistoryEntry,
@@ -59,27 +59,37 @@ fn session_step_path(storage: &FsStorage, slug: &str, step: u64) -> PathBuf {
     session_dir(storage, slug).join(format!("step-{step:06}"))
 }
 
-fn next_step(storage: &FsStorage, slug: &str) -> u64 {
+/// Reserve the next step number for a session. Holds the in-memory
+/// counter lock only across the synchronous `HashMap` lookup — disk
+/// recovery on first access happens outside the lock.
+async fn next_step(storage: &FsStorage, slug: &str) -> u64 {
+    {
+        let mut counters = storage.session_counters.lock();
+        if let Some(counter) = counters.get_mut(slug) {
+            let n = *counter;
+            *counter += 1;
+            return n;
+        }
+    }
+    let recovered = recover_step_counter(&session_dir(storage, slug)).await;
     let mut counters = storage.session_counters.lock();
-    let counter = counters
-        .entry(slug.to_owned())
-        .or_insert_with(|| recover_step_counter(&session_dir(storage, slug)));
+    let counter = counters.entry(slug.to_owned()).or_insert(recovered);
     let n = *counter;
     *counter += 1;
     n
 }
 
-fn write_step(storage: &FsStorage, slug: &str, line: StepLine) -> Result<()> {
-    let step = next_step(storage, slug);
+async fn write_step(storage: &FsStorage, slug: &str, line: StepLine) -> Result<()> {
+    let step = next_step(storage, slug).await;
     let path = session_step_path(storage, slug, step);
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).await?;
     }
     let bytes = serde_json::to_vec(&line)?;
-    atomic_write(&path, &bytes)
+    atomic_write(&path, &bytes).await
 }
 
-pub(super) fn create_session(
+pub(super) async fn create_session(
     storage: &FsStorage,
     agent: &str,
     created_by: &str,
@@ -87,11 +97,11 @@ pub(super) fn create_session(
     let agent_slug = wcore::sender_slug(agent);
     let sender = wcore::sender_slug(created_by);
     let prefix = format!("{agent_slug}_{sender}_");
-    let seq = next_session_seq(&storage.sessions_root, &prefix);
+    let seq = next_session_seq(&storage.sessions_root, &prefix).await;
     let slug = format!("{agent_slug}_{sender}_{seq}");
 
     let dir = session_dir(storage, &slug);
-    fs::create_dir_all(&dir)?;
+    fs::create_dir_all(&dir).await?;
 
     let now = chrono::Utc::now().to_rfc3339();
     let meta = ConversationMeta {
@@ -104,11 +114,11 @@ pub(super) fn create_session(
         summary: None,
     };
     let meta_bytes = serde_json::to_vec(&meta)?;
-    atomic_write(&session_meta_path(storage, &slug), &meta_bytes)?;
+    atomic_write(&session_meta_path(storage, &slug), &meta_bytes).await?;
     Ok(SessionHandle::new(slug))
 }
 
-pub(super) fn find_latest_session(
+pub(super) async fn find_latest_session(
     storage: &FsStorage,
     agent: &str,
     created_by: &str,
@@ -122,11 +132,11 @@ pub(super) fn find_latest_session(
     }
 
     let mut best: Option<(u32, String)> = None;
-    for entry in fs::read_dir(&storage.sessions_root)? {
-        let entry = entry?;
+    let mut entries = fs::read_dir(&storage.sessions_root).await?;
+    while let Some(entry) = entries.next_entry().await? {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if !name.starts_with(&prefix) || !entry.file_type()?.is_dir() {
+        if !name.starts_with(&prefix) || !entry.file_type().await?.is_dir() {
             continue;
         }
         let seq_str = &name[prefix.len()..];
@@ -139,13 +149,13 @@ pub(super) fn find_latest_session(
     Ok(best.map(|(_, slug)| SessionHandle::new(slug)))
 }
 
-pub(super) fn load_session(
+pub(super) async fn load_session(
     storage: &FsStorage,
     handle: &SessionHandle,
 ) -> Result<Option<SessionSnapshot>> {
     let slug = handle.as_str();
     let meta_path = session_meta_path(storage, slug);
-    let meta_bytes = match fs::read(&meta_path) {
+    let meta_bytes = match fs::read(&meta_path).await {
         Ok(b) => b,
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e.into()),
@@ -153,20 +163,23 @@ pub(super) fn load_session(
     let meta: ConversationMeta = serde_json::from_slice(&meta_bytes)?;
 
     let dir = session_dir(storage, slug);
-    let mut step_files: Vec<_> = fs::read_dir(&dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.file_name()
-                .to_str()
-                .is_some_and(|n| n.starts_with("step-"))
-        })
-        .collect();
-    step_files.sort_by_key(|e| e.file_name());
+    let mut step_files: Vec<PathBuf> = Vec::new();
+    let mut entries = fs::read_dir(&dir).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|n| n.starts_with("step-"))
+        {
+            step_files.push(entry.path());
+        }
+    }
+    step_files.sort();
 
     let mut lines = Vec::with_capacity(step_files.len());
     let mut last_compact_idx: Option<usize> = None;
-    for entry in &step_files {
-        let bytes = fs::read(entry.path())?;
+    for path in &step_files {
+        let bytes = fs::read(path).await?;
         match serde_json::from_slice::<StepLine>(&bytes) {
             Ok(line) => {
                 if line.is_compact_boundary() {
@@ -175,7 +188,7 @@ pub(super) fn load_session(
                 lines.push(line);
             }
             Err(e) => {
-                tracing::warn!("skipping unparsable step {}: {e}", entry.path().display());
+                tracing::warn!("skipping unparsable step {}: {e}", path.display());
             }
         }
     }
@@ -205,19 +218,19 @@ pub(super) fn load_session(
     }))
 }
 
-pub(super) fn list_sessions(storage: &FsStorage) -> Result<Vec<SessionSummary>> {
+pub(super) async fn list_sessions(storage: &FsStorage) -> Result<Vec<SessionSummary>> {
     if !storage.sessions_root.exists() {
         return Ok(Vec::new());
     }
     let mut summaries = Vec::new();
-    for entry in fs::read_dir(&storage.sessions_root)? {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
+    let mut entries = fs::read_dir(&storage.sessions_root).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        if !entry.file_type().await?.is_dir() {
             continue;
         }
         let slug = entry.file_name().to_string_lossy().to_string();
         let meta_path = session_meta_path(storage, &slug);
-        if let Ok(bytes) = fs::read(&meta_path)
+        if let Ok(bytes) = fs::read(&meta_path).await
             && let Ok(meta) = serde_json::from_slice::<ConversationMeta>(&bytes)
         {
             summaries.push(SessionSummary {
@@ -229,29 +242,29 @@ pub(super) fn list_sessions(storage: &FsStorage) -> Result<Vec<SessionSummary>> 
     Ok(summaries)
 }
 
-pub(super) fn append_session_messages(
+pub(super) async fn append_session_messages(
     storage: &FsStorage,
     handle: &SessionHandle,
     entries: &[HistoryEntry],
 ) -> Result<()> {
     for entry in entries {
-        write_step(storage, handle.as_str(), StepLine::Entry(entry.clone()))?;
+        write_step(storage, handle.as_str(), StepLine::Entry(entry.clone())).await?;
     }
     Ok(())
 }
 
-pub(super) fn append_session_events(
+pub(super) async fn append_session_events(
     storage: &FsStorage,
     handle: &SessionHandle,
     events: &[EventLine],
 ) -> Result<()> {
     for event in events {
-        write_step(storage, handle.as_str(), StepLine::Event(event.clone()))?;
+        write_step(storage, handle.as_str(), StepLine::Event(event.clone())).await?;
     }
     Ok(())
 }
 
-pub(super) fn append_session_compact(
+pub(super) async fn append_session_compact(
     storage: &FsStorage,
     handle: &SessionHandle,
     archive_name: &str,
@@ -260,35 +273,35 @@ pub(super) fn append_session_compact(
         archive_name: archive_name.to_owned(),
         archived_at: chrono::Utc::now().to_rfc3339(),
     };
-    write_step(storage, handle.as_str(), line)
+    write_step(storage, handle.as_str(), line).await
 }
 
-pub(super) fn update_session_meta(
+pub(super) async fn update_session_meta(
     storage: &FsStorage,
     handle: &SessionHandle,
     meta: &ConversationMeta,
 ) -> Result<()> {
     let path = session_meta_path(storage, handle.as_str());
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).await?;
     }
     let bytes = serde_json::to_vec(meta)?;
-    atomic_write(&path, &bytes)
+    atomic_write(&path, &bytes).await
 }
 
-pub(super) fn delete_session(storage: &FsStorage, handle: &SessionHandle) -> Result<bool> {
+pub(super) async fn delete_session(storage: &FsStorage, handle: &SessionHandle) -> Result<bool> {
     let dir = session_dir(storage, handle.as_str());
-    match fs::remove_dir_all(&dir) {
+    match fs::remove_dir_all(&dir).await {
         Ok(()) => Ok(true),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e.into()),
     }
 }
 
-fn recover_step_counter(dir: &Path) -> u64 {
+async fn recover_step_counter(dir: &Path) -> u64 {
     let mut max = 0u64;
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
+    if let Ok(mut entries) = fs::read_dir(dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name();
             let name = name.to_string_lossy();
             if let Some(suffix) = name.strip_prefix("step-")
@@ -301,10 +314,10 @@ fn recover_step_counter(dir: &Path) -> u64 {
     max + 1
 }
 
-fn next_session_seq(root: &Path, prefix: &str) -> u32 {
+async fn next_session_seq(root: &Path, prefix: &str) -> u32 {
     let mut max = 0u32;
-    if let Ok(entries) = fs::read_dir(root) {
-        for entry in entries.flatten() {
+    if let Ok(mut entries) = fs::read_dir(root).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name();
             let name = name.to_string_lossy();
             if let Some(seq_str) = name.strip_prefix(prefix)

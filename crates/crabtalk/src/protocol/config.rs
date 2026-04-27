@@ -13,17 +13,18 @@ impl<P: Provider + 'static> Daemon<P> {
 
         // Validate against the cached model list when non-empty; if the
         // /v1/models fetch at startup failed, trust the caller.
-        let known = rt.list_models();
+        let known = rt.list_models().await;
         if !known.is_empty() && !known.iter().any(|m| m.name == model) {
             anyhow::bail!("model '{model}' not advertised by the LLM endpoint");
         }
 
         let mut crab = storage
-            .load_agent_by_name(wcore::paths::DEFAULT_AGENT)?
+            .load_agent_by_name(wcore::paths::DEFAULT_AGENT)
+            .await?
             .unwrap_or_else(|| crate::storage::default_crab(&model));
         let prompt = std::mem::take(&mut crab.system_prompt);
         crab.model = model;
-        storage.upsert_agent(&crab, &prompt)?;
+        storage.upsert_agent(&crab, &prompt).await?;
         self.reload().await
     }
 
@@ -36,7 +37,7 @@ impl<P: Provider + 'static> Daemon<P> {
             .collect();
         let storage_mcps = {
             let rt = self.runtime.read().await.clone();
-            rt.storage().list_mcps()?
+            rt.storage().list_mcps().await?
         };
         // Storage wins over manifest on name conflict — seed the map from
         // storage first, then `entry(..).or_insert_with` for manifest entries
@@ -72,7 +73,7 @@ impl<P: Provider + 'static> Daemon<P> {
         let name = cfg.name.clone();
         {
             let rt = self.runtime.read().await.clone();
-            rt.storage().upsert_mcp(&cfg)?;
+            rt.storage().upsert_mcp(&cfg).await?;
         }
         self.reload().await?;
 
@@ -86,7 +87,7 @@ impl<P: Provider + 'static> Daemon<P> {
     pub(crate) async fn delete_mcp(&self, name: &str) -> Result<bool> {
         let removed = {
             let rt = self.runtime.read().await.clone();
-            rt.storage().delete_mcp(name)?
+            rt.storage().delete_mcp(name).await?
         };
         if removed {
             self.reload().await?;

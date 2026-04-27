@@ -138,7 +138,9 @@ impl<P: Provider + 'static> Daemon<P> {
                     AgentEvent::ToolCallsComplete => {
                         yield StreamEvent { event: Some(stream_event::Event::ToolsComplete(ToolsCompleteEvent {})) };
                     }
-                    AgentEvent::Compact { .. } => {}
+                    AgentEvent::ContextUsage { ref usage } => {
+                        yield StreamEvent { event: Some(stream_event::Event::ContextUsage(ContextUsageEvent { usage: Some(usage_to_proto(usage)) })) };
+                    }
                     AgentEvent::UserSteered { ref content } => {
                         yield StreamEvent { event: Some(stream_event::Event::UserSteered(UserSteeredEvent { content: content.clone() })) };
                     }
@@ -254,5 +256,19 @@ pub(super) fn sum_usage(steps: &[wcore::AgentStep]) -> TokenUsage {
         cache_hit_tokens: has_cache_hit.then_some(cache_hit),
         cache_miss_tokens: has_cache_miss.then_some(cache_miss),
         reasoning_tokens: has_reasoning.then_some(reasoning),
+    }
+}
+
+fn usage_to_proto(u: &crabllm_core::Usage) -> TokenUsage {
+    TokenUsage {
+        prompt_tokens: u.prompt_tokens,
+        completion_tokens: u.completion_tokens,
+        total_tokens: u.total_tokens,
+        cache_hit_tokens: u.prompt_cache_hit_tokens,
+        cache_miss_tokens: u.prompt_cache_miss_tokens,
+        reasoning_tokens: u
+            .completion_tokens_details
+            .as_ref()
+            .and_then(|d| d.reasoning_tokens),
     }
 }

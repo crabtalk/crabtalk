@@ -1,14 +1,9 @@
-//! `recall` — BM25 search over memory entries. Also owns the
-//! before-run auto-recall hook, which is just a recall driven by the
-//! last user message.
+//! `recall` — BM25 search over memory entries.
 
 use super::{Memory, MemoryHook};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use wcore::{
-    ToolDispatch,
-    model::{HistoryEntry, Role},
-};
+use wcore::ToolDispatch;
 
 /// Search your memory entries by keyword. Returns ranked results.
 #[derive(Deserialize, JsonSchema)]
@@ -30,37 +25,6 @@ impl Memory {
             .map(|h| format!("## {}\n{}", h.entry.name, h.entry.content))
             .collect::<Vec<_>>()
             .join("\n---\n")
-    }
-
-    /// Auto-recall: BM25-search the last user message, inject any hits
-    /// as a synthetic user turn. Caller passes the effective recall
-    /// limit so per-scope overrides resolved upstream apply.
-    pub fn before_run(&self, history: &[HistoryEntry], limit: usize) -> Vec<HistoryEntry> {
-        let last_user = history
-            .iter()
-            .rev()
-            .find(|e| *e.role() == Role::User && !e.text().is_empty());
-
-        let Some(entry) = last_user else {
-            return Vec::new();
-        };
-
-        let query: String = entry
-            .text()
-            .split_whitespace()
-            .take(8)
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        if query.is_empty() {
-            return Vec::new();
-        }
-
-        let result = self.recall(&query, limit);
-        if result == "no memories found" {
-            return Vec::new();
-        }
-        vec![HistoryEntry::user(format!("<recall>\n{result}\n</recall>")).auto_injected()]
     }
 }
 

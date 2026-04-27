@@ -4,7 +4,7 @@
 
 use super::FsStorage;
 use anyhow::Result;
-use std::fs;
+use tokio::fs;
 use wcore::AgentConfig;
 
 /// Built-in crab agent prompt (from `prompts/crab.md`).
@@ -22,18 +22,18 @@ pub fn default_crab(model: impl Into<String>) -> AgentConfig {
     cfg
 }
 
-pub(super) fn scaffold(storage: &FsStorage, default_model: &str) -> Result<()> {
-    fs::create_dir_all(&storage.config_dir)?;
-    fs::create_dir_all(storage.config_dir.join(wcore::paths::LOCAL_DIR))?;
-    fs::create_dir_all(storage.config_dir.join(wcore::paths::SKILLS_DIR))?;
-    fs::create_dir_all(storage.config_dir.join(wcore::paths::AGENTS_DIR))?;
-    fs::create_dir_all(&storage.sessions_root)?;
+pub(super) async fn scaffold(storage: &FsStorage, default_model: &str) -> Result<()> {
+    fs::create_dir_all(&storage.config_dir).await?;
+    fs::create_dir_all(storage.config_dir.join(wcore::paths::LOCAL_DIR)).await?;
+    fs::create_dir_all(storage.config_dir.join(wcore::paths::SKILLS_DIR)).await?;
+    fs::create_dir_all(storage.config_dir.join(wcore::paths::AGENTS_DIR)).await?;
+    fs::create_dir_all(&storage.sessions_root).await?;
 
-    let file = storage.read_settings()?;
+    let file = storage.read_settings().await?;
     if file.agents.is_empty() {
         let crab = default_crab(default_model);
         let prompt = crab.system_prompt.clone();
-        super::agents::upsert_agent(storage, &crab, &prompt)?;
+        super::agents::upsert_agent(storage, &crab, &prompt).await?;
     }
     Ok(())
 }

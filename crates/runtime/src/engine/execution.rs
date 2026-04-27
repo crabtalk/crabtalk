@@ -33,23 +33,19 @@ impl<C: Config> Runtime<C> {
 
         conversation.history.retain(|e| !e.auto_injected);
 
-        let mut recall_msgs =
-            self.env
-                .hook()
-                .on_before_run(agent, conversation.id, &conversation.history);
-
-        // Layered instructions (Crab.md).
+        // Layered instructions (Crab.md) and guest agent framing —
+        // both are still daemon-side per-turn injections that should
+        // move to client-supplied prompts. See issue #188.
+        let mut injected: Vec<HistoryEntry> = Vec::new();
         let cwd = self.env.effective_cwd(conversation.id);
         if let Some(instructions) = self.env.discover_instructions(&cwd) {
-            recall_msgs.push(
+            injected.push(
                 HistoryEntry::user(format!("<instructions>\n{instructions}\n</instructions>"))
                     .auto_injected(),
             );
         }
-
-        // Guest agent framing.
         if conversation.history.iter().any(|e| !e.agent.is_empty()) {
-            recall_msgs.push(
+            injected.push(
                 HistoryEntry::user(
                     "Messages wrapped in <from agent=\"...\"> tags are from guest agents \
                      who were consulted in this conversation. Continue responding as yourself."
@@ -58,9 +54,9 @@ impl<C: Config> Runtime<C> {
                 .auto_injected(),
             );
         }
-        if !recall_msgs.is_empty() {
+        if !injected.is_empty() {
             let insert_pos = conversation.history.len().saturating_sub(1);
-            for (i, entry) in recall_msgs.into_iter().enumerate() {
+            for (i, entry) in injected.into_iter().enumerate() {
                 conversation.history.insert(insert_pos + i, entry);
             }
         }
@@ -91,28 +87,26 @@ impl<C: Config> Runtime<C> {
             .run(&mut conversation.history, tx, None, tool_choice)
             .await;
 
-        let mut compact_summary: Option<String> = None;
+        let mut event_trace: Vec<wcore::EventLine> = Vec::new();
         while let Ok(event) = rx.try_recv() {
-            if let AgentEvent::Compact { ref summary } = event {
-                compact_summary = Some(summary.clone());
-            }
             self.env
                 .hook()
                 .on_event(&agent_name, conversation_id, &event);
             self.env
                 .on_agent_event(&agent_name, conversation_id, &event);
+            if let Some(line) = wcore::EventLine::from_agent_event(&event) {
+                event_trace.push(line);
+            }
         }
 
         self.finalize_run(
-            conversation_id,
             &mut conversation,
-            conversation_mutex.clone(),
             &agent_name,
             &created_by,
             pre_run_len,
-            compact_summary,
-            &[],
-        );
+            &event_trace,
+        )
+        .await;
         Ok(response)
     }
 
@@ -147,15 +141,11 @@ impl<C: Config> Runtime<C> {
 
             let (steer_tx, steer_rx) = watch::channel(None::<String>);
             self.steering.write().await.insert(conversation_id, steer_tx);
-            let mut compact_summary: Option<String> = None;
             let mut done_event: Option<AgentEvent> = None;
             let mut event_trace: Vec<wcore::EventLine> = Vec::new();
             {
                 let mut event_stream = std::pin::pin!(agent.run_stream(&mut conversation.history, Some(conversation_id), Some(steer_rx), tool_choice));
                 while let Some(event) = event_stream.next().await {
-                    if let AgentEvent::Compact { ref summary } = event {
-                        compact_summary = Some(summary.clone());
-                    }
                     self.env.hook().on_event(&agent_name, conversation_id, &event);
                     self.env.on_agent_event(&agent_name, conversation_id, &event);
                     if let Some(line) = wcore::EventLine::from_agent_event(&event) {
@@ -170,15 +160,13 @@ impl<C: Config> Runtime<C> {
             }
             self.steering.write().await.remove(&conversation_id);
             self.finalize_run(
-                conversation_id,
                 &mut conversation,
-                conversation_mutex.clone(),
                 &agent_name,
                 &created_by,
                 pre_run_len,
-                compact_summary,
                 &event_trace,
-            );
+            )
+            .await;
             if let Some(event) = done_event {
                 yield event;
             }
@@ -312,15 +300,13 @@ impl<C: Config> Runtime<C> {
             conversation.history.push(response_entry);
 
             self.finalize_run(
-                conversation_id,
                 &mut conversation,
-                conversation_mutex.clone(),
                 &agent_name,
                 &created_by,
                 pre_run_len,
-                None,
                 &[],
-            );
+            )
+            .await;
 
             yield AgentEvent::Done(AgentResponse {
                 final_response: Some(response_text),

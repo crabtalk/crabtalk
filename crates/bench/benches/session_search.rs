@@ -18,12 +18,17 @@ use runtime::{
 };
 use std::sync::Arc;
 use tempfile::TempDir;
+use tokio::runtime::Runtime as TokioRuntime;
 use wcore::{
     AgentConfig,
     model::{HistoryEntry, Model},
     storage::{SessionHandle, Storage},
     testing::provider::TestProvider,
 };
+
+fn rt() -> TokioRuntime {
+    TokioRuntime::new().expect("tokio runtime")
+}
 
 const SESSION_SIZE: usize = 50; // messages per synthetic session
 
@@ -59,7 +64,7 @@ fn build_index(messages: usize) -> SessionIndex {
 /// sessions. Returns the dir guard plus a Runtime that points at it,
 /// so a benchmark iteration can call `rebuild_session_index`
 /// end-to-end including I/O.
-fn build_runtime_with_storage(messages: usize) -> (TempDir, Runtime<BenchCfg>) {
+async fn build_runtime_with_storage(messages: usize) -> (TempDir, Runtime<BenchCfg>) {
     let dir = TempDir::new().expect("tempdir");
     let storage = Arc::new(FsStorage::new(
         dir.path().to_path_buf(),
@@ -73,6 +78,7 @@ fn build_runtime_with_storage(messages: usize) -> (TempDir, Runtime<BenchCfg>) {
     for s in 0..session_count {
         let h = storage
             .create_session("crab", &format!("tester_{s}"))
+            .await
             .expect("create_session");
         handles.push(h);
     }
@@ -81,6 +87,7 @@ fn build_runtime_with_storage(messages: usize) -> (TempDir, Runtime<BenchCfg>) {
         let entry = HistoryEntry::user(text);
         storage
             .append_session_messages(&handles[session_idx], &[entry])
+            .await
             .expect("append_session_messages");
     }
 
@@ -133,6 +140,7 @@ fn bench_insert(c: &mut Criterion) {
 }
 
 fn bench_rebuild(c: &mut Criterion) {
+    let runtime = rt();
     let mut group = c.benchmark_group("session_search/rebuild");
     // End-to-end cold-start: list_sessions + load_session per session
     // against a real `FsStorage` rooted in a tempdir, then rebuild
@@ -142,10 +150,10 @@ fn bench_rebuild(c: &mut Criterion) {
             BenchmarkId::from_parameter(messages),
             &messages,
             |b, &messages| {
-                let (_dir, runtime) = build_runtime_with_storage(messages);
+                let (_dir, rt) = runtime.block_on(build_runtime_with_storage(messages));
                 b.iter(|| {
                     runtime
-                        .rebuild_session_index()
+                        .block_on(rt.rebuild_session_index())
                         .expect("rebuild_session_index");
                 });
             },

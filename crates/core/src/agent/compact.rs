@@ -65,12 +65,4 @@ impl<P: Provider + 'static> super::Agent<P> {
             }
         }
     }
-
-    /// Estimate the token count of conversation history.
-    ///
-    /// Uses a simple heuristic: ~4 characters per token. Counts content,
-    /// reasoning_content, and tool call arguments.
-    pub(crate) fn estimate_tokens(history: &[HistoryEntry]) -> usize {
-        history.iter().map(|e| e.estimate_tokens()).sum()
-    }
 }

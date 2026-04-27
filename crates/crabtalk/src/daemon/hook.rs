@@ -7,7 +7,7 @@
 use parking_lot::RwLock;
 use runtime::Hook;
 use std::{collections::BTreeMap, sync::Arc};
-use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture, model::HistoryEntry};
+use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
 #[derive(Default)]
@@ -103,6 +103,25 @@ impl Hook for DaemonHook {
         if let Some(ref prompt) = self.system_prompt() {
             config.system_prompt.push_str(prompt);
         }
+        // Peer-agents block — names and descriptions of every other
+        // registered agent, for the `delegate` tool to target. Built
+        // once at agent-build time; later registry mutations only
+        // appear after the agent is rebuilt (re-upserted or
+        // daemon-reloaded).
+        let descriptions = self.agent_descriptions.read();
+        let peers: Vec<_> = descriptions
+            .iter()
+            .filter(|(name, _)| name.as_str() != config.name)
+            .collect();
+        if !peers.is_empty() {
+            config.system_prompt.push_str("\n\n<agents>\n");
+            for (name, desc) in peers {
+                config
+                    .system_prompt
+                    .push_str(&format!("- {name}: {desc}\n"));
+            }
+            config.system_prompt.push_str("</agents>");
+        }
         self.apply_scope(&mut config);
         config
     }
@@ -121,46 +140,17 @@ impl Hook for DaemonHook {
                 mcps: config.mcps.clone(),
             },
         );
+        for hook in self.hooks.values() {
+            hook.on_register_agent(name, config);
+        }
     }
 
     fn on_unregister_agent(&self, name: &str) {
         self.scopes.write().remove(name);
         self.agent_descriptions.write().remove(name);
-    }
-
-    fn on_before_run(
-        &self,
-        agent: &str,
-        conversation_id: u64,
-        history: &[HistoryEntry],
-    ) -> Vec<HistoryEntry> {
-        let mut injected = Vec::new();
-
-        // Agent descriptions (delegate coordination) — any agent can call any
-        // other. Injected every turn; mutations to the agent registry bust the
-        // prompt cache for every active conversation, which is fine for a
-        // single-user runtime with a handful of agents.
-        {
-            let descriptions = self.agent_descriptions.read();
-            let peers: Vec<_> = descriptions
-                .iter()
-                .filter(|(name, _)| name.as_str() != agent)
-                .collect();
-            if !peers.is_empty() {
-                let mut block = String::from("<agents>\n");
-                for (name, desc) in peers {
-                    block.push_str(&format!("- {name}: {desc}\n"));
-                }
-                block.push_str("</agents>");
-                injected.push(HistoryEntry::user(block).auto_injected());
-            }
-        }
-
         for hook in self.hooks.values() {
-            injected.extend(hook.on_before_run(agent, conversation_id, history));
+            hook.on_unregister_agent(name);
         }
-
-        injected
     }
 
     fn on_event(&self, agent: &str, conversation_id: u64, event: &AgentEvent) {

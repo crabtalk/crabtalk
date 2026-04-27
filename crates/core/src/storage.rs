@@ -10,7 +10,7 @@ use crate::{
 use anyhow::Result;
 use crabllm_core::Usage;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, future::Future};
 
 // ── Storage trait ───────────────────────────────────────────────────
 
@@ -19,82 +19,122 @@ use std::collections::BTreeMap;
 /// All read/write operations for skills, sessions, and agents live
 /// here. Implementations own their encoding and storage layout — the
 /// trait speaks domain types only.
+///
+/// Methods are declared as `fn -> impl Future + Send` (rather than
+/// `async fn`) so callers can spawn storage work onto a multi-thread
+/// runtime — `async fn` in trait does not auto-imply `Send` on the
+/// returned future. Implementations still write `async fn` bodies; the
+/// `+ Send` bound is satisfied automatically as long as the body is.
 pub trait Storage: Send + Sync + 'static {
     // ── Skills (read-only — skills are discovered from disk, not
     //    created through the runtime) ───────────────────────────────
 
     /// List all available skills.
-    fn list_skills(&self) -> Result<Vec<Skill>>;
+    fn list_skills(&self) -> impl Future<Output = Result<Vec<Skill>>> + Send;
 
     /// Load a skill by name. Returns `None` if not found.
-    fn load_skill(&self, name: &str) -> Result<Option<Skill>>;
+    fn load_skill(&self, name: &str) -> impl Future<Output = Result<Option<Skill>>> + Send;
 
     // ── Sessions ───────────────────────────────────────────────────
 
     /// Create a new session. Returns an opaque handle.
-    fn create_session(&self, agent: &str, created_by: &str) -> Result<SessionHandle>;
+    fn create_session(
+        &self,
+        agent: &str,
+        created_by: &str,
+    ) -> impl Future<Output = Result<SessionHandle>> + Send;
 
     /// Find the latest session for an (agent, created_by) identity.
-    fn find_latest_session(&self, agent: &str, created_by: &str) -> Result<Option<SessionHandle>>;
+    fn find_latest_session(
+        &self,
+        agent: &str,
+        created_by: &str,
+    ) -> impl Future<Output = Result<Option<SessionHandle>>> + Send;
 
     /// Load a session's meta and working-context history.
-    fn load_session(&self, handle: &SessionHandle) -> Result<Option<SessionSnapshot>>;
+    fn load_session(
+        &self,
+        handle: &SessionHandle,
+    ) -> impl Future<Output = Result<Option<SessionSnapshot>>> + Send;
 
     /// List all sessions.
-    fn list_sessions(&self) -> Result<Vec<SessionSummary>>;
+    fn list_sessions(&self) -> impl Future<Output = Result<Vec<SessionSummary>>> + Send;
 
     /// Append history entries to a session.
     fn append_session_messages(
         &self,
         handle: &SessionHandle,
         entries: &[HistoryEntry],
-    ) -> Result<()>;
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Append trace event entries.
-    fn append_session_events(&self, handle: &SessionHandle, events: &[EventLine]) -> Result<()>;
+    fn append_session_events(
+        &self,
+        handle: &SessionHandle,
+        events: &[EventLine],
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Append a compact marker (archive boundary). `archive_name`
     /// references the `Archive`-kind entry in `memory` where the
     /// summary content actually lives. The marker only carries the
     /// pointer — session storage never sees the summary text.
-    fn append_session_compact(&self, handle: &SessionHandle, archive_name: &str) -> Result<()>;
+    fn append_session_compact(
+        &self,
+        handle: &SessionHandle,
+        archive_name: &str,
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Overwrite session metadata.
-    fn update_session_meta(&self, handle: &SessionHandle, meta: &ConversationMeta) -> Result<()>;
+    fn update_session_meta(
+        &self,
+        handle: &SessionHandle,
+        meta: &ConversationMeta,
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Delete a session entirely.
-    fn delete_session(&self, handle: &SessionHandle) -> Result<bool>;
+    fn delete_session(&self, handle: &SessionHandle) -> impl Future<Output = Result<bool>> + Send;
 
     // ── Agents ─────────────────────────────────────────────────────
 
     /// List all persisted agent configs (with prompts loaded).
-    fn list_agents(&self) -> Result<Vec<AgentConfig>>;
+    fn list_agents(&self) -> impl Future<Output = Result<Vec<AgentConfig>>> + Send;
 
     /// Load a single agent by ULID.
-    fn load_agent(&self, id: &AgentId) -> Result<Option<AgentConfig>>;
+    fn load_agent(&self, id: &AgentId) -> impl Future<Output = Result<Option<AgentConfig>>> + Send;
 
     /// Load a single agent by name.
-    fn load_agent_by_name(&self, name: &str) -> Result<Option<AgentConfig>>;
+    fn load_agent_by_name(
+        &self,
+        name: &str,
+    ) -> impl Future<Output = Result<Option<AgentConfig>>> + Send;
 
     /// Create or replace an agent config and prompt. `config.id` and
     /// `config.name` must both be set — implementations bail otherwise
     /// (otherwise the prompt becomes an orphan, unreachable by name or
     /// by listing).
-    fn upsert_agent(&self, config: &AgentConfig, prompt: &str) -> Result<()>;
+    fn upsert_agent(
+        &self,
+        config: &AgentConfig,
+        prompt: &str,
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// Delete an agent by ULID. Returns `true` if it existed.
-    fn delete_agent(&self, id: &AgentId) -> Result<bool>;
+    fn delete_agent(&self, id: &AgentId) -> impl Future<Output = Result<bool>> + Send;
 
     /// Rename an agent. The ULID stays stable.
-    fn rename_agent(&self, id: &AgentId, new_name: &str) -> Result<bool>;
+    fn rename_agent(
+        &self,
+        id: &AgentId,
+        new_name: &str,
+    ) -> impl Future<Output = Result<bool>> + Send;
 
     // ── Config ──────────────────────────────────────────────────────
 
     /// Load the daemon configuration (`config.toml`).
-    fn load_config(&self) -> Result<DaemonConfig>;
+    fn load_config(&self) -> impl Future<Output = Result<DaemonConfig>> + Send;
 
     /// Overwrite the daemon configuration.
-    fn save_config(&self, config: &DaemonConfig) -> Result<()>;
+    fn save_config(&self, config: &DaemonConfig) -> impl Future<Output = Result<()>> + Send;
 
     /// Create the initial config directory structure and seed the
     /// default `crab` agent if no agent is stored yet.
@@ -103,21 +143,21 @@ pub trait Storage: Send + Sync + 'static {
     /// Callers pick it from the configured providers; an empty string
     /// here would produce an unusable agent, so callers must ensure a
     /// provider is configured first.
-    fn scaffold(&self, default_model: &str) -> Result<()>;
+    fn scaffold(&self, default_model: &str) -> impl Future<Output = Result<()>> + Send;
 
     // ── MCP servers ────────────────────────────────────────────────
 
     /// List all persisted MCP server configs, keyed by name.
-    fn list_mcps(&self) -> Result<BTreeMap<String, McpServerConfig>>;
+    fn list_mcps(&self) -> impl Future<Output = Result<BTreeMap<String, McpServerConfig>>> + Send;
 
     /// Load a single MCP server by name.
-    fn load_mcp(&self, name: &str) -> Result<Option<McpServerConfig>>;
+    fn load_mcp(&self, name: &str) -> impl Future<Output = Result<Option<McpServerConfig>>> + Send;
 
     /// Create or replace an MCP server config. Keyed by `config.name`.
-    fn upsert_mcp(&self, config: &McpServerConfig) -> Result<()>;
+    fn upsert_mcp(&self, config: &McpServerConfig) -> impl Future<Output = Result<()>> + Send;
 
     /// Delete an MCP server by name. `true` if it existed.
-    fn delete_mcp(&self, name: &str) -> Result<bool>;
+    fn delete_mcp(&self, name: &str) -> impl Future<Output = Result<bool>> + Send;
 }
 
 /// Reject names that won't survive serialization as a TOML table key.

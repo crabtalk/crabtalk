@@ -30,12 +30,12 @@ impl<C: Config> Runtime<C> {
     /// index off-lock and atomically swaps it in, so concurrent
     /// `search_sessions` callers see either the old index or the new
     /// one — never an empty in-between. Safe to re-run at any time.
-    pub fn rebuild_session_index(&self) -> anyhow::Result<()> {
+    pub async fn rebuild_session_index(&self) -> anyhow::Result<()> {
         let storage = self.storage();
-        let summaries = storage.list_sessions()?;
+        let summaries = storage.list_sessions().await?;
         let mut fresh = crate::sessions::SessionIndex::new();
         for summary in summaries {
-            let Some(snapshot) = storage.load_session(&summary.handle)? else {
+            let Some(snapshot) = storage.load_session(&summary.handle).await? else {
                 continue;
             };
             let session_id = fresh.ensure_session(

@@ -18,7 +18,6 @@ impl From<&AgentConfig> for AgentInfo {
             thinking: config.thinking,
             skills: config.skills.clone(),
             mcps: config.mcps.clone(),
-            compact_threshold: config.compact_threshold.map(|t| t as u32),
             compact_tool_max_len: config.compact_tool_max_len as u32,
         }
     }

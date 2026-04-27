@@ -1,9 +1,8 @@
-//! Conversation management — lifecycle, persistence, and title generation.
+//! Conversation management — lifecycle and persistence.
 
 use super::{ConvSlot, Runtime};
 use crate::{Config, Conversation, ConversationHandle};
 use anyhow::{Result, bail};
-use crabllm_core::{ChatCompletionRequest, Message, Role};
 use memory::{EntryKind, Op};
 use std::sync::{Arc, atomic::Ordering};
 use tokio::sync::Mutex;
@@ -19,18 +18,34 @@ impl<C: Config> Runtime<C> {
     }
 
     /// Get or create a conversation for the given (agent, created_by)
-    /// identity. Returns the existing conversation for this pair if one
-    /// is active, otherwise allocates a fresh id and persists.
+    /// identity.
+    ///
+    /// Resolution order:
+    /// 1. An active in-memory slot for this `(agent, sender)` — reuse.
+    /// 2. The latest persisted session for this pair — resume via
+    ///    [`Self::load`], which hydrates history (and any compact
+    ///    archive) into a fresh in-memory slot.
+    /// 3. No prior session in storage — allocate a fresh id.
+    ///
+    /// Without (2), every process boot would begin a brand-new session
+    /// per agent and the on-disk history would never be threaded into
+    /// the working context — agents would lose memory across restarts
+    /// even though the bytes are still in storage.
     pub async fn get_or_create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.has_agent(agent).await {
             bail!("agent '{agent}' not registered");
         }
 
-        // Read-first: a single active conversation per (agent, sender)
-        // is the common case; only fall through to allocation if none
-        // is registered.
         if let Some(id) = self.conversation_id(agent, created_by).await {
             return Ok(id);
+        }
+
+        if let Some(handle) = self
+            .storage()
+            .find_latest_session(agent, created_by)
+            .await?
+        {
+            return self.load(handle).await;
         }
 
         let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
@@ -43,7 +58,8 @@ impl<C: Config> Runtime<C> {
     pub async fn load(&self, handle: ConversationHandle) -> Result<u64> {
         let storage = self.storage();
         let snapshot = storage
-            .load_session(&handle)?
+            .load_session(&handle)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("conversation '{}' not found", handle.as_str()))?;
         if !self.has_agent(&snapshot.meta.agent).await {
             bail!("agent '{}' not registered", snapshot.meta.agent);
@@ -183,14 +199,29 @@ impl<C: Config> Runtime<C> {
         self.steer(id, content).await
     }
 
+    /// Compact a conversation in-place: summarize history with the
+    /// agent's compact LLM, write the summary to memory as an
+    /// `Archive` entry, drop a compact marker into the session, and
+    /// replace the live history with a single user message carrying
+    /// the summary. Returns the summary on success.
+    ///
+    /// All four steps are required for a coherent compact — without
+    /// the marker, a session reload can't find the resume boundary;
+    /// without the archive, the boundary points to nothing; without
+    /// the history replacement, the next request still ships the full
+    /// pre-compact context.
     pub async fn compact(&self, conversation_id: u64) -> Option<String> {
         // Release the conversations read lock before the per-conversation
         // mutex await — otherwise readers queue behind a potentially
         // contended inner lock.
-        let (agent_name, conversation_mutex) = {
+        let (agent_name, created_by, conversation_mutex) = {
             let conversations = self.conversations.read().await;
             let slot = conversations.get(&conversation_id)?;
-            (slot.agent.clone(), slot.inner.clone())
+            (
+                slot.agent.clone(),
+                slot.created_by.clone(),
+                slot.inner.clone(),
+            )
         };
         let history = {
             let conversation = conversation_mutex.lock().await;
@@ -199,10 +230,29 @@ impl<C: Config> Runtime<C> {
             }
             conversation.history.clone()
         };
-        self.resolve_agent(&agent_name)
+        let summary = self
+            .resolve_agent(&agent_name)
             .await?
             .compact(&history)
-            .await
+            .await?;
+
+        let mut conversation = conversation_mutex.lock().await;
+        self.ensure_handle(&mut conversation, &agent_name, &created_by)
+            .await;
+        let handle = conversation.handle.clone()?;
+        let archive_name = self.write_archive(handle.as_str(), summary.clone())?;
+
+        let storage = self.storage();
+        if let Err(e) = storage.append_session_compact(&handle, &archive_name).await {
+            tracing::warn!("compact: marker write failed: {e}");
+            return None;
+        }
+        conversation.history = vec![HistoryEntry::user(&summary)];
+        conversation.summary = Some(summary.clone());
+        let _ = storage
+            .update_session_meta(&handle, &conversation.meta(&agent_name, &created_by))
+            .await;
+        Some(summary)
     }
 
     pub async fn transfer_to<C2: Config>(&self, dest: &mut Runtime<C2>) {
@@ -285,115 +335,64 @@ impl<C: Config> Runtime<C> {
     /// Ensure the conversation has a session handle, creating one via
     /// the repo if needed. Sessions persist unconditionally — every
     /// conversation reaches storage on first persist call.
-    fn ensure_handle(&self, conversation: &mut Conversation, agent: &str, created_by: &str) {
+    async fn ensure_handle(&self, conversation: &mut Conversation, agent: &str, created_by: &str) {
         if conversation.handle.is_some() {
             return;
         }
         let storage = self.storage();
-        match storage.create_session(agent, created_by) {
+        match storage.create_session(agent, created_by).await {
             Ok(handle) => conversation.handle = Some(handle),
             Err(e) => tracing::warn!("failed to create session: {e}"),
         }
     }
 
     /// Post-run tail shared by `send_to`, `stream_to`, and
-    /// `guest_stream_to`: update uptime, persist, and kick off title
-    /// generation if the conversation has a titleable exchange and no
-    /// title yet.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn finalize_run(
+    /// `guest_stream_to`: persist messages and event trace.
+    pub(crate) async fn finalize_run(
         &self,
-        conversation_id: u64,
         conversation: &mut Conversation,
-        conversation_mutex: Arc<Mutex<Conversation>>,
         agent: &str,
         created_by: &str,
         pre_run_len: usize,
-        compact_summary: Option<String>,
         event_trace: &[wcore::EventLine],
     ) {
-        self.persist_messages(
-            conversation,
-            agent,
-            created_by,
-            pre_run_len,
-            compact_summary,
-            event_trace,
-        );
-        if conversation.title.is_empty() && conversation.history.len() >= 2 {
-            self.spawn_title_generation(conversation_id, agent, created_by, conversation_mutex);
-        }
+        self.persist_messages(conversation, agent, created_by, pre_run_len, event_trace)
+            .await;
     }
 
-    /// Persist messages to the session repo. Handles ensure_handle,
-    /// compact markers, and meta updates. Also threads each newly
-    /// persisted entry into the session search index so `search_sessions`
-    /// finds live work without waiting for a process restart.
-    pub(crate) fn persist_messages(
+    /// Persist messages to the session repo. Handles ensure_handle and
+    /// meta updates. Also threads each newly persisted entry into the
+    /// session search index so `search_sessions` finds live work
+    /// without waiting for a process restart.
+    pub(crate) async fn persist_messages(
         &self,
         conversation: &mut Conversation,
         agent: &str,
         created_by: &str,
         pre_run_len: usize,
-        compact_summary: Option<String>,
         event_trace: &[wcore::EventLine],
     ) {
-        self.ensure_handle(conversation, agent, created_by);
+        self.ensure_handle(conversation, agent, created_by).await;
         let Some(ref handle) = conversation.handle else {
             return;
         };
         let storage = self.storage();
 
-        let mut compacted = false;
-        let indexable_entries: Vec<wcore::model::HistoryEntry>;
-        if let Some(summary) = compact_summary {
-            // Stash the summary on the conversation so the next
-            // `meta()` call surfaces it to disk and to the index.
-            conversation.summary = Some(summary.clone());
-            // Archive first — if this fails, don't write a dangling
-            // marker that points at nothing. Archives are keyed by the
-            // session's storage slug so each session's phases stay
-            // grouped under one prefix in memory.
-            if let Some(archive_name) = self.write_archive(handle.as_str(), summary) {
-                let _ = storage.append_session_compact(handle, &archive_name);
-                compacted = true;
-                if conversation.history.len() > 1 {
-                    let tail: Vec<_> = conversation.history[1..]
-                        .iter()
-                        .filter(|e| !e.auto_injected)
-                        .cloned()
-                        .collect();
-                    let _ = storage.append_session_messages(handle, &tail);
-                    indexable_entries = tail;
-                } else {
-                    indexable_entries = Vec::new();
-                }
-            } else {
-                indexable_entries = Vec::new();
-            }
-        } else {
-            let new_entries: Vec<_> = conversation.history[pre_run_len..]
-                .iter()
-                .filter(|e| !e.auto_injected)
-                .cloned()
-                .collect();
-            let _ = storage.append_session_messages(handle, &new_entries);
-            indexable_entries = new_entries;
-        }
+        let new_entries: Vec<_> = conversation.history[pre_run_len..]
+            .iter()
+            .filter(|e| !e.auto_injected)
+            .cloned()
+            .collect();
+        let _ = storage.append_session_messages(handle, &new_entries).await;
         if !event_trace.is_empty() {
-            let _ = storage.append_session_events(handle, event_trace);
+            let _ = storage.append_session_events(handle, event_trace).await;
         }
         let meta = conversation.meta(agent, created_by);
-        let _ = storage.update_session_meta(handle, &meta);
+        let _ = storage.update_session_meta(handle, &meta).await;
 
-        // After storage is updated, reflect the same change into the
-        // search index. Compaction flushes the session's prior
-        // postings before re-indexing so old (pre-compact) hits don't
-        // shadow the new working context.
+        // Reflect the new entries into the search index so live work
+        // is findable without a process restart.
         let mut index = self.session_index.write();
-        if compacted && let Some(id) = index.handle_to_session_id(handle.as_str()) {
-            index.forget_session(id);
-        }
         let session_id = index.ensure_session(
             handle,
             agent,
@@ -403,103 +402,8 @@ impl<C: Config> Runtime<C> {
             &meta.created_at,
             &meta.updated_at,
         );
-        for entry in &indexable_entries {
+        for entry in &new_entries {
             index.insert_message(session_id, entry);
         }
-    }
-
-    pub(crate) fn spawn_title_generation(
-        &self,
-        _conversation_id: u64,
-        agent_name: &str,
-        created_by: &str,
-        conversation_mutex: Arc<Mutex<Conversation>>,
-    ) {
-        let model = self.model.clone();
-        let storage = self.storage().clone();
-        let agent_name = agent_name.to_owned();
-        let created_by = created_by.to_owned();
-        let model_name = self
-            .agents
-            .read()
-            .get(agent_name.as_str())
-            .map(|a| a.config.model.clone())
-            .unwrap_or_default();
-        if model_name.is_empty() {
-            return;
-        }
-        tokio::spawn(async move {
-            let (user_msg, assistant_msg) = {
-                let conversation = conversation_mutex.lock().await;
-                let user = conversation
-                    .history
-                    .iter()
-                    .find(|e| *e.role() == Role::User && !e.auto_injected)
-                    .map(|e| e.text().to_owned());
-                let assistant = conversation
-                    .history
-                    .iter()
-                    .find(|e| *e.role() == Role::Assistant)
-                    .map(|e| e.text().to_owned());
-                (user, assistant)
-            };
-
-            let Some(user) = user_msg else { return };
-            let Some(assistant) = assistant_msg else {
-                return;
-            };
-
-            let user_snippet: String = user.chars().take(200).collect();
-            let assistant_snippet: String = assistant.chars().take(200).collect();
-
-            let prompt = format!(
-                "Summarize this conversation in 3-6 words as a short title. \
-                 Return ONLY the title, nothing else.\n\n\
-                 User: {user_snippet}\nAssistant: {assistant_snippet}"
-            );
-
-            let request = ChatCompletionRequest {
-                model: model_name,
-                messages: vec![Message::user(&prompt)],
-                temperature: None,
-                top_p: None,
-                max_tokens: None,
-                stream: None,
-                stop: None,
-                tools: None,
-                tool_choice: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                seed: None,
-                user: None,
-                reasoning_effort: None,
-                thinking: None,
-                anthropic_max_tokens: None,
-                extra: Default::default(),
-            };
-
-            match model.send_ct(request).await {
-                Ok(response) => {
-                    if let Some(title) = response.content() {
-                        let title = title.trim().trim_matches('"').to_string();
-                        if !title.is_empty() {
-                            let mut conversation = conversation_mutex.lock().await;
-                            if conversation.title.is_empty() {
-                                conversation.title = title;
-                                if let Some(ref handle) = conversation.handle {
-                                    let _ = storage.update_session_meta(
-                                        handle,
-                                        &conversation.meta(&agent_name, &created_by),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::debug!("title generation failed: {e}");
-                }
-            }
-        });
     }
 }

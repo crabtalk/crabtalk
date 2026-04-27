@@ -11,11 +11,11 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},
-    fs,
     io::ErrorKind,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+use tokio::fs;
 use wcore::{
     AgentConfig, AgentId, ConversationMeta, DaemonConfig, EventLine, McpServerConfig,
     model::HistoryEntry,
@@ -66,32 +66,32 @@ impl FsStorage {
     /// Read and parse the settings file. Re-parsed on every call —
     /// settings are tiny and writes are rare, so a cache would be
     /// premature. Don't add one without measuring.
-    pub(super) fn read_settings(&self) -> Result<SettingsFile> {
+    pub(super) async fn read_settings(&self) -> Result<SettingsFile> {
         let path = self.settings_path();
-        match fs::read_to_string(&path) {
+        match fs::read_to_string(&path).await {
             Ok(content) => Ok(toml::from_str(&content)?),
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(SettingsFile::default()),
             Err(e) => Err(e.into()),
         }
     }
 
-    pub(super) fn write_settings(&self, file: &SettingsFile) -> Result<()> {
+    pub(super) async fn write_settings(&self, file: &SettingsFile) -> Result<()> {
         let path = self.settings_path();
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent).await?;
         }
         let body = toml::to_string_pretty(file)?;
         let mut content = String::with_capacity(SETTINGS_HEADER.len() + body.len());
         content.push_str(SETTINGS_HEADER);
         content.push_str(&body);
-        atomic_write(&path, content.as_bytes())
+        atomic_write(&path, content.as_bytes()).await
     }
 }
 
 /// Atomic write: same-directory tmp file + rename. Shared by every
 /// submodule that touches disk; lives here so the import path is
 /// uniform (`super::atomic_write`).
-pub(super) fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
+pub(super) async fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -99,9 +99,9 @@ pub(super) fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
     let mut tmp_os = path.to_path_buf().into_os_string();
     tmp_os.push(format!(".tmp.{}.{}", std::process::id(), nanos));
     let tmp_path = PathBuf::from(tmp_os);
-    fs::write(&tmp_path, data)?;
-    if let Err(e) = fs::rename(&tmp_path, path) {
-        let _ = fs::remove_file(&tmp_path);
+    fs::write(&tmp_path, data).await?;
+    if let Err(e) = fs::rename(&tmp_path, path).await {
+        let _ = fs::remove_file(&tmp_path).await;
         return Err(e.into());
     }
     Ok(())
@@ -119,103 +119,119 @@ pub(super) struct SettingsFile {
 }
 
 impl Storage for FsStorage {
-    fn list_skills(&self) -> Result<Vec<Skill>> {
-        skills::list_skills(self)
+    async fn list_skills(&self) -> Result<Vec<Skill>> {
+        skills::list_skills(self).await
     }
 
-    fn load_skill(&self, name: &str) -> Result<Option<Skill>> {
-        skills::load_skill(self, name)
+    async fn load_skill(&self, name: &str) -> Result<Option<Skill>> {
+        skills::load_skill(self, name).await
     }
 
-    fn create_session(&self, agent: &str, created_by: &str) -> Result<SessionHandle> {
-        sessions::create_session(self, agent, created_by)
+    async fn create_session(&self, agent: &str, created_by: &str) -> Result<SessionHandle> {
+        sessions::create_session(self, agent, created_by).await
     }
 
-    fn find_latest_session(&self, agent: &str, created_by: &str) -> Result<Option<SessionHandle>> {
-        sessions::find_latest_session(self, agent, created_by)
+    async fn find_latest_session(
+        &self,
+        agent: &str,
+        created_by: &str,
+    ) -> Result<Option<SessionHandle>> {
+        sessions::find_latest_session(self, agent, created_by).await
     }
 
-    fn load_session(&self, handle: &SessionHandle) -> Result<Option<SessionSnapshot>> {
-        sessions::load_session(self, handle)
+    async fn load_session(&self, handle: &SessionHandle) -> Result<Option<SessionSnapshot>> {
+        sessions::load_session(self, handle).await
     }
 
-    fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
-        sessions::list_sessions(self)
+    async fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
+        sessions::list_sessions(self).await
     }
 
-    fn append_session_messages(
+    async fn append_session_messages(
         &self,
         handle: &SessionHandle,
         entries: &[HistoryEntry],
     ) -> Result<()> {
-        sessions::append_session_messages(self, handle, entries)
+        sessions::append_session_messages(self, handle, entries).await
     }
 
-    fn append_session_events(&self, handle: &SessionHandle, events: &[EventLine]) -> Result<()> {
-        sessions::append_session_events(self, handle, events)
+    async fn append_session_events(
+        &self,
+        handle: &SessionHandle,
+        events: &[EventLine],
+    ) -> Result<()> {
+        sessions::append_session_events(self, handle, events).await
     }
 
-    fn append_session_compact(&self, handle: &SessionHandle, archive_name: &str) -> Result<()> {
-        sessions::append_session_compact(self, handle, archive_name)
+    async fn append_session_compact(
+        &self,
+        handle: &SessionHandle,
+        archive_name: &str,
+    ) -> Result<()> {
+        sessions::append_session_compact(self, handle, archive_name).await
     }
 
-    fn update_session_meta(&self, handle: &SessionHandle, meta: &ConversationMeta) -> Result<()> {
-        sessions::update_session_meta(self, handle, meta)
+    async fn update_session_meta(
+        &self,
+        handle: &SessionHandle,
+        meta: &ConversationMeta,
+    ) -> Result<()> {
+        sessions::update_session_meta(self, handle, meta).await
     }
 
-    fn delete_session(&self, handle: &SessionHandle) -> Result<bool> {
-        sessions::delete_session(self, handle)
+    async fn delete_session(&self, handle: &SessionHandle) -> Result<bool> {
+        sessions::delete_session(self, handle).await
     }
 
-    fn list_agents(&self) -> Result<Vec<AgentConfig>> {
-        agents::list_agents(self)
+    async fn list_agents(&self) -> Result<Vec<AgentConfig>> {
+        agents::list_agents(self).await
     }
 
-    fn load_agent(&self, id: &AgentId) -> Result<Option<AgentConfig>> {
-        agents::load_agent(self, id)
+    async fn load_agent(&self, id: &AgentId) -> Result<Option<AgentConfig>> {
+        agents::load_agent(self, id).await
     }
 
-    fn load_agent_by_name(&self, name: &str) -> Result<Option<AgentConfig>> {
-        agents::load_agent_by_name(self, name)
+    async fn load_agent_by_name(&self, name: &str) -> Result<Option<AgentConfig>> {
+        agents::load_agent_by_name(self, name).await
     }
 
-    fn upsert_agent(&self, config: &AgentConfig, prompt: &str) -> Result<()> {
-        agents::upsert_agent(self, config, prompt)
+    async fn upsert_agent(&self, config: &AgentConfig, prompt: &str) -> Result<()> {
+        agents::upsert_agent(self, config, prompt).await
     }
 
-    fn delete_agent(&self, id: &AgentId) -> Result<bool> {
-        agents::delete_agent(self, id)
+    async fn delete_agent(&self, id: &AgentId) -> Result<bool> {
+        agents::delete_agent(self, id).await
     }
 
-    fn rename_agent(&self, id: &AgentId, new_name: &str) -> Result<bool> {
-        agents::rename_agent(self, id, new_name)
+    async fn rename_agent(&self, id: &AgentId, new_name: &str) -> Result<bool> {
+        agents::rename_agent(self, id, new_name).await
     }
 
-    fn load_config(&self) -> Result<DaemonConfig> {
-        config::load_config(self)
+    async fn load_config(&self) -> Result<DaemonConfig> {
+        config::load_config(self).await
     }
 
-    fn save_config(&self, config: &DaemonConfig) -> Result<()> {
-        config::save_config(self, config)
+    async fn save_config(&self, config: &DaemonConfig) -> Result<()> {
+        config::save_config(self, config).await
     }
 
-    fn scaffold(&self, default_model: &str) -> Result<()> {
-        scaffold::scaffold(self, default_model)
+    async fn scaffold(&self, default_model: &str) -> Result<()> {
+        scaffold::scaffold(self, default_model).await
     }
 
-    fn list_mcps(&self) -> Result<BTreeMap<String, McpServerConfig>> {
-        mcp::list_mcps(self)
+    async fn list_mcps(&self) -> Result<BTreeMap<String, McpServerConfig>> {
+        mcp::list_mcps(self).await
     }
 
-    fn load_mcp(&self, name: &str) -> Result<Option<McpServerConfig>> {
-        mcp::load_mcp(self, name)
+    async fn load_mcp(&self, name: &str) -> Result<Option<McpServerConfig>> {
+        mcp::load_mcp(self, name).await
     }
 
-    fn upsert_mcp(&self, config: &McpServerConfig) -> Result<()> {
-        mcp::upsert_mcp(self, config)
+    async fn upsert_mcp(&self, config: &McpServerConfig) -> Result<()> {
+        mcp::upsert_mcp(self, config).await
     }
 
-    fn delete_mcp(&self, name: &str) -> Result<bool> {
-        mcp::delete_mcp(self, name)
+    async fn delete_mcp(&self, name: &str) -> Result<bool> {
+        mcp::delete_mcp(self, name).await
     }
 }

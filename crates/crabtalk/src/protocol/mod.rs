@@ -120,7 +120,7 @@ impl<P: Provider + 'static> Server for Daemon<P> {
             .map_err(|e| anyhow::anyhow!("invalid AgentConfig JSON: {e}"))?;
         config.name = req.name;
         let rt = self.runtime.read().await.clone();
-        let registered = rt.create_agent(config, &req.prompt)?;
+        let registered = rt.create_agent(config, &req.prompt).await?;
         Ok(AgentInfo::from(&registered))
     }
 
@@ -129,18 +129,18 @@ impl<P: Provider + 'static> Server for Daemon<P> {
             .map_err(|e| anyhow::anyhow!("invalid AgentConfig JSON: {e}"))?;
         config.name = req.name;
         let rt = self.runtime.read().await.clone();
-        let registered = rt.update_agent(config, &req.prompt)?;
+        let registered = rt.update_agent(config, &req.prompt).await?;
         Ok(AgentInfo::from(&registered))
     }
 
     async fn delete_agent(&self, name: String) -> Result<bool> {
         let rt = self.runtime.read().await.clone();
-        rt.purge_agent(&name)
+        rt.purge_agent(&name).await
     }
 
     async fn rename_agent(&self, old_name: String, new_name: String) -> Result<AgentInfo> {
         let rt = self.runtime.read().await.clone();
-        let registered = rt.rename_agent(&old_name, &new_name)?;
+        let registered = rt.rename_agent(&old_name, &new_name).await?;
         Ok(AgentInfo::from(&registered))
     }
 
@@ -166,6 +166,7 @@ impl<P: Provider + 'static> Server for Daemon<P> {
         let rt = self.runtime.read().await.clone();
         Ok(rt
             .list_conversations(&agent, &sender)
+            .await
             .into_iter()
             .map(|mut c| {
                 c.date = format_date_label(&c.date);
@@ -176,12 +177,12 @@ impl<P: Provider + 'static> Server for Daemon<P> {
 
     async fn get_conversation_history(&self, file_path: String) -> Result<ConversationHistory> {
         let rt = self.runtime.read().await.clone();
-        rt.load_conversation_history(&file_path)
+        rt.load_conversation_history(&file_path).await
     }
 
     async fn delete_conversation(&self, file_path: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
-        rt.delete_conversation(&file_path)
+        rt.delete_conversation(&file_path).await
     }
 
     async fn list_mcps(&self) -> Result<Vec<McpInfo>> {
@@ -206,7 +207,7 @@ impl<P: Provider + 'static> Server for Daemon<P> {
 
     async fn list_models(&self) -> Result<Vec<ModelInfo>> {
         let rt = self.runtime.read().await.clone();
-        Ok(rt.list_models())
+        Ok(rt.list_models().await)
     }
 
     async fn list_plugins(&self) -> Result<Vec<PluginInfo>> {

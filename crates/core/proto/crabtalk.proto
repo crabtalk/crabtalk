@@ -381,7 +381,16 @@ message StreamEvent {
     TextEndEvent text_end = 11;
     ThinkingStartEvent thinking_start = 12;
     ThinkingEndEvent thinking_end = 13;
+    ContextUsageEvent context_usage = 14;
   }
+}
+
+// Real token counts reported by the provider after a completed step.
+// Emitted once per LLM call so clients can detect context pressure
+// and decide when to call compact_conversation. The daemon does not
+// act on this — policy is the client's.
+message ContextUsageEvent {
+  TokenUsage usage = 1;
 }
 
 message TextStartEvent {
@@ -528,10 +537,9 @@ message AgentInfo {
   bool thinking = 6;
   repeated string skills = 8;
   repeated string mcps = 9;
-  optional uint32 compact_threshold = 10;
   uint32 compact_tool_max_len = 11;
-  reserved 7;
-  reserved "members";
+  reserved 7, 10;
+  reserved "members", "compact_threshold";
 }
 
 message AgentList {

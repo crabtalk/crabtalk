@@ -1,5 +1,12 @@
 # 0000 - Compaction
 
+> **Superseded by [0189 - Policy at the Edge](0189-policy-at-the-edge.md).**
+> The auto-compaction policy described here was removed. Compaction
+> remains as a mechanism, but the trigger is now an explicit
+> `compact_conversation` RPC; clients gate it on the new
+> `AgentEvent::ContextUsage` events instead of the daemon guessing
+> from a `chars/4` heuristic.
+
 - Feature Name: Auto-Compaction
 - Start Date: 2025-12-01
 - Discussion: foundational design
