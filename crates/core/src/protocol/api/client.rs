@@ -851,8 +851,8 @@ pub trait Client: Send {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(true),
                 ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, .. })),
-                } if code == 404 => Ok(false),
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code: 404, .. })),
+                } => Ok(false),
                 ServerMessage {
                     msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
