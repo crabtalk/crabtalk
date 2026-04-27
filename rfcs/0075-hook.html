@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9b85eef6.js";
+            window.path_to_searchindex_js = "../searchindex-be77618b.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-ec115bf0.js"></script>
+        <script src="../toc-b06bde72.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -187,6 +187,9 @@
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/pull/75">#75</a></li>
 <li>Crates: core, runtime, daemon</li>
 </ul>
+<blockquote>
+<p><strong>Updated by <a href="0189-policy-at-the-edge.html">0189</a> (2026-04-28).</strong> <code>on_before_run</code> was removed; the trait now exposes <code>on_register_agent</code> / <code>on_unregister_agent</code> instead. See 0189 for the rationale.</p>
+</blockquote>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <p>The Hook trait is the central extensibility point for agent lifecycle. It
 defines five methods that the runtime calls at specific points: building an

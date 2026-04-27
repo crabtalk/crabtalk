@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9b85eef6.js";
+            window.path_to_searchindex_js = "../searchindex-be77618b.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-ec115bf0.js"></script>
+        <script src="../toc-b06bde72.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -188,6 +188,9 @@
 <li>Crates: memory, crabtalk, runtime</li>
 <li>Supersedes: <a href="0038-memory.html">0038 (Memory)</a></li>
 </ul>
+<blockquote>
+<p><strong>Updated by <a href="0189-policy-at-the-edge.html">0189</a> (2026-04-28).</strong> Auto-recall (<code>Memory::before_run</code>) was removed; <code>recall</code> is now strictly model-driven. See 0189 for the rationale.</p>
+</blockquote>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <p>A standalone <code>crabtalk-memory</code> crate backing agent memory with a single binary db file, atomic persistence, and BM25 recall. The markdown tree is a human-facing export — not the primary store. Entries come in two kinds: <code>Note</code> (agent-written via <code>remember</code>/<code>forget</code>) and <code>Archive</code> (compaction output). The agent’s system prompt is human-managed via <code>Crab.md</code> (existing layered-instructions mechanism) — the memory store has no opinion on it.</p>
 <h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>

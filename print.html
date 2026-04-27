@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-9b85eef6.js";
+            window.path_to_searchindex_js = "searchindex-be77618b.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-ec115bf0.js"></script>
+        <script src="toc-b06bde72.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -538,111 +538,6 @@ architecture must be right. Everything else follows.</p>
 <h2 id="upstream"><a class="header" href="#upstream">Upstream</a></h2>
 <p><code>crabllm</code> is maintained at <a href="https://github.com/crabtalk/crabllm"><code>crabtalk/crabllm</code></a>. Bug fixes, new backends, and trait changes are filed there. Crabtalk upgrades its crabllm dependency on release.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="0000---compaction"><a class="header" href="#0000---compaction">0000 - Compaction</a></h1>
-<ul>
-<li>Feature Name: Auto-Compaction</li>
-<li>Start Date: 2025-12-01</li>
-<li>Discussion: foundational design</li>
-<li>Crates: core</li>
-</ul>
-<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
-<p>Automatic context management for conversations that outgrow the LLM’s context
-window. When history exceeds a token threshold, the agent uses the LLM itself
-to summarize the conversation into a compact briefing that replaces the full
-history. The conversation continues with no interruption.</p>
-<h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
-<p>LLM context windows are finite. A conversation that runs long enough — multi-step
-tool use, research sessions, debugging loops — will exceed the model’s limit.
-When that happens, the request fails. The user loses their session.</p>
-<p>Every LLM application has to solve this problem. The common approaches are:</p>
-<ul>
-<li><strong>Truncation</strong> — drop old messages. Cheap but lossy. The agent forgets
-decisions, context, and user preferences from earlier in the conversation.</li>
-<li><strong>Sliding window</strong> — keep the last N messages. Same problem: the agent loses
-the beginning of the conversation.</li>
-<li><strong>Retrieval</strong> — embed messages and retrieve relevant ones. Heavyweight:
-requires a vector store, an embedding model, and a retrieval strategy.</li>
-</ul>
-<p>Crabtalk’s approach: <strong>use the LLM to summarize itself.</strong> The same model that’s
-having the conversation produces a dense summary of everything important. The
-summary replaces the history. The conversation continues as if nothing happened.</p>
-<h2 id="design"><a class="header" href="#design">Design</a></h2>
-<h3 id="trigger"><a class="header" href="#trigger">Trigger</a></h3>
-<p>After each agent step (LLM response + tool results), the runtime estimates the
-token count of the current history. If it exceeds <code>compact_threshold</code> (default
-100,000 tokens), compaction fires automatically.</p>
-<p>Token estimation is a heuristic: ~4 characters per token, counting message
-content, reasoning content, and tool call arguments. It’s deliberately rough —
-the threshold is a safety margin, not a precise limit.</p>
-<h3 id="compaction-1"><a class="header" href="#compaction-1">Compaction</a></h3>
-<p>The agent sends the full history to the LLM with a compaction system prompt
-that instructs it to:</p>
-<p><strong>Preserve:</strong></p>
-<ul>
-<li>Agent identity (name, personality, relationship notes)</li>
-<li>User profile (name, preferences, context)</li>
-<li>Key decisions and their rationale</li>
-<li>Active tasks and their status</li>
-<li>Important facts, constraints, and preferences</li>
-<li>Tool results still relevant to ongoing work</li>
-</ul>
-<p><strong>Omit:</strong></p>
-<ul>
-<li>Greetings, filler, acknowledgements</li>
-<li>Superseded plans or abandoned approaches</li>
-<li>Tool calls whose results have been incorporated</li>
-</ul>
-<p>The compaction prompt also includes the agent’s system prompt, so the LLM
-preserves identity and profile information from <code>&lt;self&gt;</code>, <code>&lt;identity&gt;</code>, and
-<code>&lt;profile&gt;</code> blocks.</p>
-<p>The output is dense prose, not bullet points — it becomes the new conversation
-context and must be self-contained.</p>
-<h3 id="replacement"><a class="header" href="#replacement">Replacement</a></h3>
-<p>After compaction:</p>
-<ol>
-<li>The summary is yielded as an <code>AgentEvent::Compact { summary }</code>.</li>
-<li>The session history is replaced with a single user message containing the
-summary.</li>
-<li>A <code>[context compacted]</code> text delta is yielded so the user sees it happened.</li>
-<li>The agent loop continues — the next step sees the compact summary as its
-entire history.</li>
-</ol>
-<p>On disk, a <code>{"compact":"..."}</code> marker is appended to the session JSONL. On
-reload, <code>load_context</code> reads from the last compact marker forward. History
-before the marker is archived in place — still in the file, never deleted.</p>
-<h3 id="interaction-with-other-systems"><a class="header" href="#interaction-with-other-systems">Interaction with other systems</a></h3>
-<ul>
-<li><strong>Memory auto-recall</strong> — runs fresh every turn via <code>on_before_run</code>. Compaction
-doesn’t affect recall — memories are separate from conversation history.</li>
-<li><strong>Client-initiated compact</strong> (RFC 0078) — the same <code>Agent::compact()</code> method,
-but triggered by the client for @-mention handoff rather than by the token
-threshold.</li>
-<li><strong>Session persistence</strong> — compact markers are append-only in the JSONL. The
-full history survives on disk even after in-memory replacement.</li>
-</ul>
-<h3 id="configuration-1"><a class="header" href="#configuration-1">Configuration</a></h3>
-<p>Per-agent configurable. <code>None</code> disables auto-compaction. The default of 100,000
-tokens leaves headroom below most model context limits (128K–200K) for the
-system prompt, tool schemas, and injected context.</p>
-<h2 id="alternatives"><a class="header" href="#alternatives">Alternatives</a></h2>
-<p><strong>Truncation / sliding window.</strong> Cheap but the agent loses context. In a
-multi-step debugging session, forgetting the first half of the investigation
-means repeating work. Compaction preserves the substance while discarding the
-noise.</p>
-<p><strong>RAG over message history.</strong> Retrieve relevant messages via embeddings. More
-precise than compaction but requires infrastructure (vector store, embedding
-model) and adds latency to every turn. Compaction is zero-infrastructure — it
-uses the model already in the conversation.</p>
-<p><strong>No automatic compaction.</strong> Let the user manage context manually. Rejected
-because context overflow is invisible until the request fails. The user
-shouldn’t need to monitor token counts.</p>
-<h2 id="unresolved-questions"><a class="header" href="#unresolved-questions">Unresolved Questions</a></h2>
-<ul>
-<li>Should the compaction prompt be customizable per agent?</li>
-<li>Should the threshold adapt based on the model’s actual context limit rather
-than a fixed number?</li>
-</ul>
-<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="0009---transport"><a class="header" href="#0009---transport">0009 - Transport</a></h1>
 <ul>
 <li>Feature Name: UDS and TCP Transport Layers</li>
@@ -650,11 +545,11 @@ than a fixed number?</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/9">#9</a></li>
 <li>Crates: transport, core</li>
 </ul>
-<h2 id="summary-1"><a class="header" href="#summary-1">Summary</a></h2>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <p>A transport layer providing Unix domain socket (UDS) and TCP connectivity
 between clients and the crabtalk daemon, built on a shared length-prefixed
 protobuf codec defined in <code>core</code>.</p>
-<h2 id="motivation-1"><a class="header" href="#motivation-1">Motivation</a></h2>
+<h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
 <p>The daemon needs to accept connections from local CLI clients and remote clients
 (Telegram, web gateways). UDS is the natural choice for same-machine
 communication — no port management, filesystem-based access control. TCP is
@@ -663,7 +558,7 @@ required for remote access and cross-platform support (Windows has no UDS).</p>
 definitions belong in <code>core</code> so that any transport can use them without
 depending on each other. The <code>transport</code> crate provides the concrete connection
 machinery.</p>
-<h2 id="design-1"><a class="header" href="#design-1">Design</a></h2>
+<h2 id="design"><a class="header" href="#design">Design</a></h2>
 <h3 id="codec-coreprotocolcodec"><a class="header" href="#codec-coreprotocolcodec">Codec (<code>core::protocol::codec</code>)</a></h3>
 <p>Wire format: <code>[u32 BE length][protobuf payload]</code>. The length prefix counts
 payload bytes only, excluding the 4-byte header itself.</p>
@@ -722,7 +617,7 @@ on <code>Client</code> (e.g., <code>stream()</code>) handle sentinel detection (
 <p>Connections are not <code>Clone</code> — one connection per session. The client struct
 (<code>CrabtalkClient</code> / <code>TcpClient</code>) holds config and produces connections on
 demand.</p>
-<h2 id="alternatives-1"><a class="header" href="#alternatives-1">Alternatives</a></h2>
+<h2 id="alternatives"><a class="header" href="#alternatives">Alternatives</a></h2>
 <p><strong>tokio-util <code>LengthDelimitedCodec</code>.</strong> Would save the manual length-prefix
 code but adds a dependency for ~50 lines of straightforward framing. The
 hand-rolled codec is simpler to audit and has no extra allocations.</p>
@@ -734,7 +629,7 @@ length-prefixed stream, no HTTP layer, no service definitions beyond the
 identical but kept as separate modules. A generic <code>Transport</code> trait would save
 ~20 lines of duplication but add an abstraction with exactly two implementors.
 Not worth it.</p>
-<h2 id="unresolved-questions-1"><a class="header" href="#unresolved-questions-1">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions"><a class="header" href="#unresolved-questions">Unresolved Questions</a></h2>
 <ul>
 <li>Should the transport support TLS for TCP connections in non-localhost
 deployments?</li>
@@ -749,16 +644,16 @@ is the protocol-level <code>Ping</code>/<code>Pong</code> sufficient?</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/pull/18">#18</a></li>
 <li>Crates: core</li>
 </ul>
-<h2 id="summary-2"><a class="header" href="#summary-2">Summary</a></h2>
+<h2 id="summary-1"><a class="header" href="#summary-1">Summary</a></h2>
 <p>A protobuf-based wire protocol defining all client-server communication for the
 crabtalk daemon, with a <code>Server</code> trait for dispatch and a <code>Client</code> trait for
 typed request methods.</p>
-<h2 id="motivation-2"><a class="header" href="#motivation-2">Motivation</a></h2>
+<h2 id="motivation-1"><a class="header" href="#motivation-1">Motivation</a></h2>
 <p>The daemon mediates between multiple clients (CLI, Telegram, web) and multiple
 agents. A well-defined wire protocol decouples client and server implementations
 and makes the contract explicit. Protobuf was chosen for compact binary
 encoding, language-neutral schema, and generated code via <code>prost</code>.</p>
-<h2 id="design-2"><a class="header" href="#design-2">Design</a></h2>
+<h2 id="design-1"><a class="header" href="#design-1">Design</a></h2>
 <h3 id="wire-messages-crabtalkproto"><a class="header" href="#wire-messages-crabtalkproto">Wire messages (<code>crabtalk.proto</code>)</a></h3>
 <p>Two top-level envelopes using <code>oneof</code>:</p>
 <p><strong>ClientMessage</strong> — 15 variants:</p>
@@ -866,7 +761,7 @@ each frame through <code>TryFrom&lt;ServerMessage&gt;</code> for type-safe event
 <code>SendResponse -&gt; ServerMessage</code>). <code>TryFrom</code> impls unwrap in the other direction,
 returning an error for unexpected variants. This keeps call sites clean — no
 manual enum construction.</p>
-<h2 id="alternatives-2"><a class="header" href="#alternatives-2">Alternatives</a></h2>
+<h2 id="alternatives-1"><a class="header" href="#alternatives-1">Alternatives</a></h2>
 <p><strong>JSON over WebSocket.</strong> Simpler to debug with <code>curl</code>, but larger payloads and
 no schema enforcement. Protobuf catches schema mismatches at compile time.</p>
 <p><strong>gRPC service definitions.</strong> Would provide streaming and code generation out of
@@ -878,7 +773,7 @@ and sequential — one outstanding request per connection at a time. This is a
 fundamental design constraint: clients must wait for a response before sending
 the next request. No need for request IDs or multiplexing. If multiplexing is
 needed later, it belongs in the transport layer, not the protocol.</p>
-<h2 id="unresolved-questions-2"><a class="header" href="#unresolved-questions-2">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-1"><a class="header" href="#unresolved-questions-1">Unresolved Questions</a></h2>
 <ul>
 <li>Should the protocol negotiate a version on connect to detect client/server
 mismatches?</li>
@@ -895,11 +790,11 @@ session’s events rather than all events?</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/27">#27</a></li>
 <li>Crates: model, core</li>
 </ul>
-<h2 id="summary-3"><a class="header" href="#summary-3">Summary</a></h2>
+<h2 id="summary-2"><a class="header" href="#summary-2">Summary</a></h2>
 <p>A provider registry that wraps multiple LLM backends (OpenAI, Anthropic, Google,
 Bedrock, Azure) behind a unified <code>Model</code> trait, with per-model provider
 instances, runtime model switching, and retry logic with exponential backoff.</p>
-<h2 id="motivation-3"><a class="header" href="#motivation-3">Motivation</a></h2>
+<h2 id="motivation-2"><a class="header" href="#motivation-2">Motivation</a></h2>
 <p>The daemon talks to LLMs. Which LLM, from which provider, through which API —
 that’s configuration, not architecture. The agent code should call <code>model.send()</code>
 and not care whether it’s hitting Anthropic directly or an OpenAI-compatible
@@ -913,7 +808,7 @@ proxy.</p>
 <li>Type conversion between crabtalk’s message types and each provider’s wire
 format.</li>
 </ul>
-<h2 id="design-3"><a class="header" href="#design-3">Design</a></h2>
+<h2 id="design-2"><a class="header" href="#design-2">Design</a></h2>
 <h3 id="model-trait-core"><a class="header" href="#model-trait-core">Model trait (core)</a></h3>
 <p>Defined in <code>wcore::model</code>:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
@@ -972,7 +867,7 @@ exponential backoff and full jitter:</p>
 Message, StreamChunk) and <code>crabllm_core</code> types (ChatCompletionRequest,
 ChatCompletionResponse). This isolates the external library’s types from the
 rest of the codebase.</p>
-<h2 id="alternatives-3"><a class="header" href="#alternatives-3">Alternatives</a></h2>
+<h2 id="alternatives-2"><a class="header" href="#alternatives-2">Alternatives</a></h2>
 <p><strong>Direct provider calls without a registry.</strong> Each agent holds its own provider.
 Rejected because runtime model switching and centralized configuration require
 a shared registry.</p>
@@ -980,7 +875,7 @@ a shared registry.</p>
 concrete <code>Provider</code> enum. Rejected because <code>Model</code> has generic return types
 (impl Stream) that prevent object safety. The enum dispatch via
 <code>crabllm_provider::Provider</code> handles this naturally.</p>
-<h2 id="unresolved-questions-3"><a class="header" href="#unresolved-questions-3">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-2"><a class="header" href="#unresolved-questions-2">Unresolved Questions</a></h2>
 <ul>
 <li>Should the registry support fallback chains (try provider A, fall back to B)?</li>
 <li>Should streaming requests retry on connection failures before the first chunk?</li>
@@ -993,11 +888,11 @@ concrete <code>Provider</code> enum. Rejected because <code>Model</code> has gen
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/36">#36</a></li>
 <li>Crates: runtime</li>
 </ul>
-<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
+<h2 id="summary-3"><a class="header" href="#summary-3">Summary</a></h2>
 <p>How crabtalk discovers, loads, dispatches, hot-reloads, and scopes skills. The
 skill format follows the <a href="https://agentskills.io">agentskills.io</a> convention —
 this RFC covers the loading mechanism, not the format.</p>
-<h2 id="motivation-4"><a class="header" href="#motivation-4">Motivation</a></h2>
+<h2 id="motivation-3"><a class="header" href="#motivation-3">Motivation</a></h2>
 <p>Agents need extensible behavior without recompilation. Skills are the simplest
 unit that works: a markdown file with a name, description, and a prompt body.
 No code generation, no plugin API, no runtime linking.</p>
@@ -1005,7 +900,7 @@ No code generation, no plugin API, no runtime linking.</p>
 needs to decide is how skills are found on disk, how they’re resolved at
 runtime, how they stay current without restarts, and how agents are restricted
 to subsets of available skills.</p>
-<h2 id="design-4"><a class="header" href="#design-4">Design</a></h2>
+<h2 id="design-3"><a class="header" href="#design-3">Design</a></h2>
 <h3 id="format-1"><a class="header" href="#format-1">Format</a></h3>
 <p>SKILL.md follows the <a href="https://agentskills.io">agentskills.io</a> convention.
 Required fields: <code>name</code>, <code>description</code>. Optional: <code>allowed-tools</code>. The markdown
@@ -1055,108 +950,17 @@ happens before tool dispatch — it’s prompt injection, not a tool call.</p>
 <p>Agents can be restricted to a subset of skills via <code>AgentScope.skills</code>. If
 non-empty, only listed skills are available. Empty means unrestricted. Scoping
 applies to both exact load, fuzzy listing, and slash resolution.</p>
-<h2 id="alternatives-4"><a class="header" href="#alternatives-4">Alternatives</a></h2>
+<h2 id="alternatives-3"><a class="header" href="#alternatives-3">Alternatives</a></h2>
 <p><strong>Code-based plugins (dylib / WASM).</strong> Far more powerful but far more complex.
 Skills are prompt injection, not code execution. The simplicity of markdown
 files is the point.</p>
 <p><strong>Database-backed registry.</strong> Adds persistence complexity for a registry that
 rebuilds in milliseconds from disk. Not needed.</p>
-<h2 id="unresolved-questions-4"><a class="header" href="#unresolved-questions-4">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-3"><a class="header" href="#unresolved-questions-3">Unresolved Questions</a></h2>
 <ul>
 <li>Should skills support arguments beyond the skill name (parameterized prompts)?</li>
 <li>Should <code>allowed-tools</code> be enforced at the runtime level? Currently it is not
 enforced — it exists in the format but has no runtime effect.</li>
-</ul>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="0038---memory"><a class="header" href="#0038---memory">0038 - Memory</a></h1>
-<blockquote>
-<p><strong>Superseded by <a href="#0150---memory-store">0150 - Memory Store</a>.</strong>
-The file-per-entry premise was replaced by a single binary db file with a markdown dump tree for humans. <code>description</code> is gone; <code>aliases</code> and <code>EntryKind</code> (Note / Archive / Prompt) are new; the reserved <code>global</code> Prompt entry replaces <code>MEMORY.md</code>.</p>
-</blockquote>
-<ul>
-<li>Feature Name: Memory System</li>
-<li>Start Date: 2026-02-10</li>
-<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/38">#38</a></li>
-<li>Crates: runtime</li>
-</ul>
-<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
-<p>File-per-entry memory with BM25-ranked recall, a curated index (MEMORY.md), and
-an identity file (Crab.md) for agent personality. No database — just files.</p>
-<h2 id="motivation-5"><a class="header" href="#motivation-5">Motivation</a></h2>
-<p>Agents need persistent knowledge across sessions. The original approach used a
-graph memory backed by a database, but that added operational weight and
-complexity for what is fundamentally a collection of text entries that need to
-be searched.</p>
-<p>The system must:</p>
-<ul>
-<li>Store entries as individual files (inspectable, editable by humans).</li>
-<li>Search by relevance, not just exact match.</li>
-<li>Inject relevant memories automatically before each agent turn.</li>
-<li>Support a curated overview (MEMORY.md) that is always present in context.</li>
-<li>Support an identity/soul file (Crab.md) for agent personality.</li>
-</ul>
-<h2 id="design-5"><a class="header" href="#design-5">Design</a></h2>
-<h3 id="directory-structure"><a class="header" href="#directory-structure">Directory structure</a></h3>
-<pre><code>~/.crabtalk/config/
-├── Crab.md                  # identity file (one level above memory/)
-└── memory/
-    ├── entries/
-    │   ├── entry-name.md
-    │   └── ...
-    └── MEMORY.md
-</code></pre>
-<p>Crab.md lives one level above <code>memory/</code> because it’s an agent-level identity
-file, not a memory entry. It’s shared across the config, not scoped to memory.</p>
-<h3 id="entry-format"><a class="header" href="#entry-format">Entry format</a></h3>
-<p>Frontmatter markdown. Each entry has a name, description (used for search), and
-content.</p>
-<pre><code class="language-markdown">---
-name: Entry Name
-description: Short searchable description
----
-
-Long-form content here.
-</code></pre>
-<p>Filenames are slugified from the entry name: <code>entry-name.md</code>.</p>
-<h3 id="recall-pipeline"><a class="header" href="#recall-pipeline">Recall pipeline</a></h3>
-<p>BM25 scoring over all entries. The query is matched against the concatenation of
-description + content. Results are ranked by relevance and capped at
-<code>recall_limit</code> (configurable).</p>
-<h3 id="auto-recall"><a class="header" href="#auto-recall">Auto-recall</a></h3>
-<p>Before each agent turn (<code>on_before_run</code>), the system extracts the first 8 words
-of the last user message (an arbitrary cutoff — short enough to avoid noise,
-long enough to carry intent), runs <code>recall()</code>, and injects matching results as
-an auto-injected <code>&lt;recall&gt;</code> block. Auto-injected messages are not persisted and
-are refreshed every turn.</p>
-<h3 id="system-prompt-injection"><a class="header" href="#system-prompt-injection">System prompt injection</a></h3>
-<ul>
-<li><strong>MEMORY.md</strong> — injected as a <code>&lt;memory&gt;</code> block in the system prompt via
-<code>build_prompt()</code>. Always present if non-empty.</li>
-<li><strong>Crab.md</strong> — the identity file. Injected via <code>build_soul()</code>. Writing is
-gated by <code>soul_editable</code> config.</li>
-<li><strong>Memory prompt</strong> — instructions for the agent on how to use memory tools,
-included from <code>prompts/memory.md</code>.</li>
-</ul>
-<h3 id="tools"><a class="header" href="#tools">Tools</a></h3>
-<p>Four tools exposed to agents:</p>
-<ul>
-<li><code>remember(name, description, content)</code> — create or overwrite an entry.</li>
-<li><code>forget(name)</code> — delete an entry.</li>
-<li><code>recall(query, limit)</code> — BM25 search, returns formatted results.</li>
-<li><code>memory(content)</code> — overwrite MEMORY.md index.</li>
-</ul>
-<h2 id="alternatives-5"><a class="header" href="#alternatives-5">Alternatives</a></h2>
-<p><strong>Graph memory with database.</strong> The original system. Rejected for operational
-complexity. Files are simpler, inspectable, and sufficient for the use case.</p>
-<p><strong>Embedding-based search.</strong> Would require a vector store and embedding model.
-BM25 is fast, dependency-free, and works well enough for the entry sizes we
-deal with.</p>
-<p><strong>Single file storage.</strong> One big memory file instead of file-per-entry. Rejected
-because individual files are easier to inspect, edit, and version.</p>
-<h2 id="unresolved-questions-5"><a class="header" href="#unresolved-questions-5">Unresolved Questions</a></h2>
-<ul>
-<li>Should auto-recall use more than the first 8 words for the query?</li>
-<li>Should entries support tags or categories for non-BM25 filtering?</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="0043---component-system"><a class="header" href="#0043---component-system">0043 - Component System</a></h1>
@@ -1166,12 +970,12 @@ because individual files are easier to inspect, edit, and version.</p>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/43">#43</a></li>
 <li>Crates: command</li>
 </ul>
-<h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
+<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
 <p>Crabtalk components are independent binaries that install as system services and
 connect to the daemon via auto-discovery. They crash alone, swap without
 restarts, and the daemon never loads them. This is the manifesto’s composition
 model made concrete.</p>
-<h2 id="motivation-6"><a class="header" href="#motivation-6">Motivation</a></h2>
+<h2 id="motivation-4"><a class="header" href="#motivation-4">Motivation</a></h2>
 <p>The manifesto says: “You put what you need on your PATH. They connect as
 clients. They crash alone. They swap without restarts.”</p>
 <p>This requires a system where components — search, gateways, tool servers — are
@@ -1182,7 +986,7 @@ the daemon down.</p>
 crashes, it can take the daemon with it: zombie processes, leaked file
 descriptors, blocked event loops. The subprocess model creates shared fate.
 The component model eliminates it.</p>
-<h2 id="design-6"><a class="header" href="#design-6">Design</a></h2>
+<h2 id="design-4"><a class="header" href="#design-4">Design</a></h2>
 <h3 id="the-contract"><a class="header" href="#the-contract">The contract</a></h3>
 <p>A component is a binary that:</p>
 <ol>
@@ -1237,7 +1041,7 @@ new port on next scan.</p>
 <h3 id="entry-point-1"><a class="header" href="#entry-point-1">Entry point</a></h3>
 <p>The <code>run()</code> function handles tracing init and tokio bootstrap for all component
 binaries.</p>
-<h2 id="alternatives-6"><a class="header" href="#alternatives-6">Alternatives</a></h2>
+<h2 id="alternatives-4"><a class="header" href="#alternatives-4">Alternatives</a></h2>
 <p><strong>Subprocess management.</strong> The daemon spawns and manages components as child
 processes. Rejected because shared fate — a broken child can break the daemon.
 This is the approach we explicitly designed against.</p>
@@ -1246,7 +1050,7 @@ crabtalk is local-first. System services are the right abstraction for a
 personal daemon on your machine.</p>
 <p><strong>Shell scripts for service management.</strong> Works on Unix, breaks on Windows,
 drifts across components. A shared Rust crate is portable and stays consistent.</p>
-<h2 id="unresolved-questions-6"><a class="header" href="#unresolved-questions-6">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-4"><a class="header" href="#unresolved-questions-4">Unresolved Questions</a></h2>
 <ul>
 <li>Should the Service trait support health checks?</li>
 <li>Should the daemon watch the run directory for new port files instead of
@@ -1260,13 +1064,16 @@ scanning only at startup/reload?</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/pull/75">#75</a></li>
 <li>Crates: core, runtime, daemon</li>
 </ul>
-<h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
+<blockquote>
+<p><strong>Updated by <a href="#0189---policy-at-the-edge">0189</a> (2026-04-28).</strong> <code>on_before_run</code> was removed; the trait now exposes <code>on_register_agent</code> / <code>on_unregister_agent</code> instead. See 0189 for the rationale.</p>
+</blockquote>
+<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
 <p>The Hook trait is the central extensibility point for agent lifecycle. It
 defines five methods that the runtime calls at specific points: building an
 agent, registering tools, preprocessing input, injecting context before a run,
 and observing events. Everything that customizes agent behavior — skills, memory,
 MCP, scoping, prompt injection — composes through this trait.</p>
-<h2 id="motivation-7"><a class="header" href="#motivation-7">Motivation</a></h2>
+<h2 id="motivation-5"><a class="header" href="#motivation-5">Motivation</a></h2>
 <p>When the runtime was split out of the daemon (#75), a clean interface was needed
 between the runtime (which executes agents) and the hook implementations (which
 customize them). The runtime must not know about skills, memory, MCP, or daemon
@@ -1274,7 +1081,7 @@ infrastructure. It only knows it has a <code>Hook</code> and calls its methods a
 times.</p>
 <p>This separation enables two modes: the daemon (full hook with skills, MCP,
 memory, event broadcasting) and embedded use (no hook, or a minimal one).</p>
-<h2 id="design-7"><a class="header" href="#design-7">Design</a></h2>
+<h2 id="design-5"><a class="header" href="#design-5">Design</a></h2>
 <h3 id="the-trait"><a class="header" href="#the-trait">The trait</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1334,14 +1141,14 @@ schemas). The runtime calls <code>dispatch_tool</code> when an agent produces a 
 Dispatch enforces scoping before routing.</p>
 <p>Dispatch returns <code>Result&lt;String, String&gt;</code>. <code>Ok</code> carries normal tool output; <code>Err</code> carries a handler-reported failure (invalid args, not found, scope rejection, operation error) or a dispatch-level failure (no tool sender, tool channel closed, reply dropped). The same convention applies to the <code>Host</code> trait methods for server-specific tools (<code>dispatch_ask_user</code>, <code>dispatch_delegate</code>, <code>dispatch_custom_tool</code>). The distinction propagates to the <code>AgentEvent::ToolResult.output</code> field and to the wire protocol’s <code>is_error</code> flag so UIs can render errors distinctly and agents can make retry decisions without string-matching error messages. <code>HistoryEntry::tool</code> still stores the inner string regardless of the arm — the LLM wire format has no <code>is_error</code> field, so the model sees the text either way.</p>
 <p>When an agent step produces multiple tool calls, the runtime dispatches them concurrently via <code>FuturesUnordered</code>; tool results are appended to history in the original call order (positional pairing with tool_calls is load-bearing for providers that correlate by index), but the <code>ToolResult</code> events fire in completion order so UIs show fast tools immediately without waiting on slow siblings.</p>
-<h2 id="alternatives-7"><a class="header" href="#alternatives-7">Alternatives</a></h2>
+<h2 id="alternatives-5"><a class="header" href="#alternatives-5">Alternatives</a></h2>
 <p><strong>Separate traits per concern.</strong> One trait for prompt building, one for tools,
 one for events. Rejected because they always compose together and the single
 trait is simpler to implement and reason about.</p>
 <p><strong>Closure-based hooks.</strong> Pass lambdas instead of a trait. Rejected because the
 hook needs shared state (skill registry, MCP connections, memory) that closures
 make awkward.</p>
-<h2 id="unresolved-questions-7"><a class="header" href="#unresolved-questions-7">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-5"><a class="header" href="#unresolved-questions-5">Unresolved Questions</a></h2>
 <ul>
 <li>Should <code>on_build_agent</code> be async to support hooks that need I/O during agent
 construction?</li>
@@ -1356,12 +1163,12 @@ invocation)?</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/80">#80</a>, <a href="https://github.com/crabtalk/crabtalk/issues/183">#183</a></li>
 <li>Crates: <code>services/cron</code></li>
 </ul>
-<h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
+<h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
 <p>Cron triggers skills into agents on a schedule. The scheduler runs as a standalone service outside the daemon and speaks the existing <code>StreamMsg</code> protocol — no cron-specific daemon knowledge, no cron-specific wire messages. The <code>services/cron</code> crate is desktop-oriented; alternate consumers (e.g. multi-tenant cloud schedulers) model their own entry shape, storage, and time-zone semantics — the shared surface between them is just the daemon’s <code>StreamMsg</code> protocol.</p>
-<h2 id="motivation-8"><a class="header" href="#motivation-8">Motivation</a></h2>
+<h2 id="motivation-6"><a class="header" href="#motivation-6">Motivation</a></h2>
 <p>Agents need periodic behavior — checking feeds, running maintenance, sending reminders. Time-based triggering is one form of <em>trigger</em>; chat messages, webhooks, and file-watch events are others. All of them produce the same shape: something happens → an agent runs with a payload. Cron is the first concrete implementation of this trigger role and deliberately uses the same <code>StreamMsg</code> path that chat gateways use.</p>
 <p>The session already carries the agent and sender. A cron entry needs the skill to fire, the agent to run, the sender to attribute it to, and the schedule expression — nothing else.</p>
-<h2 id="design-8"><a class="header" href="#design-8">Design</a></h2>
+<h2 id="design-6"><a class="header" href="#design-6">Design</a></h2>
 <h3 id="data-model"><a class="header" href="#data-model">Data model</a></h3>
 <pre><code class="language-toml">[[cron]]
 id = 1
@@ -1400,13 +1207,13 @@ once = false
 }
 <span class="boring">}</span></code></pre>
 <p>The reply stream is drained and discarded — output goes to conversation history through the daemon’s normal path. Failures surface as <code>ErrorMsg</code> frames; the schedule continues on the next tick.</p>
-<h2 id="alternatives-8"><a class="header" href="#alternatives-8">Alternatives</a></h2>
+<h2 id="alternatives-6"><a class="header" href="#alternatives-6">Alternatives</a></h2>
 <p><strong>Keep cron inside the daemon.</strong> Rejected. Cron forced a <code>P: Provider</code> bound on the daemon struct for no reason other than that <code>CronStore</code> called <code>runtime.send_to</code>. Embedding also prevented alternate schedulers (e.g. multi-tenant cloud schedulers) from reusing the daemon without running cron.</p>
 <p><strong>Introduce an <code>InvokeSkill</code> protocol variant.</strong> Rejected. Cron already has everything it needs from <code>SendMsg</code> / <code>StreamMsg</code> — the content <code>/{skill}</code> pattern is what chat-driven slash commands use too. Adding a variant would fragment the trigger contract across consumers and force every downstream scheduler (e.g. external ones) to learn a new wire format.</p>
 <p><strong>Cron as a peer protocol endpoint with its own socket for admin.</strong> Rejected. The admin surface is thin and routing it through a dedicated socket multiplies client complexity (TUI would need to discover and connect to cron too). Instead, admin is direct file editing — the running service picks up changes via mtime polling.</p>
 <p><strong>Put <code>CronEntry</code> + validators in <code>wcore</code> for downstream consumers to reuse.</strong> Rejected. Multi-tenant cloud schedulers need different entry fields (tenant id, different trigger payload), different storage (database rows, not TOML), and different time-zone semantics (UTC, not local). The <code>cron::Schedule::from_str</code> “validator” is one line; reimplementing <code>is_quiet</code> for UTC is trivial. Sharing a struct would force alignment on details that shouldn’t align.</p>
 <p><strong>Introduce a <code>Trigger</code> trait / <code>crates/trigger</code> library.</strong> Premature. Cron is the only trigger today (chat gateways are structurally similar but each has its own domain-specific code — Telegram auth, WeChat sync, etc.). A common trait only becomes clear once a second non-chat trigger lands (webhook, file-watch).</p>
-<h2 id="unresolved-questions-8"><a class="header" href="#unresolved-questions-8">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-6"><a class="header" href="#unresolved-questions-6">Unresolved Questions</a></h2>
 <ul>
 <li>Should cron support a time-zone override per entry (instead of local time for everything)?</li>
 <li>Should there be a max-concurrent-fires limit so a quiet window ending doesn’t burst?</li>
@@ -1419,7 +1226,7 @@ once = false
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/pull/82">#82</a></li>
 <li>Crates: runtime, core</li>
 </ul>
-<h2 id="summary-9"><a class="header" href="#summary-9">Summary</a></h2>
+<h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
 <p>A whitelist-based scoping system that restricts what an agent can access: tools,
 skills, and MCP servers. Enforced at dispatch time and advertised in the system
 prompt. This is a security boundary, not a hint.</p>
@@ -1427,14 +1234,14 @@ prompt. This is a security boundary, not a hint.</p>
 registered agent can delegate to any other. Multi-tenant identity-based access
 control, if ever needed, belongs in a wrapper above the runtime, not inside
 <code>AgentConfig</code>.</p>
-<h2 id="motivation-9"><a class="header" href="#motivation-9">Motivation</a></h2>
+<h2 id="motivation-7"><a class="header" href="#motivation-7">Motivation</a></h2>
 <p>In multi-agent setups, a delegated sub-agent should not have the same
 capabilities as the primary agent. A research agent doesn’t need bash. Without
 scoping, every agent has access to everything — which means a misbehaving or
 confused agent can call tools it was never intended to use.</p>
 <p>Scoping solves this by letting agent configs declare exactly what resources are
 available. The runtime enforces it.</p>
-<h2 id="design-9"><a class="header" href="#design-9">Design</a></h2>
+<h2 id="design-7"><a class="header" href="#design-7">Design</a></h2>
 <h3 id="agentscope"><a class="header" href="#agentscope">AgentScope</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1496,7 +1303,7 @@ edit fails — optimistic concurrency without locks.</p>
 <h3 id="default-agent"><a class="header" href="#default-agent">Default agent</a></h3>
 <p>The default agent (primary) has no scope restrictions — empty lists on all
 three dimensions. Scoping is for sub-agents that need constrained access.</p>
-<h2 id="alternatives-9"><a class="header" href="#alternatives-9">Alternatives</a></h2>
+<h2 id="alternatives-7"><a class="header" href="#alternatives-7">Alternatives</a></h2>
 <p><strong>Denylist instead of whitelist.</strong> List what’s forbidden instead of what’s
 allowed. Rejected because allowlists are safer by default — a new tool or
 server is inaccessible until explicitly granted. Denylists require updating
@@ -1505,7 +1312,7 @@ every time a new resource is added.</p>
 don’t enforce at dispatch. Rejected because LLMs don’t reliably follow
 instructions — a determined or confused model will call tools it was told not
 to. Enforcement must be at the dispatch layer.</p>
-<h2 id="unresolved-questions-9"><a class="header" href="#unresolved-questions-9">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-7"><a class="header" href="#unresolved-questions-7">Unresolved Questions</a></h2>
 <ul>
 <li>Should scoping support wildcard patterns (e.g. <code>mcp: search-*</code>)?</li>
 <li>Should scope violations be logged as security events for monitoring?</li>
@@ -1519,11 +1326,11 @@ to. Enforcement must be at the dispatch layer.</p>
 <li>Crates: daemon, core, runtime</li>
 <li>Updates: <a href="#0080---cron">0080 (Cron)</a></li>
 </ul>
-<h2 id="summary-10"><a class="header" href="#summary-10">Summary</a></h2>
+<h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
 <p>A daemon-level event bus that routes named events to target agents via
 exact-match subscriptions. Agent completion is the first built-in event source.
 The bus also enables non-blocking delegation and ad-hoc worker agents.</p>
-<h2 id="motivation-10"><a class="header" href="#motivation-10">Motivation</a></h2>
+<h2 id="motivation-8"><a class="header" href="#motivation-8">Motivation</a></h2>
 <p>The daemon can trigger agents on a schedule (cron) and run agents on user
 request (protocol). But there’s no way for one agent’s completion to trigger
 another agent. The Signal pipeline (crabtalk/app#59) needs exactly this:</p>
@@ -1535,7 +1342,7 @@ re-sending. The daemon should own this.</p>
 <p>Separately, <code>delegate</code> blocks the parent agent until all tasks complete. For
 background research or parallel work, this is a limitation. If the daemon can
 route agent completion events, non-blocking delegation falls out for free.</p>
-<h2 id="design-10"><a class="header" href="#design-10">Design</a></h2>
+<h2 id="design-8"><a class="header" href="#design-8">Design</a></h2>
 <h3 id="event-bus-1"><a class="header" href="#event-bus-1">Event bus</a></h3>
 <p>An in-memory subscription table that matches events by exact source string and
 fires target agents with the event payload as message content.</p>
@@ -1639,7 +1446,7 @@ results inline. Events are asynchronous and deliver results out-of-band.
 daemon event channel — this is unchanged. A future iteration may refactor cron
 as an event source adapter, emitting <code>cron:{id}:fired</code> events into the bus, but
 this is not in scope. The event bus is additive, not a cron replacement.</p>
-<h2 id="alternatives-10"><a class="header" href="#alternatives-10">Alternatives</a></h2>
+<h2 id="alternatives-8"><a class="header" href="#alternatives-8">Alternatives</a></h2>
 <p><strong>Agent completion triggers (no bus).</strong> A simpler design where completion of
 agent X directly triggers agent Y, without a general subscription mechanism.
 Rejected because the Signal pipeline needs external events (RSS fetch results)
@@ -1651,7 +1458,7 @@ current use cases. Glob matching can be added when a real consumer needs it.</p>
 interpolation in a <code>prompt_template</code> field. Rejected — agents are the template
 engine. The payload goes in as-is; the agent’s instructions handle
 interpretation.</p>
-<h2 id="unresolved-questions-10"><a class="header" href="#unresolved-questions-10">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-8"><a class="header" href="#unresolved-questions-8">Unresolved Questions</a></h2>
 <ul>
 <li>Should there be a max subscription count?</li>
 <li>Should the bus detect infinite loops (agent A triggers B triggers A)?
@@ -1666,13 +1473,13 @@ chains of spawned tasks.</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/135">#135</a></li>
 <li>Crates: core, runtime, daemon, cli, gateway</li>
 <li>Supersedes: <a href="rfcs/0064-session.html">0064 (Session)</a>, <a href="rfcs/0078-compact-session.html">0078 (Compact Session)</a></li>
-<li>Updates: <a href="#0018---protocol">0018 (Protocol)</a>, <a href="#0038---memory">0038 (Memory)</a></li>
+<li>Updates: <a href="#0018---protocol">0018 (Protocol)</a>, <a href="rfcs/0038-memory.html">0038 (Memory)</a></li>
 </ul>
-<h2 id="summary-11"><a class="header" href="#summary-11">Summary</a></h2>
+<h2 id="summary-9"><a class="header" href="#summary-9">Summary</a></h2>
 <p>Replace session-centric protocol addressing with agent-centric addressing.
 Users talk to agents, not sessions. Introduce guest turns for multi-agent
 conversations and compaction archives as the agent’s long-term memory.</p>
-<h2 id="motivation-11"><a class="header" href="#motivation-11">Motivation</a></h2>
+<h2 id="motivation-9"><a class="header" href="#motivation-9">Motivation</a></h2>
 <p>The original protocol was session-centric: clients managed session IDs to kill,
 reply, compact, and route messages. This leaked an implementation detail (the
 session ID) into every client and forced multi-agent interaction into either
@@ -1695,7 +1502,7 @@ transport state) with agent memory (message history, compaction). These are
 different lifecycles — connections are ephemeral, conversations persist.</p>
 </li>
 </ol>
-<h2 id="design-11"><a class="header" href="#design-11">Design</a></h2>
+<h2 id="design-9"><a class="header" href="#design-9">Design</a></h2>
 <h3 id="core-model"><a class="header" href="#core-model">Core model</a></h3>
 <p>Each agent has <strong>one continuous conversation</strong> per user. Conversations are
 keyed by <code>(agent, sender)</code> — no session IDs in the protocol.</p>
@@ -1828,7 +1635,7 @@ logic needed.</p>
 <p>Session-addressed messages are replaced with (agent, sender) addressing.
 <code>StreamMsg</code> and <code>SendMsg</code> gain a <code>guest</code> field. <code>SessionInfo</code> becomes
 <code>ActiveConversationInfo</code>. See protocol changes section above.</p>
-<h3 id="0038---memory-1"><a class="header" href="#0038---memory-1">0038 - Memory</a></h3>
+<h3 id="0038---memory"><a class="header" href="#0038---memory">0038 - Memory</a></h3>
 <p>Compaction archives become the primary long-term memory mechanism. The
 recall tool searches across archived segments. See <a href="https://github.com/crabtalk/crabtalk/issues/101">#101 (revised)</a> for
 the pluggable memory provider aligned with this model.</p>
@@ -1839,11 +1646,14 @@ the pluggable memory provider aligned with this model.</p>
 <li>Start Date: 2026-04-14</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/38">#38</a></li>
 <li>Crates: memory, crabtalk, runtime</li>
-<li>Supersedes: <a href="#0038---memory">0038 (Memory)</a></li>
+<li>Supersedes: <a href="rfcs/0038-memory.html">0038 (Memory)</a></li>
 </ul>
-<h2 id="summary-12"><a class="header" href="#summary-12">Summary</a></h2>
+<blockquote>
+<p><strong>Updated by <a href="#0189---policy-at-the-edge">0189</a> (2026-04-28).</strong> Auto-recall (<code>Memory::before_run</code>) was removed; <code>recall</code> is now strictly model-driven. See 0189 for the rationale.</p>
+</blockquote>
+<h2 id="summary-10"><a class="header" href="#summary-10">Summary</a></h2>
 <p>A standalone <code>crabtalk-memory</code> crate backing agent memory with a single binary db file, atomic persistence, and BM25 recall. The markdown tree is a human-facing export — not the primary store. Entries come in two kinds: <code>Note</code> (agent-written via <code>remember</code>/<code>forget</code>) and <code>Archive</code> (compaction output). The agent’s system prompt is human-managed via <code>Crab.md</code> (existing layered-instructions mechanism) — the memory store has no opinion on it.</p>
-<h2 id="motivation-12"><a class="header" href="#motivation-12">Motivation</a></h2>
+<h2 id="motivation-10"><a class="header" href="#motivation-10">Motivation</a></h2>
 <p>RFC 0038 bet on file-per-entry markdown as the primary store. In practice that premise did not hold:</p>
 <ul>
 <li><strong>Atomic writes don’t compose across many files.</strong> Every remember/forget touched an entry file plus a sidecar index; a crash mid-op left the tree inconsistent. A single-file db is atomic by rename+fsync.</li>
@@ -1855,7 +1665,7 @@ the pluggable memory provider aligned with this model.</p>
 <ul>
 <li><strong>The system prompt is not memory.</strong> 0038 carried a <code>MEMORY.md</code> curated overview that the agent could rewrite via a dedicated <code>memory</code> tool. That conflated two different things: persistent recall (the agent’s notes) and instructions (the human’s prompt). It also gave the agent a footgun — overwriting the whole thing in a single tool call with no diff. Killed: the <code>memory</code> tool, the <code>Prompt</code> entry kind, and the reserved <code>global</code> name. The system prompt now lives in <code>Crab.md</code> (already a file, already layered, already human-edited). If a human wants the agent to edit it, they grant that in prose inside <code>Crab.md</code> and the agent uses the standard file-edit tools.</li>
 </ul>
-<h2 id="design-12"><a class="header" href="#design-12">Design</a></h2>
+<h2 id="design-10"><a class="header" href="#design-10">Design</a></h2>
 <h3 id="crate-layout"><a class="header" href="#crate-layout">Crate layout</a></h3>
 <p><code>crabtalk-memory</code> is a standalone crate. The <code>crabtalk</code> hooks own one <code>Memory</code> handle and expose a <code>SharedStore = Arc&lt;RwLock&lt;Memory&gt;&gt;</code> to the runtime so compaction can write archives and session resume can read them.</p>
 <h3 id="binary-file-format-crmem-v1"><a class="header" href="#binary-file-format-crmem-v1">Binary file format (CRMEM v1)</a></h3>
@@ -1934,11 +1744,11 @@ struct Entry {
 <p><code>Memory::apply(op)</code> mutates + flushes. Callers never touch <code>fs::write</code> directly.</p>
 <h3 id="recall"><a class="header" href="#recall">Recall</a></h3>
 <p>BM25 with Lucene-style IDF (<code>ln((n - df + 0.5)/(df + 0.5) + 1.0)</code>), k1=1.2, b=0.75. The index is an inverted index of tokens from entry content and aliases, keyed by <code>EntryId</code>. Search walks the posting lists for query terms instead of rescanning every entry on every query.</p>
-<h3 id="auto-recall-1"><a class="header" href="#auto-recall-1">Auto-recall</a></h3>
+<h3 id="auto-recall"><a class="header" href="#auto-recall">Auto-recall</a></h3>
 <p>Before each agent turn (<code>before_run</code>), the hook takes the first 8 words of the last user message, runs BM25 search, and injects hits as an auto-injected <code>&lt;recall&gt;</code> user turn. Auto-injected messages are not persisted and refresh every turn.</p>
 <h3 id="system-prompt"><a class="header" href="#system-prompt">System prompt</a></h3>
 <p>The hook contributes one <code>&lt;system_prompt&gt;</code> fragment: the contents of <code>prompts/memory.md</code>, which tells the agent <em>when</em> to use the memory tools (tool <em>signatures</em> come from each input struct’s <code>///</code> doc comment via schemars). The agent’s identity / behavior prompt is <strong>not</strong> the memory store’s responsibility — it’s <code>Crab.md</code>, layered from <code>&lt;config_dir&gt;/Crab.md</code> and any project-local <code>Crab.md</code> walked up from CWD (see <code>daemon::host::discover_instructions</code>).</p>
-<h3 id="tools-1"><a class="header" href="#tools-1">Tools</a></h3>
+<h3 id="tools"><a class="header" href="#tools">Tools</a></h3>
 <p>Three tools exposed to the agent:</p>
 <ul>
 <li><code>remember(name, content, aliases)</code> — upsert a <code>Note</code>.</li>
@@ -1969,11 +1779,11 @@ prod rollout steps ...
 </code></pre>
 <p>Chosen for mdbook: <code>&lt;dl&gt;</code> / <code>&lt;dt&gt;</code> / <code>&lt;dd&gt;</code> is the semantic HTML for key-value metadata, renders as a labeled info card, and doesn’t pollute mdbook’s heading tree. <code>&lt;time datetime="..."&gt;</code> round-trips the exact unix timestamp. A file that doesn’t start with <code>&lt;div id="meta"&gt;</code> is treated as pure content with no metadata.</p>
 <p><code>Memory::load(dir)</code> reads the tree and <em>replaces</em> the db. It validates fully before mutating — a mid-load error leaves the current state untouched. Each kind’s subdirectory is cleared on <code>dump</code> so renames and deletes don’t leave orphan files behind; anything else in <code>dir</code> (e.g. a customized <code>book.toml</code>, a <code>theme/</code> directory) is left alone.</p>
-<h2 id="alternatives-11"><a class="header" href="#alternatives-11">Alternatives</a></h2>
+<h2 id="alternatives-9"><a class="header" href="#alternatives-9">Alternatives</a></h2>
 <p><strong>Stay with file-per-entry (0038).</strong> Rejected — compaction archives need a real store, and atomic multi-file writes would require WAL anyway. A single file gets atomicity for free.</p>
 <p><strong>SQLite.</strong> Overkill for 10²–10³ entries, adds a dependency and schema migrations. A 200-line hand-rolled format is simpler and easier to inspect with <code>xxd</code>.</p>
 <p><strong>Embedding-based search.</strong> Still rejected for the same reasons as 0038: requires a vector store and embedding model. BM25 is fast, dependency-free, and works well at the entry sizes agents produce.</p>
-<h2 id="unresolved-questions-11"><a class="header" href="#unresolved-questions-11">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-9"><a class="header" href="#unresolved-questions-9">Unresolved Questions</a></h2>
 <ul>
 <li>WAL for crash safety in the window between the RAM mutation and the atomic flush.</li>
 <li>Should <code>load()</code> merge instead of replace?</li>
@@ -1988,9 +1798,9 @@ prod rollout steps ...
 <li>Crates: new <code>crabup</code> binary; consumes <code>command</code>; shrinks <code>crabtalkd</code></li>
 <li>Updates: <a href="#0043---component-system">0043 (Component System)</a></li>
 </ul>
-<h2 id="summary-13"><a class="header" href="#summary-13">Summary</a></h2>
+<h2 id="summary-11"><a class="header" href="#summary-11">Summary</a></h2>
 <p><code>crabup</code> is a thin wrapper over <code>cargo install</code> that also owns <code>launchd</code>/<code>systemd</code>/<code>schtasks</code> lifecycle for every crabtalk binary. <code>crabup install crabtalkd</code> spawns <code>cargo install crabtalkd</code>. The value add is service management — the one thing <code>cargo install</code> doesn’t do — not distribution, not version coordination, not a registry.</p>
-<h2 id="motivation-13"><a class="header" href="#motivation-13">Motivation</a></h2>
+<h2 id="motivation-11"><a class="header" href="#motivation-11">Motivation</a></h2>
 <p>Two real problems today, both about service management, not about distribution:</p>
 <ol>
 <li><strong>The daemon is its own installer.</strong> <code>crabtalkd start</code> generates and loads a platform unit for itself via the <code>command</code> crate; every other binary (<code>crabtalk-telegram</code>, <code>crabtalk-wechat</code>, …) does the same thing with the same code. A daemon shouldn’t install itself, and the install path shouldn’t live in three places.</li>
@@ -1998,7 +1808,7 @@ prod rollout steps ...
 </ol>
 <p>Distribution is already handled: every crabtalk crate publishes to crates.io with <code>version.workspace = true</code>, so <code>cargo install crabtalkd</code> is the install story today. It will remain the install story under crabup — crabup just renames the command and wraps service management around it.</p>
 <p>RFC <a href="#0043---component-system">0043</a> defined <em>how</em> components talk to the daemon (port-file discovery, MCP contract). This RFC defines <em>how they get installed and stay alive</em>.</p>
-<h2 id="design-13"><a class="header" href="#design-13">Design</a></h2>
+<h2 id="design-11"><a class="header" href="#design-11">Design</a></h2>
 <h3 id="command-surface"><a class="header" href="#command-surface">Command surface</a></h3>
 <pre><code>crabup pull &lt;name&gt; [--version X]      # cargo install crabtalk-&lt;name&gt; (or crabtalkd)
 crabup rm &lt;name&gt;                      # cargo uninstall
@@ -2074,12 +1884,12 @@ crabup &lt;name&gt; logs [-f]
 </table>
 </div>
 <p>After this, <code>crabtalkd</code>’s CLI is <code>run</code> (the long-running process the service unit invokes, equivalent to today’s <code>--foreground</code>), <code>reload</code>, <code>events</code>, and the runtime plugin ops (<code>pull</code>/<code>rm</code>, which are live-daemon operations, not install).</p>
-<h2 id="alternatives-12"><a class="header" href="#alternatives-12">Alternatives</a></h2>
+<h2 id="alternatives-10"><a class="header" href="#alternatives-10">Alternatives</a></h2>
 <p><strong>Plain <code>cargo install</code>, no crabup.</strong> Installs are one command, but users hand-write <code>launchd</code>/<code>systemd</code> units per binary, and <code>ps</code>/<code>logs</code> across services don’t exist. The service-management gap is the whole reason crabup is a separate tool.</p>
 <p><strong>A real package manager with its own manifest, signed pre-built binaries, version coordination, atomic-set installs.</strong> Previously drafted; cut. Infrastructure we don’t need — crates.io is the registry, workspace-version inheritance is the coordination, and the non-developer audience that would need pre-built binaries doesn’t exist yet. If that audience materializes, pre-built becomes a second <code>crabup pull</code> backend alongside the <code>cargo install</code> path.</p>
 <p><strong>Keep each binary’s <code>start/stop/logs</code> subcommand, just delete the cross-binary dispatcher.</strong> Leaves three copies of the same install code and no one-stop service view. Cuts nothing meaningful.</p>
 <p><strong>Dynamic plugin loading (shared objects).</strong> Rejected by RFC 0043 — shared fate with the daemon is the exact thing the component model avoids.</p>
-<h2 id="unresolved-questions-12"><a class="header" href="#unresolved-questions-12">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-10"><a class="header" href="#unresolved-questions-10">Unresolved Questions</a></h2>
 <ul>
 <li><strong>Windows service layer.</strong> <code>schtasks</code> is weaker than <code>launchd</code>/<code>systemd</code> (no restart-on-failure, limited log routing). Acceptable for v1, or not?</li>
 <li><strong><code>rm</code> scope.</strong> Should <code>crabup rm daemon</code> also remove <code>~/.crabtalk/config/</code>? Leaning no (<code>rm</code> is binary-only; data stays); confirm.</li>
@@ -2095,12 +1905,15 @@ crabup &lt;name&gt; logs [-f]
 <li>Supersedes: <a href="rfcs/0171-topic-switching.html">0171 (Topic Switching)</a></li>
 <li>Updates: <a href="#0135---agent-first-protocol">0135 (Agent-First)</a>, <a href="#0150---memory-store">0150 (Memory Store)</a></li>
 </ul>
-<h2 id="summary-14"><a class="header" href="#summary-14">Summary</a></h2>
+<blockquote>
+<p><strong>Updated by <a href="#0189---policy-at-the-edge">0189</a> (2026-04-28).</strong> The “automatic compaction on overflow as a safety net” carve-out and auto-title generation were both removed; clients drive both via <code>compact_conversation</code> and a future <code>generate_title</code> RPC, gated on the new <code>AgentEvent::ContextUsage</code> events. See 0189 for the rationale.</p>
+</blockquote>
+<h2 id="summary-12"><a class="header" href="#summary-12">Summary</a></h2>
 <p>Collapse the topic subsystem. Sessions persist unconditionally, always get auto-titled, and carry a small runtime-managed meta blob. Recall gains a second BM25 index — this one over conversation messages — returning windowed excerpts with bounded size. The runtime exposes narrow session primitives and two search tools; client UX owns <code>/clear</code>, <code>/new</code>, <code>/compact</code>, and session routing. The “topic” concept dissolves: content-derived session search (BM25) replaces tag-based grouping, and any curated grouping that survives is a client concern.</p>
-<h2 id="motivation-14"><a class="header" href="#motivation-14">Motivation</a></h2>
+<h2 id="motivation-12"><a class="header" href="#motivation-12">Motivation</a></h2>
 <p>RFC 0171 introduced topic switching to partition a single <code>(agent, sender)</code> pair into N parallel threads keyed by title, with tmp chats that skip persistence until the agent “promotes” them by entering a topic. In practice it conflated four independent concerns into one knot — routing (“which conversation does this message land in?”), persistence policy (“should this session hit storage?”), recall indexing (“how do we find related past work?”), and lifecycle UX (“when does a chat end and a new one begin?”). Each wanted a different home, and riding one mechanism for all of them produced the <code>TopicRouter</code> reservation/rollback dance, the tmp/promote split, and agent-upfront title commitment on what should have been retrospective categorization.</p>
 <p>The reframe driving this RFC: <em>a topic is not a thing</em>. It was a name trying to be a routing key, a memory kind, a session tag, and a recall index simultaneously. With BM25 over session messages, content-derived recall eats the tag’s lunch — the agent searches “cron refactor” and gets back the conversations that actually discussed it, without any of them ever being classified upfront. What remains worth keeping is a <code>summary</code> field that boosts search ranking when one happens to exist (piggybacking on work the runtime already does during overflow compaction).</p>
-<h2 id="design-14"><a class="header" href="#design-14">Design</a></h2>
+<h2 id="design-12"><a class="header" href="#design-12">Design</a></h2>
 <h3 id="layering-runtime-vs-client"><a class="header" href="#layering-runtime-vs-client">Layering: runtime vs. client</a></h3>
 <p>The runtime’s job is to provide mechanical primitives. UX decisions (when to clear, when to compact for cleanliness, which session to route a message to, how to surface archival browsing) belong one layer up in the client. The one exception is overflow compaction — a context-window overflow is a hard constraint the client can’t see coming, so the runtime keeps automatic compaction on overflow as a safety net. Every other form of compaction, clearing, and switching is a client concern composed from primitives.</p>
 <p>Runtime primitives (policy-free):</p>
@@ -2215,7 +2028,7 @@ pub struct WindowItem {
 <h3 id="auto-compaction-as-safety-net"><a class="header" href="#auto-compaction-as-safety-net">Auto-compaction as safety net</a></h3>
 <p>Overflow compaction stays, because context-window overflow is a hard constraint the client layer can’t enforce. Two changes versus today: (a) compaction additionally populates <code>ConversationMeta.summary</code> so session search can boost it, and (b) compaction is no longer per-topic (there are no topics) — it fires per session, which is what a client would expect anyway.</p>
 <p>The existing <code>AgentConfig::compact_threshold</code> continues to fire on token-budget pressure, not overflow-only; “overflow safety net” here is shorthand for “context-pressure-driven, not user-driven.” Discretionary compaction (“I want to clean up this old chat”) is a client concern — the runtime optionally exposes a <code>compact(session_id)</code> helper in a follow-up RFC if clients converge on needing one. Not required to ship this one.</p>
-<h2 id="alternatives-13"><a class="header" href="#alternatives-13">Alternatives</a></h2>
+<h2 id="alternatives-11"><a class="header" href="#alternatives-11">Alternatives</a></h2>
 <p><strong>Semantic retrieval via embeddings.</strong> Deferred. Lexical BM25 covers the 80% case at zero new deps and microsecond query time. A vector index adds an embedding model or API dependency, hundreds of MB of index storage, and a hybrid-search ranking story. Revisit when lexical recall demonstrably misses on a labeled test set — not before.</p>
 <p><strong>Keep topic as a tag.</strong> Rejected. With BM25 over messages, tag-based filtering is redundant with query-based retrieval at the cost of requiring disciplined agent tagging and introducing tag-name drift (“cron refactor” vs “cron cleanup”). The tag was the join key between memory and sessions; BM25 is the join key now.</p>
 <p><strong>Single unified <code>recall()</code> tool that queries memory and sessions together.</strong> Rejected. Two explicit tools are cheaper for the agent to reason about — it knows what it is paying for in each call, and the two stores have different payload-sizing rules (memory entries are small and returned whole; session hits are bounded excerpts). Composition in prompt-space is the right layer.</p>
@@ -2237,6 +2050,73 @@ pub struct WindowItem {
 <li><strong>Discretionary <code>compact(session_id)</code> helper.</strong> Ship only when a client demands it. Not in this RFC.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="0189---policy-at-the-edge"><a class="header" href="#0189---policy-at-the-edge">0189 - Policy at the Edge</a></h1>
+<ul>
+<li>Feature Name: Policy at the Edge</li>
+<li>Start Date: 2026-04-28</li>
+<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/188">#188</a>, <a href="https://github.com/crabtalk/crabtalk/pull/189">#189</a></li>
+<li>Crates: core, runtime, crabtalk, sdk</li>
+<li>Supersedes: <a href="rfcs/0000-compaction.html">0000 (Compaction)</a></li>
+<li>Updates: <a href="#0075---hook">0075 (Hook)</a>, <a href="#0150---memory-store">0150 (Memory Store)</a>, <a href="#0185---session-search-and-storage-primitives">0185 (Session Search)</a></li>
+</ul>
+<h2 id="summary-13"><a class="header" href="#summary-13">Summary</a></h2>
+<p>Mechanism belongs in the daemon; policy belongs at the edge. The daemon stops making decisions on the user’s behalf — it no longer auto-compacts on a token-count heuristic, no longer spawns title-generation calls in the background, no longer BM25-searches memory and injects synthetic <code>&lt;recall&gt;</code> user turns. Each of these is now an explicit RPC the client calls when (and if) it wants the behavior. A new <code>AgentEvent::ContextUsage { usage }</code> carries real per-step token counts so clients can pick their own pressure threshold. The <code>Hook::on_before_run</code> lifecycle method is removed.</p>
+<h2 id="motivation-13"><a class="header" href="#motivation-13">Motivation</a></h2>
+<p>Three independent features had drifted toward the same anti-pattern: the daemon making policy decisions using its own heuristics, then mutating conversation state on the user’s behalf without being asked. RFC 0000 codified auto-compaction at a <code>chars/4</code>-derived threshold. RFC 0038 (then 0150) codified auto-recall as a per-turn before-run injection. The runtime grew a quiet <code>spawn_title_generation</code> call inside <code>finalize_run</code>. Each was useful in isolation. Together they shaped a daemon that thought it knew best.</p>
+<p>The cost of that posture:</p>
+<ul>
+<li><strong>Bad heuristics.</strong> Token estimation as <code>chars/4</code> is wrong for code, JSON tool outputs, and non-English prose. The threshold either trips early (destroying live context with an unwanted summary) or trips late (the request fails anyway). The daemon doesn’t have the inputs — model identity, real token counts, user intent — to pick a threshold. Clients do.</li>
+<li><strong>Synthetic events.</strong> Auto-compaction yielded <code>AgentEvent::Compact</code> followed by hand-forged <code>TextStart</code>/<code>TextDelta</code>/<code>TextEnd</code> events containing the literal string <code>[context compacted]</code>. Auto-recall injected <code>&lt;recall&gt;...&lt;/recall&gt;</code> user turns flagged <code>auto_injected: true</code>. Both lied to the event stream — the model didn’t say those things, the daemon did. Downstream consumers had to filter them out.</li>
+<li><strong>Wasted tokens, opaque costs.</strong> Auto-titling spent an LLM call after every conversation that crossed two history entries, behind the user’s back. Auto-recall paid retrieval cost on every turn whether or not the model would have asked.</li>
+<li><strong>Race with the explicit API.</strong> All three behaviors had explicit-API counterparts (<code>compact_conversation</code>, the <code>recall</code> tool, a clearly-named title RPC if the client wanted one). The daemon was racing the client to call its own API.</li>
+</ul>
+<p>RFC 0185 already drew the right line for sessions: “the runtime’s job is to provide mechanical primitives. UX decisions belong one layer up in the client.” This RFC carries that all the way through.</p>
+<h2 id="design-13"><a class="header" href="#design-13">Design</a></h2>
+<h3 id="principle"><a class="header" href="#principle">Principle</a></h3>
+<p>Mechanism in the daemon, policy at the edge. Concretely:</p>
+<ul>
+<li><strong>Mechanism</strong> is what only the daemon can do: own conversation state, own storage, own the LLM connection, own MCP child processes, run summarization, write archives. These are inherently centralized.</li>
+<li><strong>Policy</strong> is everything else: when to compact, when to title, what to prepend to a user message, what counts as context pressure. These need information the daemon doesn’t have (which model, which UI, which user, which tradeoff matters today). Policy lives in the client — TUI, telegram, web app, headless automation — and is composed from primitives the daemon exposes.</li>
+</ul>
+<p>Where this leaves heuristics: the daemon doesn’t run them. If the daemon would need to estimate something to decide, the answer is “don’t decide — surface the data and let the client decide.”</p>
+<h3 id="what-was-removed"><a class="header" href="#what-was-removed">What was removed</a></h3>
+<p><strong>Auto-compaction.</strong> The block in <code>Agent::run</code> that called <code>self.compact(history)</code> when <code>estimate_tokens(history) &gt; threshold</code> is gone. The synthetic <code>Compact</code>/<code>TextStart</code>/<code>TextDelta(\"[context compacted]\")</code>/<code>TextEnd</code> events are gone. <code>AgentConfig::compact_threshold</code> is gone (silently dropped from existing TOML via serde default). <code>HistoryEntry::estimate_tokens</code> and the <code>chars/4</code> heuristic are gone.</p>
+<p><strong>Auto-titling.</strong> <code>Runtime::spawn_title_generation</code> and its <code>finalize_run</code> call site are gone. The <code>title</code> field on <code>Conversation</code> and <code>ConversationMeta</code> stays — existing data is still valid, the daemon just doesn’t generate fresh titles on its own.</p>
+<p><strong>Auto-recall.</strong> <code>Memory::before_run</code> (the BM25-search-and-inject helper) is gone. <code>MemoryHook::on_before_run</code> is gone. The <code>recall</code> tool is unchanged — model-driven recall continues to work.</p>
+<p><strong><code>Hook::on_before_run</code>.</strong> The trait method is removed. <code>OsHook</code> previously used it to inject <code>&lt;environment&gt;working_directory: ...&lt;/environment&gt;</code> per turn — that goes too. Bash dispatch still resolves the effective cwd at tool-call time, so commands run in the right directory; the model just doesn’t get a synthetic turn telling it where it is. Clients that want the model to see the cwd put it in their own user message (they supplied it via <code>req.cwd</code> in the first place). The peer-agents <code>&lt;agents&gt;</code> block that <code>DaemonHook::on_before_run</code> injected for delegation moves to <code>DaemonHook::on_build_agent</code> so it lands in the system prompt at agent-build time — registry mutations are visible after the next agent rebuild.</p>
+<h3 id="what-was-added"><a class="header" href="#what-was-added">What was added</a></h3>
+<p><strong><code>AgentEvent::ContextUsage { usage: Usage }</code>.</strong> Emitted once per LLM call when the provider reports non-zero usage. Carries real <code>prompt_tokens</code>, <code>completion_tokens</code>, <code>total_tokens</code>, plus optional cache-hit/miss and reasoning counts. The corresponding wire event is <code>ContextUsageEvent { usage: TokenUsage }</code>. Clients track these and decide for themselves when to call <code>compact_conversation</code>.</p>
+<p><strong>Real <code>compact_conversation</code>.</strong> The runtime method previously returned the summary string and silently dropped the persistence work. It now does all four steps in order: summarize → write archive entry → write session compact marker → replace history with a single user message carrying the summary. Atomic from the client’s perspective.</p>
+<h3 id="reference-explicit-replacements"><a class="header" href="#reference-explicit-replacements">Reference: explicit replacements</a></h3>
+<p>Each removed behavior maps to an existing or planned API:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Removed</th><th>Explicit replacement</th></tr>
+</thead>
+<tbody>
+<tr><td>Auto-compaction</td><td><code>compact_conversation(agent, sender)</code> RPC, gated on client-tracked <code>ContextUsage</code> events</td></tr>
+<tr><td>Auto-titling</td><td>A future <code>generate_title(conversation_id)</code> RPC; until then, clients can run their own summarization or leave titles blank</td></tr>
+<tr><td>Auto-recall</td><td>The <code>recall</code> tool (model-driven); or a client-side <code>recall + send</code> composition before the user’s message</td></tr>
+</tbody>
+</table>
+</div>
+<p>The opt-in client-side helpers for each of these are tracked in <a href="https://github.com/crabtalk/crabtalk/issues/188">#188</a> as SDK sugars — a few dozen lines on top of the daemon client.</p>
+<h2 id="migration-1"><a class="header" href="#migration-1">Migration</a></h2>
+<ul>
+<li>New conversations have empty <code>title</code> until a client asks for one. Existing titles on disk are unaffected.</li>
+<li>The <code>recall</code> tool still works. Clients that previously relied on silent <code>&lt;recall&gt;</code> injection need to either let the model call <code>recall</code> itself (the intended path) or compose <code>recall + send</code> client-side.</li>
+<li>No auto-compact. Clients should subscribe to <code>ContextUsage</code> events and call <code>compact_conversation</code> when their threshold trips. The model returns an explicit error if context is exceeded — the daemon no longer guesses.</li>
+<li><code>compact_threshold</code> in agent TOML is silently dropped via serde default. No errors, just ignored.</li>
+</ul>
+<h2 id="alternatives-considered"><a class="header" href="#alternatives-considered">Alternatives considered</a></h2>
+<p><strong>Keep auto-compact as a safety net.</strong> RFC 0185 took this position: “automatic compaction on overflow as a safety net” because clients can’t see overflow coming. Rejected here because the daemon can’t reliably detect overflow either — <code>chars/4</code> is the wrong tool, and the model itself returns a clear error when context is exceeded. A bad safety net is worse than none, because clients build trust in it and stop watching.</p>
+<p><strong>Threshold-gated <code>ContextPressure</code> event.</strong> Emit only when over some threshold. Rejected because it recreates the policy problem in a smaller form — the daemon still picks a number, and is still wrong for whichever model and use case it didn’t anticipate. Always-emit <code>ContextUsage</code> lets clients pick.</p>
+<p><strong>Move policy to per-agent config knobs.</strong> “Auto-compact off by default; opt in via <code>compact_threshold</code>.” Rejected because the per-agent config is set by the client at create-time anyway — moving the decision a step earlier doesn’t change who decides, just makes the decision harder to update. A per-call decision (the client picks each turn) is more honest.</p>
+<h2 id="out-of-scope"><a class="header" href="#out-of-scope">Out of scope</a></h2>
+<p>Two daemon-side per-turn injections in <code>prepare_history</code> survive this RFC: the <code>&lt;instructions&gt;</code> block from Crab.md discovery and the guest-agent-framing prose (“Messages wrapped in <code>&lt;from agent=\"...\"&gt;</code>…”). Same anti-pattern, deferred to a separate cleanup so this RFC stays focused.</p>
+<p>Wire-protocol changes are limited to the new <code>ContextUsageEvent</code> and reservation of <code>AgentInfo.compact_threshold</code> (field 10). No breaking renumbering, no new RPCs.</p>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="superseded-rfcs"><a class="header" href="#superseded-rfcs">Superseded RFCs</a></h1>
 <p>RFCs that have been replaced by newer designs. Kept for historical reference.</p>
 <div class="table-wrapper">
@@ -2245,7 +2125,8 @@ pub struct WindowItem {
 <tr><th>RFC</th><th>Title</th><th>Superseded by</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="#0038---memory">0038</a></td><td>Memory</td><td><a href="#0150---memory-store">0150 - Memory Store</a></td></tr>
+<tr><td><a href="rfcs/0000-compaction.html">0000</a></td><td>Compaction</td><td><a href="#0189---policy-at-the-edge">0189 - Policy at the Edge</a></td></tr>
+<tr><td><a href="rfcs/0038-memory.html">0038</a></td><td>Memory</td><td><a href="#0150---memory-store">0150 - Memory Store</a></td></tr>
 <tr><td><a href="rfcs/0064-session.html">0064</a></td><td>Session</td><td><a href="#0135---agent-first-protocol">0135 - Agent-First Protocol</a></td></tr>
 <tr><td><a href="rfcs/0078-compact-session.html">0078</a></td><td>Compact Session</td><td><a href="#0135---agent-first-protocol">0135 - Agent-First Protocol</a></td></tr>
 <tr><td><a href="rfcs/0171-topic-switching.html">0171</a></td><td>Topic Switching</td><td><a href="#0185---session-search-and-storage-primitives">0185 - Session Search and Storage Primitives</a></td></tr>
