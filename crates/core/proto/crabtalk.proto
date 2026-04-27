@@ -601,6 +601,7 @@ enum McpStatus {
   CONNECTED = 1;
   DISCONNECTED = 2;
   FAILED = 3;
+  CONNECTING = 4;
 }
 
 message McpInfo {
