@@ -1,4 +1,4 @@
-//! Platform-agnostic stream accumulator for gateway loops.
+//! Platform-agnostic stream accumulator for app loops.
 //!
 //! Consumes `StreamEvent` messages from the daemon and builds a text buffer
 //! with inline tool call status. Used by the Telegram loop.
@@ -49,7 +49,7 @@ impl StreamAccumulator {
                 self.text.push_str(&c.content);
             }
             Some(stream_event::Event::Thinking(_)) => {
-                // Thinking content not shown in gateway messages.
+                // Thinking content not shown in chat-platform messages.
             }
             Some(stream_event::Event::ToolStart(ts)) => {
                 let names: Vec<&str> = ts.calls.iter().map(|c| c.name.as_str()).collect();

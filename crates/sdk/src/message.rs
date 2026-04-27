@@ -1,8 +1,8 @@
-//! Gateway message types.
+//! Inbound message types for chat-platform apps (telegram, wechat, …).
 
-/// A message received from or sent to a gateway.
+/// A message received from a chat platform.
 #[derive(Debug, Clone)]
-pub struct GatewayMessage {
+pub struct Message {
     /// Platform chat/channel ID.
     pub chat_id: i64,
     /// Platform-specific message ID (for reply threading).
@@ -49,8 +49,8 @@ pub enum AttachmentKind {
     Video,
 }
 
-impl From<GatewayMessage> for wcore::model::Message {
-    fn from(msg: GatewayMessage) -> Self {
+impl From<Message> for wcore::model::Message {
+    fn from(msg: Message) -> Self {
         wcore::model::Message::user(msg.content)
     }
 }

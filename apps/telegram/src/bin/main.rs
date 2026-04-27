@@ -1,4 +1,4 @@
-//! `crabtalk-telegram` binary — Telegram gateway for Crabtalk.
+//! `crabtalk-telegram` binary — Telegram app for Crabtalk.
 
 use std::io::Write;
 
@@ -10,9 +10,9 @@ use crossterm::{
 };
 
 #[command::command(kind = "client", name = "telegram")]
-struct GatewayTelegram;
+struct TelegramApp;
 
-impl GatewayTelegram {
+impl TelegramApp {
     async fn run(&self) -> anyhow::Result<()> {
         let conn_info = sdk::ConnectionInfo::platform_default()?;
         let config_path = config_path();
@@ -98,11 +98,11 @@ fn main() {
     }
 
     let cli = CrabtalkCli::parse();
-    if matches!(&cli.action, GatewayTelegramCommand::Start { .. })
+    if matches!(&cli.action, TelegramAppCommand::Start { .. })
         && let Err(e) = ensure_config()
     {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
-    cli.start(GatewayTelegram);
+    cli.start(TelegramApp);
 }

@@ -5,7 +5,7 @@
 //!   - bootstrap a connection ([`connect_uds`], [`connect_tcp`], [`connect_from`]),
 //!   - hold reconnection metadata ([`ConnectionInfo`]),
 //!   - and offer an [`OutputChunk`] adapter over [`api::Client::stream`] for
-//!     UI consumers (TUI, gateway adapters).
+//!     UI consumers (TUI and chat-platform apps).
 
 use anyhow::Result;
 use futures_core::Stream;
@@ -46,8 +46,9 @@ impl ConnectionInfo {
     /// replies. The connection closes when the daemon ends the stream or the
     /// receiver is dropped.
     ///
-    /// Use this for short-lived consumers (cron fires, gateway stream-per-chat)
-    /// where a long-lived [`Transport`] would just serialize concurrent senders.
+    /// Use this for short-lived consumers (cron fires, chat-platform
+    /// stream-per-chat) where a long-lived [`Transport`] would just serialize
+    /// concurrent senders.
     pub async fn send(&self, msg: ClientMessage) -> Result<mpsc::UnboundedReceiver<ServerMessage>> {
         let mut transport = connect_from(self).await?;
         let (tx, rx) = mpsc::unbounded_channel();

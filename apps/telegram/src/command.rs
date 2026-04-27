@@ -1,6 +1,6 @@
 //! Telegram bot command dispatch.
 
-use crate::BotCommand;
+use sdk::BotCommand;
 use teloxide::prelude::*;
 
 /// Execute a bot command, streaming progress messages back to the originating chat.

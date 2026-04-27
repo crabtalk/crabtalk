@@ -1,8 +1,8 @@
-//! Telegram gateway serve logic.
+//! Telegram app serve logic.
 
 use crate::config::TelegramConfig;
-use crate::{
-    COMMAND_HINT, ConnectionInfo, GatewayMessage, KnownBots, StreamAccumulator, StreamResult,
+use sdk::{
+    COMMAND_HINT, ConnectionInfo, KnownBots, Message, StreamAccumulator, StreamResult,
     attachment_summary, parse_command,
 };
 use std::collections::HashMap;
@@ -13,11 +13,11 @@ use wcore::protocol::message::{
     AskQuestion, ClientMessage, ReplyToAsk, ServerMessage, StreamMsg, server_message,
 };
 
-/// Run the Telegram gateway service.
+/// Run the Telegram app service.
 pub async fn run(conn_info: ConnectionInfo, config: &TelegramConfig) -> anyhow::Result<()> {
     let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
-    let default_agent = crate::resolve_default_agent(&agents_dir);
-    tracing::info!(agent = %default_agent, "telegram gateway starting");
+    let default_agent = sdk::resolve_default_agent(&agents_dir);
+    tracing::info!(agent = %default_agent, "telegram app starting");
 
     let known_bots: KnownBots =
         std::sync::Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new()));
@@ -36,7 +36,7 @@ pub async fn run(conn_info: ConnectionInfo, config: &TelegramConfig) -> anyhow::
     }
 
     tokio::signal::ctrl_c().await?;
-    tracing::info!("telegram gateway shutting down");
+    tracing::info!("telegram app shutting down");
     Ok(())
 }
 
@@ -60,7 +60,7 @@ async fn spawn_telegram(
         }
     }
 
-    let (tx, rx) = mpsc::unbounded_channel::<GatewayMessage>();
+    let (tx, rx) = mpsc::unbounded_channel::<Message>();
 
     let poll_bot = bot.clone();
     tokio::spawn(async move {
@@ -99,7 +99,7 @@ async fn reap_chat(chat: ChatStream) -> bool {
 }
 
 async fn telegram_loop(
-    mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
+    mut rx: mpsc::UnboundedReceiver<Message>,
     bot: Bot,
     agent: String,
     conn_info: ConnectionInfo,

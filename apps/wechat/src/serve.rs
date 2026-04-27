@@ -1,20 +1,19 @@
-//! WeChat gateway serve logic.
+//! WeChat app serve logic.
 
 use crate::config::WechatConfig;
-use crate::{
-    ConnectionInfo, ContextTokens, GatewayMessage, StreamAccumulator, StreamResult, UserIdMap,
-};
+use crate::{ContextTokens, UserIdMap};
+use sdk::{ConnectionInfo, Message, StreamAccumulator, StreamResult};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
 use wcore::protocol::message::{
     ClientMessage, ReplyToAsk, ServerMessage, StreamMsg, server_message,
 };
 
-/// Run the WeChat gateway service.
+/// Run the WeChat app service.
 pub async fn run(conn_info: ConnectionInfo, config: &WechatConfig) -> anyhow::Result<()> {
     let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
-    let default_agent = crate::resolve_default_agent(&agents_dir);
-    tracing::info!(agent = %default_agent, "wechat gateway starting");
+    let default_agent = sdk::resolve_default_agent(&agents_dir);
+    tracing::info!(agent = %default_agent, "wechat app starting");
 
     if config.token.is_empty() {
         tracing::warn!(platform = "wechat", "token is empty, skipping");
@@ -23,12 +22,12 @@ pub async fn run(conn_info: ConnectionInfo, config: &WechatConfig) -> anyhow::Re
     }
 
     tokio::signal::ctrl_c().await?;
-    tracing::info!("wechat gateway shutting down");
+    tracing::info!("wechat app shutting down");
     Ok(())
 }
 
 async fn spawn_wechat(wc: &WechatConfig, agent: String, conn_info: ConnectionInfo) {
-    let (tx, rx) = mpsc::unbounded_channel::<GatewayMessage>();
+    let (tx, rx) = mpsc::unbounded_channel::<Message>();
     let ctx_tokens: ContextTokens = Arc::new(parking_lot::Mutex::new(HashMap::new()));
     let user_ids: UserIdMap = Arc::new(parking_lot::Mutex::new(HashMap::new()));
 
@@ -76,7 +75,7 @@ async fn reap_chat(chat: ChatStream) -> bool {
 
 #[allow(clippy::too_many_arguments)]
 async fn wechat_loop(
-    mut rx: mpsc::UnboundedReceiver<GatewayMessage>,
+    mut rx: mpsc::UnboundedReceiver<Message>,
     agent: String,
     conn_info: ConnectionInfo,
     ctx_tokens: ContextTokens,
