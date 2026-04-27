@@ -92,6 +92,7 @@ impl<C: Config> Runtime<C> {
             .await;
 
         let mut compact_summary: Option<String> = None;
+        let mut event_trace: Vec<wcore::EventLine> = Vec::new();
         while let Ok(event) = rx.try_recv() {
             if let AgentEvent::Compact { ref summary } = event {
                 compact_summary = Some(summary.clone());
@@ -101,6 +102,9 @@ impl<C: Config> Runtime<C> {
                 .on_event(&agent_name, conversation_id, &event);
             self.env
                 .on_agent_event(&agent_name, conversation_id, &event);
+            if let Some(line) = wcore::EventLine::from_agent_event(&event) {
+                event_trace.push(line);
+            }
         }
 
         self.finalize_run(
@@ -111,7 +115,7 @@ impl<C: Config> Runtime<C> {
             &created_by,
             pre_run_len,
             compact_summary,
-            &[],
+            &event_trace,
         )
         .await;
         Ok(response)
