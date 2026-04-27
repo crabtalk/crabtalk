@@ -55,55 +55,57 @@ pub async fn accept_loop<F>(
     F: Fn(ClientMessage, mpsc::Sender<ServerMessage>) + Clone + Send + 'static,
 {
     loop {
-        tokio::select! {
-            result = listener.accept() => {
-                match result {
-                    Ok((stream, addr)) => {
-                        let _ = stream.set_nodelay(true);
-                        tracing::debug!("tcp connection from {addr}");
-                        let cb = on_message.clone();
-                        tokio::spawn(async move {
-                            let (mut reader, mut writer) = stream.into_split();
-                            let (tx, mut rx) = mpsc::channel::<ServerMessage>(REPLY_CHANNEL_CAPACITY);
-                            let send_task = tokio::spawn(async move {
-                                while let Some(msg) = rx.recv().await {
-                                    if let Err(e) = codec::write_message(&mut writer, &msg).await {
-                                        tracing::error!("failed to write message: {e}");
-                                        break;
-                                    }
-                                }
-                            });
-
-                            loop {
-                                let client_msg: ClientMessage = match codec::read_message(&mut reader).await {
-                                    Ok(msg) => msg,
-                                    Err(codec::FrameError::ConnectionClosed) => break,
-                                    Err(e) => { tracing::debug!("read error: {e}"); break; }
-                                };
-                                cb(client_msg, tx.clone());
-                            }
-
-                            // Client is gone — drop our tx and abort send_task so
-                            // the writer half releases the socket FD immediately.
-                            // Without abort, send_task would await rx.recv() until
-                            // every dispatch task drops its tx clone (which for
-                            // long-lived subscriptions never happens), leaking the
-                            // FD for the lifetime of the daemon.
-                            drop(tx);
-                            send_task.abort();
-                            let _ = send_task.await;
-                        });
-                    }
-                    Err(e) => {
-                        tracing::error!("failed to accept tcp connection: {e}");
-                        tokio::time::sleep(ACCEPT_ERROR_BACKOFF).await;
-                    }
+        let (stream, addr) = tokio::select! {
+            result = listener.accept() => match result {
+                Ok(pair) => pair,
+                Err(e) => {
+                    tracing::error!("failed to accept tcp connection: {e}");
+                    tokio::time::sleep(ACCEPT_ERROR_BACKOFF).await;
+                    continue;
                 }
-            }
+            },
             _ = &mut shutdown => {
                 tracing::info!("tcp accept loop shutting down");
                 break;
             }
-        }
+        };
+
+        let _ = stream.set_nodelay(true);
+        tracing::debug!("tcp connection from {addr}");
+        let cb = on_message.clone();
+        tokio::spawn(async move {
+            let (mut reader, mut writer) = stream.into_split();
+            let (tx, mut rx) = mpsc::channel::<ServerMessage>(REPLY_CHANNEL_CAPACITY);
+            let send_task = tokio::spawn(async move {
+                while let Some(msg) = rx.recv().await {
+                    if let Err(e) = codec::write_message(&mut writer, &msg).await {
+                        tracing::error!("failed to write message: {e}");
+                        break;
+                    }
+                }
+            });
+
+            loop {
+                let client_msg: ClientMessage = match codec::read_message(&mut reader).await {
+                    Ok(msg) => msg,
+                    Err(codec::FrameError::ConnectionClosed) => break,
+                    Err(e) => {
+                        tracing::debug!("read error: {e}");
+                        break;
+                    }
+                };
+                cb(client_msg, tx.clone());
+            }
+
+            // Client is gone — drop our tx and abort send_task so
+            // the writer half releases the socket FD immediately.
+            // Without abort, send_task would await rx.recv() until
+            // every dispatch task drops its tx clone (which for
+            // long-lived subscriptions never happens), leaking the
+            // FD for the lifetime of the daemon.
+            drop(tx);
+            send_task.abort();
+            let _ = send_task.await;
+        });
     }
 }
