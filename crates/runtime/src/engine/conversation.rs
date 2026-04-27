@@ -43,7 +43,8 @@ impl<C: Config> Runtime<C> {
     pub async fn load(&self, handle: ConversationHandle) -> Result<u64> {
         let storage = self.storage();
         let snapshot = storage
-            .load_session(&handle)?
+            .load_session(&handle)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("conversation '{}' not found", handle.as_str()))?;
         if !self.has_agent(&snapshot.meta.agent).await {
             bail!("agent '{}' not registered", snapshot.meta.agent);
@@ -285,12 +286,12 @@ impl<C: Config> Runtime<C> {
     /// Ensure the conversation has a session handle, creating one via
     /// the repo if needed. Sessions persist unconditionally — every
     /// conversation reaches storage on first persist call.
-    fn ensure_handle(&self, conversation: &mut Conversation, agent: &str, created_by: &str) {
+    async fn ensure_handle(&self, conversation: &mut Conversation, agent: &str, created_by: &str) {
         if conversation.handle.is_some() {
             return;
         }
         let storage = self.storage();
-        match storage.create_session(agent, created_by) {
+        match storage.create_session(agent, created_by).await {
             Ok(handle) => conversation.handle = Some(handle),
             Err(e) => tracing::warn!("failed to create session: {e}"),
         }
@@ -301,7 +302,7 @@ impl<C: Config> Runtime<C> {
     /// generation if the conversation has a titleable exchange and no
     /// title yet.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn finalize_run(
+    pub(crate) async fn finalize_run(
         &self,
         conversation_id: u64,
         conversation: &mut Conversation,
@@ -319,7 +320,8 @@ impl<C: Config> Runtime<C> {
             pre_run_len,
             compact_summary,
             event_trace,
-        );
+        )
+        .await;
         if conversation.title.is_empty() && conversation.history.len() >= 2 {
             self.spawn_title_generation(conversation_id, agent, created_by, conversation_mutex);
         }
@@ -329,7 +331,7 @@ impl<C: Config> Runtime<C> {
     /// compact markers, and meta updates. Also threads each newly
     /// persisted entry into the session search index so `search_sessions`
     /// finds live work without waiting for a process restart.
-    pub(crate) fn persist_messages(
+    pub(crate) async fn persist_messages(
         &self,
         conversation: &mut Conversation,
         agent: &str,
@@ -338,7 +340,7 @@ impl<C: Config> Runtime<C> {
         compact_summary: Option<String>,
         event_trace: &[wcore::EventLine],
     ) {
-        self.ensure_handle(conversation, agent, created_by);
+        self.ensure_handle(conversation, agent, created_by).await;
         let Some(ref handle) = conversation.handle else {
             return;
         };
@@ -355,7 +357,7 @@ impl<C: Config> Runtime<C> {
             // session's storage slug so each session's phases stay
             // grouped under one prefix in memory.
             if let Some(archive_name) = self.write_archive(handle.as_str(), summary) {
-                let _ = storage.append_session_compact(handle, &archive_name);
+                let _ = storage.append_session_compact(handle, &archive_name).await;
                 compacted = true;
                 if conversation.history.len() > 1 {
                     let tail: Vec<_> = conversation.history[1..]
@@ -363,7 +365,7 @@ impl<C: Config> Runtime<C> {
                         .filter(|e| !e.auto_injected)
                         .cloned()
                         .collect();
-                    let _ = storage.append_session_messages(handle, &tail);
+                    let _ = storage.append_session_messages(handle, &tail).await;
                     indexable_entries = tail;
                 } else {
                     indexable_entries = Vec::new();
@@ -377,14 +379,14 @@ impl<C: Config> Runtime<C> {
                 .filter(|e| !e.auto_injected)
                 .cloned()
                 .collect();
-            let _ = storage.append_session_messages(handle, &new_entries);
+            let _ = storage.append_session_messages(handle, &new_entries).await;
             indexable_entries = new_entries;
         }
         if !event_trace.is_empty() {
-            let _ = storage.append_session_events(handle, event_trace);
+            let _ = storage.append_session_events(handle, event_trace).await;
         }
         let meta = conversation.meta(agent, created_by);
-        let _ = storage.update_session_meta(handle, &meta);
+        let _ = storage.update_session_meta(handle, &meta).await;
 
         // After storage is updated, reflect the same change into the
         // search index. Compaction flushes the session's prior
@@ -487,10 +489,12 @@ impl<C: Config> Runtime<C> {
                             if conversation.title.is_empty() {
                                 conversation.title = title;
                                 if let Some(ref handle) = conversation.handle {
-                                    let _ = storage.update_session_meta(
-                                        handle,
-                                        &conversation.meta(&agent_name, &created_by),
-                                    );
+                                    let _ = storage
+                                        .update_session_meta(
+                                            handle,
+                                            &conversation.meta(&agent_name, &created_by),
+                                        )
+                                        .await;
                                 }
                             }
                         }

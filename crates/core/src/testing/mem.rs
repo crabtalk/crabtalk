@@ -60,17 +60,17 @@ impl InMemoryStorage {
 impl Storage for InMemoryStorage {
     // ── Skills ─────────────────────────────────────────────────────
 
-    fn list_skills(&self) -> Result<Vec<Skill>> {
+    async fn list_skills(&self) -> Result<Vec<Skill>> {
         Ok(self.skills.lock().clone())
     }
 
-    fn load_skill(&self, name: &str) -> Result<Option<Skill>> {
+    async fn load_skill(&self, name: &str) -> Result<Option<Skill>> {
         Ok(self.skills.lock().iter().find(|s| s.name == name).cloned())
     }
 
     // ── Sessions ───────────────────────────────────────────────────
 
-    fn create_session(&self, agent: &str, created_by: &str) -> Result<SessionHandle> {
+    async fn create_session(&self, agent: &str, created_by: &str) -> Result<SessionHandle> {
         let mut seq = self.next_session_seq.lock();
         *seq += 1;
         let slug = format!("{}_{}", agent, seq);
@@ -95,7 +95,11 @@ impl Storage for InMemoryStorage {
         Ok(SessionHandle::new(slug))
     }
 
-    fn find_latest_session(&self, agent: &str, created_by: &str) -> Result<Option<SessionHandle>> {
+    async fn find_latest_session(
+        &self,
+        agent: &str,
+        created_by: &str,
+    ) -> Result<Option<SessionHandle>> {
         let sessions = self.sessions.lock();
         for (slug, state) in sessions.iter() {
             if state.meta.agent == agent && state.meta.created_by == created_by {
@@ -105,7 +109,7 @@ impl Storage for InMemoryStorage {
         Ok(None)
     }
 
-    fn load_session(&self, handle: &SessionHandle) -> Result<Option<SessionSnapshot>> {
+    async fn load_session(&self, handle: &SessionHandle) -> Result<Option<SessionSnapshot>> {
         let sessions = self.sessions.lock();
         let Some(state) = sessions.get(handle.as_str()) else {
             return Ok(None);
@@ -118,7 +122,7 @@ impl Storage for InMemoryStorage {
         }))
     }
 
-    fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
+    async fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
         let sessions = self.sessions.lock();
         Ok(sessions
             .iter()
@@ -129,7 +133,7 @@ impl Storage for InMemoryStorage {
             .collect())
     }
 
-    fn append_session_messages(
+    async fn append_session_messages(
         &self,
         handle: &SessionHandle,
         entries: &[HistoryEntry],
@@ -141,7 +145,11 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    fn append_session_events(&self, handle: &SessionHandle, events: &[EventLine]) -> Result<()> {
+    async fn append_session_events(
+        &self,
+        handle: &SessionHandle,
+        events: &[EventLine],
+    ) -> Result<()> {
         let mut sessions = self.sessions.lock();
         if let Some(state) = sessions.get_mut(handle.as_str()) {
             state.events.extend(events.iter().cloned());
@@ -149,7 +157,11 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    fn append_session_compact(&self, handle: &SessionHandle, archive_name: &str) -> Result<()> {
+    async fn append_session_compact(
+        &self,
+        handle: &SessionHandle,
+        archive_name: &str,
+    ) -> Result<()> {
         let mut sessions = self.sessions.lock();
         if let Some(state) = sessions.get_mut(handle.as_str()) {
             state
@@ -160,7 +172,11 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    fn update_session_meta(&self, handle: &SessionHandle, meta: &ConversationMeta) -> Result<()> {
+    async fn update_session_meta(
+        &self,
+        handle: &SessionHandle,
+        meta: &ConversationMeta,
+    ) -> Result<()> {
         let mut sessions = self.sessions.lock();
         if let Some(state) = sessions.get_mut(handle.as_str()) {
             state.meta = meta.clone();
@@ -168,13 +184,13 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    fn delete_session(&self, handle: &SessionHandle) -> Result<bool> {
+    async fn delete_session(&self, handle: &SessionHandle) -> Result<bool> {
         Ok(self.sessions.lock().remove(handle.as_str()).is_some())
     }
 
     // ── Agents ─────────────────────────────────────────────────────
 
-    fn list_agents(&self) -> Result<Vec<AgentConfig>> {
+    async fn list_agents(&self) -> Result<Vec<AgentConfig>> {
         Ok(self
             .agents
             .lock()
@@ -187,7 +203,7 @@ impl Storage for InMemoryStorage {
             .collect())
     }
 
-    fn load_agent(&self, id: &AgentId) -> Result<Option<AgentConfig>> {
+    async fn load_agent(&self, id: &AgentId) -> Result<Option<AgentConfig>> {
         let agents = self.agents.lock();
         for (config, prompt) in agents.values() {
             if config.id == *id {
@@ -199,7 +215,7 @@ impl Storage for InMemoryStorage {
         Ok(None)
     }
 
-    fn load_agent_by_name(&self, name: &str) -> Result<Option<AgentConfig>> {
+    async fn load_agent_by_name(&self, name: &str) -> Result<Option<AgentConfig>> {
         let agents = self.agents.lock();
         if let Some((config, prompt)) = agents.get(name) {
             let mut c = config.clone();
@@ -210,7 +226,7 @@ impl Storage for InMemoryStorage {
         }
     }
 
-    fn upsert_agent(&self, config: &AgentConfig, prompt: &str) -> Result<()> {
+    async fn upsert_agent(&self, config: &AgentConfig, prompt: &str) -> Result<()> {
         if config.id.is_nil() {
             anyhow::bail!("cannot upsert agent with nil ID");
         }
@@ -223,7 +239,7 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    fn delete_agent(&self, id: &AgentId) -> Result<bool> {
+    async fn delete_agent(&self, id: &AgentId) -> Result<bool> {
         let mut agents = self.agents.lock();
         let name = agents
             .iter()
@@ -237,7 +253,7 @@ impl Storage for InMemoryStorage {
         }
     }
 
-    fn rename_agent(&self, id: &AgentId, new_name: &str) -> Result<bool> {
+    async fn rename_agent(&self, id: &AgentId, new_name: &str) -> Result<bool> {
         let mut agents = self.agents.lock();
         let old_name = agents
             .iter()
@@ -253,36 +269,36 @@ impl Storage for InMemoryStorage {
         Ok(false)
     }
 
-    fn load_config(&self) -> Result<DaemonConfig> {
+    async fn load_config(&self) -> Result<DaemonConfig> {
         Ok(self.config.lock().clone())
     }
 
-    fn save_config(&self, config: &DaemonConfig) -> Result<()> {
+    async fn save_config(&self, config: &DaemonConfig) -> Result<()> {
         *self.config.lock() = config.clone();
         Ok(())
     }
 
-    fn scaffold(&self, _default_model: &str) -> Result<()> {
+    async fn scaffold(&self, _default_model: &str) -> Result<()> {
         Ok(())
     }
 
     // ── MCP servers ────────────────────────────────────────────────
 
-    fn list_mcps(&self) -> Result<BTreeMap<String, McpServerConfig>> {
+    async fn list_mcps(&self) -> Result<BTreeMap<String, McpServerConfig>> {
         Ok(self.mcps.lock().clone())
     }
 
-    fn load_mcp(&self, name: &str) -> Result<Option<McpServerConfig>> {
+    async fn load_mcp(&self, name: &str) -> Result<Option<McpServerConfig>> {
         Ok(self.mcps.lock().get(name).cloned())
     }
 
-    fn upsert_mcp(&self, config: &McpServerConfig) -> Result<()> {
+    async fn upsert_mcp(&self, config: &McpServerConfig) -> Result<()> {
         validate_table_name("mcp", &config.name)?;
         self.mcps.lock().insert(config.name.clone(), config.clone());
         Ok(())
     }
 
-    fn delete_mcp(&self, name: &str) -> Result<bool> {
+    async fn delete_mcp(&self, name: &str) -> Result<bool> {
         Ok(self.mcps.lock().remove(name).is_some())
     }
 }

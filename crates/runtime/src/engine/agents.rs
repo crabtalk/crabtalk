@@ -85,25 +85,25 @@ impl<C: Config> Runtime<C> {
 
     /// Create a new persisted agent. Writes storage, registers in the
     /// runtime, returns the registered config.
-    pub fn create_agent(&self, mut config: AgentConfig, prompt: &str) -> Result<AgentConfig> {
+    pub async fn create_agent(&self, mut config: AgentConfig, prompt: &str) -> Result<AgentConfig> {
         validate_agent_name(&config.name)?;
         if config.id.is_nil() {
             config.id = AgentId::new();
         }
         let storage = self.storage();
-        if storage.load_agent_by_name(&config.name)?.is_some() {
+        if storage.load_agent_by_name(&config.name).await?.is_some() {
             anyhow::bail!("agent '{}' already exists", config.name);
         }
-        storage.upsert_agent(&config, prompt)?;
-        self.load_and_register(&config.name)
+        storage.upsert_agent(&config, prompt).await?;
+        self.load_and_register(&config.name).await
     }
 
     /// Update an existing persisted agent (or create if absent). Writes
     /// storage, re-registers in the runtime, returns the registered config.
-    pub fn update_agent(&self, mut config: AgentConfig, prompt: &str) -> Result<AgentConfig> {
+    pub async fn update_agent(&self, mut config: AgentConfig, prompt: &str) -> Result<AgentConfig> {
         validate_agent_name(&config.name)?;
         let storage = self.storage();
-        let existing = storage.load_agent_by_name(&config.name)?;
+        let existing = storage.load_agent_by_name(&config.name).await?;
         if let Some(prev) = &existing {
             if config.id.is_nil() {
                 config.id = prev.id;
@@ -116,20 +116,20 @@ impl<C: Config> Runtime<C> {
         } else {
             prompt.to_owned()
         };
-        storage.upsert_agent(&config, &prompt)?;
-        self.load_and_register(&config.name)
+        storage.upsert_agent(&config, &prompt).await?;
+        self.load_and_register(&config.name).await
     }
 
     /// Purge a persisted agent — removes from storage AND unregisters from
     /// the runtime. Named distinctly from `Storage::delete_agent` (which is
     /// storage-only and keyed by `AgentId`) to avoid confusion about which
     /// layer cascades.
-    pub fn purge_agent(&self, name: &str) -> Result<bool> {
+    pub async fn purge_agent(&self, name: &str) -> Result<bool> {
         let storage = self.storage();
-        let Some(existing) = storage.load_agent_by_name(name)? else {
+        let Some(existing) = storage.load_agent_by_name(name).await? else {
             return Ok(false);
         };
-        let removed = storage.delete_agent(&existing.id)?;
+        let removed = storage.delete_agent(&existing.id).await?;
         if removed {
             self.remove_agent(name);
         }
@@ -138,7 +138,7 @@ impl<C: Config> Runtime<C> {
 
     /// Rename a persisted agent. Updates storage, re-registers under the
     /// new name in the runtime.
-    pub fn rename_agent(&self, old_name: &str, new_name: &str) -> Result<AgentConfig> {
+    pub async fn rename_agent(&self, old_name: &str, new_name: &str) -> Result<AgentConfig> {
         validate_agent_name(new_name)?;
         anyhow::ensure!(
             old_name != paths::DEFAULT_AGENT,
@@ -154,17 +154,19 @@ impl<C: Config> Runtime<C> {
         }
         let storage = self.storage();
         let existing = storage
-            .load_agent_by_name(old_name)?
+            .load_agent_by_name(old_name)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("agent '{old_name}' not found"))?;
-        storage.rename_agent(&existing.id, new_name)?;
+        storage.rename_agent(&existing.id, new_name).await?;
         self.remove_agent(old_name);
-        self.load_and_register(new_name)
+        self.load_and_register(new_name).await
     }
 
-    fn load_and_register(&self, name: &str) -> Result<AgentConfig> {
+    async fn load_and_register(&self, name: &str) -> Result<AgentConfig> {
         let config = self
             .storage()
-            .load_agent_by_name(name)?
+            .load_agent_by_name(name)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("agent '{name}' missing from storage after upsert"))?;
         Ok(self.upsert_agent(config))
     }

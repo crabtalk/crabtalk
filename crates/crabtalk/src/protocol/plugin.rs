@@ -80,7 +80,7 @@ impl<P: Provider + 'static> Daemon<P> {
             }
             let storage_mcps = {
                 let rt = self.runtime.read().await.clone();
-                rt.storage().list_mcps()?
+                rt.storage().list_mcps().await?
             };
             for (name, mcp) in &storage_mcps {
                 if mcp.auth

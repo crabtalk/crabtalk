@@ -112,7 +112,8 @@ impl<C: Config> Runtime<C> {
             pre_run_len,
             compact_summary,
             &[],
-        );
+        )
+        .await;
         Ok(response)
     }
 
@@ -178,7 +179,8 @@ impl<C: Config> Runtime<C> {
                 pre_run_len,
                 compact_summary,
                 &event_trace,
-            );
+            )
+            .await;
             if let Some(event) = done_event {
                 yield event;
             }
@@ -320,7 +322,8 @@ impl<C: Config> Runtime<C> {
                 pre_run_len,
                 None,
                 &[],
-            );
+            )
+            .await;
 
             yield AgentEvent::Done(AgentResponse {
                 final_response: Some(response_text),

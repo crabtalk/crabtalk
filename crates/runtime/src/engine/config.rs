@@ -7,9 +7,10 @@ use wcore::{paths, protocol::message::ModelInfo, storage::Storage};
 impl<C: Config> Runtime<C> {
     /// The active model — defined as the default agent's `model` field.
     /// Empty string if the default agent is missing (pre-scaffold).
-    pub fn active_model(&self) -> String {
+    pub async fn active_model(&self) -> String {
         self.storage()
             .load_agent_by_name(paths::DEFAULT_AGENT)
+            .await
             .ok()
             .flatten()
             .map(|c| c.model)
@@ -24,8 +25,8 @@ impl<C: Config> Runtime<C> {
 
     /// List models advertised by the configured LLM endpoint at startup
     /// (or last reload). Flags the currently active model.
-    pub fn list_models(&self) -> Vec<ModelInfo> {
-        let active_model = self.active_model();
+    pub async fn list_models(&self) -> Vec<ModelInfo> {
+        let active_model = self.active_model().await;
         self.models
             .read()
             .iter()

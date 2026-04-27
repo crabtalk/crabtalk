@@ -3,18 +3,17 @@
 use crate::daemon::ConversationCwds;
 use bash::Bash;
 use edit::Edit;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use read::Read;
 use runtime::Hook;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Write,
     path::PathBuf,
     sync::Arc,
 };
 use wcore::{
     AgentConfig, BashConfig, ToolDispatch, ToolFuture, agent::AsTool, model::HistoryEntry,
-    storage::Storage,
 };
 
 mod bash;
@@ -45,40 +44,27 @@ pub struct OsHook {
     conversation_cwds: ConversationCwds,
     /// Files read per conversation — edit requires a prior read.
     read_files: ReadFiles,
-    /// Storage handle used to resolve the calling agent's bash policy
-    /// at dispatch time. Each agent owns its own [`BashConfig`].
-    storage: Arc<dyn Storage>,
+    /// Per-agent bash policy cache, populated from `on_register_agent`.
+    /// Avoids an async storage roundtrip from the sync `dispatch` path.
+    configs: RwLock<BTreeMap<String, BashConfig>>,
 }
 
 impl OsHook {
-    pub fn new(
-        cwd: PathBuf,
-        conversation_cwds: ConversationCwds,
-        read_files: ReadFiles,
-        storage: Arc<dyn Storage>,
-    ) -> Self {
+    pub fn new(cwd: PathBuf, conversation_cwds: ConversationCwds, read_files: ReadFiles) -> Self {
         Self {
             cwd,
             conversation_cwds,
             read_files,
-            storage,
+            configs: RwLock::new(BTreeMap::new()),
         }
     }
 
-    /// Look up an agent's bash configuration. Falls back to [`BashConfig::default`]
-    /// when the agent is missing — the dispatcher will refuse to run an
-    /// unknown agent anyway, so the value only matters for `scoped_tools`.
-    /// Storage errors are logged loudly: a transient I/O failure here would
-    /// silently relax bash deny rules, which is a security regression.
+    /// Look up an agent's bash configuration. Falls back to
+    /// [`BashConfig::default`] for unknown agents — the dispatcher
+    /// rejects unknown agents anyway, so this only matters for
+    /// `scoped_tools`.
     fn bash_config(&self, agent: &str) -> BashConfig {
-        match self.storage.load_agent_by_name(agent) {
-            Ok(Some(cfg)) => cfg.hooks.bash,
-            Ok(None) => BashConfig::default(),
-            Err(e) => {
-                tracing::error!(%agent, error = %e, "failed to load bash config — falling back to defaults");
-                BashConfig::default()
-            }
-        }
+        self.configs.read().get(agent).cloned().unwrap_or_default()
     }
 
     /// Effective `disabled` flag for an agent.
@@ -149,6 +135,16 @@ impl Hook for OsHook {
 
     fn system_prompt(&self) -> Option<String> {
         Some(environment_block())
+    }
+
+    fn on_register_agent(&self, name: &str, config: &AgentConfig) {
+        self.configs
+            .write()
+            .insert(name.to_owned(), config.hooks.bash.clone());
+    }
+
+    fn on_unregister_agent(&self, name: &str) {
+        self.configs.write().remove(name);
     }
 
     fn on_before_run(

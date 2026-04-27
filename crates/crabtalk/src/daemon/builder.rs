@@ -69,9 +69,9 @@ impl<P: Provider + 'static> Daemon<P> {
         // immediately, so new work is always findable).
         {
             let rebuild_runtime = shared_runtime.clone();
-            tokio::task::spawn_blocking(move || {
-                let rt = rebuild_runtime.blocking_read().clone();
-                if let Err(e) = rt.rebuild_session_index() {
+            tokio::spawn(async move {
+                let rt = rebuild_runtime.read().await.clone();
+                if let Err(e) = rt.rebuild_session_index().await {
                     tracing::warn!("session index rebuild failed: {e}");
                 }
             });
@@ -189,10 +189,10 @@ impl<P: Provider + 'static> Daemon<P> {
         let storage = Self::build_storage(config_dir, &dirs);
         let models = fetch_models(&config.llm).await;
         let default_model = models.first().cloned().unwrap_or_default();
-        storage.scaffold(&default_model)?;
+        storage.scaffold(&default_model).await?;
 
         let model = build_provider(config, &models)?;
-        let servers = mcp_servers(config, storage.as_ref(), &dirs)?;
+        let servers = mcp_servers(config, storage.as_ref(), &dirs).await?;
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::load(&servers).await);
         let (os_hook, ask_hook, shared_memory) = Self::register_tools(
             &mut node_hook,
@@ -203,7 +203,8 @@ impl<P: Provider + 'static> Daemon<P> {
             cwd.clone(),
             conversation_cwds.clone(),
             pending_asks,
-        )?;
+        )
+        .await?;
         let node_hook = Arc::new(node_hook);
 
         let (events_tx, _) = broadcast::channel(256);
@@ -221,7 +222,7 @@ impl<P: Provider + 'static> Daemon<P> {
         let runtime = Runtime::new(model, env, storage, shared_memory, tools);
         runtime.set_models(models);
         let mut runtime = runtime;
-        Self::register_agents(&mut runtime, &dirs)?;
+        Self::register_agents(&mut runtime, &dirs).await?;
         Ok((runtime, mcp_handler, node_hook, os_hook, ask_hook))
     }
 
@@ -241,7 +242,7 @@ impl<P: Provider + 'static> Daemon<P> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn register_tools(
+    async fn register_tools(
         node_hook: &mut DaemonHook,
         storage: Arc<FsStorage>,
         config_dir: &Path,
@@ -261,21 +262,18 @@ impl<P: Provider + 'static> Daemon<P> {
         let scopes = node_hook.scopes.clone();
         let read_files: crate::hooks::os::ReadFiles = Default::default();
         let mcp_server_list = mcp_handler.cached_list();
+        let skills = storage.list_skills().await.unwrap_or_default();
 
         let os_hook = Arc::new(crate::hooks::os::OsHook::new(
             cwd,
             conversation_cwds.clone(),
             read_files.clone(),
-            storage.clone(),
         ));
         node_hook.register_hook("os", os_hook.clone());
 
         node_hook.register_hook(
             "memory",
-            Arc::new(crate::hooks::memory::MemoryHook::new(
-                memory,
-                storage.clone(),
-            )),
+            Arc::new(crate::hooks::memory::MemoryHook::new(memory)),
         );
 
         node_hook.register_hook(
@@ -288,7 +286,7 @@ impl<P: Provider + 'static> Daemon<P> {
         node_hook.register_hook(
             "skill",
             Arc::new(crate::hooks::skill::handler::SkillHook::new(
-                storage,
+                skills,
                 scopes.clone(),
             )),
         );
@@ -328,11 +326,11 @@ impl<P: Provider + 'static> Daemon<P> {
     /// Storage is seeded with the default `crab` agent by
     /// [`Storage::scaffold`] before this runs. Plugin agents only
     /// register if storage doesn't already shadow them by name.
-    fn register_agents(
+    async fn register_agents(
         runtime: &mut Runtime<crate::daemon::DaemonCfg<P>>,
         dirs: &ResolvedDirs,
     ) -> Result<()> {
-        let stored_agents = runtime.storage().list_agents()?;
+        let stored_agents = runtime.storage().list_agents().await?;
         let stored_names: std::collections::BTreeSet<String> =
             stored_agents.iter().map(|a| a.name.clone()).collect();
 
@@ -434,13 +432,13 @@ async fn fetch_models_inner(req: reqwest::RequestBuilder) -> Result<Vec<String>>
         .unwrap_or_default())
 }
 
-fn mcp_servers(
+async fn mcp_servers(
     config: &DaemonConfig,
-    storage: &dyn Storage,
+    storage: &FsStorage,
     dirs: &ResolvedDirs,
 ) -> Result<Vec<wcore::McpServerConfig>> {
     let mut merged: BTreeMap<String, wcore::McpServerConfig> = dirs.plugin_mcps.clone();
-    for (name, mcp) in storage.list_mcps()? {
+    for (name, mcp) in storage.list_mcps().await? {
         merged.insert(name, mcp);
     }
     Ok(merged

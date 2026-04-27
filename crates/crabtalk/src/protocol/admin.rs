@@ -16,7 +16,7 @@ impl<P: Provider + 'static> Daemon<P> {
         let active = rt.conversation_count().await;
         let agents = rt.agents().len() as u32;
         let uptime = self.started_at.elapsed().as_secs();
-        let active_model = rt.active_model();
+        let active_model = rt.active_model().await;
         Ok(DaemonStats {
             uptime_secs: uptime,
             active_conversations: active as u32,

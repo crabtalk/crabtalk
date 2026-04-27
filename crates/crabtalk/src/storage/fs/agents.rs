@@ -3,7 +3,8 @@
 
 use super::{FsStorage, atomic_write};
 use anyhow::Result;
-use std::{fs, io::ErrorKind, path::PathBuf};
+use std::{io::ErrorKind, path::PathBuf};
+use tokio::fs;
 use wcore::{AgentConfig, AgentId, storage::validate_table_name};
 
 fn agent_prompt_path(storage: &FsStorage, id: &AgentId) -> PathBuf {
@@ -14,48 +15,61 @@ fn agent_prompt_path(storage: &FsStorage, id: &AgentId) -> PathBuf {
         .join("prompt.md")
 }
 
-fn read_agent_prompt(storage: &FsStorage, id: &AgentId) -> Option<String> {
+async fn read_agent_prompt(storage: &FsStorage, id: &AgentId) -> Option<String> {
     if id.is_nil() {
         return None;
     }
-    fs::read_to_string(agent_prompt_path(storage, id)).ok()
+    fs::read_to_string(agent_prompt_path(storage, id))
+        .await
+        .ok()
 }
 
-pub(super) fn list_agents(storage: &FsStorage) -> Result<Vec<AgentConfig>> {
-    let file = storage.read_settings()?;
+pub(super) async fn list_agents(storage: &FsStorage) -> Result<Vec<AgentConfig>> {
+    let file = storage.read_settings().await?;
     let mut out = Vec::with_capacity(file.agents.len());
     for (name, mut cfg) in file.agents {
         cfg.name = name;
-        cfg.system_prompt = read_agent_prompt(storage, &cfg.id).unwrap_or_default();
+        cfg.system_prompt = read_agent_prompt(storage, &cfg.id)
+            .await
+            .unwrap_or_default();
         out.push(cfg);
     }
     Ok(out)
 }
 
-pub(super) fn load_agent(storage: &FsStorage, id: &AgentId) -> Result<Option<AgentConfig>> {
+pub(super) async fn load_agent(storage: &FsStorage, id: &AgentId) -> Result<Option<AgentConfig>> {
     if id.is_nil() {
         return Ok(None);
     }
-    let file = storage.read_settings()?;
+    let file = storage.read_settings().await?;
     let Some((name, mut cfg)) = file.agents.into_iter().find(|(_, c)| c.id == *id) else {
         return Ok(None);
     };
     cfg.name = name;
-    cfg.system_prompt = read_agent_prompt(storage, id).unwrap_or_default();
+    cfg.system_prompt = read_agent_prompt(storage, id).await.unwrap_or_default();
     Ok(Some(cfg))
 }
 
-pub(super) fn load_agent_by_name(storage: &FsStorage, name: &str) -> Result<Option<AgentConfig>> {
-    let file = storage.read_settings()?;
+pub(super) async fn load_agent_by_name(
+    storage: &FsStorage,
+    name: &str,
+) -> Result<Option<AgentConfig>> {
+    let file = storage.read_settings().await?;
     let Some(mut cfg) = file.agents.get(name).cloned() else {
         return Ok(None);
     };
     cfg.name = name.to_owned();
-    cfg.system_prompt = read_agent_prompt(storage, &cfg.id).unwrap_or_default();
+    cfg.system_prompt = read_agent_prompt(storage, &cfg.id)
+        .await
+        .unwrap_or_default();
     Ok(Some(cfg))
 }
 
-pub(super) fn upsert_agent(storage: &FsStorage, config: &AgentConfig, prompt: &str) -> Result<()> {
+pub(super) async fn upsert_agent(
+    storage: &FsStorage,
+    config: &AgentConfig,
+    prompt: &str,
+) -> Result<()> {
     if config.id.is_nil() {
         anyhow::bail!("cannot upsert agent with nil ID");
     }
@@ -63,18 +77,18 @@ pub(super) fn upsert_agent(storage: &FsStorage, config: &AgentConfig, prompt: &s
         anyhow::bail!("cannot upsert agent with empty name");
     }
     validate_table_name("agent", &config.name)?;
-    let mut file = storage.read_settings()?;
+    let mut file = storage.read_settings().await?;
     file.agents.insert(config.name.clone(), config.clone());
-    storage.write_settings(&file)?;
+    storage.write_settings(&file).await?;
     let path = agent_prompt_path(storage, &config.id);
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).await?;
     }
-    atomic_write(&path, prompt.as_bytes())
+    atomic_write(&path, prompt.as_bytes()).await
 }
 
-pub(super) fn delete_agent(storage: &FsStorage, id: &AgentId) -> Result<bool> {
-    let mut file = storage.read_settings()?;
+pub(super) async fn delete_agent(storage: &FsStorage, id: &AgentId) -> Result<bool> {
+    let mut file = storage.read_settings().await?;
     let removed_name = file
         .agents
         .iter()
@@ -83,10 +97,10 @@ pub(super) fn delete_agent(storage: &FsStorage, id: &AgentId) -> Result<bool> {
     let settings_removed = removed_name.is_some();
     if let Some(name) = removed_name {
         file.agents.remove(&name);
-        storage.write_settings(&file)?;
+        storage.write_settings(&file).await?;
     }
     let dir = storage.config_dir.join("agents").join(id.to_string());
-    let dir_removed = match fs::remove_dir_all(&dir) {
+    let dir_removed = match fs::remove_dir_all(&dir).await {
         Ok(()) => true,
         Err(e) if e.kind() == ErrorKind::NotFound => false,
         Err(e) => return Err(e.into()),
@@ -94,9 +108,13 @@ pub(super) fn delete_agent(storage: &FsStorage, id: &AgentId) -> Result<bool> {
     Ok(dir_removed || settings_removed)
 }
 
-pub(super) fn rename_agent(storage: &FsStorage, id: &AgentId, new_name: &str) -> Result<bool> {
+pub(super) async fn rename_agent(
+    storage: &FsStorage,
+    id: &AgentId,
+    new_name: &str,
+) -> Result<bool> {
     validate_table_name("agent", new_name)?;
-    let mut file = storage.read_settings()?;
+    let mut file = storage.read_settings().await?;
     let old_name = file
         .agents
         .iter()
@@ -113,6 +131,6 @@ pub(super) fn rename_agent(storage: &FsStorage, id: &AgentId, new_name: &str) ->
     }
     let cfg = file.agents.remove(&old_name).expect("present above");
     file.agents.insert(new_name.to_owned(), cfg);
-    storage.write_settings(&file)?;
+    storage.write_settings(&file).await?;
     Ok(true)
 }

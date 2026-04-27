@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use runtime::Hook;
 use serde::Deserialize;
 use std::{collections::BTreeMap, sync::Arc};
-use wcore::{ToolDispatch, ToolFuture, agent::AsTool, storage::Storage};
+use wcore::{ToolDispatch, ToolFuture, agent::AsTool, storage::Skill};
 
 /// Load a skill by name. Returns its instructions on exact match, or lists matching skills otherwise.
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -19,26 +19,33 @@ pub struct SkillTool {
 
 /// Skill subsystem: tool dispatch + slash-skill preprocessing.
 ///
-/// Owns a Storage reference for loading skills and a scopes reference
-/// for enforcing per-agent skill whitelists.
-pub struct SkillHook<S: Storage> {
-    storage: Arc<S>,
+/// Owns a snapshot of the discovered skills (loaded once at construction
+/// from disk) and a scopes reference for enforcing per-agent skill
+/// whitelists. Skill changes on disk after construction don't show up
+/// until the daemon restarts — same trade-off the rest of the storage
+/// layer makes.
+pub struct SkillHook {
+    skills: Vec<Skill>,
     scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
 }
 
-impl<S: Storage> SkillHook<S> {
-    pub fn new(storage: Arc<S>, scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>) -> Self {
-        Self { storage, scopes }
+impl SkillHook {
+    pub fn new(skills: Vec<Skill>, scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>) -> Self {
+        Self { skills, scopes }
+    }
+
+    fn find_skill(&self, name: &str) -> Option<&Skill> {
+        self.skills.iter().find(|s| s.name == name)
     }
 }
 
-impl<S: Storage + 'static> Hook for SkillHook<S> {
+impl Hook for SkillHook {
     fn schema(&self) -> Vec<wcore::model::Tool> {
         vec![SkillTool::as_tool()]
     }
 
     fn system_prompt(&self) -> Option<String> {
-        build_skill_prompt(self.storage.as_ref())
+        build_skill_prompt(&self.skills)
     }
 
     fn scoped_tools(&self, config: &wcore::AgentConfig) -> (Vec<String>, Option<String>) {
@@ -79,17 +86,13 @@ impl<S: Storage + 'static> Hook for SkillHook<S> {
             }
         }
 
-        match self.storage.load_skill(name) {
-            Ok(Some(skill)) => {
-                let body = remainder.trim_start();
-                let block = format!("<skill name=\"{name}\">\n{}\n</skill>", skill.body);
-                if body.is_empty() {
-                    Some(block)
-                } else {
-                    Some(format!("{body}\n\n{block}"))
-                }
-            }
-            _ => None,
+        let skill = self.find_skill(name)?;
+        let body = remainder.trim_start();
+        let block = format!("<skill name=\"{name}\">\n{}\n</skill>", skill.body);
+        if body.is_empty() {
+            Some(block)
+        } else {
+            Some(format!("{body}\n\n{block}"))
         }
     }
 
@@ -117,12 +120,10 @@ impl<S: Storage + 'static> Hook for SkillHook<S> {
                 return Err(format!("invalid skill name: {name}"));
             }
 
-            if !name.is_empty() {
-                match self.storage.load_skill(name) {
-                    Ok(Some(skill)) => return Ok(skill.body),
-                    Ok(None) => {}
-                    Err(e) => return Err(format!("failed to load skill: {e}")),
-                }
+            if !name.is_empty()
+                && let Some(skill) = self.find_skill(name)
+            {
+                return Ok(skill.body.clone());
             }
 
             let query = name.to_lowercase();
@@ -133,8 +134,8 @@ impl<S: Storage + 'static> Hook for SkillHook<S> {
                 .map(|s| s.skills.clone())
                 .unwrap_or_default();
 
-            let skills = self.storage.list_skills().unwrap_or_default();
-            let matches: Vec<String> = skills
+            let matches: Vec<String> = self
+                .skills
                 .iter()
                 .filter(|s| {
                     if !allowed.is_empty() && !allowed.iter().any(|a| a == s.name.as_str()) {
@@ -156,8 +157,7 @@ impl<S: Storage + 'static> Hook for SkillHook<S> {
     }
 }
 
-fn build_skill_prompt(storage: &dyn Storage) -> Option<String> {
-    let skills = storage.list_skills().ok()?;
+fn build_skill_prompt(skills: &[Skill]) -> Option<String> {
     if skills.is_empty() {
         return None;
     }

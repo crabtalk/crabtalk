@@ -1,21 +1,15 @@
 //! Tests for read, edit, and bash tool handlers via OsHook.
 
-use crabtalk::{hooks::os::OsHook, storage::FsStorage};
+use crabtalk::hooks::os::OsHook;
 use runtime::Hook;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-use wcore::{ToolDispatch, storage::Storage};
+use wcore::ToolDispatch;
 
 fn hook(cwd: PathBuf) -> OsHook {
     let cwds = Arc::new(Mutex::new(HashMap::new()));
     let read_files = Default::default();
-    let storage_dir = tempfile::tempdir().unwrap().keep();
-    let storage: Arc<dyn Storage> = Arc::new(FsStorage::new(
-        storage_dir.clone(),
-        storage_dir.join("sessions"),
-        Vec::new(),
-    ));
-    OsHook::new(cwd, cwds, read_files, storage)
+    OsHook::new(cwd, cwds, read_files)
 }
 
 fn dispatch(args: &str) -> ToolDispatch {

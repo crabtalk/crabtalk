@@ -1,7 +1,12 @@
 //! Session I/O benchmarks: append throughput and load latency.
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use tokio::runtime::Runtime;
 use wcore::{model::HistoryEntry, storage::Storage, testing::InMemoryStorage};
+
+fn rt() -> Runtime {
+    Runtime::new().expect("tokio runtime")
+}
 
 fn generate_messages(n: usize) -> Vec<HistoryEntry> {
     (0..n)
@@ -17,16 +22,18 @@ fn generate_messages(n: usize) -> Vec<HistoryEntry> {
 
 /// Create a fresh `InMemoryStorage` with `n` messages already
 /// persisted, and return the storage + handle for replay.
-fn prepopulate_session(n: usize) -> (InMemoryStorage, wcore::storage::SessionHandle) {
+async fn prepopulate_session(n: usize) -> (InMemoryStorage, wcore::storage::SessionHandle) {
     let storage = InMemoryStorage::new();
-    let handle = storage.create_session("bench", "bench").unwrap();
+    let handle = storage.create_session("bench", "bench").await.unwrap();
     storage
         .append_session_messages(&handle, &generate_messages(n))
+        .await
         .unwrap();
     (storage, handle)
 }
 
 fn bench_append(c: &mut Criterion) {
+    let runtime = rt();
     let mut group = c.benchmark_group("conversation_append");
     for size in [10, 100, 1_000, 5_000] {
         let messages = generate_messages(size);
@@ -36,12 +43,19 @@ fn bench_append(c: &mut Criterion) {
             |b, messages| {
                 b.iter_batched(
                     || {
-                        let storage = InMemoryStorage::new();
-                        let handle = storage.create_session("bench", "bench").unwrap();
-                        (storage, handle)
+                        runtime.block_on(async {
+                            let storage = InMemoryStorage::new();
+                            let handle = storage.create_session("bench", "bench").await.unwrap();
+                            (storage, handle)
+                        })
                     },
                     |(storage, handle)| {
-                        storage.append_session_messages(&handle, messages).unwrap();
+                        runtime.block_on(async {
+                            storage
+                                .append_session_messages(&handle, messages)
+                                .await
+                                .unwrap();
+                        });
                     },
                     BatchSize::SmallInput,
                 );
@@ -52,14 +66,15 @@ fn bench_append(c: &mut Criterion) {
 }
 
 fn bench_load_context(c: &mut Criterion) {
+    let runtime = rt();
     let mut group = c.benchmark_group("conversation_load");
     for size in [10, 100, 1_000, 5_000] {
-        let (storage, handle) = prepopulate_session(size);
+        let (storage, handle) = runtime.block_on(prepopulate_session(size));
         group.bench_with_input(
             BenchmarkId::from_parameter(size),
             &(storage, handle),
             |b, (storage, handle)| {
-                b.iter(|| storage.load_session(handle).unwrap());
+                b.iter(|| runtime.block_on(storage.load_session(handle)).unwrap());
             },
         );
     }

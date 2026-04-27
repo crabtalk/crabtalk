@@ -121,11 +121,17 @@ impl Hook for DaemonHook {
                 mcps: config.mcps.clone(),
             },
         );
+        for hook in self.hooks.values() {
+            hook.on_register_agent(name, config);
+        }
     }
 
     fn on_unregister_agent(&self, name: &str) {
         self.scopes.write().remove(name);
         self.agent_descriptions.write().remove(name);
+        for hook in self.hooks.values() {
+            hook.on_unregister_agent(name);
+        }
     }
 
     fn on_before_run(
