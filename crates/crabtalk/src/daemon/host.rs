@@ -115,10 +115,7 @@ impl Env for DaemonEnv {
                 tracing::debug!(%agent, "agent tool calls complete");
                 Payload::of(AgentEventKind::ToolsComplete)
             }
-            AgentEvent::Compact { summary } => {
-                tracing::info!(%agent, summary_len = summary.len(), "context compacted");
-                return;
-            }
+            AgentEvent::ContextUsage { .. } => return,
             AgentEvent::UserSteered { content } => {
                 tracing::info!(%agent, content_len = content.len(), "user steered session");
                 return;

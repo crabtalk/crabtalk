@@ -57,8 +57,12 @@ pub enum AgentEvent {
     ToolCallsComplete,
     /// User steering message injected at turn boundary.
     UserSteered { content: String },
-    /// Context was compacted — carries the compaction summary.
-    Compact { summary: String },
+    /// Token usage reported by the model after a completed step.
+    ///
+    /// Emitted once per LLM call so clients can track context pressure
+    /// in real time and decide when to call `compact_conversation`. The
+    /// daemon takes no action on this event — policy is the client's.
+    ContextUsage { usage: Usage },
     /// Agent finished with final response.
     Done(AgentResponse),
 }

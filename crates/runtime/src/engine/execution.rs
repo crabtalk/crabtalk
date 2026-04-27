@@ -91,12 +91,8 @@ impl<C: Config> Runtime<C> {
             .run(&mut conversation.history, tx, None, tool_choice)
             .await;
 
-        let mut compact_summary: Option<String> = None;
         let mut event_trace: Vec<wcore::EventLine> = Vec::new();
         while let Ok(event) = rx.try_recv() {
-            if let AgentEvent::Compact { ref summary } = event {
-                compact_summary = Some(summary.clone());
-            }
             self.env
                 .hook()
                 .on_event(&agent_name, conversation_id, &event);
@@ -114,7 +110,6 @@ impl<C: Config> Runtime<C> {
             &agent_name,
             &created_by,
             pre_run_len,
-            compact_summary,
             &event_trace,
         )
         .await;
@@ -152,15 +147,11 @@ impl<C: Config> Runtime<C> {
 
             let (steer_tx, steer_rx) = watch::channel(None::<String>);
             self.steering.write().await.insert(conversation_id, steer_tx);
-            let mut compact_summary: Option<String> = None;
             let mut done_event: Option<AgentEvent> = None;
             let mut event_trace: Vec<wcore::EventLine> = Vec::new();
             {
                 let mut event_stream = std::pin::pin!(agent.run_stream(&mut conversation.history, Some(conversation_id), Some(steer_rx), tool_choice));
                 while let Some(event) = event_stream.next().await {
-                    if let AgentEvent::Compact { ref summary } = event {
-                        compact_summary = Some(summary.clone());
-                    }
                     self.env.hook().on_event(&agent_name, conversation_id, &event);
                     self.env.on_agent_event(&agent_name, conversation_id, &event);
                     if let Some(line) = wcore::EventLine::from_agent_event(&event) {
@@ -181,7 +172,6 @@ impl<C: Config> Runtime<C> {
                 &agent_name,
                 &created_by,
                 pre_run_len,
-                compact_summary,
                 &event_trace,
             )
             .await;
@@ -324,7 +314,6 @@ impl<C: Config> Runtime<C> {
                 &agent_name,
                 &created_by,
                 pre_run_len,
-                None,
                 &[],
             )
             .await;

@@ -495,20 +495,12 @@ impl<P: Provider + 'static> Agent<P> {
                     yield AgentEvent::ToolCallsComplete;
                 }
 
-                // Auto-compaction: check token estimate after each step.
-                if let Some(threshold) = self.config.compact_threshold
-                    && Self::estimate_tokens(history) > threshold
-                {
-                    if let Some(summary) = self.compact(history).await {
-                        yield AgentEvent::Compact { summary: summary.clone() };
-                        *history = vec![HistoryEntry::user(&summary)];
-                        yield AgentEvent::TextStart;
-                        yield AgentEvent::TextDelta(
-                            "\n[context compacted]\n".to_owned(),
-                        );
-                        yield AgentEvent::TextEnd;
-                    }
-                    continue;
+                // Surface real token counts after each LLM call so
+                // clients can detect context pressure and decide when to
+                // call `compact_conversation`. The daemon does not act on
+                // this — policy is the client's.
+                if usage.total_tokens > 0 {
+                    yield AgentEvent::ContextUsage { usage: usage.clone() };
                 }
 
                 let step = AgentStep {

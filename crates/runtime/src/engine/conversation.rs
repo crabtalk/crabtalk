@@ -184,14 +184,29 @@ impl<C: Config> Runtime<C> {
         self.steer(id, content).await
     }
 
+    /// Compact a conversation in-place: summarize history with the
+    /// agent's compact LLM, write the summary to memory as an
+    /// `Archive` entry, drop a compact marker into the session, and
+    /// replace the live history with a single user message carrying
+    /// the summary. Returns the summary on success.
+    ///
+    /// All four steps are required for a coherent compact — without
+    /// the marker, a session reload can't find the resume boundary;
+    /// without the archive, the boundary points to nothing; without
+    /// the history replacement, the next request still ships the full
+    /// pre-compact context.
     pub async fn compact(&self, conversation_id: u64) -> Option<String> {
         // Release the conversations read lock before the per-conversation
         // mutex await — otherwise readers queue behind a potentially
         // contended inner lock.
-        let (agent_name, conversation_mutex) = {
+        let (agent_name, created_by, conversation_mutex) = {
             let conversations = self.conversations.read().await;
             let slot = conversations.get(&conversation_id)?;
-            (slot.agent.clone(), slot.inner.clone())
+            (
+                slot.agent.clone(),
+                slot.created_by.clone(),
+                slot.inner.clone(),
+            )
         };
         let history = {
             let conversation = conversation_mutex.lock().await;
@@ -200,10 +215,29 @@ impl<C: Config> Runtime<C> {
             }
             conversation.history.clone()
         };
-        self.resolve_agent(&agent_name)
+        let summary = self
+            .resolve_agent(&agent_name)
             .await?
             .compact(&history)
-            .await
+            .await?;
+
+        let mut conversation = conversation_mutex.lock().await;
+        self.ensure_handle(&mut conversation, &agent_name, &created_by)
+            .await;
+        let handle = conversation.handle.clone()?;
+        let archive_name = self.write_archive(handle.as_str(), summary.clone())?;
+
+        let storage = self.storage();
+        if let Err(e) = storage.append_session_compact(&handle, &archive_name).await {
+            tracing::warn!("compact: marker write failed: {e}");
+            return None;
+        }
+        conversation.history = vec![HistoryEntry::user(&summary)];
+        conversation.summary = Some(summary.clone());
+        let _ = storage
+            .update_session_meta(&handle, &conversation.meta(&agent_name, &created_by))
+            .await;
+        Some(summary)
     }
 
     pub async fn transfer_to<C2: Config>(&self, dest: &mut Runtime<C2>) {
@@ -301,7 +335,6 @@ impl<C: Config> Runtime<C> {
     /// `guest_stream_to`: update uptime, persist, and kick off title
     /// generation if the conversation has a titleable exchange and no
     /// title yet.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn finalize_run(
         &self,
         conversation_id: u64,
@@ -310,34 +343,25 @@ impl<C: Config> Runtime<C> {
         agent: &str,
         created_by: &str,
         pre_run_len: usize,
-        compact_summary: Option<String>,
         event_trace: &[wcore::EventLine],
     ) {
-        self.persist_messages(
-            conversation,
-            agent,
-            created_by,
-            pre_run_len,
-            compact_summary,
-            event_trace,
-        )
-        .await;
+        self.persist_messages(conversation, agent, created_by, pre_run_len, event_trace)
+            .await;
         if conversation.title.is_empty() && conversation.history.len() >= 2 {
             self.spawn_title_generation(conversation_id, agent, created_by, conversation_mutex);
         }
     }
 
-    /// Persist messages to the session repo. Handles ensure_handle,
-    /// compact markers, and meta updates. Also threads each newly
-    /// persisted entry into the session search index so `search_sessions`
-    /// finds live work without waiting for a process restart.
+    /// Persist messages to the session repo. Handles ensure_handle and
+    /// meta updates. Also threads each newly persisted entry into the
+    /// session search index so `search_sessions` finds live work
+    /// without waiting for a process restart.
     pub(crate) async fn persist_messages(
         &self,
         conversation: &mut Conversation,
         agent: &str,
         created_by: &str,
         pre_run_len: usize,
-        compact_summary: Option<String>,
         event_trace: &[wcore::EventLine],
     ) {
         self.ensure_handle(conversation, agent, created_by).await;
@@ -346,56 +370,21 @@ impl<C: Config> Runtime<C> {
         };
         let storage = self.storage();
 
-        let mut compacted = false;
-        let indexable_entries: Vec<wcore::model::HistoryEntry>;
-        if let Some(summary) = compact_summary {
-            // Stash the summary on the conversation so the next
-            // `meta()` call surfaces it to disk and to the index.
-            conversation.summary = Some(summary.clone());
-            // Archive first — if this fails, don't write a dangling
-            // marker that points at nothing. Archives are keyed by the
-            // session's storage slug so each session's phases stay
-            // grouped under one prefix in memory.
-            if let Some(archive_name) = self.write_archive(handle.as_str(), summary) {
-                let _ = storage.append_session_compact(handle, &archive_name).await;
-                compacted = true;
-                if conversation.history.len() > 1 {
-                    let tail: Vec<_> = conversation.history[1..]
-                        .iter()
-                        .filter(|e| !e.auto_injected)
-                        .cloned()
-                        .collect();
-                    let _ = storage.append_session_messages(handle, &tail).await;
-                    indexable_entries = tail;
-                } else {
-                    indexable_entries = Vec::new();
-                }
-            } else {
-                indexable_entries = Vec::new();
-            }
-        } else {
-            let new_entries: Vec<_> = conversation.history[pre_run_len..]
-                .iter()
-                .filter(|e| !e.auto_injected)
-                .cloned()
-                .collect();
-            let _ = storage.append_session_messages(handle, &new_entries).await;
-            indexable_entries = new_entries;
-        }
+        let new_entries: Vec<_> = conversation.history[pre_run_len..]
+            .iter()
+            .filter(|e| !e.auto_injected)
+            .cloned()
+            .collect();
+        let _ = storage.append_session_messages(handle, &new_entries).await;
         if !event_trace.is_empty() {
             let _ = storage.append_session_events(handle, event_trace).await;
         }
         let meta = conversation.meta(agent, created_by);
         let _ = storage.update_session_meta(handle, &meta).await;
 
-        // After storage is updated, reflect the same change into the
-        // search index. Compaction flushes the session's prior
-        // postings before re-indexing so old (pre-compact) hits don't
-        // shadow the new working context.
+        // Reflect the new entries into the search index so live work
+        // is findable without a process restart.
         let mut index = self.session_index.write();
-        if compacted && let Some(id) = index.handle_to_session_id(handle.as_str()) {
-            index.forget_session(id);
-        }
         let session_id = index.ensure_session(
             handle,
             agent,
@@ -405,7 +394,7 @@ impl<C: Config> Runtime<C> {
             &meta.created_at,
             &meta.updated_at,
         );
-        for entry in &indexable_entries {
+        for entry in &new_entries {
             index.insert_message(session_id, entry);
         }
     }

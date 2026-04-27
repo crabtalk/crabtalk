@@ -146,19 +146,6 @@ impl HistoryEntry {
         self.message.tool_call_id.as_deref().unwrap_or("")
     }
 
-    /// Estimate the number of tokens in this entry (~4 chars per token).
-    pub fn estimate_tokens(&self) -> usize {
-        let chars = self.text().len()
-            + self.reasoning().len()
-            + self.tool_call_id().len()
-            + self
-                .tool_calls()
-                .iter()
-                .map(|tc| tc.function.name.len() + tc.function.arguments.len())
-                .sum::<usize>();
-        (chars / 4).max(1)
-    }
-
     /// Project to a `crabllm_core::Message` for sending to a provider.
     ///
     /// If this is a guest assistant message (`agent` non-empty and role is
@@ -179,11 +166,6 @@ impl HistoryEntry {
             extra: self.message.extra.clone(),
         }
     }
-}
-
-/// Estimate total tokens across a slice of entries.
-pub fn estimate_history_tokens(entries: &[HistoryEntry]) -> usize {
-    entries.iter().map(|e| e.estimate_tokens()).sum()
 }
 
 // ── MessageBuilder ──────────────────────────────────────────────────
