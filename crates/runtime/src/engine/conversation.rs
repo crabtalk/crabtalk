@@ -18,18 +18,34 @@ impl<C: Config> Runtime<C> {
     }
 
     /// Get or create a conversation for the given (agent, created_by)
-    /// identity. Returns the existing conversation for this pair if one
-    /// is active, otherwise allocates a fresh id and persists.
+    /// identity.
+    ///
+    /// Resolution order:
+    /// 1. An active in-memory slot for this `(agent, sender)` — reuse.
+    /// 2. The latest persisted session for this pair — resume via
+    ///    [`Self::load`], which hydrates history (and any compact
+    ///    archive) into a fresh in-memory slot.
+    /// 3. No prior session in storage — allocate a fresh id.
+    ///
+    /// Without (2), every process boot would begin a brand-new session
+    /// per agent and the on-disk history would never be threaded into
+    /// the working context — agents would lose memory across restarts
+    /// even though the bytes are still in storage.
     pub async fn get_or_create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.has_agent(agent).await {
             bail!("agent '{agent}' not registered");
         }
 
-        // Read-first: a single active conversation per (agent, sender)
-        // is the common case; only fall through to allocation if none
-        // is registered.
         if let Some(id) = self.conversation_id(agent, created_by).await {
             return Ok(id);
+        }
+
+        if let Some(handle) = self
+            .storage()
+            .find_latest_session(agent, created_by)
+            .await?
+        {
+            return self.load(handle).await;
         }
 
         let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
