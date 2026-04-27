@@ -1,4 +1,4 @@
-//! Crabtalk WeChat gateway — ilink bot API adapter.
+//! Crabtalk WeChat app — ilink bot API adapter.
 
 pub mod api;
 pub mod config;
@@ -6,7 +6,7 @@ pub mod serve;
 
 use api::WeixinMessage;
 use parking_lot::Mutex;
-pub use sdk::*;
+use sdk::Message;
 use std::{
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
@@ -40,7 +40,7 @@ fn save_sync_buf(buf: &str) {
     let _ = std::fs::write(sync_buf_path(), buf);
 }
 
-/// Stable hash of a string user ID to i64 for GatewayMessage compatibility.
+/// Stable hash of a string user ID to i64 for Message compatibility.
 fn hash_user_id(user_id: &str) -> i64 {
     let mut hasher = DefaultHasher::new();
     user_id.hash(&mut hasher);
@@ -57,12 +57,12 @@ fn extract_text(msg: &WeixinMessage) -> String {
         .join("")
 }
 
-/// Long-poll loop: receives WeChat messages and forwards them as [`GatewayMessage`]s.
+/// Long-poll loop: receives WeChat messages and forwards them as [`Message`]s.
 pub async fn poll_loop(
     client: reqwest::Client,
     base_url: String,
     token: String,
-    tx: mpsc::UnboundedSender<GatewayMessage>,
+    tx: mpsc::UnboundedSender<Message>,
     ctx_tokens: ContextTokens,
     user_ids: UserIdMap,
 ) {
@@ -136,7 +136,7 @@ pub async fn poll_loop(
                     }
                     user_ids.lock().insert(chat_id, msg.from_user_id.clone());
 
-                    let gateway_msg = GatewayMessage {
+                    let gateway_msg = Message {
                         chat_id,
                         message_id: 0,
                         sender_id: chat_id,

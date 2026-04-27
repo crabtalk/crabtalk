@@ -4,7 +4,7 @@
 use crate::entry::{CronEntry, is_quiet};
 use crate::store::Store;
 use anyhow::Result;
-use sdk::NodeClient;
+use sdk::ConnectionInfo;
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -22,16 +22,15 @@ const FILE_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Run the scheduler until a shutdown signal is received.
 ///
-/// `schedule_path` is the TOML file owned by this process. `client` is the
-/// daemon connection — constructed by the caller so tests and alternate
+/// `schedule_path` is the TOML file owned by this process. `conn_info` is the
+/// daemon connection info — constructed by the caller so tests and alternate
 /// assemblies can inject their own.
-pub async fn run(schedule_path: PathBuf, client: NodeClient) -> Result<()> {
+pub async fn run(schedule_path: PathBuf, conn_info: ConnectionInfo) -> Result<()> {
     let store = Arc::new(Mutex::new(Store::load(schedule_path.clone())?));
-    let client = Arc::new(client);
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
 
     let mut timers: HashMap<u64, JoinHandle<()>> = HashMap::new();
-    reconcile(&store, &client, &shutdown_tx, &mut timers).await;
+    reconcile(&store, &conn_info, &shutdown_tx, &mut timers).await;
     tracing::info!(
         "cron started — {} schedule(s) loaded from {}",
         timers.len(),
@@ -54,7 +53,7 @@ pub async fn run(schedule_path: PathBuf, client: NodeClient) -> Result<()> {
                     match Store::load(schedule_path.clone()) {
                         Ok(fresh) => {
                             *store.lock().await = fresh;
-                            reconcile(&store, &client, &shutdown_tx, &mut timers).await;
+                            reconcile(&store, &conn_info, &shutdown_tx, &mut timers).await;
                         }
                         Err(e) => tracing::warn!("reload failed: {e}"),
                     }
@@ -78,7 +77,7 @@ pub async fn run(schedule_path: PathBuf, client: NodeClient) -> Result<()> {
 /// is gone. Assumes the store holds the fresh state.
 async fn reconcile(
     store: &Arc<Mutex<Store>>,
-    client: &Arc<NodeClient>,
+    conn_info: &ConnectionInfo,
     shutdown_tx: &broadcast::Sender<()>,
     timers: &mut HashMap<u64, JoinHandle<()>>,
 ) {
@@ -100,7 +99,7 @@ async fn reconcile(
         }
         let handle = spawn_timer(
             entry.clone(),
-            client.clone(),
+            conn_info.clone(),
             store.clone(),
             shutdown_tx.subscribe(),
         );
@@ -110,7 +109,7 @@ async fn reconcile(
 
 fn spawn_timer(
     entry: CronEntry,
-    client: Arc<NodeClient>,
+    conn_info: ConnectionInfo,
     store: Arc<Mutex<Store>>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> JoinHandle<()> {
@@ -167,7 +166,7 @@ fn spawn_timer(
                 entry.sender,
             );
 
-            fire(&client, &entry).await;
+            fire(&conn_info, &entry).await;
 
             if entry.once {
                 if let Err(e) = store.lock().await.delete(entry.id) {
@@ -182,8 +181,8 @@ fn spawn_timer(
 
 /// Open a connection, fire a single StreamMsg, and drain the reply stream.
 /// Errors inside the daemon surface as ErrorMsg in the stream and are logged
-/// by NodeClient — the schedule continues on the next tick regardless.
-async fn fire(client: &NodeClient, entry: &CronEntry) {
+/// by the SDK — the schedule continues on the next tick regardless.
+async fn fire(conn_info: &ConnectionInfo, entry: &CronEntry) {
     let msg = ClientMessage::from(StreamMsg {
         agent: entry.agent.clone(),
         content: format!("/{}", entry.skill),
@@ -192,7 +191,13 @@ async fn fire(client: &NodeClient, entry: &CronEntry) {
         guest: None,
         tool_choice: None,
     });
-    let mut rx = client.send(msg).await;
+    let mut rx = match conn_info.send(msg).await {
+        Ok(rx) => rx,
+        Err(e) => {
+            tracing::warn!("cron {}: failed to connect to daemon: {e}", entry.id);
+            return;
+        }
+    };
     while rx.recv().await.is_some() {}
 }
 

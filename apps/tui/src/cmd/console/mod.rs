@@ -1,6 +1,5 @@
 //! Interactive TUI for managing conversations.
 
-use crate::repl::runner::Runner;
 use crate::tui;
 use anyhow::Result;
 use clap::Args;
@@ -15,9 +14,10 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Tabs},
 };
+use sdk::{ConnectionInfo, Transport};
 use std::collections::VecDeque;
 use tokio::sync::mpsc;
-use wcore::protocol::api::Client;
+use wcore::protocol::api::Client as _;
 use wcore::protocol::message::AgentEventMsg;
 
 mod conversations;
@@ -31,15 +31,19 @@ pub struct Console;
 
 impl Console {
     /// Run the console. Returns a file path if the user selected a conversation to resume.
-    pub async fn run(self, mut runner: Runner) -> Result<Option<std::path::PathBuf>> {
+    pub async fn run(
+        self,
+        mut runner: Transport,
+        conn_info: ConnectionInfo,
+    ) -> Result<Option<std::path::PathBuf>> {
         // Spawn background event subscription task.
         let (event_tx, event_rx) = mpsc::unbounded_channel::<AgentEventMsg>();
-        let conn_info = runner.conn_info.clone();
+        let event_conn_info = conn_info.clone();
         tokio::spawn(async move {
-            let Ok(mut sub_runner) = Runner::connect_from(&conn_info).await else {
+            let Ok(mut sub) = sdk::connect_from(&event_conn_info).await else {
                 return;
             };
-            let stream = sub_runner.subscribe_events();
+            let stream = sub.subscribe_events();
             tokio::pin!(stream);
             while let Some(Ok(msg)) = stream.next().await {
                 if event_tx.send(msg).is_err() {
@@ -51,7 +55,10 @@ impl Console {
         let mut terminal = tui::setup()?;
 
         // Fetch initial data from daemon.
-        let daemon_conversations = runner.list_active_conversations().await.unwrap_or_default();
+        let daemon_conversations = runner
+            .list_active_conversations(String::new(), String::new())
+            .await
+            .unwrap_or_default();
         let conversations = runner
             .list_conversations(String::new(), String::new())
             .await
@@ -99,9 +106,13 @@ impl Console {
                 if idle_ticks >= 8 {
                     idle_ticks = 0;
                     let timeout = std::time::Duration::from_millis(500);
-                    if let Ok(Ok(conversations)) =
-                        tokio::time::timeout(timeout, state.runner.list_active_conversations())
-                            .await
+                    if let Ok(Ok(conversations)) = tokio::time::timeout(
+                        timeout,
+                        state
+                            .runner
+                            .list_active_conversations(String::new(), String::new()),
+                    )
+                    .await
                     {
                         state.daemon_conversations = conversations;
                         state
@@ -127,7 +138,7 @@ enum Tab {
 
 pub(crate) struct ConsoleState {
     pub(crate) status: String,
-    pub(crate) runner: Runner,
+    pub(crate) runner: Transport,
     tab: Tab,
     conversation_view: ConversationView,
     daemon_conversations: Vec<wcore::protocol::message::ActiveConversationInfo>,
@@ -188,8 +199,13 @@ async fn handle_conversations_key(
                 let agent = agent.to_string();
                 let sender = sender.to_string();
                 let timeout = std::time::Duration::from_millis(500);
-                if let Ok(Ok(active)) =
-                    tokio::time::timeout(timeout, state.runner.list_active_conversations()).await
+                if let Ok(Ok(active)) = tokio::time::timeout(
+                    timeout,
+                    state
+                        .runner
+                        .list_active_conversations(String::new(), String::new()),
+                )
+                .await
                 {
                     state.daemon_conversations = active;
                 }
@@ -253,8 +269,13 @@ async fn handle_conversations_key(
         }
         KeyCode::Char('r') => {
             let timeout = std::time::Duration::from_millis(500);
-            if let Ok(Ok(sessions)) =
-                tokio::time::timeout(timeout, state.runner.list_active_conversations()).await
+            if let Ok(Ok(sessions)) = tokio::time::timeout(
+                timeout,
+                state
+                    .runner
+                    .list_active_conversations(String::new(), String::new()),
+            )
+            .await
             {
                 state.daemon_conversations = sessions;
             }

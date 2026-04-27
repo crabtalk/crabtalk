@@ -1,4 +1,4 @@
-//! `crabtalk-wechat` binary — WeChat gateway for Crabtalk.
+//! `crabtalk-wechat` binary — WeChat app for Crabtalk.
 
 use clap::Parser;
 use crabtalk_wechat::config::WechatConfig;
@@ -6,14 +6,14 @@ use crabtalk_wechat::config::WechatConfig;
 const DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
 
 #[command::command(kind = "client", name = "wechat")]
-struct GatewayWechat;
+struct WechatApp;
 
-impl GatewayWechat {
+impl WechatApp {
     async fn run(&self) -> anyhow::Result<()> {
-        let client = sdk::NodeClient::platform_default()?;
+        let conn_info = sdk::ConnectionInfo::platform_default()?;
         let path = config_path();
         let config = WechatConfig::load(&path)?;
-        crabtalk_wechat::serve::run(client, &config).await
+        crabtalk_wechat::serve::run(conn_info, &config).await
     }
 }
 
@@ -98,11 +98,11 @@ fn main() {
     }
 
     let cli = CrabtalkCli::parse();
-    if matches!(&cli.action, GatewayWechatCommand::Start { .. })
+    if matches!(&cli.action, WechatAppCommand::Start { .. })
         && let Err(e) = ensure_config()
     {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
-    cli.start(GatewayWechat);
+    cli.start(WechatApp);
 }

@@ -1,4 +1,4 @@
-//! Crabtalk Telegram gateway — Telegram Bot API adapter.
+//! Crabtalk Telegram app — Telegram Bot API adapter.
 
 pub mod command;
 pub mod config;
@@ -6,14 +6,14 @@ pub mod markdown;
 pub mod serve;
 
 use futures_util::StreamExt;
-pub use sdk::*;
+use sdk::{Attachment, AttachmentKind, Message};
 use teloxide::prelude::*;
 use teloxide::types::{CallbackQuery, ChatKind, UpdateKind};
 use teloxide::update_listeners::{AsUpdateStream, polling_default};
 use tokio::sync::mpsc;
 
-/// Long-poll loop: receives Telegram updates and forwards them as [`GatewayMessage`]s.
-pub async fn poll_loop(bot: Bot, tx: mpsc::UnboundedSender<GatewayMessage>) {
+/// Long-poll loop: receives Telegram updates and forwards them as [`Message`]s.
+pub async fn poll_loop(bot: Bot, tx: mpsc::UnboundedSender<Message>) {
     let mut listener = polling_default(bot).await;
     let stream = listener.as_stream();
     futures_util::pin_mut!(stream);
@@ -35,8 +35,8 @@ pub async fn poll_loop(bot: Bot, tx: mpsc::UnboundedSender<GatewayMessage>) {
     }
 }
 
-/// Convert a teloxide `Update` to a `GatewayMessage`.
-fn convert_update(update: Update) -> Option<GatewayMessage> {
+/// Convert a teloxide `Update` to a `Message`.
+fn convert_update(update: Update) -> Option<Message> {
     match update.kind {
         UpdateKind::CallbackQuery(cq) => convert_callback_query(cq),
         UpdateKind::Message(msg) => convert_message(msg),
@@ -44,8 +44,8 @@ fn convert_update(update: Update) -> Option<GatewayMessage> {
     }
 }
 
-/// Convert a `CallbackQuery` into a `GatewayMessage` carrying callback data as content.
-fn convert_callback_query(cq: CallbackQuery) -> Option<GatewayMessage> {
+/// Convert a `CallbackQuery` into a `Message` carrying callback data as content.
+fn convert_callback_query(cq: CallbackQuery) -> Option<Message> {
     let data = cq.data?;
     let msg_ref = cq.message?;
     let chat = msg_ref.chat().clone();
@@ -55,7 +55,7 @@ fn convert_callback_query(cq: CallbackQuery) -> Option<GatewayMessage> {
     let is_bot = cq.from.is_bot;
     let is_group = matches!(chat.kind, ChatKind::Public(_));
 
-    Some(GatewayMessage {
+    Some(Message {
         chat_id: chat.id.0,
         message_id: msg_id.0 as i64,
         sender_id,
@@ -69,8 +69,8 @@ fn convert_callback_query(cq: CallbackQuery) -> Option<GatewayMessage> {
     })
 }
 
-/// Convert a regular `Message` update into a `GatewayMessage`.
-fn convert_message(msg: teloxide::types::Message) -> Option<GatewayMessage> {
+/// Convert a regular `Message` update into a `Message`.
+fn convert_message(msg: teloxide::types::Message) -> Option<Message> {
     let chat_id = msg.chat.id.0;
     let sender = msg.from.as_ref();
     let sender_id = sender.map(|u| u.id.0 as i64).unwrap_or(0);
@@ -99,7 +99,7 @@ fn convert_message(msg: teloxide::types::Message) -> Option<GatewayMessage> {
 
     let reply_to = msg.reply_to_message().map(|r| r.id.0);
 
-    Some(GatewayMessage {
+    Some(Message {
         chat_id,
         message_id: msg.id.0 as i64,
         sender_id,

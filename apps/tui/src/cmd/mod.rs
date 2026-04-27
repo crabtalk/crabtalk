@@ -1,8 +1,8 @@
 //! CLI argument parsing and command dispatch.
 
-use crate::repl::runner::Runner;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use sdk::{ConnectionInfo, Transport};
 #[cfg(feature = "daemon")]
 pub mod agent;
 pub mod console;
@@ -97,21 +97,22 @@ impl Cli {
 
         match self.command {
             None => {
-                let runner = connect(self.tcp).await?;
-                let mut repl = crate::repl::ChatRepl::new(runner, self.agent)?;
+                let (transport, conn_info) = connect(self.tcp).await?;
+                let mut repl = crate::repl::ChatRepl::new(transport, conn_info, self.agent)?;
                 repl.run().await
             }
             Some(Command::Resume { file }) => {
-                let runner = connect(self.tcp).await?;
+                let (transport, conn_info) = connect(self.tcp).await?;
                 if let Some(path) = file {
-                    let mut repl = crate::repl::ChatRepl::new(runner, self.agent)?;
+                    let mut repl = crate::repl::ChatRepl::new(transport, conn_info, self.agent)?;
                     repl.resume(std::path::PathBuf::from(path)).await
                 } else {
                     let cmd = console::Console;
-                    let selected = cmd.run(runner).await?;
+                    let selected = cmd.run(transport, conn_info.clone()).await?;
                     if let Some(path) = selected {
-                        let runner = connect(self.tcp).await?;
-                        let mut repl = crate::repl::ChatRepl::new(runner, self.agent)?;
+                        let (transport, conn_info) = connect(self.tcp).await?;
+                        let mut repl =
+                            crate::repl::ChatRepl::new(transport, conn_info, self.agent)?;
                         repl.resume(path).await
                     } else {
                         Ok(())
@@ -145,7 +146,7 @@ impl Cli {
 }
 
 /// Connect to daemon, failing with a clear message pointing at crabup if down.
-async fn connect(use_tcp: bool) -> Result<Runner> {
+async fn connect(use_tcp: bool) -> Result<(Transport, ConnectionInfo)> {
     if use_tcp {
         connect_tcp().await
     } else {
@@ -154,16 +155,18 @@ async fn connect(use_tcp: bool) -> Result<Runner> {
 }
 
 /// Connect using the platform default transport: UDS on Unix, TCP on Windows.
-pub(crate) async fn connect_default() -> Result<Runner> {
+pub(crate) async fn connect_default() -> Result<(Transport, ConnectionInfo)> {
     #[cfg(unix)]
     {
         let socket_path = &*wcore::paths::SOCKET_PATH;
-        Runner::connect(socket_path).await.with_context(|| {
+        let info = ConnectionInfo::Uds(socket_path.to_path_buf());
+        let transport = sdk::connect_from(&info).await.with_context(|| {
             format!(
                 "daemon not running — start with: crabup daemon start\n  (tried {})",
                 socket_path.display()
             )
-        })
+        })?;
+        Ok((transport, info))
     }
     #[cfg(not(unix))]
     {
@@ -184,7 +187,7 @@ pub(crate) fn read_path_or_stdin(path: &std::path::Path) -> Result<String> {
 }
 
 /// Connect to crabtalk daemon via TCP, reading the port from the port file.
-pub(crate) async fn connect_tcp() -> Result<Runner> {
+pub(crate) async fn connect_tcp() -> Result<(Transport, ConnectionInfo)> {
     let tcp_port_file = &*wcore::paths::TCP_PORT_FILE;
     let port_str = std::fs::read_to_string(tcp_port_file).with_context(|| {
         format!(
@@ -196,7 +199,9 @@ pub(crate) async fn connect_tcp() -> Result<Runner> {
         .trim()
         .parse()
         .with_context(|| format!("invalid port in {}", tcp_port_file.display()))?;
-    Runner::connect_tcp(port)
+    let info = ConnectionInfo::Tcp(port);
+    let transport = sdk::connect_from(&info)
         .await
-        .with_context(|| format!("failed to connect to crabtalk daemon via TCP on port {port}"))
+        .with_context(|| format!("failed to connect to crabtalk daemon via TCP on port {port}"))?;
+    Ok((transport, info))
 }

@@ -48,7 +48,7 @@ pub enum AgentCmd {
 
 impl Agent {
     pub async fn run(self, tcp: bool) -> Result<()> {
-        let mut runner = super::connect(tcp).await?;
+        let (mut runner, _) = super::connect(tcp).await?;
         match self.command {
             AgentCmd::List => {
                 let agents = runner.list_agents().await?;

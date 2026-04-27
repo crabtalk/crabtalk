@@ -6,7 +6,6 @@ use crate::repl::{
     command::{SlashResult, handle_slash},
     input::{History, InputAction, InputState},
     render::MarkdownRenderer,
-    runner::{ConnectionInfo, OutputChunk, Runner, send_reply},
 };
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
@@ -17,28 +16,30 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
-use std::{collections::VecDeque, path::PathBuf, pin::pin, time::Duration};
+use sdk::{ConnectionInfo, OutputChunk, Transport};
+use std::{collections::VecDeque, path::PathBuf, time::Duration};
 use tokio::sync::mpsc;
-use wcore::protocol::api::Client;
+use wcore::protocol::api::Client as _;
+use wcore::protocol::message::StreamMsg;
 
 mod ask;
 pub mod chat;
 pub mod command;
 pub mod input;
 pub mod render;
-pub mod runner;
 
 /// Interactive chat REPL.
 pub struct ChatRepl {
-    runner: Runner,
+    runner: Transport,
+    conn_info: ConnectionInfo,
     agent: String,
     history_path: Option<PathBuf>,
     history: History,
 }
 
 impl ChatRepl {
-    /// Create a new REPL with the given runner and agent name.
-    pub fn new(runner: Runner, agent: String) -> Result<Self> {
+    /// Create a new REPL with the given transport, conn_info, and agent name.
+    pub fn new(runner: Transport, conn_info: ConnectionInfo, agent: String) -> Result<Self> {
         let history_path = history_file_path();
         let mut history = History::new();
         if let Some(ref path) = history_path {
@@ -46,6 +47,7 @@ impl ChatRepl {
         }
         Ok(Self {
             runner,
+            conn_info,
             agent,
             history_path,
             history,
@@ -70,7 +72,7 @@ impl ChatRepl {
 
     async fn run_inner(&mut self, chat_title: String) -> Result<()> {
         let model = self.fetch_model_name().await;
-        let conn_info = self.runner.conn_info.clone();
+        let conn_info = self.conn_info.clone();
         let os_user = std::env::var("USER").unwrap_or_else(|_| "user".into());
 
         let skill_names: Vec<String> = self
@@ -266,7 +268,9 @@ async fn run_event_loop(
                                     if let (Some(agent), Some(sender)) = (app.ask_agent.take(), app.ask_sender.take()) {
                                         let conn_info = app.conn_info.clone();
                                         tokio::spawn(async move {
-                                            let _ = send_reply(&conn_info, agent, sender, reply).await;
+                                            if let Ok(mut conn) = sdk::connect_from(&conn_info).await {
+                                                let _ = conn.reply_to_ask(agent, sender, reply).await;
+                                            }
                                         });
                                     }
                                     app.ask_state = None;
@@ -334,8 +338,10 @@ async fn run_event_loop(
                                             // Temporarily leave fullscreen for console.
                                             crate::tui::teardown(terminal)?;
                                             let console = crate::cmd::console::Console;
-                                            if let Ok(runner) = crate::cmd::connect_default().await
-                                                && let Ok(Some(_path)) = console.run(runner).await
+                                            if let Ok((transport, info)) =
+                                                crate::cmd::connect_default().await
+                                                && let Ok(Some(_path)) =
+                                                    console.run(transport, info).await
                                             {
                                                 // Resume is informational only — conversations
                                                 // are continuous per (agent, sender).
@@ -357,8 +363,8 @@ async fn run_event_loop(
                                             let agent = app.agent.clone();
                                             let sender = app.os_user.clone();
                                             tokio::spawn(async move {
-                                                if let Ok(mut runner) = Runner::connect_from(&conn_info).await {
-                                                    let _ = runner.kill_conversation(&agent, &sender).await;
+                                                if let Ok(mut runner) = sdk::connect_from(&conn_info).await {
+                                                    let _ = runner.kill_conversation(agent, sender).await;
                                                 }
                                             });
                                             app.renderer.buffer.push(ChatEntry::Text(vec![
@@ -427,35 +433,20 @@ fn send_or_queue(
 }
 
 fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<OutputChunk>> {
-    let (tx, rx) = mpsc::unbounded_channel();
-    let conn_info = app.conn_info.clone();
-    let agent = app.agent.clone();
-    let content = content.to_string();
-    let sender = Some(app.os_user.clone());
-
+    let cwd = std::env::current_dir()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned());
+    let req = StreamMsg {
+        agent: app.agent.clone(),
+        content: content.to_string(),
+        sender: Some(app.os_user.clone()),
+        cwd,
+        guest: None,
+        tool_choice: None,
+    };
     app.streaming = true;
     app.renderer.start_waiting();
-
-    tokio::spawn(async move {
-        let runner = Runner::connect_from(&conn_info).await;
-        let mut runner = match runner {
-            Ok(r) => r,
-            Err(e) => {
-                let _ = tx.send(Err(e));
-                return;
-            }
-        };
-        let cwd = std::env::current_dir().ok();
-        let stream = runner.stream(&agent, &content, cwd.as_deref(), sender);
-        let mut stream = pin!(stream);
-        while let Some(chunk) = stream.next().await {
-            if tx.send(chunk).is_err() {
-                break;
-            }
-        }
-    });
-
-    rx
+    sdk::spawn_stream(app.conn_info.clone(), req)
 }
 
 fn handle_chunk(chunk: OutputChunk, app: &mut App) {

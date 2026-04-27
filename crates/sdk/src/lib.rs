@@ -1,18 +1,20 @@
-//! Crabtalk gateway — library for platform adapters (Telegram, etc.)
-//! and system service management.
+//! Crabtalk SDK — sugar layer over `crates/transport`. Apps (TUI, telegram,
+//! wechat, …) connect to the daemon through this crate.
 
 use std::{collections::HashSet, path::Path, sync::Arc};
 use tokio::sync::RwLock;
 
-pub mod client;
 pub mod command;
+pub mod conn;
 pub mod message;
 pub mod stream;
 
-pub use client::NodeClient;
-pub use command::{BotCommand, COMMAND_HINT, parse_command};
-pub use message::{Attachment, AttachmentKind, GatewayMessage, attachment_summary};
-pub use stream::StreamAccumulator;
+pub use command::{COMMAND_HINT, COMMANDS, Command, collect_candidates, parse_command};
+#[cfg(unix)]
+pub use conn::connect_uds;
+pub use conn::{ConnectionInfo, MemConnection, Transport, connect_from, connect_mem, connect_tcp};
+pub use message::{Attachment, AttachmentKind, Message, attachment_summary};
+pub use stream::{OutputChunk, StreamAccumulator, spawn_stream, stream_chunks};
 
 /// Shared set of sender IDs belonging to sibling Crabtalk bots.
 ///
