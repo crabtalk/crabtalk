@@ -12,9 +12,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use wcore::{
-    AgentConfig, BashConfig, ToolDispatch, ToolFuture, agent::AsTool, model::HistoryEntry,
-};
+use wcore::{AgentConfig, BashConfig, ToolDispatch, ToolFuture, agent::AsTool};
 
 mod bash;
 mod edit;
@@ -145,22 +143,6 @@ impl Hook for OsHook {
 
     fn on_unregister_agent(&self, name: &str) {
         self.configs.write().remove(name);
-    }
-
-    fn on_before_run(
-        &self,
-        _agent: &str,
-        conversation_id: u64,
-        _history: &[HistoryEntry],
-    ) -> Vec<HistoryEntry> {
-        let cwd = self.effective_cwd(Some(conversation_id));
-        vec![
-            HistoryEntry::user(format!(
-                "<environment>\nworking_directory: {}\n</environment>",
-                cwd.display()
-            ))
-            .auto_injected(),
-        ]
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {

@@ -11,11 +11,7 @@ use recall::Recall;
 use remember::Remember;
 use runtime::Hook;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use wcore::{
-    AgentConfig, MemoryConfig, ToolDispatch, ToolFuture,
-    agent::AsTool,
-    model::{HistoryEntry, Tool},
-};
+use wcore::{AgentConfig, MemoryConfig, ToolDispatch, ToolFuture, agent::AsTool, model::Tool};
 
 mod forget;
 mod recall;
@@ -105,15 +101,6 @@ impl Hook for MemoryHook {
 
     fn on_unregister_agent(&self, name: &str) {
         self.configs.write().remove(name);
-    }
-
-    fn on_before_run(
-        &self,
-        agent: &str,
-        _conversation_id: u64,
-        history: &[HistoryEntry],
-    ) -> Vec<HistoryEntry> {
-        self.memory.before_run(history, self.recall_limit(agent))
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {

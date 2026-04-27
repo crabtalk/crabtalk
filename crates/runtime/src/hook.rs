@@ -5,7 +5,7 @@
 //! events, preprocess messages, and dispatch tool calls.
 
 use crabllm_core::Tool;
-use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture, model::HistoryEntry};
+use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 
 /// A pluggable subsystem that participates in the agent lifecycle.
 ///
@@ -39,16 +39,6 @@ pub trait Hook: Send + Sync {
     /// `on_register_agent`: once the agent is invisible, hook state is
     /// cleaned up.
     fn on_unregister_agent(&self, _name: &str) {}
-
-    /// Inject context entries before each agent run.
-    fn on_before_run(
-        &self,
-        _agent: &str,
-        _conversation_id: u64,
-        _history: &[HistoryEntry],
-    ) -> Vec<HistoryEntry> {
-        Vec::new()
-    }
 
     /// Called by Runtime after each agent step during execution.
     fn on_event(&self, _agent: &str, _conversation_id: u64, _event: &AgentEvent) {}

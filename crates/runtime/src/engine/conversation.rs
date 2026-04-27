@@ -1,9 +1,8 @@
-//! Conversation management — lifecycle, persistence, and title generation.
+//! Conversation management — lifecycle and persistence.
 
 use super::{ConvSlot, Runtime};
 use crate::{Config, Conversation, ConversationHandle};
 use anyhow::{Result, bail};
-use crabllm_core::{ChatCompletionRequest, Message, Role};
 use memory::{EntryKind, Op};
 use std::sync::{Arc, atomic::Ordering};
 use tokio::sync::Mutex;
@@ -332,14 +331,10 @@ impl<C: Config> Runtime<C> {
     }
 
     /// Post-run tail shared by `send_to`, `stream_to`, and
-    /// `guest_stream_to`: update uptime, persist, and kick off title
-    /// generation if the conversation has a titleable exchange and no
-    /// title yet.
+    /// `guest_stream_to`: persist messages and event trace.
     pub(crate) async fn finalize_run(
         &self,
-        conversation_id: u64,
         conversation: &mut Conversation,
-        conversation_mutex: Arc<Mutex<Conversation>>,
         agent: &str,
         created_by: &str,
         pre_run_len: usize,
@@ -347,9 +342,6 @@ impl<C: Config> Runtime<C> {
     ) {
         self.persist_messages(conversation, agent, created_by, pre_run_len, event_trace)
             .await;
-        if conversation.title.is_empty() && conversation.history.len() >= 2 {
-            self.spawn_title_generation(conversation_id, agent, created_by, conversation_mutex);
-        }
     }
 
     /// Persist messages to the session repo. Handles ensure_handle and
@@ -397,102 +389,5 @@ impl<C: Config> Runtime<C> {
         for entry in &new_entries {
             index.insert_message(session_id, entry);
         }
-    }
-
-    pub(crate) fn spawn_title_generation(
-        &self,
-        _conversation_id: u64,
-        agent_name: &str,
-        created_by: &str,
-        conversation_mutex: Arc<Mutex<Conversation>>,
-    ) {
-        let model = self.model.clone();
-        let storage = self.storage().clone();
-        let agent_name = agent_name.to_owned();
-        let created_by = created_by.to_owned();
-        let model_name = self
-            .agents
-            .read()
-            .get(agent_name.as_str())
-            .map(|a| a.config.model.clone())
-            .unwrap_or_default();
-        if model_name.is_empty() {
-            return;
-        }
-        tokio::spawn(async move {
-            let (user_msg, assistant_msg) = {
-                let conversation = conversation_mutex.lock().await;
-                let user = conversation
-                    .history
-                    .iter()
-                    .find(|e| *e.role() == Role::User && !e.auto_injected)
-                    .map(|e| e.text().to_owned());
-                let assistant = conversation
-                    .history
-                    .iter()
-                    .find(|e| *e.role() == Role::Assistant)
-                    .map(|e| e.text().to_owned());
-                (user, assistant)
-            };
-
-            let Some(user) = user_msg else { return };
-            let Some(assistant) = assistant_msg else {
-                return;
-            };
-
-            let user_snippet: String = user.chars().take(200).collect();
-            let assistant_snippet: String = assistant.chars().take(200).collect();
-
-            let prompt = format!(
-                "Summarize this conversation in 3-6 words as a short title. \
-                 Return ONLY the title, nothing else.\n\n\
-                 User: {user_snippet}\nAssistant: {assistant_snippet}"
-            );
-
-            let request = ChatCompletionRequest {
-                model: model_name,
-                messages: vec![Message::user(&prompt)],
-                temperature: None,
-                top_p: None,
-                max_tokens: None,
-                stream: None,
-                stop: None,
-                tools: None,
-                tool_choice: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                seed: None,
-                user: None,
-                reasoning_effort: None,
-                thinking: None,
-                anthropic_max_tokens: None,
-                extra: Default::default(),
-            };
-
-            match model.send_ct(request).await {
-                Ok(response) => {
-                    if let Some(title) = response.content() {
-                        let title = title.trim().trim_matches('"').to_string();
-                        if !title.is_empty() {
-                            let mut conversation = conversation_mutex.lock().await;
-                            if conversation.title.is_empty() {
-                                conversation.title = title;
-                                if let Some(ref handle) = conversation.handle {
-                                    let _ = storage
-                                        .update_session_meta(
-                                            handle,
-                                            &conversation.meta(&agent_name, &created_by),
-                                        )
-                                        .await;
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::debug!("title generation failed: {e}");
-                }
-            }
-        });
     }
 }
