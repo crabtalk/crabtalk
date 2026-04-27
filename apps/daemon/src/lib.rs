@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use transport::Transport;
 use wcore::protocol::{
     api::Client,
-    message::{AgentEventKind, plugin_event},
+    message::{AgentEventKind, McpEventKind, plugin_event},
 };
 
 pub mod attach;
@@ -44,6 +44,8 @@ pub enum Command {
     Reload,
     /// Stream daemon events.
     Events,
+    /// Stream MCP server lifecycle events.
+    McpEvents,
     /// Install a plugin.
     Pull {
         /// Plugin name.
@@ -84,6 +86,7 @@ impl Cli {
                 Ok(())
             }
             Command::Events => stream_events(connect(self.tcp).await?).await,
+            Command::McpEvents => stream_mcp_events(connect(self.tcp).await?).await,
             Command::Pull { plugin, force } => {
                 use std::io::Write;
                 let mut conn = connect(self.tcp).await?;
@@ -202,6 +205,29 @@ async fn stream_events(mut conn: Transport) -> Result<()> {
                 }
             }
         }
+    }
+    Ok(())
+}
+
+/// Stream MCP lifecycle events to stdout.
+async fn stream_mcp_events(mut conn: Transport) -> Result<()> {
+    let stream = conn.subscribe_mcp_events();
+    tokio::pin!(stream);
+    while let Some(result) = stream.next().await {
+        let event = result?;
+        let kind = match McpEventKind::try_from(event.kind) {
+            Ok(McpEventKind::Connecting) => "connecting",
+            Ok(McpEventKind::Connected) => "connected",
+            Ok(McpEventKind::Failed) => "failed",
+            Ok(McpEventKind::Disconnected) => "disconnected",
+            _ => "unknown",
+        };
+        let detail = match McpEventKind::try_from(event.kind) {
+            Ok(McpEventKind::Connected) => format!(" ({} tool(s))", event.tools.len()),
+            Ok(McpEventKind::Failed) if !event.error.is_empty() => format!(": {}", event.error),
+            _ => String::new(),
+        };
+        println!("[{}] {} {}{}", event.timestamp, event.name, kind, detail);
     }
     Ok(())
 }

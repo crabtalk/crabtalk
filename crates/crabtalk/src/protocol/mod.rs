@@ -62,6 +62,10 @@ impl<P: Provider + 'static> Server for Daemon<P> {
         self.subscribe_events()
     }
 
+    fn subscribe_mcp_events(&self) -> impl futures_core::Stream<Item = Result<McpEventMsg>> + Send {
+        self.subscribe_mcp_events()
+    }
+
     async fn reload(&self) -> Result<()> {
         self.reload().await
     }

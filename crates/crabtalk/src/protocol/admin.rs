@@ -5,10 +5,45 @@ use crate::daemon::Daemon;
 use crate::daemon::event::EventSubscription;
 use anyhow::Result;
 use crabllm_core::Provider;
+use mcp::McpEvent;
 use runtime::Env;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use wcore::protocol::message::*;
+
+fn mcp_event_to_msg(event: McpEvent) -> McpEventMsg {
+    let now = chrono::Utc::now().to_rfc3339();
+    match event {
+        McpEvent::Connecting { name } => McpEventMsg {
+            kind: McpEventKind::Connecting.into(),
+            name,
+            tools: Vec::new(),
+            error: String::new(),
+            timestamp: now,
+        },
+        McpEvent::Connected { name, tools } => McpEventMsg {
+            kind: McpEventKind::Connected.into(),
+            name,
+            tools,
+            error: String::new(),
+            timestamp: now,
+        },
+        McpEvent::Failed { name, error } => McpEventMsg {
+            kind: McpEventKind::Failed.into(),
+            name,
+            tools: Vec::new(),
+            error,
+            timestamp: now,
+        },
+        McpEvent::Disconnected { name } => McpEventMsg {
+            kind: McpEventKind::Disconnected.into(),
+            name,
+            tools: Vec::new(),
+            error: String::new(),
+            timestamp: now,
+        },
+    }
+}
 
 impl<P: Provider + 'static> Daemon<P> {
     pub(crate) async fn get_stats(&self) -> Result<DaemonStats> {
@@ -37,6 +72,22 @@ impl<P: Provider + 'static> Daemon<P> {
             loop {
                 match rx.recv().await {
                     Ok(event) => yield event,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                }
+            }
+        }
+    }
+
+    pub(crate) fn subscribe_mcp_events(
+        &self,
+    ) -> impl futures_core::Stream<Item = Result<McpEventMsg>> + Send {
+        let mcp = self.mcp.clone();
+        async_stream::try_stream! {
+            let mut rx = mcp.subscribe();
+            loop {
+                match rx.recv().await {
+                    Ok(event) => yield mcp_event_to_msg(event),
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 }
