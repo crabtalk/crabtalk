@@ -17,7 +17,10 @@ use std::path::PathBuf;
 use tokio::sync::mpsc;
 use wcore::protocol::{api::Client as _, message::*};
 
-pub use transport::Transport;
+pub use transport::{
+    Transport,
+    mem::{MemConnection, connect as connect_mem},
+};
 
 /// How to (re)connect to the daemon.
 #[derive(Clone)]

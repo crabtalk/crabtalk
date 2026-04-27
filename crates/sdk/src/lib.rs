@@ -12,7 +12,8 @@ pub mod stream;
 #[cfg(unix)]
 pub use client::connect_uds;
 pub use client::{
-    ConnectionInfo, OutputChunk, Transport, connect_from, connect_tcp, stream_chunks,
+    ConnectionInfo, MemConnection, OutputChunk, Transport, connect_from, connect_mem, connect_tcp,
+    stream_chunks,
 };
 pub use command::{COMMAND_HINT, COMMANDS, Command, parse_command};
 pub use message::{Attachment, AttachmentKind, Message, attachment_summary};

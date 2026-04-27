@@ -17,6 +17,7 @@ use wcore::protocol::{
     message::{ClientMessage, ServerMessage},
 };
 
+pub mod mem;
 pub mod tcp;
 #[cfg(unix)]
 pub mod uds;
