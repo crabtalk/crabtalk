@@ -72,9 +72,10 @@ impl<P: Provider + 'static> Daemon<P> {
             let rt = self.runtime.read().await.clone();
             rt.storage().upsert_mcp(&cfg).await?;
         }
-        self.reload().await?;
+        self.mcp.upsert_server(&cfg).await;
 
-        // Re-list to surface the runtime status (connected/failed/etc).
+        // Re-list to surface the runtime status (connected/failed/etc) merged
+        // with the per-source view (storage vs plugin manifest).
         let mcps = self.list_mcps().await?;
         mcps.into_iter()
             .find(|m| m.name == name)
@@ -87,7 +88,7 @@ impl<P: Provider + 'static> Daemon<P> {
             rt.storage().delete_mcp(name).await?
         };
         if removed {
-            self.reload().await?;
+            self.mcp.disconnect_server(name).await;
         }
         Ok(removed)
     }

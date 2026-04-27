@@ -141,6 +141,31 @@ impl McpHandler {
     pub fn try_bridge(&self) -> Option<Arc<McpBridge>> {
         self.bridge.try_read().ok().map(|g| Arc::clone(&*g))
     }
+
+    /// Connect (or reconnect) a single server in place.
+    ///
+    /// Removes any prior peer for this name from the bridge, marks the
+    /// state as `Connecting`, attempts a fresh connect, and stores the
+    /// resulting state. Returns the new state.
+    pub async fn upsert_server(&self, cfg: &McpServerConfig) -> McpServerState {
+        let bridge = self.bridge().await;
+        bridge.remove_server(&cfg.name).await;
+        self.states
+            .write()
+            .insert(cfg.name.clone(), McpServerState::connecting());
+        let state = connect_one(&bridge, cfg).await;
+        self.states.write().insert(cfg.name.clone(), state.clone());
+        state
+    }
+
+    /// Disconnect and forget a single server.
+    ///
+    /// Returns the prior state, if any.
+    pub async fn disconnect_server(&self, name: &str) -> Option<McpServerState> {
+        let bridge = self.bridge().await;
+        bridge.remove_server(name).await;
+        self.states.write().remove(name)
+    }
 }
 
 /// Attempt to connect a single server, applying the global timeout.
