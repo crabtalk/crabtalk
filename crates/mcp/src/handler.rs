@@ -152,21 +152,28 @@ impl McpHandler {
             .collect()
     }
 
-    /// Tools currently exported by all peers an agent has access to,
-    /// scoped to the given declared mcp names. Used by the dispatcher.
-    pub fn allowed_tools(&self, agent: &str, mcp_names: &[String]) -> Vec<String> {
+    /// `(peer_id, tool_name)` pairs for every tool exposed by the
+    /// agent's declared MCPs. Iteration order matches `mcp_names`, which
+    /// matches the agent's declaration order — first-declarer wins on
+    /// tool name collisions within an agent. Used by the dispatcher to
+    /// route calls to the right peer without exposing tools the agent
+    /// didn't ask for.
+    pub fn allowed(&self, agent: &str, mcp_names: &[String]) -> Vec<(String, String)> {
         let by_owner = self.by_owner.read();
         let peers = self.peers.read();
-        let mut tools = Vec::new();
+        let mut out = Vec::new();
         for name in mcp_names {
             let key = (agent.to_owned(), name.clone());
             if let Some(fp) = by_owner.get(&key)
                 && let Some(peer) = peers.get(fp)
             {
-                tools.extend(peer.state.tools.iter().cloned());
+                let id = peer_id(*fp);
+                for tool_name in &peer.state.tools {
+                    out.push((id.clone(), tool_name.clone()));
+                }
             }
         }
-        tools
+        out
     }
 
     /// Get a clone of the current bridge Arc. Tool calls go through this.
