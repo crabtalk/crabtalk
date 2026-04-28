@@ -26,7 +26,7 @@ compile_error!("one of `native-tls` or `rustls` must be enabled");
 
 pub use {
     bridge::McpBridge,
-    handler::{McpEvent, McpHandler, McpServerState, ServerStatus},
+    handler::{Fingerprint, McpEvent, McpHandler, McpServerState, ServerStatus, fingerprint},
 };
 
 pub mod bridge;

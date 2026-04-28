@@ -1,8 +1,8 @@
 //! MCP tool dispatch — the `mcp` meta-tool handler.
 //!
-//! Called from `NodeEnv::dispatch_mcp` with the parsed args and the
-//! agent's MCP scope. Owns tool resolution, scope enforcement, fuzzy
-//! matching, and bridge call routing.
+//! Called from `McpHook::dispatch` with the calling agent and the
+//! parsed args. Owns tool resolution scoped to the agent's declared
+//! MCPs, fuzzy matching, and bridge call routing.
 
 use crate::McpHandler;
 use serde::Deserialize;
@@ -16,45 +16,28 @@ struct McpArgs {
 
 /// Dispatch the `mcp` meta-tool.
 ///
-/// `allowed_mcps` is the agent's MCP scope — server names the agent may
-/// access. Empty means unrestricted.
+/// `agent` is the calling agent's name; `allowed_mcp_names` are the MCP
+/// server names that agent declared. The handler resolves those names
+/// to fingerprint-keyed peers and only exposes their tools.
 pub async fn dispatch_mcp(
     handler: &McpHandler,
+    agent: &str,
     args: &str,
-    allowed_mcps: &[String],
+    allowed_mcp_names: &[String],
 ) -> Result<String, String> {
     let input: McpArgs =
         serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 
+    let allowed_tools = handler.allowed_tools(agent, allowed_mcp_names);
     let bridge = handler.bridge().await;
-
-    // Resolve which tools this agent may access.
-    let allowed_tools: Option<Vec<String>> = if !allowed_mcps.is_empty() {
-        let servers = bridge.list_servers().await;
-        Some(
-            servers
-                .into_iter()
-                .filter(|(name, _)| allowed_mcps.iter().any(|m| m == name.as_str()))
-                .flat_map(|(_, tools)| tools)
-                .collect(),
-        )
-    } else {
-        None
-    };
 
     // Try exact call first.
     if !input.name.is_empty() {
-        if let Some(ref allowed) = allowed_tools
-            && !allowed.iter().any(|t| t.as_str() == input.name)
-        {
+        if !allowed_tools.iter().any(|t| t == &input.name) {
             return Err(format!("tool not available: {}", input.name));
         }
-
-        let tools = bridge.tools().await;
-        if tools.iter().any(|t| t.function.name == input.name) {
-            let tool_args = input.args.unwrap_or_default();
-            return bridge.call(&input.name, &tool_args).await;
-        }
+        let tool_args = input.args.unwrap_or_default();
+        return bridge.call(&input.name, &tool_args).await;
     }
 
     // No exact match — fuzzy search / list all.
@@ -63,13 +46,11 @@ pub async fn dispatch_mcp(
     let matches: Vec<String> = tools
         .iter()
         .filter(|t| {
-            if let Some(ref allowed) = allowed_tools
-                && !allowed
-                    .iter()
-                    .any(|a| a.as_str() == t.function.name.as_str())
-            {
-                return false;
-            }
+            allowed_tools
+                .iter()
+                .any(|a| a.as_str() == t.function.name.as_str())
+        })
+        .filter(|t| {
             query.is_empty()
                 || t.function.name.to_lowercase().contains(&query)
                 || t.function

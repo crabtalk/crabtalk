@@ -227,7 +227,10 @@ async fn stream_mcp_events(mut conn: Transport) -> Result<()> {
             Ok(McpEventKind::Failed) if !event.error.is_empty() => format!(": {}", event.error),
             _ => String::new(),
         };
-        println!("[{}] {} {}{}", event.timestamp, event.name, kind, detail);
+        println!(
+            "[{}] {} {}/{} {}{}",
+            event.timestamp, event.agent, "mcp", event.name, kind, detail
+        );
     }
     Ok(())
 }

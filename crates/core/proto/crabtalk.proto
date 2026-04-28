@@ -655,6 +655,10 @@ message McpEventMsg {
   // Populated for FAILED.
   string error = 4;
   string timestamp = 5;
+  // The agent whose declaration produced this event. Identical configs
+  // across agents share one peer, but events still fire per (agent, name)
+  // so consumers see lifecycle from each owner's point of view.
+  string agent = 6;
 }
 
 // ── Plugin Events ───────────────────────────────────────────────

@@ -33,30 +33,28 @@ impl<P: Provider + 'static> Daemon<P> {
     pub(crate) async fn list_mcps(&self, agent: Option<String>) -> Result<Vec<McpInfo>> {
         let states = self.mcp.states();
         let rt = self.runtime.read().await.clone();
-        let mut by_name: BTreeMap<String, McpInfo> = BTreeMap::new();
+        let mut out: Vec<McpInfo> = Vec::new();
         match agent {
             Some(name) => {
                 let cfg = rt
                     .agent(&name)
                     .ok_or_else(|| anyhow::anyhow!("agent '{name}' not found"))?;
                 for mcp_cfg in &cfg.mcps {
-                    by_name.insert(mcp_cfg.name.clone(), mcp_info(mcp_cfg, &name, &states));
+                    out.push(mcp_info(mcp_cfg, &name, &states));
                 }
             }
             None => {
-                // Union view across every registered agent. First-declarer
-                // wins on name conflicts (Phase 2 — fingerprint-keyed dedup
-                // arrives in Phase 3).
+                // Union view: every (agent, mcp) pair. Identically-configured
+                // MCPs across agents share one peer (and thus one status
+                // entry in `states`), but the listing surfaces both owners.
                 for cfg in rt.agents() {
                     for mcp_cfg in &cfg.mcps {
-                        by_name
-                            .entry(mcp_cfg.name.clone())
-                            .or_insert_with(|| mcp_info(mcp_cfg, &cfg.name, &states));
+                        out.push(mcp_info(mcp_cfg, &cfg.name, &states));
                     }
                 }
             }
         }
-        Ok(by_name.into_values().collect())
+        Ok(out)
     }
 
     pub(crate) async fn upsert_mcp(&self, agent: String, config_json: String) -> Result<McpInfo> {
@@ -103,10 +101,10 @@ impl<P: Provider + 'static> Daemon<P> {
             return Ok(false);
         }
         rt.update_agent(existing, &prompt).await?;
-        // Phase 2 only: drop the bridge peer keyed by name. With
-        // fingerprint refcounting (Phase 3) this becomes a refcount
-        // decrement so peers shared across agents survive.
-        self.mcp.disconnect_server(&name).await;
+        // The runtime's `update_agent` triggers `on_register_agent`,
+        // which diffs the new declarations against the prior set and
+        // calls `unregister_for_agent` for entries that disappeared —
+        // so the bridge peer is released (refcounted) automatically.
         Ok(true)
     }
 
@@ -151,9 +149,10 @@ impl<P: Provider + 'static> Daemon<P> {
 fn mcp_info(
     cfg: &wcore::McpServerConfig,
     agent: &str,
-    states: &BTreeMap<String, McpServerState>,
+    states: &BTreeMap<(String, String), McpServerState>,
 ) -> McpInfo {
-    let (status, tool_count, error) = match states.get(&cfg.name) {
+    let key = (agent.to_owned(), cfg.name.clone());
+    let (status, tool_count, error) = match states.get(&key) {
         Some(state) => (
             proto_status(state.status),
             state.tools.len() as u32,

@@ -24,17 +24,17 @@ pub struct Mcp {
 /// Agents declare their MCP configs inline (RFC 0193). This hook wires
 /// the agent lifecycle (`on_register_agent` / `on_unregister_agent`) to
 /// the daemon's `McpHandler` so each agent's declared MCPs are spawned
-/// or reconnected when the agent appears, and dispatch is scoped to
-/// only the MCPs the calling agent declared.
+/// or reconnected when the agent appears, and dispatch is scoped to the
+/// MCPs the calling agent owns. Identical configs across agents share
+/// one peer process — see `McpHandler::register_for_agent`.
 pub struct McpHook {
     mcp: Arc<McpHandler>,
     /// Daemon-wide env overlay applied on top of each MCP's own env at
-    /// register time. Mirrors the pre-RFC behavior where the daemon's
-    /// `[env]` section seeded variables for every MCP child process.
+    /// register time.
     env_overlay: BTreeMap<String, String>,
-    /// Per-agent declared MCP server names. Populated from
-    /// `on_register_agent`; consulted on dispatch to scope tool routing
-    /// and on unregister for future cleanup.
+    /// Per-agent declared MCP names. Snapshot of what's currently
+    /// registered; consulted to scope dispatch and to compute the set
+    /// of MCPs to unregister when the agent's declarations change.
     agent_mcps: RwLock<BTreeMap<String, Vec<String>>>,
 }
 
@@ -68,30 +68,52 @@ impl Hook for McpHook {
     }
 
     fn on_register_agent(&self, name: &str, config: &wcore::AgentConfig) {
-        let mut names = Vec::with_capacity(config.mcps.len());
+        let new_names: Vec<String> = config.mcps.iter().map(|m| m.name.clone()).collect();
+        let prior = self
+            .agent_mcps
+            .write()
+            .insert(name.to_owned(), new_names.clone())
+            .unwrap_or_default();
+
+        // Drop any MCPs that disappeared (e.g., agent updated with
+        // some entries removed). The handler handles refcounting —
+        // a peer shared with another agent won't actually be torn down.
+        for old_name in prior {
+            if !new_names.contains(&old_name) {
+                let handler = self.mcp.clone();
+                let agent = name.to_owned();
+                tokio::spawn(async move {
+                    handler.unregister_for_agent(&agent, &old_name).await;
+                });
+            }
+        }
+
+        // Register every current declaration. Idempotent — a repeat
+        // with the same fingerprint is a no-op refcount bump.
         for cfg in &config.mcps {
-            names.push(cfg.name.clone());
             let mut effective = cfg.clone();
             for (k, v) in &self.env_overlay {
                 effective.env.entry(k.clone()).or_insert_with(|| v.clone());
             }
-            // on_register_agent is sync; the connect itself is async.
-            // Lifecycle events (Connecting/Connected/Failed) surface
-            // outcome to subscribers — see RFC 0190.
             let handler = self.mcp.clone();
+            let agent = name.to_owned();
             tokio::spawn(async move {
-                handler.upsert_server(&effective).await;
+                handler.register_for_agent(&agent, &effective).await;
             });
         }
-        self.agent_mcps.write().insert(name.to_owned(), names);
     }
 
     fn on_unregister_agent(&self, name: &str) {
-        // Refcounted teardown lands with fingerprint-keyed dedup
-        // (Phase 3). For now, agent removal forgets the bookkeeping
-        // entry but leaves bridge peers connected — matches pre-refactor
-        // behavior where named MCPs persisted independently of agents.
-        self.agent_mcps.write().remove(name);
+        let Some(names) = self.agent_mcps.write().remove(name) else {
+            return;
+        };
+        for mcp_name in names {
+            let handler = self.mcp.clone();
+            let agent = name.to_owned();
+            tokio::spawn(async move {
+                handler.unregister_for_agent(&agent, &mcp_name).await;
+            });
+        }
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
@@ -105,7 +127,7 @@ impl Hook for McpHook {
                 .get(&call.agent)
                 .cloned()
                 .unwrap_or_default();
-            dispatch_mcp(&self.mcp, &call.args, &allowed_mcps).await
+            dispatch_mcp(&self.mcp, &call.agent, &call.args, &allowed_mcps).await
         }))
     }
 }
