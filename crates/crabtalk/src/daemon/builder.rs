@@ -187,18 +187,19 @@ impl<P: Provider + 'static> Daemon<P> {
     )> {
         let dirs = resolve_dirs(config_dir);
         let storage = Self::build_storage(config_dir, &dirs);
+        crate::storage::fs::migrate::migrate_settings(storage.as_ref()).await?;
         let models = fetch_models(&config.llm).await;
         let default_model = models.first().cloned().unwrap_or_default();
         storage.scaffold(&default_model).await?;
 
         let model = build_provider(config, &models)?;
-        let servers = mcp_servers(config, storage.as_ref(), &dirs).await?;
-        let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::load(&servers).await);
+        let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::empty());
         let (os_hook, ask_hook, shared_memory) = Self::register_tools(
             &mut node_hook,
             storage.clone(),
             config_dir,
             mcp_handler.clone(),
+            config.env.clone(),
             runtime_once,
             cwd.clone(),
             conversation_cwds.clone(),
@@ -247,6 +248,7 @@ impl<P: Provider + 'static> Daemon<P> {
         storage: Arc<FsStorage>,
         config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
+        env_overlay: BTreeMap<String, String>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
         cwd: PathBuf,
         conversation_cwds: crate::daemon::ConversationCwds,
@@ -302,7 +304,7 @@ impl<P: Provider + 'static> Daemon<P> {
 
         node_hook.register_hook(
             "mcp",
-            Arc::new(crate::hooks::mcp::McpHook::new(mcp_handler, scopes)),
+            Arc::new(crate::hooks::mcp::McpHook::new(mcp_handler, env_overlay)),
         );
         Ok((os_hook, ask_hook, shared_memory))
     }
@@ -415,24 +417,4 @@ async fn fetch_models_inner(req: reqwest::RequestBuilder) -> Result<Vec<String>>
                 .collect()
         })
         .unwrap_or_default())
-}
-
-async fn mcp_servers(
-    config: &DaemonConfig,
-    storage: &FsStorage,
-    dirs: &ResolvedDirs,
-) -> Result<Vec<wcore::McpServerConfig>> {
-    let mut merged: BTreeMap<String, wcore::McpServerConfig> = dirs.plugin_mcps.clone();
-    for (name, mcp) in storage.list_mcps().await? {
-        merged.insert(name, mcp);
-    }
-    Ok(merged
-        .into_values()
-        .map(|mut mcp| {
-            for (k, v) in &config.env {
-                mcp.env.entry(k.clone()).or_insert_with(|| v.clone());
-            }
-            mcp
-        })
-        .collect())
 }

@@ -449,12 +449,16 @@ pub trait Client: Send {
         }
     }
 
-    /// List all MCP server configs.
-    fn list_mcps(&mut self) -> impl std::future::Future<Output = Result<Vec<McpInfo>>> + Send {
+    /// List MCPs declared by agents. `agent` empty = union view across
+    /// every registered agent.
+    fn list_mcps(
+        &mut self,
+        agent: String,
+    ) -> impl std::future::Future<Output = Result<Vec<McpInfo>>> + Send {
         async move {
             match self
                 .request(ClientMessage {
-                    msg: Some(client_message::Msg::ListMcps(ListMcpsMsg {})),
+                    msg: Some(client_message::Msg::ListMcps(ListMcpsMsg { agent })),
                 })
                 .await?
             {
@@ -469,15 +473,19 @@ pub trait Client: Send {
         }
     }
 
-    /// Create or replace an MCP server (Storage-backed).
+    /// Add or replace an MCP in the given agent's `mcps` list.
     fn upsert_mcp(
         &mut self,
+        agent: String,
         config: String,
     ) -> impl std::future::Future<Output = Result<McpInfo>> + Send {
         async move {
             match self
                 .request(ClientMessage {
-                    msg: Some(client_message::Msg::UpsertMcp(UpsertMcpMsg { config })),
+                    msg: Some(client_message::Msg::UpsertMcp(UpsertMcpMsg {
+                        agent,
+                        config,
+                    })),
                 })
                 .await?
             {
@@ -492,12 +500,16 @@ pub trait Client: Send {
         }
     }
 
-    /// Delete an MCP server by name.
-    fn delete_mcp(&mut self, name: String) -> impl std::future::Future<Output = Result<()>> + Send {
+    /// Remove an MCP from the given agent's `mcps` list.
+    fn delete_mcp(
+        &mut self,
+        agent: String,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
                 .request(ClientMessage {
-                    msg: Some(client_message::Msg::DeleteMcp(DeleteMcpMsg { name })),
+                    msg: Some(client_message::Msg::DeleteMcp(DeleteMcpMsg { agent, name })),
                 })
                 .await?
             {

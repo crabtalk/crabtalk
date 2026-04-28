@@ -30,67 +30,84 @@ impl<P: Provider + 'static> Daemon<P> {
         self.reload().await
     }
 
-    pub(crate) async fn list_mcps(&self) -> Result<Vec<McpInfo>> {
+    pub(crate) async fn list_mcps(&self, agent: Option<String>) -> Result<Vec<McpInfo>> {
         let states = self.mcp.states();
-        let storage_mcps = {
-            let rt = self.runtime.read().await.clone();
-            rt.storage().list_mcps().await?
-        };
-        // Storage wins over manifest on name conflict — seed the map from
-        // storage first, then `entry(..).or_insert_with` for manifest entries
-        // skips names already present. Output is alphabetical by name.
-        let mut by_name: BTreeMap<String, McpInfo> = storage_mcps
-            .iter()
-            .map(|(name, cfg)| {
-                (
-                    name.clone(),
-                    mcp_info(name, cfg, "local", SourceKind::Local, &states),
-                )
-            })
-            .collect();
-        for (plugin_name, manifest) in super::plugin::scan_plugin_manifests(&self.config_dir) {
-            for (name, mcp_res) in manifest.mcps {
-                by_name.entry(name.clone()).or_insert_with(|| {
-                    mcp_info(
-                        &name,
-                        &mcp_res.to_server_config(),
-                        &plugin_name,
-                        SourceKind::Plugin,
-                        &states,
-                    )
-                });
+        let rt = self.runtime.read().await.clone();
+        let mut by_name: BTreeMap<String, McpInfo> = BTreeMap::new();
+        match agent {
+            Some(name) => {
+                let cfg = rt
+                    .agent(&name)
+                    .ok_or_else(|| anyhow::anyhow!("agent '{name}' not found"))?;
+                for mcp_cfg in &cfg.mcps {
+                    by_name.insert(mcp_cfg.name.clone(), mcp_info(mcp_cfg, &name, &states));
+                }
+            }
+            None => {
+                // Union view across every registered agent. First-declarer
+                // wins on name conflicts (Phase 2 — fingerprint-keyed dedup
+                // arrives in Phase 3).
+                for cfg in rt.agents() {
+                    for mcp_cfg in &cfg.mcps {
+                        by_name
+                            .entry(mcp_cfg.name.clone())
+                            .or_insert_with(|| mcp_info(mcp_cfg, &cfg.name, &states));
+                    }
+                }
             }
         }
         Ok(by_name.into_values().collect())
     }
 
-    pub(crate) async fn upsert_mcp(&self, config_json: String) -> Result<McpInfo> {
+    pub(crate) async fn upsert_mcp(&self, agent: String, config_json: String) -> Result<McpInfo> {
+        anyhow::ensure!(!agent.is_empty(), "agent name is required for upsert_mcp");
         let cfg: wcore::McpServerConfig =
             serde_json::from_str(&config_json).context("invalid McpServerConfig JSON")?;
-        let name = cfg.name.clone();
-        {
-            let rt = self.runtime.read().await.clone();
-            rt.storage().upsert_mcp(&cfg).await?;
-        }
-        self.mcp.upsert_server(&cfg).await;
+        anyhow::ensure!(!cfg.name.is_empty(), "MCP config must have a name");
+        let mcp_name = cfg.name.clone();
 
-        // Re-list to surface the runtime status (connected/failed/etc) merged
-        // with the per-source view (storage vs plugin manifest).
-        let mcps = self.list_mcps().await?;
+        let rt = self.runtime.read().await.clone();
+        let mut existing = rt
+            .storage()
+            .load_agent_by_name(&agent)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("agent '{agent}' not found"))?;
+        let prompt = std::mem::take(&mut existing.system_prompt);
+        if let Some(slot) = existing.mcps.iter_mut().find(|m| m.name == mcp_name) {
+            *slot = cfg;
+        } else {
+            existing.mcps.push(cfg);
+        }
+        rt.update_agent(existing, &prompt).await?;
+
+        // Re-list this agent to surface runtime status set by the
+        // background register triggered through `on_register_agent`.
+        let mcps = self.list_mcps(Some(agent)).await?;
         mcps.into_iter()
-            .find(|m| m.name == name)
-            .ok_or_else(|| anyhow::anyhow!("mcp '{name}' missing from listing after upsert"))
+            .find(|m| m.name == mcp_name)
+            .ok_or_else(|| anyhow::anyhow!("mcp '{mcp_name}' missing from listing after upsert"))
     }
 
-    pub(crate) async fn delete_mcp(&self, name: &str) -> Result<bool> {
-        let removed = {
-            let rt = self.runtime.read().await.clone();
-            rt.storage().delete_mcp(name).await?
-        };
-        if removed {
-            self.mcp.disconnect_server(name).await;
+    pub(crate) async fn delete_mcp(&self, agent: String, name: String) -> Result<bool> {
+        anyhow::ensure!(!agent.is_empty(), "agent name is required for delete_mcp");
+        let rt = self.runtime.read().await.clone();
+        let mut existing = rt
+            .storage()
+            .load_agent_by_name(&agent)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("agent '{agent}' not found"))?;
+        let prompt = std::mem::take(&mut existing.system_prompt);
+        let before = existing.mcps.len();
+        existing.mcps.retain(|m| m.name != name);
+        if existing.mcps.len() == before {
+            return Ok(false);
         }
-        Ok(removed)
+        rt.update_agent(existing, &prompt).await?;
+        // Phase 2 only: drop the bridge peer keyed by name. With
+        // fingerprint refcounting (Phase 3) this becomes a refcount
+        // decrement so peers shared across agents survive.
+        self.mcp.disconnect_server(&name).await;
+        Ok(true)
     }
 
     pub(crate) fn list_skills(&self) -> Vec<SkillInfo> {
@@ -132,24 +149,22 @@ impl<P: Provider + 'static> Daemon<P> {
 }
 
 fn mcp_info(
-    name: &str,
     cfg: &wcore::McpServerConfig,
-    source: &str,
-    source_kind: SourceKind,
+    agent: &str,
     states: &BTreeMap<String, McpServerState>,
 ) -> McpInfo {
-    let (status, tool_count, error) = match states.get(name) {
+    let (status, tool_count, error) = match states.get(&cfg.name) {
         Some(state) => (
             proto_status(state.status),
             state.tools.len() as u32,
             state.last_error.clone().unwrap_or_default(),
         ),
-        // Registered in storage/plugin but never seen by the handler — treat
-        // as not yet attempted.
+        // Declared by the agent but not yet attempted (e.g., agent
+        // recently registered, connect still scheduled).
         None => (McpStatus::Unknown, 0, String::new()),
     };
     McpInfo {
-        name: name.to_string(),
+        name: cfg.name.clone(),
         command: cfg.command.clone(),
         args: cfg.args.clone(),
         env: cfg
@@ -159,9 +174,10 @@ fn mcp_info(
             .collect(),
         url: cfg.url.clone().unwrap_or_default(),
         auth: cfg.auth,
-        source: source.to_string(),
+        // The "source" is now the agent that owns the declaration.
+        source: agent.to_string(),
         auto_restart: cfg.auto_restart,
-        source_kind: source_kind.into(),
+        source_kind: SourceKind::Local.into(),
         status: status.into(),
         error,
         tool_count,

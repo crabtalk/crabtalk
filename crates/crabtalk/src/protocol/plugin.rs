@@ -4,7 +4,6 @@ use crate::daemon::Daemon;
 use anyhow::{Context, Result};
 use crabllm_core::Provider;
 use wcore::protocol::message::*;
-use wcore::storage::Storage;
 
 impl<P: Provider + 'static> Daemon<P> {
     pub(crate) fn install_plugin<'a>(
@@ -77,17 +76,6 @@ impl<P: Provider + 'static> Daemon<P> {
             let warnings = wcore::check_skill_conflicts(&dirs.skill_dirs);
             for w in &warnings {
                 yield plugin_warning(w);
-            }
-            let storage_mcps = {
-                let rt = self.runtime.read().await.clone();
-                rt.storage().list_mcps().await?
-            };
-            for (name, mcp) in &storage_mcps {
-                if mcp.auth
-                    && !wcore::paths::TOKENS_DIR.join(format!("{name}.json")).exists()
-                {
-                    yield plugin_warning(&format!("MCP '{name}' requires authentication"));
-                }
             }
 
             yield plugin_step("configure env vars in config.toml [env] section if needed");

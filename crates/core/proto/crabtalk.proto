@@ -244,16 +244,24 @@ message ListConversationsMsg {
   string sender = 2;
 }
 
-message ListMcpsMsg {}
+message ListMcpsMsg {
+  // Optional — when non-empty, list only this agent's declared MCPs.
+  // Empty = union view across every registered agent.
+  string agent = 1;
+}
 
 message UpsertMcpMsg {
   // JSON-encoded `McpServerConfig`. The MCP name lives inside the
   // payload — there is no separate identity field.
   string config = 1;
+  // Required — the agent whose `mcps` list is being modified.
+  string agent = 2;
 }
 
 message DeleteMcpMsg {
   string name = 1;
+  // Required — the agent whose `mcps` list is being modified.
+  string agent = 2;
 }
 
 message SetActiveModelMsg {

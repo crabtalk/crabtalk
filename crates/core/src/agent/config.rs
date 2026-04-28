@@ -48,9 +48,10 @@ pub struct AgentConfig {
     /// Skill names this agent can access. Empty = all skills (crabtalk default).
     #[serde(default)]
     pub skills: Vec<String>,
-    /// MCP server names this agent can access. Empty = all MCPs (crabtalk default).
+    /// MCP servers this agent uses. Each entry is a self-contained config the
+    /// daemon spawns or connects to on the agent's behalf. Empty = none.
     #[serde(default)]
-    pub mcps: Vec<String>,
+    pub mcps: Vec<crate::config::McpServerConfig>,
     /// Computed tool whitelist. Empty = all tools. Not serialized.
     #[serde(skip)]
     pub tools: Vec<String>,

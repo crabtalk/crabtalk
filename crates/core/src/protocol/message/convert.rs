@@ -17,7 +17,7 @@ impl From<&AgentConfig> for AgentInfo {
             max_iterations: config.max_iterations as u32,
             thinking: config.thinking,
             skills: config.skills.clone(),
-            mcps: config.mcps.clone(),
+            mcps: config.mcps.iter().map(|m| m.name.clone()).collect(),
             compact_tool_max_len: config.compact_tool_max_len as u32,
         }
     }

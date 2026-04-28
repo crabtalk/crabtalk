@@ -17,14 +17,14 @@ use std::{
 };
 use tokio::fs;
 use wcore::{
-    AgentConfig, AgentId, ConversationMeta, DaemonConfig, EventLine, McpServerConfig,
+    AgentConfig, AgentId, ConversationMeta, DaemonConfig, EventLine,
     model::HistoryEntry,
     storage::{SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage},
 };
 
 mod agents;
 mod config;
-mod mcp;
+pub(crate) mod migrate;
 mod scaffold;
 mod sessions;
 mod skills;
@@ -35,7 +35,7 @@ pub use scaffold::default_crab;
 /// template as the one scaffolded on first-run (`DEFAULT_SETTINGS`).
 /// Tells humans not to edit the file while the daemon is running and
 /// documents the allowed sections.
-const SETTINGS_HEADER: &str = crate::storage::DEFAULT_SETTINGS;
+pub(super) const SETTINGS_HEADER: &str = crate::storage::DEFAULT_SETTINGS;
 
 /// Filesystem persistence backend.
 pub struct FsStorage {
@@ -108,12 +108,9 @@ pub(super) async fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
 }
 
 /// On-disk shape of `local/settings.toml`. Holds runtime-added records:
-///   - `[mcps.<name>]` — MCP server registrations
-///   - `[agents.<name>]` — full agent definitions (model, skills, …)
+///   - `[agents.<name>]` — full agent definitions (model, MCPs, skills, …)
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(super) struct SettingsFile {
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub(super) mcps: BTreeMap<String, McpServerConfig>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(super) agents: BTreeMap<String, AgentConfig>,
 }
@@ -217,21 +214,5 @@ impl Storage for FsStorage {
 
     async fn scaffold(&self, default_model: &str) -> Result<()> {
         scaffold::scaffold(self, default_model).await
-    }
-
-    async fn list_mcps(&self) -> Result<BTreeMap<String, McpServerConfig>> {
-        mcp::list_mcps(self).await
-    }
-
-    async fn load_mcp(&self, name: &str) -> Result<Option<McpServerConfig>> {
-        mcp::load_mcp(self, name).await
-    }
-
-    async fn upsert_mcp(&self, config: &McpServerConfig) -> Result<()> {
-        mcp::upsert_mcp(self, config).await
-    }
-
-    async fn delete_mcp(&self, name: &str) -> Result<bool> {
-        mcp::delete_mcp(self, name).await
     }
 }

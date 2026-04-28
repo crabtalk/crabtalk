@@ -3,11 +3,12 @@
 use crate::protocol::message::{
     ActiveConversationInfo, ActiveConversationList, AgentEventMsg, AgentInfo, AgentList,
     ClientMessage, CompactResponse, ConversationHistory, ConversationInfo, ConversationList,
-    CreateAgentMsg, DaemonStats, ErrorMsg, InstallPluginMsg, McpEventMsg, McpInfo, McpList,
-    ModelInfo, ModelList, PluginEvent, PluginInfo, PluginList, PluginSearchList, Pong,
-    PublishEventMsg, SendMsg, SendResponse, ServerMessage, ServiceLogOutput, SkillInfo, SkillList,
-    SteerSessionMsg, StreamEvent, StreamMsg, SubscribeEventMsg, SubscriptionInfo, SubscriptionList,
-    UpdateAgentMsg, UpsertMcpMsg, client_message, server_message,
+    CreateAgentMsg, DaemonStats, DeleteMcpMsg, ErrorMsg, InstallPluginMsg, ListMcpsMsg,
+    McpEventMsg, McpInfo, McpList, ModelInfo, ModelList, PluginEvent, PluginInfo, PluginList,
+    PluginSearchList, Pong, PublishEventMsg, SendMsg, SendResponse, ServerMessage,
+    ServiceLogOutput, SkillInfo, SkillList, SteerSessionMsg, StreamEvent, StreamMsg,
+    SubscribeEventMsg, SubscriptionInfo, SubscriptionList, UpdateAgentMsg, UpsertMcpMsg,
+    client_message, server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -193,17 +194,25 @@ pub trait Server: Sync {
         file_path: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
-    /// Handle `ListMcps` — return all MCP server configs with source info.
-    fn list_mcps(&self) -> impl std::future::Future<Output = Result<Vec<McpInfo>>> + Send;
+    /// Handle `ListMcps` — return MCPs declared by agents. When
+    /// `req.agent` is non-empty, scoped to that agent; otherwise the
+    /// union view across every registered agent.
+    fn list_mcps(
+        &self,
+        req: ListMcpsMsg,
+    ) -> impl std::future::Future<Output = Result<Vec<McpInfo>>> + Send;
 
-    /// Handle `UpsertMcp` — create or replace an MCP server in Storage.
+    /// Handle `UpsertMcp` — add or replace an MCP in the named agent's `mcps` list.
     fn upsert_mcp(
         &self,
         req: UpsertMcpMsg,
     ) -> impl std::future::Future<Output = Result<McpInfo>> + Send;
 
-    /// Handle `DeleteMcp` — remove an MCP server from Storage.
-    fn delete_mcp(&self, name: String) -> impl std::future::Future<Output = Result<bool>> + Send;
+    /// Handle `DeleteMcp` — remove an MCP from the named agent's `mcps` list.
+    fn delete_mcp(
+        &self,
+        req: DeleteMcpMsg,
+    ) -> impl std::future::Future<Output = Result<bool>> + Send;
 
     /// Handle `SetActiveModel` — update the active model in config.toml.
     fn set_active_model(
@@ -506,8 +515,8 @@ pub trait Server: Sync {
                         Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                client_message::Msg::ListMcps(_) => {
-                    yield match self.list_mcps().await {
+                client_message::Msg::ListMcps(req) => {
+                    yield match self.list_mcps(req).await {
                         Ok(mcps) => ServerMessage {
                             msg: Some(server_message::Msg::McpList(McpList { mcps })),
                         },
@@ -523,9 +532,10 @@ pub trait Server: Sync {
                     };
                 }
                 client_message::Msg::DeleteMcp(req) => {
-                    yield match self.delete_mcp(req.name.clone()).await {
+                    let name = req.name.clone();
+                    yield match self.delete_mcp(req).await {
                         Ok(true) => server_pong(),
-                        Ok(false) => server_error(404, format!("mcp '{}' not found", req.name)),
+                        Ok(false) => server_error(404, format!("mcp '{name}' not found")),
                         Err(e) => server_error(500, e.to_string()),
                     };
                 }

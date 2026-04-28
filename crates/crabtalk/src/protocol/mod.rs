@@ -189,16 +189,17 @@ impl<P: Provider + 'static> Server for Daemon<P> {
         rt.delete_conversation(&file_path).await
     }
 
-    async fn list_mcps(&self) -> Result<Vec<McpInfo>> {
-        self.list_mcps().await
+    async fn list_mcps(&self, req: ListMcpsMsg) -> Result<Vec<McpInfo>> {
+        let agent = (!req.agent.is_empty()).then_some(req.agent);
+        self.list_mcps(agent).await
     }
 
     async fn upsert_mcp(&self, req: UpsertMcpMsg) -> Result<McpInfo> {
-        self.upsert_mcp(req.config).await
+        self.upsert_mcp(req.agent, req.config).await
     }
 
-    async fn delete_mcp(&self, name: String) -> Result<bool> {
-        self.delete_mcp(&name).await
+    async fn delete_mcp(&self, req: DeleteMcpMsg) -> Result<bool> {
+        self.delete_mcp(req.agent, req.name).await
     }
 
     async fn set_active_model(&self, model: String) -> Result<()> {
