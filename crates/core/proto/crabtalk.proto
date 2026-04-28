@@ -79,6 +79,8 @@ message ClientMessage {
     PublishEventMsg publish_event = 43;
     // Steering
     SteerSessionMsg steer_session = 44;
+    // MCP lifecycle event subscription
+    SubscribeMcpEventsMsg subscribe_mcp_events = 52;
     // Extension point for downstream products.
     bytes extension = 100;
   }
@@ -325,6 +327,8 @@ message ServerMessage {
     SubscriptionList subscription_list = 26;
     // MCP CRUD response (single-item)
     McpInfo mcp_info = 29;
+    // MCP lifecycle event
+    McpEventMsg mcp_event = 30;
     // Extension point for downstream products.
     bytes extension = 100;
   }
@@ -601,6 +605,7 @@ enum McpStatus {
   CONNECTED = 1;
   DISCONNECTED = 2;
   FAILED = 3;
+  CONNECTING = 4;
 }
 
 message McpInfo {
@@ -622,6 +627,26 @@ message McpInfo {
 
 message McpList {
   repeated McpInfo mcps = 1;
+}
+
+message SubscribeMcpEventsMsg {}
+
+enum McpEventKind {
+  MCP_EVENT_KIND_UNKNOWN = 0;
+  MCP_EVENT_KIND_CONNECTING = 1;
+  MCP_EVENT_KIND_CONNECTED = 2;
+  MCP_EVENT_KIND_FAILED = 3;
+  MCP_EVENT_KIND_DISCONNECTED = 4;
+}
+
+message McpEventMsg {
+  McpEventKind kind = 1;
+  string name = 2;
+  // Populated for CONNECTED.
+  repeated string tools = 3;
+  // Populated for FAILED.
+  string error = 4;
+  string timestamp = 5;
 }
 
 // ── Plugin Events ───────────────────────────────────────────────

@@ -3,11 +3,11 @@
 use crate::protocol::message::{
     ActiveConversationInfo, ActiveConversationList, AgentEventMsg, AgentInfo, AgentList,
     ClientMessage, CompactResponse, ConversationHistory, ConversationInfo, ConversationList,
-    CreateAgentMsg, DaemonStats, ErrorMsg, InstallPluginMsg, McpInfo, McpList, ModelInfo,
-    ModelList, PluginEvent, PluginInfo, PluginList, PluginSearchList, Pong, PublishEventMsg,
-    SendMsg, SendResponse, ServerMessage, ServiceLogOutput, SkillInfo, SkillList, SteerSessionMsg,
-    StreamEvent, StreamMsg, SubscribeEventMsg, SubscriptionInfo, SubscriptionList, UpdateAgentMsg,
-    UpsertMcpMsg, client_message, server_message,
+    CreateAgentMsg, DaemonStats, ErrorMsg, InstallPluginMsg, McpEventMsg, McpInfo, McpList,
+    ModelInfo, ModelList, PluginEvent, PluginInfo, PluginList, PluginSearchList, Pong,
+    PublishEventMsg, SendMsg, SendResponse, ServerMessage, ServiceLogOutput, SkillInfo, SkillList,
+    SteerSessionMsg, StreamEvent, StreamMsg, SubscribeEventMsg, SubscriptionInfo, SubscriptionList,
+    UpdateAgentMsg, UpsertMcpMsg, client_message, server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -68,6 +68,9 @@ pub trait Server: Sync {
 
     /// Handle `SubscribeEvents` — stream agent events.
     fn subscribe_events(&self) -> impl Stream<Item = Result<AgentEventMsg>> + Send;
+
+    /// Handle `SubscribeMcpEvents` — stream MCP lifecycle events.
+    fn subscribe_mcp_events(&self) -> impl Stream<Item = Result<McpEventMsg>> + Send;
 
     /// Handle `Reload` — hot-reload runtime from disk.
     fn reload(&self) -> impl std::future::Future<Output = Result<()>> + Send;
@@ -287,6 +290,13 @@ pub trait Server: Sync {
                 }
                 client_message::Msg::SubscribeEvents(_) => {
                     let s = self.subscribe_events();
+                    tokio::pin!(s);
+                    while let Some(result) = s.next().await {
+                        yield result_to_msg(result);
+                    }
+                }
+                client_message::Msg::SubscribeMcpEvents(_) => {
+                    let s = self.subscribe_mcp_events();
                     tokio::pin!(s);
                     while let Some(result) = s.next().await {
                         yield result_to_msg(result);

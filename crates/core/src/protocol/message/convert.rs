@@ -2,9 +2,9 @@
 
 use crate::agent::AgentConfig;
 use crate::protocol::proto::{
-    AgentEventMsg, AgentInfo, ClientMessage, ConversationHistory, PluginEvent, ReplyToAsk, SendMsg,
-    SendResponse, ServerMessage, StreamEvent, StreamMsg, client_message, plugin_event,
-    server_message, stream_event,
+    AgentEventMsg, AgentInfo, ClientMessage, ConversationHistory, McpEventMsg, PluginEvent,
+    ReplyToAsk, SendMsg, SendResponse, ServerMessage, StreamEvent, StreamMsg, client_message,
+    plugin_event, server_message, stream_event,
 };
 
 impl From<&AgentConfig> for AgentInfo {
@@ -71,6 +71,14 @@ impl From<AgentEventMsg> for ServerMessage {
     fn from(e: AgentEventMsg) -> Self {
         Self {
             msg: Some(server_message::Msg::AgentEvent(e)),
+        }
+    }
+}
+
+impl From<McpEventMsg> for ServerMessage {
+    fn from(e: McpEventMsg) -> Self {
+        Self {
+            msg: Some(server_message::Msg::McpEvent(e)),
         }
     }
 }

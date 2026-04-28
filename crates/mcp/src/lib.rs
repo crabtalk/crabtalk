@@ -24,7 +24,10 @@ compile_error!("features `native-tls` and `rustls` are mutually exclusive");
 #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
 compile_error!("one of `native-tls` or `rustls` must be enabled");
 
-pub use {bridge::McpBridge, handler::McpHandler};
+pub use {
+    bridge::McpBridge,
+    handler::{McpEvent, McpHandler, McpServerState, ServerStatus},
+};
 
 pub mod bridge;
 pub mod client;

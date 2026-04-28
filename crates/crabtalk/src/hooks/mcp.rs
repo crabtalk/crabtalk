@@ -24,20 +24,11 @@ pub struct Mcp {
 pub struct McpHook {
     mcp: Arc<McpHandler>,
     scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
-    prompt: String,
 }
 
 impl McpHook {
-    pub fn new(
-        mcp: Arc<McpHandler>,
-        scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
-        prompt: String,
-    ) -> Self {
-        Self {
-            mcp,
-            scopes,
-            prompt,
-        }
+    pub fn new(mcp: Arc<McpHandler>, scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>) -> Self {
+        Self { mcp, scopes }
     }
 }
 
@@ -61,7 +52,14 @@ impl Hook for McpHook {
     }
 
     fn system_prompt(&self) -> Option<String> {
-        Some(self.prompt.clone())
+        let names: Vec<String> = self.mcp.cached_list().into_iter().map(|(n, _)| n).collect();
+        if names.is_empty() {
+            return None;
+        }
+        Some(format!(
+            "\n\n<resources>\nMCP servers: {}. Use the mcp tool to list or call tools.\n</resources>",
+            names.join(", ")
+        ))
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {

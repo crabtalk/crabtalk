@@ -261,7 +261,6 @@ impl<P: Provider + 'static> Daemon<P> {
         let memory = Arc::new(memory_wrapper);
         let scopes = node_hook.scopes.clone();
         let read_files: crate::hooks::os::ReadFiles = Default::default();
-        let mcp_server_list = mcp_handler.cached_list();
         let skills = storage.list_skills().await.unwrap_or_default();
 
         let os_hook = Arc::new(crate::hooks::os::OsHook::new(
@@ -301,24 +300,10 @@ impl<P: Provider + 'static> Daemon<P> {
         let ask_hook = Arc::new(crate::hooks::ask_user::AskUserHook::new(pending_asks));
         node_hook.register_hook("ask_user", ask_hook.clone());
 
-        if !mcp_server_list.is_empty() {
-            let mcp_prompt = format!(
-                "\n\n<resources>\nMCP servers: {}. Use the mcp tool to list or call tools.\n</resources>",
-                mcp_server_list
-                    .iter()
-                    .map(|(n, _)| n.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-            node_hook.register_hook(
-                "mcp",
-                Arc::new(crate::hooks::mcp::McpHook::new(
-                    mcp_handler,
-                    scopes,
-                    mcp_prompt,
-                )),
-            );
-        }
+        node_hook.register_hook(
+            "mcp",
+            Arc::new(crate::hooks::mcp::McpHook::new(mcp_handler, scopes)),
+        );
         Ok((os_hook, ask_hook, shared_memory))
     }
 

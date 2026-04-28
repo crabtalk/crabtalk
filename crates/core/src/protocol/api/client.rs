@@ -945,6 +945,27 @@ pub trait Client: Send {
         })
     }
 
+    /// Subscribe to MCP lifecycle events.
+    fn subscribe_mcp_events(&mut self) -> impl Stream<Item = Result<McpEventMsg>> + Send + '_ {
+        self.request_stream(ClientMessage {
+            msg: Some(client_message::Msg::SubscribeMcpEvents(
+                SubscribeMcpEventsMsg {},
+            )),
+        })
+        .filter_map(|r| async {
+            match r {
+                Ok(ServerMessage {
+                    msg: Some(server_message::Msg::McpEvent(e)),
+                }) => Some(Ok(e)),
+                Ok(ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                }) => Some(Err(anyhow::anyhow!("server error ({code}): {message}"))),
+                Ok(_) => None,
+                Err(e) => Some(Err(e)),
+            }
+        })
+    }
+
     /// Inject a user message into an active stream (steering).
     fn steer_session(
         &mut self,

@@ -1,138 +1,147 @@
-//! Crabtalk MCP handler — initial load and read access.
+//! Crabtalk MCP handler — initial load, mutation, state, and events.
 
 use crate::McpBridge;
 use parking_lot::RwLock as SyncRwLock;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::{collections::BTreeMap, sync::Arc};
+use tokio::sync::{RwLock, broadcast};
 use wcore::McpServerConfig;
+
+/// Connection status for a single registered MCP server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerStatus {
+    /// Connect attempt in progress.
+    Connecting,
+    /// Connected and tools registered.
+    Connected,
+    /// Connect attempt failed; see `last_error` on the state.
+    Failed,
+    /// Previously connected, now removed (kept on the map for diagnostics).
+    Disconnected,
+}
+
+/// Per-server lifecycle state mirrored on the handler.
+///
+/// The bridge owns the live peer set; this map is the queryable view —
+/// it retains failures (which the bridge drops) and surfaces "currently
+/// trying" between attempts.
+#[derive(Debug, Clone)]
+pub struct McpServerState {
+    pub status: ServerStatus,
+    pub tools: Vec<String>,
+    pub last_error: Option<String>,
+}
+
+impl McpServerState {
+    fn connecting() -> Self {
+        Self {
+            status: ServerStatus::Connecting,
+            tools: Vec::new(),
+            last_error: None,
+        }
+    }
+
+    fn connected(tools: Vec<String>) -> Self {
+        Self {
+            status: ServerStatus::Connected,
+            tools,
+            last_error: None,
+        }
+    }
+
+    fn failed(error: String) -> Self {
+        Self {
+            status: ServerStatus::Failed,
+            tools: Vec::new(),
+            last_error: Some(error),
+        }
+    }
+}
+
+/// Lifecycle event emitted on every state transition.
+///
+/// Events go to a `tokio::sync::broadcast` channel — late subscribers
+/// see only events emitted after they subscribe. To recover prior state,
+/// callers should pair `subscribe()` with a fresh `states()` snapshot.
+#[derive(Debug, Clone)]
+pub enum McpEvent {
+    Connecting { name: String },
+    Connected { name: String, tools: Vec<String> },
+    Failed { name: String, error: String },
+    Disconnected { name: String },
+}
+
+const EVENT_CHANNEL_CAPACITY: usize = 256;
 
 /// MCP bridge owner.
 pub struct McpHandler {
     bridge: RwLock<Arc<McpBridge>>,
-    /// Sync cache of server names → tool names, populated at load/reload.
-    server_cache: SyncRwLock<Vec<(String, Vec<String>)>>,
+    /// Per-server state, keyed by server name.
+    states: SyncRwLock<BTreeMap<String, McpServerState>>,
+    events_tx: broadcast::Sender<McpEvent>,
 }
 
 impl McpHandler {
-    /// Create an empty handler with no connected servers.
-    pub fn empty() -> Self {
-        Self {
-            bridge: RwLock::new(Arc::new(McpBridge::new())),
-            server_cache: SyncRwLock::new(Vec::new()),
-        }
-    }
-
-    /// Build a bridge from the given MCP server configs and discovered port files.
     /// Timeout for connecting to a single MCP server (30 seconds).
     const MCP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-    async fn build_bridge(configs: &[McpServerConfig]) -> McpBridge {
-        let bridge = McpBridge::new();
-        let mut connected_names: Vec<String> = Vec::new();
-
-        // 1. Connect servers from config.
-        for server_config in configs {
-            let fut = async {
-                if let Some(url) = &server_config.url {
-                    tracing::info!(
-                        server = %server_config.name,
-                        url = %url,
-                        "connecting MCP server via HTTP"
-                    );
-                    bridge
-                        .connect_http_named(server_config.name.clone(), url)
-                        .await
-                } else {
-                    let mut cmd = tokio::process::Command::new(&server_config.command);
-                    cmd.args(&server_config.args);
-                    for (k, v) in &server_config.env {
-                        cmd.env(k, v);
-                    }
-                    tracing::info!(
-                        server = %server_config.name,
-                        command = %server_config.command,
-                        "connecting MCP server via stdio"
-                    );
-                    bridge
-                        .connect_stdio_named(server_config.name.clone(), cmd)
-                        .await
-                }
-            };
-
-            match tokio::time::timeout(Self::MCP_CONNECT_TIMEOUT, fut).await {
-                Ok(Ok(tools)) => {
-                    connected_names.push(server_config.name.clone());
-                    tracing::info!(
-                        "connected MCP server '{}' — {} tool(s)",
-                        server_config.name,
-                        tools.len()
-                    );
-                }
-                Ok(Err(e)) => {
-                    tracing::warn!("failed to connect MCP server '{}': {e}", server_config.name);
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        "MCP server '{}' timed out after {}s, skipping",
-                        server_config.name,
-                        Self::MCP_CONNECT_TIMEOUT.as_secs()
-                    );
-                }
-            }
+    /// Create an empty handler with no connected servers.
+    pub fn empty() -> Self {
+        let (events_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
+        Self {
+            bridge: RwLock::new(Arc::new(McpBridge::new())),
+            states: SyncRwLock::new(BTreeMap::new()),
+            events_tx,
         }
-
-        // 2. Auto-discover services from port files not already connected.
-        for (name, url) in scan_port_files() {
-            if connected_names.iter().any(|n| n == &name) {
-                continue;
-            }
-            tracing::info!(
-                server = %name,
-                url = %url,
-                "connecting MCP server via port file"
-            );
-            match tokio::time::timeout(
-                Self::MCP_CONNECT_TIMEOUT,
-                bridge.connect_http_named(name.clone(), &url),
-            )
-            .await
-            {
-                Ok(Ok(tools)) => {
-                    tracing::info!("connected MCP server '{name}' — {} tool(s)", tools.len());
-                }
-                Ok(Err(e)) => {
-                    tracing::warn!("failed to connect MCP server '{name}': {e}");
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        "MCP server '{name}' timed out after {}s, skipping",
-                        Self::MCP_CONNECT_TIMEOUT.as_secs()
-                    );
-                }
-            }
-        }
-
-        bridge
     }
 
     /// Load MCP servers from the given configs at startup.
     pub async fn load(configs: &[McpServerConfig]) -> Self {
-        let bridge = Self::build_bridge(configs).await;
-        let servers = bridge.list_servers().await;
-        Self {
-            bridge: RwLock::new(Arc::new(bridge)),
-            server_cache: SyncRwLock::new(servers),
+        let handler = Self::empty();
+        handler.connect_initial(configs).await;
+        handler
+    }
+
+    async fn connect_initial(&self, configs: &[McpServerConfig]) {
+        for cfg in configs {
+            self.upsert_server(cfg).await;
+        }
+        for (name, url) in scan_port_files() {
+            if self.states.read().contains_key(&name) {
+                continue;
+            }
+            let cfg = McpServerConfig {
+                name,
+                url: Some(url),
+                ..Default::default()
+            };
+            self.upsert_server(&cfg).await;
         }
     }
 
-    /// List all connected servers with their tool names.
+    /// Subscribe to lifecycle events. The returned receiver yields every
+    /// transition emitted while it is alive.
+    pub fn subscribe(&self) -> broadcast::Receiver<McpEvent> {
+        self.events_tx.subscribe()
+    }
+
+    /// List all connected servers with their tool names (live, from the bridge).
     pub async fn list(&self) -> Vec<(String, Vec<String>)> {
         self.bridge.read().await.list_servers().await
     }
 
-    /// Sync access to the cached server→tools list (populated at load time).
+    /// Sync access to the cached list of *connected* servers and their tools.
     pub fn cached_list(&self) -> Vec<(String, Vec<String>)> {
-        self.server_cache.read().clone()
+        self.states
+            .read()
+            .iter()
+            .filter(|(_, s)| s.status == ServerStatus::Connected)
+            .map(|(name, s)| (name.clone(), s.tools.clone()))
+            .collect()
+    }
+
+    /// Snapshot of every registered server's state (connected, failed, or other).
+    pub fn states(&self) -> BTreeMap<String, McpServerState> {
+        self.states.read().clone()
     }
 
     /// Get a clone of the current bridge Arc.
@@ -143,6 +152,106 @@ impl McpHandler {
     /// Try to get a clone of the current bridge Arc without blocking.
     pub fn try_bridge(&self) -> Option<Arc<McpBridge>> {
         self.bridge.try_read().ok().map(|g| Arc::clone(&*g))
+    }
+
+    /// Connect (or reconnect) a single server in place.
+    ///
+    /// Removes any prior peer for this name from the bridge, marks the
+    /// state as `Connecting`, attempts a fresh connect, and stores the
+    /// resulting state. Emits a `Connecting` event followed by
+    /// `Connected` or `Failed`. Returns the new state.
+    pub async fn upsert_server(&self, cfg: &McpServerConfig) -> McpServerState {
+        let bridge = self.bridge().await;
+        bridge.remove_server(&cfg.name).await;
+        self.set_state(&cfg.name, McpServerState::connecting());
+        self.emit(McpEvent::Connecting {
+            name: cfg.name.clone(),
+        });
+
+        let state = connect_one(&bridge, cfg).await;
+        self.set_state(&cfg.name, state.clone());
+        match &state.status {
+            ServerStatus::Connected => self.emit(McpEvent::Connected {
+                name: cfg.name.clone(),
+                tools: state.tools.clone(),
+            }),
+            ServerStatus::Failed => self.emit(McpEvent::Failed {
+                name: cfg.name.clone(),
+                error: state.last_error.clone().unwrap_or_default(),
+            }),
+            ServerStatus::Connecting | ServerStatus::Disconnected => {}
+        }
+        state
+    }
+
+    /// Disconnect and forget a single server.
+    ///
+    /// Returns the prior state, if any. Emits `Disconnected` only when
+    /// an entry actually existed.
+    pub async fn disconnect_server(&self, name: &str) -> Option<McpServerState> {
+        let bridge = self.bridge().await;
+        bridge.remove_server(name).await;
+        let prior = self.states.write().remove(name);
+        if prior.is_some() {
+            self.emit(McpEvent::Disconnected {
+                name: name.to_string(),
+            });
+        }
+        prior
+    }
+
+    fn set_state(&self, name: &str, state: McpServerState) {
+        self.states.write().insert(name.to_string(), state);
+    }
+
+    fn emit(&self, event: McpEvent) {
+        let _ = self.events_tx.send(event);
+    }
+}
+
+/// Attempt to connect a single server, applying the global timeout.
+async fn connect_one(bridge: &McpBridge, cfg: &McpServerConfig) -> McpServerState {
+    let fut = async {
+        if let Some(url) = &cfg.url {
+            tracing::info!(server = %cfg.name, %url, "connecting MCP server via HTTP");
+            bridge.connect_http_named(cfg.name.clone(), url).await
+        } else {
+            let mut cmd = tokio::process::Command::new(&cfg.command);
+            cmd.args(&cfg.args);
+            for (k, v) in &cfg.env {
+                cmd.env(k, v);
+            }
+            tracing::info!(
+                server = %cfg.name,
+                command = %cfg.command,
+                "connecting MCP server via stdio"
+            );
+            bridge.connect_stdio_named(cfg.name.clone(), cmd).await
+        }
+    };
+
+    match tokio::time::timeout(McpHandler::MCP_CONNECT_TIMEOUT, fut).await {
+        Ok(Ok(tools)) => {
+            tracing::info!(
+                "connected MCP server '{}' — {} tool(s)",
+                cfg.name,
+                tools.len()
+            );
+            McpServerState::connected(tools)
+        }
+        Ok(Err(e)) => {
+            let msg = e.to_string();
+            tracing::warn!("failed to connect MCP server '{}': {msg}", cfg.name);
+            McpServerState::failed(msg)
+        }
+        Err(_) => {
+            let msg = format!(
+                "timed out after {}s",
+                McpHandler::MCP_CONNECT_TIMEOUT.as_secs()
+            );
+            tracing::warn!("MCP server '{}' {msg}, skipping", cfg.name);
+            McpServerState::failed(msg)
+        }
     }
 }
 

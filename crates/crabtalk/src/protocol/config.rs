@@ -3,6 +3,8 @@
 use crate::daemon::Daemon;
 use anyhow::{Context, Result};
 use crabllm_core::Provider;
+use mcp::{McpServerState, ServerStatus};
+use std::collections::BTreeMap;
 use wcore::protocol::message::*;
 use wcore::storage::Storage;
 
@@ -29,12 +31,7 @@ impl<P: Provider + 'static> Daemon<P> {
     }
 
     pub(crate) async fn list_mcps(&self) -> Result<Vec<McpInfo>> {
-        let connected: std::collections::BTreeMap<String, usize> = self
-            .mcp
-            .cached_list()
-            .into_iter()
-            .map(|(name, tools)| (name, tools.len()))
-            .collect();
+        let states = self.mcp.states();
         let storage_mcps = {
             let rt = self.runtime.read().await.clone();
             rt.storage().list_mcps().await?
@@ -42,12 +39,12 @@ impl<P: Provider + 'static> Daemon<P> {
         // Storage wins over manifest on name conflict — seed the map from
         // storage first, then `entry(..).or_insert_with` for manifest entries
         // skips names already present. Output is alphabetical by name.
-        let mut by_name: std::collections::BTreeMap<String, McpInfo> = storage_mcps
+        let mut by_name: BTreeMap<String, McpInfo> = storage_mcps
             .iter()
             .map(|(name, cfg)| {
                 (
                     name.clone(),
-                    mcp_info(name, cfg, "local", SourceKind::Local, &connected),
+                    mcp_info(name, cfg, "local", SourceKind::Local, &states),
                 )
             })
             .collect();
@@ -59,7 +56,7 @@ impl<P: Provider + 'static> Daemon<P> {
                         &mcp_res.to_server_config(),
                         &plugin_name,
                         SourceKind::Plugin,
-                        &connected,
+                        &states,
                     )
                 });
             }
@@ -75,9 +72,10 @@ impl<P: Provider + 'static> Daemon<P> {
             let rt = self.runtime.read().await.clone();
             rt.storage().upsert_mcp(&cfg).await?;
         }
-        self.reload().await?;
+        self.mcp.upsert_server(&cfg).await;
 
-        // Re-list to surface the runtime status (connected/failed/etc).
+        // Re-list to surface the runtime status (connected/failed/etc) merged
+        // with the per-source view (storage vs plugin manifest).
         let mcps = self.list_mcps().await?;
         mcps.into_iter()
             .find(|m| m.name == name)
@@ -90,7 +88,7 @@ impl<P: Provider + 'static> Daemon<P> {
             rt.storage().delete_mcp(name).await?
         };
         if removed {
-            self.reload().await?;
+            self.mcp.disconnect_server(name).await;
         }
         Ok(removed)
     }
@@ -138,11 +136,17 @@ fn mcp_info(
     cfg: &wcore::McpServerConfig,
     source: &str,
     source_kind: SourceKind,
-    connected: &std::collections::BTreeMap<String, usize>,
+    states: &BTreeMap<String, McpServerState>,
 ) -> McpInfo {
-    let (status, tool_count) = match connected.get(name) {
-        Some(&count) => (McpStatus::Connected, count as u32),
-        None => (McpStatus::Failed, 0),
+    let (status, tool_count, error) = match states.get(name) {
+        Some(state) => (
+            proto_status(state.status),
+            state.tools.len() as u32,
+            state.last_error.clone().unwrap_or_default(),
+        ),
+        // Registered in storage/plugin but never seen by the handler — treat
+        // as not yet attempted.
+        None => (McpStatus::Unknown, 0, String::new()),
     };
     McpInfo {
         name: name.to_string(),
@@ -159,7 +163,16 @@ fn mcp_info(
         auto_restart: cfg.auto_restart,
         source_kind: source_kind.into(),
         status: status.into(),
-        error: String::new(),
+        error,
         tool_count,
+    }
+}
+
+fn proto_status(s: ServerStatus) -> McpStatus {
+    match s {
+        ServerStatus::Connecting => McpStatus::Connecting,
+        ServerStatus::Connected => McpStatus::Connected,
+        ServerStatus::Failed => McpStatus::Failed,
+        ServerStatus::Disconnected => McpStatus::Disconnected,
     }
 }
