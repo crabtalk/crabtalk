@@ -25,8 +25,7 @@ Layer 4 ─ Adapters
   ├─ crabup               Package + service manager for the ecosystem
   ├─ sdk                  NodeClient, message types for platform adapters
   ├─ tui                  REPL, config TUI (optional daemon feature for all-in-one)
-  ├─ apps/                telegram, wechat (gateway clients)
-  └─ services/            cron, outlook, search (standalone services)
+  └─ apps/                telegram, wechat (gateway clients); cron, search (standalone services)
 ```
 
 ## Where does my feature go?

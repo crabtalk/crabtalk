@@ -61,7 +61,7 @@ Name resolution is a small table compiled into crabup:
 | `telegram` | `crabtalk-telegram` | Telegram gateway     |
 | `wechat`   | `crabtalk-wechat`   | WeChat gateway       |
 | `search`   | `crabtalk-search`   | meta-search plugin   |
-| `outlook`  | `crabtalk-outlook`  | Outlook plugin       |
+| `cron`     | `crabtalk-cron`     | scheduler            |
 
 `crabup pull <short>` resolves via the table; `crabup pull <anything-else>` passes through verbatim so `crabup pull some-third-party-crabtalk-gateway` still works without a table edit. New first-party binaries get a row added when they ship.
 
