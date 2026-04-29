@@ -556,7 +556,6 @@ dependencies = [
  "chrono",
  "crabllm-core",
  "crabllm-provider",
- "crabtalk-command",
  "crabtalk-core",
  "crabtalk-mcp",
  "crabtalk-memory",

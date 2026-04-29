@@ -549,60 +549,6 @@ pub trait Client: Send {
         }
     }
 
-    /// Start a command service.
-    fn start_service(
-        &mut self,
-        name: String,
-        force: bool,
-    ) -> impl std::future::Future<Output = Result<()>> + Send {
-        async move {
-            match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::StartService(StartServiceMsg {
-                        name,
-                        force,
-                    })),
-                })
-                .await?
-            {
-                ServerMessage {
-                    msg: Some(server_message::Msg::Pong(_)),
-                } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
-                } => {
-                    anyhow::bail!("server error ({code}): {message}")
-                }
-                other => anyhow::bail!("unexpected response: {other:?}"),
-            }
-        }
-    }
-
-    /// Stop a command service.
-    fn stop_service(
-        &mut self,
-        name: String,
-    ) -> impl std::future::Future<Output = Result<()>> + Send {
-        async move {
-            match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::StopService(StopServiceMsg { name })),
-                })
-                .await?
-            {
-                ServerMessage {
-                    msg: Some(server_message::Msg::Pong(_)),
-                } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
-                } => {
-                    anyhow::bail!("server error ({code}): {message}")
-                }
-                other => anyhow::bail!("unexpected response: {other:?}"),
-            }
-        }
-    }
-
     /// List all available skills with enabled state.
     fn list_skills(&mut self) -> impl std::future::Future<Output = Result<Vec<SkillInfo>>> + Send {
         async move {
@@ -637,35 +583,6 @@ pub trait Client: Send {
                 ServerMessage {
                     msg: Some(server_message::Msg::ModelList(ModelList { models })),
                 } => Ok(models),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
-                } => {
-                    anyhow::bail!("server error ({code}): {message}")
-                }
-                other => anyhow::bail!("unexpected response: {other:?}"),
-            }
-        }
-    }
-
-    /// Get recent log lines for a service.
-    fn service_logs(
-        &mut self,
-        name: String,
-        lines: u32,
-    ) -> impl std::future::Future<Output = Result<String>> + Send {
-        async move {
-            match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::ServiceLogs(ServiceLogsMsg {
-                        name,
-                        lines,
-                    })),
-                })
-                .await?
-            {
-                ServerMessage {
-                    msg: Some(server_message::Msg::ServiceLogOutput(ServiceLogOutput { content })),
-                } => Ok(content),
                 ServerMessage {
                     msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
                 } => {

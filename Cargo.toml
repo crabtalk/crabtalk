@@ -6,7 +6,7 @@ members = ["apps/*", "crates/*"]
 version = "0.0.21"
 edition = "2024"
 authors = ["clearloop <tianyi.gc@gmail.com>"]
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/crabtalk/crabtalk"
 keywords = ["llm", "agent", "ai"]
 

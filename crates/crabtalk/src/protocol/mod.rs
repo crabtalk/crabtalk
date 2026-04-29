@@ -222,16 +222,4 @@ impl<P: Provider + 'static> Server for Daemon<P> {
     async fn search_plugins(&self, query: String) -> Result<Vec<PluginInfo>> {
         plugin::search(&query).await
     }
-
-    async fn start_service(&self, name: String, force: bool) -> Result<()> {
-        self.start_service(name, force).await
-    }
-
-    async fn stop_service(&self, name: String) -> Result<()> {
-        admin::stop_service(&name).await
-    }
-
-    async fn service_logs(&self, name: String, lines: u32) -> Result<String> {
-        admin::service_logs(&name, lines).await
-    }
 }

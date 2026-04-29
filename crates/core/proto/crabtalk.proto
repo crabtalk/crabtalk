@@ -24,6 +24,10 @@ message ClientMessage {
   // Removed — cron now lives as a standalone service outside the daemon.
   reserved 27, 28, 29;
   reserved "create_cron", "delete_cron", "list_crons";
+  // Tags 24, 25, 26 were StartService/StopService/ServiceLogs.
+  // Removed — service management moved out of the daemon into crabup.
+  reserved 24, 25, 26;
+  reserved "start_service", "stop_service", "service_logs";
 
   oneof msg {
     // Execution
@@ -62,10 +66,6 @@ message ClientMessage {
     GetConversationHistoryMsg get_conversation_history = 38;
     // Delete conversation
     DeleteConversationMsg delete_conversation = 39;
-    // Services
-    StartServiceMsg start_service = 24;
-    StopServiceMsg stop_service = 25;
-    ServiceLogsMsg service_logs = 26;
     // Daemon lifecycle
     Ping ping = 30;
     GetConfig get_config = 31;
@@ -268,20 +268,6 @@ message SetActiveModelMsg {
   string model = 1;
 }
 
-message StartServiceMsg {
-  string name = 1;
-  bool force = 2;
-}
-
-message StopServiceMsg {
-  string name = 1;
-}
-
-message ServiceLogsMsg {
-  string name = 1;
-  uint32 lines = 2;
-}
-
 // ── Server Messages ──────────────────────────────────────────────
 
 message ServerMessage {
@@ -296,6 +282,9 @@ message ServerMessage {
   // Tags 17, 18 were CronInfo/CronList — removed with the cron extraction.
   reserved 17, 18;
   reserved "cron_info", "cron_list";
+  // Tag 16 was ServiceLogOutput — removed with service management.
+  reserved 16;
+  reserved "service_log_output";
 
   oneof msg {
     // Common
@@ -324,8 +313,6 @@ message ServerMessage {
     PluginSearchList plugin_search_list = 23;
     // Conversation history
     ConversationHistory conversation_history = 24;
-    // Services
-    ServiceLogOutput service_log_output = 16;
     // Daemon lifecycle
     ConfigMsg config = 19;
     DaemonStats stats = 20;
@@ -560,10 +547,6 @@ message AgentList {
 
 message PluginList {
   repeated PluginInfo plugins = 1;
-}
-
-message ServiceLogOutput {
-  string content = 1;
 }
 
 message SkillInfo {
