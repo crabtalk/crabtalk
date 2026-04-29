@@ -66,11 +66,6 @@ pub enum Command {
         #[command(subcommand)]
         action: ServiceAction,
     },
-    /// Outlook service commands.
-    Outlook {
-        #[command(subcommand)]
-        action: ServiceAction,
-    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -139,7 +134,6 @@ impl Cli {
             Command::Telegram { action } => action.run(&registry::TELEGRAM),
             Command::Wechat { action } => action.run(&registry::WECHAT),
             Command::Search { action } => action.run(&registry::SEARCH),
-            Command::Outlook { action } => action.run(&registry::OUTLOOK),
         }
     }
 }
