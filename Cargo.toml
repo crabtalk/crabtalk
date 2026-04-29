@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/*", "crates/*", "services/*"]
+members = ["apps/*", "crates/*"]
 
 [workspace.package]
 version = "0.0.21"
@@ -26,8 +26,8 @@ memory = { path = "crates/memory", package = "crabtalk-memory", version = "0.0.2
 mcp = { path = "crates/mcp", package = "crabtalk-mcp", version = "0.0.21", default-features = false }
 command = { path = "crates/command", package = "crabtalk-command", version = "0.0.21" }
 command-codegen = { path = "crates/command-codegen", package = "crabtalk-command-codegen", version = "0.0.21" }
-search = { path = "services/search", package = "crabtalk-search", version = "0.0.21", default-features = false }
-crabtalk-cron = { path = "services/cron", version = "0.0.21" }
+search = { path = "apps/search", package = "crabtalk-search", version = "0.0.21", default-features = false }
+crabtalk-cron = { path = "apps/cron", version = "0.0.21" }
 
 # crabllm
 crabllm-core = "0.0.18"
