@@ -228,8 +228,8 @@ async fn stream_mcp_events(mut conn: Transport) -> Result<()> {
             _ => String::new(),
         };
         println!(
-            "[{}] {} {}/{} {}{}",
-            event.timestamp, event.agent, "mcp", event.name, kind, detail
+            "[{}] {} mcp/{} {}{}",
+            event.timestamp, event.agent, event.name, kind, detail
         );
     }
     Ok(())
