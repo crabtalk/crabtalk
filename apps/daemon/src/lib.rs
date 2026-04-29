@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use transport::Transport;
 use wcore::protocol::{
     api::Client,
-    message::{AgentEventKind, McpEventKind, plugin_event},
+    message::{AgentEventKind, McpEventKind},
 };
 
 pub mod attach;
@@ -46,19 +46,6 @@ pub enum Command {
     Events,
     /// Stream MCP server lifecycle events.
     McpEvents,
-    /// Install a plugin.
-    Pull {
-        /// Plugin name.
-        plugin: String,
-        /// Overwrite if already installed.
-        #[arg(long)]
-        force: bool,
-    },
-    /// Uninstall a plugin.
-    Rm {
-        /// Plugin name.
-        plugin: String,
-    },
 }
 
 impl Cli {
@@ -87,68 +74,6 @@ impl Cli {
             }
             Command::Events => stream_events(connect(self.tcp).await?).await,
             Command::McpEvents => stream_mcp_events(connect(self.tcp).await?).await,
-            Command::Pull { plugin, force } => {
-                use std::io::Write;
-                let mut conn = connect(self.tcp).await?;
-                let stream =
-                    conn.install_plugin(plugin.clone(), String::new(), String::new(), force);
-                tokio::pin!(stream);
-                let mut last_was_output = false;
-                while let Some(event) = stream.next().await {
-                    match event? {
-                        plugin_event::Event::Step(s) => {
-                            if last_was_output {
-                                println!();
-                                last_was_output = false;
-                            }
-                            println!("  {}", s.message);
-                        }
-                        plugin_event::Event::SetupOutput(o) => {
-                            print!("\r  {}", o.content);
-                            let _ = std::io::stdout().flush();
-                            last_was_output = true;
-                        }
-                        plugin_event::Event::Warning(w) => {
-                            if last_was_output {
-                                println!();
-                                last_was_output = false;
-                            }
-                            eprintln!("  warning: {}", w.message);
-                        }
-                        plugin_event::Event::Done(d) => {
-                            if last_was_output {
-                                println!();
-                            }
-                            if !d.error.is_empty() {
-                                anyhow::bail!("{}", d.error);
-                            }
-                        }
-                    }
-                }
-                println!("Done: {plugin}");
-                Ok(())
-            }
-            Command::Rm { plugin } => {
-                let mut conn = connect(self.tcp).await?;
-                let stream = conn.uninstall_plugin(plugin.clone());
-                tokio::pin!(stream);
-                while let Some(event) = stream.next().await {
-                    match event? {
-                        plugin_event::Event::Step(s) => println!("  {}", s.message),
-                        plugin_event::Event::Warning(w) => {
-                            eprintln!("  warning: {}", w.message);
-                        }
-                        plugin_event::Event::Done(d) => {
-                            if !d.error.is_empty() {
-                                anyhow::bail!("{}", d.error);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                println!("Done: {plugin}");
-                Ok(())
-            }
         }
     }
 }

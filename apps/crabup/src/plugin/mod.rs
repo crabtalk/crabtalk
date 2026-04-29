@@ -4,7 +4,8 @@
 //! source repo to `.cache/repos/{slug}`. Skills and agents are discovered
 //! from the cached repo by convention on daemon reload.
 
-use crate::manifest;
+pub mod manifest;
+
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use wcore::paths::CONFIG_DIR;

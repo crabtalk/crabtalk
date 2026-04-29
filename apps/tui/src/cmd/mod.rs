@@ -50,21 +50,6 @@ pub enum Command {
         /// Conversation file to resume. If omitted, shows a conversation picker.
         file: Option<String>,
     },
-    /// Install a plugin.
-    #[cfg(feature = "daemon")]
-    Pull {
-        /// Plugin name.
-        plugin: String,
-        /// Overwrite if already installed.
-        #[arg(long)]
-        force: bool,
-    },
-    /// Uninstall a plugin.
-    #[cfg(feature = "daemon")]
-    Rm {
-        /// Plugin name.
-        plugin: String,
-    },
 }
 
 impl Cli {
@@ -121,26 +106,6 @@ impl Cli {
             }
             Some(Command::Agent(cmd)) => cmd.run(self.tcp).await,
             Some(Command::Mcp(cmd)) => cmd.run(self.tcp).await,
-            #[cfg(feature = "daemon")]
-            Some(Command::Pull { plugin, force }) => {
-                let daemon = crabtalkd::Cli {
-                    foreground: false,
-                    verbose: 0,
-                    tcp: self.tcp,
-                    command: Some(crabtalkd::Command::Pull { plugin, force }),
-                };
-                daemon.run().await
-            }
-            #[cfg(feature = "daemon")]
-            Some(Command::Rm { plugin }) => {
-                let daemon = crabtalkd::Cli {
-                    foreground: false,
-                    verbose: 0,
-                    tcp: self.tcp,
-                    command: Some(crabtalkd::Command::Rm { plugin }),
-                };
-                daemon.run().await
-            }
         }
     }
 }

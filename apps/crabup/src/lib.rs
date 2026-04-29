@@ -2,11 +2,13 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 use crate::registry::Entry;
 
 pub mod cargo;
 pub mod list;
+pub mod plugin;
 pub mod ps;
 pub mod registry;
 pub mod service;
@@ -66,6 +68,32 @@ pub enum Command {
         #[command(subcommand)]
         action: ServiceAction,
     },
+
+    /// Install a crabtalk plugin.
+    Add {
+        /// Plugin short name.
+        name: String,
+        /// Pin to a specific branch of the plugin's source repo.
+        #[arg(long)]
+        branch: Option<String>,
+        /// Local path to a plugin directory (skips registry sync).
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Re-install if already present.
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Uninstall a crabtalk plugin.
+    Remove {
+        /// Plugin short name.
+        name: String,
+    },
+    /// Search the crabtalk plugin registry.
+    Find {
+        /// Match name, description, or keywords. Empty lists everything.
+        #[arg(default_value = "")]
+        query: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -100,7 +128,7 @@ impl ServiceAction {
 }
 
 impl Cli {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self.command {
             Command::Pull {
                 name,
@@ -134,6 +162,37 @@ impl Cli {
             Command::Telegram { action } => action.run(&registry::TELEGRAM),
             Command::Wechat { action } => action.run(&registry::WECHAT),
             Command::Search { action } => action.run(&registry::SEARCH),
+            Command::Add {
+                name,
+                branch,
+                path,
+                force,
+            } => {
+                plugin::install(
+                    &name,
+                    branch.as_deref(),
+                    path.as_deref(),
+                    force,
+                    |msg| println!("  {msg}"),
+                    |msg| println!("  {msg}"),
+                )
+                .await?;
+                println!("Done: {name}");
+                Ok(())
+            }
+            Command::Remove { name } => {
+                plugin::uninstall(&name, |msg| println!("  {msg}")).await?;
+                println!("Done: {name}");
+                Ok(())
+            }
+            Command::Find { query } => {
+                let results = plugin::search(&query).await?;
+                for r in results {
+                    let mark = if r.installed { "✓" } else { " " };
+                    println!("{mark} {} — {}", r.name, r.description);
+                }
+                Ok(())
+            }
         }
     }
 }

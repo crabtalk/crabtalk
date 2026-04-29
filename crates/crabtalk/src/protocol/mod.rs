@@ -9,7 +9,6 @@ use wcore::protocol::message::*;
 mod admin;
 mod config;
 mod conversation;
-mod plugin;
 
 /// Render an RFC3339 `created_at` string as a human-friendly relative date —
 /// "Today" / "Yesterday" / `YYYY-MM-DD`. Returns empty string if parsing fails.
@@ -148,20 +147,6 @@ impl<P: Provider + 'static> Server for Daemon<P> {
         Ok(AgentInfo::from(&registered))
     }
 
-    fn install_plugin(
-        &self,
-        req: InstallPluginMsg,
-    ) -> impl futures_core::Stream<Item = Result<PluginEvent>> + Send {
-        self.install_plugin(req)
-    }
-
-    fn uninstall_plugin(
-        &self,
-        plugin: String,
-    ) -> impl futures_core::Stream<Item = Result<PluginEvent>> + Send {
-        self.uninstall_plugin(plugin)
-    }
-
     async fn list_conversations(
         &self,
         agent: String,
@@ -213,13 +198,5 @@ impl<P: Provider + 'static> Server for Daemon<P> {
     async fn list_models(&self) -> Result<Vec<ModelInfo>> {
         let rt = self.runtime.read().await.clone();
         Ok(rt.list_models().await)
-    }
-
-    async fn list_plugins(&self) -> Result<Vec<PluginInfo>> {
-        Ok(self.list_plugins())
-    }
-
-    async fn search_plugins(&self, query: String) -> Result<Vec<PluginInfo>> {
-        plugin::search(&query).await
     }
 }

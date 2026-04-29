@@ -559,7 +559,6 @@ dependencies = [
  "crabtalk-core",
  "crabtalk-mcp",
  "crabtalk-memory",
- "crabtalk-plugins",
  "crabtalk-runtime",
  "crabtalk-transport",
  "cron",
@@ -697,18 +696,6 @@ dependencies = [
  "chrono",
  "tempfile",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "crabtalk-plugins"
-version = "0.0.21"
-dependencies = [
- "anyhow",
- "crabtalk-core",
- "serde",
- "tokio",
- "toml",
- "toml_edit",
 ]
 
 [[package]]
@@ -883,6 +870,8 @@ dependencies = [
  "crabtalk-command",
  "crabtalk-core",
  "dirs",
+ "serde",
+ "tokio",
  "toml",
 ]
 

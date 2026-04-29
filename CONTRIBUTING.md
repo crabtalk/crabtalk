@@ -21,7 +21,7 @@ Layer 3 ─ Server
   └─ crabtalk             Daemon core: event loop, transport setup, config, hot reload
 
 Layer 4 ─ Adapters
-  ├─ crabtalkd            Daemon CLI: run, setup, reload, events, plugin ops
+  ├─ crabtalkd            Daemon CLI: run, setup, reload, events
   ├─ crabup               Package + service manager for the ecosystem
   ├─ sdk                  NodeClient, message types for platform adapters
   ├─ tui                  REPL, config TUI (optional daemon feature for all-in-one)
