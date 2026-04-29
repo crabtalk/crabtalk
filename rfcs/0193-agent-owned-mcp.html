@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>0135 - Agent-First Protocol - The Crabtalk RFC Book</title>
+        <title>0193 - Agent-Owned MCP - The Crabtalk RFC Book</title>
 
 
         <!-- Custom HTML head -->
@@ -146,7 +146,7 @@
                         <a href="https://github.com/crabtalk/crabtalk" title="Git repository" aria-label="Git repository">
                             <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
                         </a>
-                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/rfcs/0135-agent-first.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/rfcs/0193-agent-owned-mcp.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
                         </a>
 
@@ -180,189 +180,83 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="0135---agent-first-protocol"><a class="header" href="#0135---agent-first-protocol">0135 - Agent-First Protocol</a></h1>
+                        <h1 id="0193---agent-owned-mcp"><a class="header" href="#0193---agent-owned-mcp">0193 - Agent-Owned MCP</a></h1>
 <ul>
-<li>Feature Name: Agent-First Protocol</li>
-<li>Start Date: 2026-04-03</li>
-<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/135">#135</a></li>
-<li>Crates: core, runtime, daemon, cli, gateway</li>
-<li>Supersedes: <a href="0064-session.html">0064 (Session)</a>, <a href="0078-compact-session.html">0078 (Compact Session)</a></li>
-<li>Updates: <a href="0018-protocol.html">0018 (Protocol)</a>, <a href="0038-memory.html">0038 (Memory)</a></li>
+<li>Feature Name: Agent-Owned MCP</li>
+<li>Start Date: 2026-04-28</li>
+<li>Discussion: TBD</li>
+<li>Crates: core, mcp, crabtalk, runtime</li>
+<li>Updates: <a href="0082-scoping.html">0082 (Scoping)</a>, <a href="0135-agent-first.html">0135 (Agent-First)</a>, <a href="https://github.com/crabtalk/crabtalk/pull/192">0190 (MCP Lifecycle)</a></li>
 </ul>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
-<p>Replace session-centric protocol addressing with agent-centric addressing.
-Users talk to agents, not sessions. Introduce guest turns for multi-agent
-conversations and compaction archives as the agent’s long-term memory.</p>
+<p>Agents own their MCP servers by value, not by name reference into a daemon-global registry. <code>AgentConfig.mcps</code> becomes <code>Vec&lt;McpServerConfig&gt;</code> — every agent carries the full configuration of every MCP it uses. The daemon’s job shrinks to “spawn what agents declare, dedup identical processes, route tool calls per agent.” <code>Storage::{list,upsert,delete}_mcp</code> and <code>crabtalkd mcp</code> go away. Forking an agent now means copying one config; the new owner gets a self-contained, runnable artifact.</p>
 <h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
-<p>The original protocol was session-centric: clients managed session IDs to kill,
-reply, compact, and route messages. This leaked an implementation detail (the
-session ID) into every client and forced multi-agent interaction into either
-permanent agent switching or invisible delegation.</p>
-<p>Problems with the session model:</p>
-<ol>
-<li>
-<p><strong>Session IDs leak everywhere.</strong> Every client (CLI, Telegram, WeChat, IDE)
-must track session IDs to route replies, kill conversations, and handle
-ask_user prompts. If a client loses the ID, the conversation is orphaned.</p>
-</li>
-<li>
-<p><strong>Multi-agent is invisible.</strong> When agent A delegates to agent B, the result
-comes back as a tool result string. The user hears A’s summary of B’s
-answer, never B’s actual voice. There’s no multi-agent conversation.</p>
-</li>
-<li>
-<p><strong>Session ≠ conversation.</strong> “Session” conflated device connections (CWD,
-transport state) with agent memory (message history, compaction). These are
-different lifecycles — connections are ephemeral, conversations persist.</p>
-</li>
-</ol>
+<p>The current model treats MCPs as a daemon-level resource that agents reference by name. That made sense when crabtalk was a single-user CLI managing a fixed fleet of tools. It doesn’t fit where the runtime is going.</p>
+<p><strong>Forkability is broken.</strong> RFC 0135 framed agents as the unit users see and share — sessions are plumbing, agents are the artifact. Cloud workflows extend that: an agent should be a forkable thing, like a GitHub repo. Today, forking an agent’s TOML doesn’t fork its MCPs; the fork lands on a daemon that may or may not have a server registered under the same name, with the same args, with the same env. The agent reference is a dangling pointer until someone manually re-registers the missing pieces.</p>
+<p><strong>Namespace pollution is artificial.</strong> Two agents that want the same logical MCP with different env (e.g., one read-only token, one admin token) must register two differently-named entries in a global flat namespace. The bridge’s <code>tool_cache: BTreeMap&lt;String, Tool&gt;</code> then logs-and-skips conflicts when both expose <code>web_search</code>. None of that pollution is intrinsic to MCP; it’s a consequence of the registry shape.</p>
+<p><strong>The allowlist is a workaround for ownership.</strong> <code>AgentConfig.mcps: Vec&lt;String&gt;</code> (RFC 0082) gates which global entries an agent may dispatch to. It exists because the registry is shared. If agents own their MCPs, allowlists become tautological — the agent only dispatches to what it declared.</p>
+<p>The cloud target makes this acute. Cloud will import <code>crabtalk</code> as a library and host one agent per tenant (or per agent instance). A daemon-global registry on a multi-tenant host either leaks configurations across tenants or forces the cloud layer to maintain its own per-tenant overlay on top of the registry. Either way the global registry is wrong — the right shape is “agent has its MCPs,” and the cloud’s secret/canonical layer can compose forkable templates above that.</p>
 <h2 id="design"><a class="header" href="#design">Design</a></h2>
-<h3 id="core-model"><a class="header" href="#core-model">Core model</a></h3>
-<p>Each agent has <strong>one continuous conversation</strong> per user. Conversations are
-keyed by <code>(agent, sender)</code> — no session IDs in the protocol.</p>
-<pre><code>Client: StreamMsg { agent: "crab", content: "hello", sender: "user" }
-Daemon: resolves (crab, user) → internal conversation, runs agent, streams response
-</code></pre>
-<h3 id="conversation-vs-session"><a class="header" href="#conversation-vs-session">Conversation vs session</a></h3>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th></th><th>Session</th><th>Conversation</th></tr>
-</thead>
-<tbody>
-<tr><td>What</td><td>Device ↔ daemon connection</td><td>Agent’s memory with a user</td></tr>
-<tr><td>Key</td><td>connection/device ID</td><td>(agent, sender)</td></tr>
-<tr><td>Lifetime</td><td>ephemeral</td><td>persistent</td></tr>
-<tr><td>State</td><td>CWD, transport</td><td>messages, title, JSONL, archives</td></tr>
-</tbody>
-</table>
-</div>
-<p>Sessions are daemon-internal. Conversations are the protocol-visible abstraction.</p>
-<h3 id="protocol-changes"><a class="header" href="#protocol-changes">Protocol changes</a></h3>
-<p>Client messages address conversations by <code>(agent, sender)</code>:</p>
-<pre><code class="language-protobuf">message StreamMsg {
-  string agent = 1;
-  string content = 2;
-  optional string sender = 4;
-  optional string cwd = 5;
-  optional string guest = 6;  // guest turn
-}
-
-message KillMsg {
-  string agent = 1;
-  string sender = 2;
-}
-
-message ReplyToAsk {
-  string agent = 1;
-  string sender = 2;
-  string content = 3;
-}
-
-message CompactMsg {
-  string agent = 1;
-  string sender = 2;
-}
-</code></pre>
-<p>Removed from the protocol: <code>session</code> (u64 ID), <code>new_chat</code>, <code>resume_file</code>.</p>
-<p>Server responses no longer include session IDs:</p>
-<pre><code class="language-protobuf">message StreamStart {
-  string agent = 1;  // no session field
-}
-</code></pre>
-<h3 id="guest-turns"><a class="header" href="#guest-turns">Guest turns</a></h3>
-<p>The <code>guest</code> field on <code>StreamMsg</code> enables multi-agent conversations. When set,
-the daemon runs the guest agent against the primary agent’s conversation
-history — text-only, no tool dispatch.</p>
-<p>Flow:</p>
-<ol>
-<li>Client sends <code>StreamMsg { agent: "twin", content: "question", guest: "crab" }</code></li>
-<li>Daemon finds twin’s conversation</li>
-<li>Adds user message to twin’s history</li>
-<li>Injects guest framing (auto-injected system message)</li>
-<li>Runs crab against twin’s history with crab’s system prompt (no tools)</li>
-<li>Tags response with <code>agent: "crab"</code></li>
-<li>Appends to twin’s history</li>
-</ol>
-<p>The guest’s response appears as a first-class message in the conversation,
-attributed to the guest. No delegation, no tool results, no paraphrasing.</p>
-<h3 id="bidirectional-framing"><a class="header" href="#bidirectional-framing">Bidirectional framing</a></h3>
-<p>Both guest and primary need context about multi-agent conversation:</p>
-<ul>
-<li><strong>Guest framing</strong> (injected when a guest runs): “You are joining a
-conversation as a guest. Messages wrapped in <code>&lt;from agent="..."&gt;</code> tags are from other
-agents.”</li>
-<li><strong>Primary framing</strong> (injected when the primary runs and guest messages exist
-in history): “Messages wrapped in <code>&lt;from agent="..."&gt;</code> tags are from guest agents.
-Continue responding as yourself.”</li>
-</ul>
-<p>Both are <code>auto_injected</code> — stripped before each run, re-injected fresh. Zero
-accumulation.</p>
-<h3 id="message-attribution"><a class="header" href="#message-attribution">Message attribution</a></h3>
-<p>The <code>Message</code> struct gains an <code>agent</code> field:</p>
+<h3 id="data-model"><a class="header" href="#data-model">Data model</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>#[serde(default, skip_serializing_if = "String::is_empty")]
-pub agent: String,
+</span>struct AgentConfig {
+    // …
+    mcps: Vec&lt;McpServerConfig&gt;,  // was Vec&lt;String&gt;
+}
 <span class="boring">}</span></code></pre>
-<p>Empty = the conversation’s primary agent. Non-empty = a guest. When building
-LLM requests, assistant messages with non-empty <code>agent</code> are prefixed with
-<code>&lt;from agent="..."&gt;</code> XML tags so every agent can distinguish speakers.</p>
-<p><code>Message::with_agent_tag()</code> handles the prefixing — one function, used by
-both <code>build_request</code> and <code>guest_stream_to</code>.</p>
-<h3 id="compaction-as-memory"><a class="header" href="#compaction-as-memory">Compaction as memory</a></h3>
-<p>Compaction markers become archive boundaries. Each compact marker stores a
-title (first sentence of the summary, max 60 chars) and a timestamp:</p>
-<pre><code class="language-json">{"compact":"Summary of pricing discussion...","title":"Pricing analysis for solo dev tools.","archived_at":"2026-04-03T10:00:00Z"}
-</code></pre>
-<p>The conversation is continuous — compaction doesn’t create a new conversation,
-it archives a segment of the existing one. Archived segments are browsable
-via <code>Conversation::load_archives()</code> and available to the recall tool as
-long-term memory.</p>
-<pre><code>Crab's memory:
-├── [active] Current conversation
-├── "Pricing analysis for solo dev tools." — 2 days ago
-├── "Auth module refactor plan." — 5 days ago
-└── "HN competitor signal analysis." — last week
-</code></pre>
-<h3 id="what-dies"><a class="header" href="#what-dies">What dies</a></h3>
+<p>Embedded by value. No enum wrapper, no separate “decl” type. The agent’s TOML carries every field of every MCP it depends on.</p>
+<p><code>Storage</code> loses <code>list_mcps</code>, <code>upsert_mcp</code>, <code>delete_mcp</code>. The protocol RPCs <code>ListMcps</code>, <code>UpsertMcp</code>, <code>DeleteMcp</code> stay — they shift meaning from “manage the global registry” to “list MCPs declared by any registered agent” / “modify an agent’s MCPs in place” / “remove an MCP from an agent’s config.” Implemented by reading and writing through the agent’s config rather than a separate table.</p>
+<h3 id="daemon-side-dedup"><a class="header" href="#daemon-side-dedup">Daemon-side dedup</a></h3>
+<p>The daemon never spawns the same MCP twice. Two agents declaring <code>command="github-mcp", args=[...], env={TOKEN: "abc"}</code> share one peer process. Different <code>args</code> or <code>env</code> → separate processes. Identity is structural, not by name.</p>
+<p><code>McpHandler</code> keys peers by <strong>fingerprint</strong> — a stable hash of <code>(command, args, env, url)</code>. The state map becomes <code>BTreeMap&lt;Fingerprint, McpServerEntry&gt;</code> where each entry refcounts the agents that declared it. <code>register_for_agent(agent, cfg)</code> increments the refcount, spawning if first; <code>unregister_for_agent(agent, fingerprint)</code> decrements, tearing down at zero.</p>
+<p>The lifecycle event broadcast from RFC 0190 (PR #192) still applies: <code>Connecting</code> / <code>Connected</code> / <code>Failed</code> / <code>Disconnected</code> are emitted per fingerprint, not per name. The event payload identifies the server by fingerprint plus the set of agents that own a reference to it.</p>
+<h3 id="per-agent-tool-namespace"><a class="header" href="#per-agent-tool-namespace">Per-agent tool namespace</a></h3>
+<p>The bridge stops sharing a flat <code>tool_cache</code>. Two agents declaring different MCPs that both expose a <code>web_search</code> tool no longer collide — the dispatcher resolves <code>(agent, tool_name)</code> to the right peer through the agent’s declared fingerprints.</p>
+<p>Concretely: <code>McpBridge</code> keeps the per-fingerprint peer map but drops the global tool cache. Tool lookup walks the agent’s fingerprints in declaration order and returns the first match. <code>McpHook::dispatch</code> already has the agent context; it now uses the agent’s declared MCPs directly instead of consulting an <code>AgentScope.mcps</code> allowlist.</p>
+<h3 id="lifecycle-interactions"><a class="header" href="#lifecycle-interactions">Lifecycle interactions</a></h3>
 <ul>
-<li><strong>Session IDs in the protocol</strong> — replaced by (agent, sender)</li>
-<li><strong><code>new_chat</code></strong> — the conversation is continuous, compaction handles the window</li>
-<li><strong><code>resume_file</code></strong> — one conversation per (agent, user), always active</li>
-<li><strong>Client-side @mention logic</strong> (<a href="0078-compact-session.html">0078</a>) — guest turns
-handle it daemon-side</li>
-<li><strong>Session forking</strong> — agents are the abstraction, not sessions</li>
+<li><strong>Agent create / update.</strong> <code>Runtime::create_agent</code> and <code>update_agent</code> walk the config’s <code>mcps</code> list, calling <code>McpHandler::register_for_agent(agent, cfg)</code> for each. New fingerprints spawn; existing fingerprints just bump the refcount.</li>
+<li><strong>Agent delete.</strong> Walks the agent’s <code>mcps</code>, calls <code>unregister_for_agent</code> for each. Peers with refcount=0 are torn down. <code>Disconnected</code> events fire.</li>
+<li><strong>Agent rename.</strong> Refcounts move from <code>old_name</code> to <code>new_name</code>. No spawn/teardown.</li>
+<li><strong>Daemon startup.</strong> Storage rebuilds agents one by one; each <code>register_for_agent</code> call walks the same dedup path. No special “load global MCPs” phase.</li>
+<li><strong>Daemon reload.</strong> Already rebuilds agents (RFC 0189-era refactor). Same path. New configs trigger spawns; removed fingerprints trigger teardowns.</li>
 </ul>
-<h2 id="supersedes"><a class="header" href="#supersedes">Supersedes</a></h2>
-<h3 id="0064---session"><a class="header" href="#0064---session">0064 - Session</a></h3>
-<p>The session model is replaced by conversations. The JSONL file format is
-preserved (backward compatible with added <code>title</code> and <code>archived_at</code> fields on
-compact markers, and <code>agent</code> field on messages). The <code>Session</code> struct is renamed
-to <code>Conversation</code>. Session IDs are removed from the protocol.</p>
-<h3 id="0078---compact-session"><a class="header" href="#0078---compact-session">0078 - Compact Session</a></h3>
-<p>The compact-then-handoff pattern for @mentions is replaced by guest turns.
-The daemon handles multi-agent conversation natively — no client-side compact
-logic needed.</p>
-<h2 id="updates"><a class="header" href="#updates">Updates</a></h2>
-<h3 id="0018---protocol"><a class="header" href="#0018---protocol">0018 - Protocol</a></h3>
-<p>Session-addressed messages are replaced with (agent, sender) addressing.
-<code>StreamMsg</code> and <code>SendMsg</code> gain a <code>guest</code> field. <code>SessionInfo</code> becomes
-<code>ActiveConversationInfo</code>. See protocol changes section above.</p>
-<h3 id="0038---memory"><a class="header" href="#0038---memory">0038 - Memory</a></h3>
-<p>Compaction archives become the primary long-term memory mechanism. The
-recall tool searches across archived segments. See <a href="https://github.com/crabtalk/crabtalk/issues/101">#101 (revised)</a> for
-the pluggable memory provider aligned with this model.</p>
+<h3 id="where-secrets-are-not"><a class="header" href="#where-secrets-are-not">Where secrets are not</a></h3>
+<p>The daemon stores literal <code>McpServerConfig</code> values. There is no placeholder syntax, no resolver trait, no interpolation in this codebase. If a value looks like <code>${TAVILY_KEY}</code>, the daemon spawns a process with that literal string in the environment.</p>
+<p>The “canonical with placeholders / materialized with values” split lives in whatever sits above the daemon. Cloud’s control plane holds canonical agent configs (with <code>${TAVILY_KEY}</code>), resolves against the tenant’s vault, and writes the resolved config to the daemon-as-library it owns for that tenant. Forks copy the canonical, never the resolved.</p>
+<p>This keeps the forkability invariant — shareable artifacts carry structure, not values — while keeping the daemon secret-unaware.</p>
+<h2 id="migration"><a class="header" href="#migration">Migration</a></h2>
+<p><code>AgentConfig.mcps</code> is a breaking field type change (<code>Vec&lt;String&gt;</code> → <code>Vec&lt;McpServerConfig&gt;</code>). Existing configs on disk need a one-shot migration:</p>
+<ol>
+<li>On daemon startup, if any agent’s <code>mcps</code> is <code>Vec&lt;String&gt;</code> (detected via serde), look each name up in the existing <code>mcps.toml</code> (or whatever Storage held the global registry), inline the <code>McpServerConfig</code>, and rewrite the agent’s TOML.</li>
+<li>After every agent has been migrated, delete the global <code>mcps.toml</code>.</li>
+</ol>
+<p>The migration runs once. After the first startup on the new code, configs are uniformly the new shape; the migration code path is dead and gets removed in a follow-up cleanup commit.</p>
+<p><code>Storage::list_mcps</code> / <code>upsert_mcp</code> / <code>delete_mcp</code> are removed from the trait. Implementations — <code>FsStorage</code>, <code>MemStorage</code> — drop the corresponding files/fields. The protocol RPCs <code>ListMcps</code> / <code>UpsertMcp</code> / <code>DeleteMcp</code> stay on the wire; their handlers are rewritten to operate on agent configs.</p>
+<p><code>AgentScope.mcps</code> (RFC 0082) is removed. The scoping struct still gates <code>tools</code> and <code>skills</code>; MCP scoping is now intrinsic to the agent’s declaration.</p>
+<h2 id="alternatives-considered"><a class="header" href="#alternatives-considered">Alternatives considered</a></h2>
+<p><strong>Keep the global registry, add per-agent overrides.</strong> Allow <code>AgentConfig.mcps</code> to carry inline overrides on top of name references. Rejected because it doubles the configuration surface — every consumer has to handle “which wins, the override or the registry?” — without solving forkability. Forking an agent still depends on the destination daemon having the right names registered.</p>
+<p><strong>SecretResolver trait in this repo.</strong> Earlier draft. Cut because the daemon can stay secret-unaware: cloud handles canonical-vs-resolved at its control plane and only writes resolved configs into the daemon. Adding a trait here for a default that just reads env vars is complexity for a problem we don’t have.</p>
+<p><strong>Generic on <code>Daemon</code> for the resolver.</strong> Even if a resolver lived in this repo, adding a second type parameter to <code>Daemon&lt;P&gt;</code> compounds complexity per the no-generics-for-future-use rule. Not worth it for a hypothetical hook.</p>
+<p><strong>Plugin-provided MCPs as agent templates.</strong> Plugins are being removed, so this collapses. Future plugin-like artifacts (if any) will compose at the agent level rather than at a separate MCP-registry level.</p>
+<h2 id="out-of-scope"><a class="header" href="#out-of-scope">Out of scope</a></h2>
+<ul>
+<li>Secret resolution, vaulting, or <code>${VAR}</code> interpolation. Cloud’s problem, not the daemon’s.</li>
+<li>Auto-restart behavior for failed peers. Lifecycle events from PR #192 surface failures; whether a client retries is a client decision.</li>
+<li>Discovery of port-file MCPs. Today <code>McpHandler</code> auto-connects services that drop a <code>*.port</code> file under <code>~/.crabtalk/run/</code>. That mechanism continues to work, but discovered servers now register against a synthetic per-process “discovery agent” (or are exposed only on the daemon-internal dispatch path) — the exact shape is a follow-up.</li>
+<li>Plugin MCPs. Plugins are being removed; no migration needed.</li>
+</ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../rfcs/0121-event-bus.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rfcs/0189-policy-at-the-edge.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../rfcs/0150-memory-store.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../rfcs/superseded.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -372,11 +266,11 @@ the pluggable memory provider aligned with this model.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../rfcs/0121-event-bus.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rfcs/0189-policy-at-the-edge.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../rfcs/0150-memory-store.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../rfcs/superseded.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
