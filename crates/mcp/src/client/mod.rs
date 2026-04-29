@@ -22,8 +22,8 @@ impl McpPeer {
         Ok(Self::Stdio(Box::new(stdio::StdioTransport::new(command)?)))
     }
 
-    pub fn http(url: &str) -> Self {
-        Self::Http(Box::new(http::HttpTransport::new(url)))
+    pub fn http(url: &str, auth: Option<String>) -> Self {
+        Self::Http(Box::new(http::HttpTransport::new(url, auth)))
     }
 
     async fn request(&mut self, msg: serde_json::Value) -> Result<serde_json::Value> {

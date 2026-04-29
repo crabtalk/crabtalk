@@ -622,7 +622,9 @@ message McpInfo {
   repeated string args = 3;
   map<string, string> env = 4;
   string url = 5;
-  bool auth = 6;
+  // Full `Authorization` header value (e.g. `"Bearer eyJ..."`) sent on
+  // every HTTP-transport request. Empty string = no header.
+  string auth = 6;
   string source = 7;
   bool auto_restart = 8;
   reserved 9;

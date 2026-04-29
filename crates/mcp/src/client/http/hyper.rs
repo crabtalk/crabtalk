@@ -22,14 +22,16 @@ type HttpClient = Client<Connector, Full<Bytes>>;
 pub struct HttpTransport {
     client: HttpClient,
     url: String,
+    auth: Option<String>,
     session_id: Option<String>,
 }
 
 impl HttpTransport {
-    pub fn new(url: &str) -> Self {
+    pub fn new(url: &str, auth: Option<String>) -> Self {
         Self {
             client: Client::builder(TokioExecutor::new()).build(build_connector()),
             url: url.to_string(),
+            auth,
             session_id: None,
         }
     }
@@ -39,6 +41,9 @@ impl HttpTransport {
         let mut builder = Request::post(self.url.as_str())
             .header("content-type", "application/json")
             .header("accept", "application/json, text/event-stream");
+        if let Some(auth) = self.auth.as_deref() {
+            builder = builder.header("authorization", auth);
+        }
         if let Some(sid) = self.session_id.as_deref() {
             builder = builder.header("mcp-session-id", sid);
         }
@@ -89,6 +94,9 @@ impl HttpTransport {
         let body = serde_json::to_vec(&msg)?;
         let mut builder =
             Request::post(self.url.as_str()).header("content-type", "application/json");
+        if let Some(auth) = self.auth.as_deref() {
+            builder = builder.header("authorization", auth);
+        }
         if let Some(sid) = self.session_id.as_deref() {
             builder = builder.header("mcp-session-id", sid);
         }

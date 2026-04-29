@@ -172,7 +172,7 @@ fn mcp_info(
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect(),
         url: cfg.url.clone().unwrap_or_default(),
-        auth: cfg.auth,
+        auth: cfg.auth.clone().unwrap_or_default(),
         // The "source" is now the agent that owns the declaration.
         source: agent.to_string(),
         auto_restart: cfg.auto_restart,

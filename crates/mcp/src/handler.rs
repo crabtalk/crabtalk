@@ -330,7 +330,9 @@ async fn connect_one(bridge: &McpBridge, cfg: &McpServerConfig, fp: Fingerprint)
                 %url,
                 "connecting MCP server via HTTP"
             );
-            bridge.connect_http_named(id.clone(), url).await
+            bridge
+                .connect_http_named(id.clone(), url, cfg.auth.clone())
+                .await
         } else {
             let mut cmd = tokio::process::Command::new(&cfg.command);
             cmd.args(&cfg.args);

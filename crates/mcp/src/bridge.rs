@@ -45,9 +45,15 @@ impl McpBridge {
         self.register_peer(id, McpPeer::stdio(command)?).await
     }
 
-    /// Connect to a peer over HTTP transport.
-    pub async fn connect_http_named(&self, id: String, url: &str) -> Result<Vec<String>> {
-        self.register_peer(id, McpPeer::http(url)).await
+    /// Connect to a peer over HTTP transport. `auth`, if present, is sent
+    /// verbatim as the `Authorization` header on every request.
+    pub async fn connect_http_named(
+        &self,
+        id: String,
+        url: &str,
+        auth: Option<String>,
+    ) -> Result<Vec<String>> {
+        self.register_peer(id, McpPeer::http(url, auth)).await
     }
 
     /// Initialize a peer, fetch its tools, and store it.
