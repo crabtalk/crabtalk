@@ -22,15 +22,31 @@ type HttpClient = Client<Connector, Full<Bytes>>;
 pub struct HttpTransport {
     client: HttpClient,
     url: String,
+    /// Pre-computed `Host` header value (`host[:port]`). hyper-util's
+    /// legacy Client doesn't reliably auto-populate this for HTTP/1.1
+    /// targets, and hyper-based servers (Axum) reject HTTP/1.1 requests
+    /// without it. We stamp it manually on every request.
+    host: String,
     auth: Option<String>,
     session_id: Option<String>,
 }
 
 impl HttpTransport {
     pub fn new(url: &str, auth: Option<String>) -> Self {
+        let host = http::Uri::try_from(url)
+            .ok()
+            .and_then(|u| {
+                let host = u.host()?.to_owned();
+                Some(match u.port_u16() {
+                    Some(p) => format!("{host}:{p}"),
+                    None => host,
+                })
+            })
+            .unwrap_or_default();
         Self {
             client: Client::builder(TokioExecutor::new()).build(build_connector()),
             url: url.to_string(),
+            host,
             auth,
             session_id: None,
         }
@@ -39,6 +55,7 @@ impl HttpTransport {
     pub async fn request(&mut self, msg: serde_json::Value) -> Result<serde_json::Value> {
         let body = serde_json::to_vec(&msg)?;
         let mut builder = Request::post(self.url.as_str())
+            .header("host", self.host.as_str())
             .header("content-type", "application/json")
             .header("accept", "application/json, text/event-stream");
         if let Some(auth) = self.auth.as_deref() {
@@ -92,8 +109,9 @@ impl HttpTransport {
 
     pub async fn notify(&mut self, msg: serde_json::Value) -> Result<()> {
         let body = serde_json::to_vec(&msg)?;
-        let mut builder =
-            Request::post(self.url.as_str()).header("content-type", "application/json");
+        let mut builder = Request::post(self.url.as_str())
+            .header("host", self.host.as_str())
+            .header("content-type", "application/json");
         if let Some(auth) = self.auth.as_deref() {
             builder = builder.header("authorization", auth);
         }
