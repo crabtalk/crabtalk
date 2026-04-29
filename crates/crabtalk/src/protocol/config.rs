@@ -113,7 +113,7 @@ impl<P: Provider + 'static> Daemon<P> {
         let local_skills_dir = self.config_dir.join(wcore::paths::SKILLS_DIR);
 
         let dir_to_pkg: std::collections::BTreeMap<_, _> = dirs
-            .plugin_skill_dirs
+            .package_skill_dirs
             .iter()
             .map(|(id, dir)| (dir.clone(), id.clone()))
             .collect();
@@ -125,7 +125,7 @@ impl<P: Provider + 'static> Daemon<P> {
             let (source, source_kind) = if *dir == local_skills_dir {
                 ("local".to_string(), SourceKind::Local)
             } else if let Some(pkg_id) = dir_to_pkg.get(dir) {
-                (pkg_id.clone(), SourceKind::Plugin)
+                (pkg_id.clone(), SourceKind::Package)
             } else {
                 let name = wcore::external_source_name(dir).unwrap_or("external");
                 (name.to_string(), SourceKind::External)

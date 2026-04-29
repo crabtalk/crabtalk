@@ -5,7 +5,7 @@
 [![Discord][discord-badge]][discord]
 
 **Agent daemon.** Runs agents, dispatches tools, connects to MCP servers.
-Start it, talk to it, extend it with plugins.
+Start it, talk to it, extend it with packages.
 
 ```bash
 curl -fsSL https://crabtalk.ai/install.sh | sh

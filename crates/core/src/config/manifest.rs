@@ -1,12 +1,12 @@
-//! Plugin directory discovery and skill scanning.
+//! Package directory discovery and skill scanning.
 //!
-//! Scans `plugins/*.toml` to find each plugin's cached repo (skills,
+//! Scans `packages/*.toml` to find each package's cached repo (skills,
 //! agents, MCPs). User-added agents and MCPs live in Storage; this
 //! module only resolves filesystem locations for packaged content.
 
 use crate::{
     AgentConfig, McpServerConfig,
-    paths::{AGENTS_DIR, PLUGINS_DIR, SKILLS_DIR},
+    paths::{AGENTS_DIR, PACKAGES_DIR, SKILLS_DIR},
 };
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -15,16 +15,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-// ── Plugin manifest types ───────────────────────────────────────────
+// ── Package manifest types ──────────────────────────────────────────
 
-/// Subset of a plugin TOML this module reads at boot:
+/// Subset of a package TOML this module reads at boot:
 ///   - `[package]` for repo slug → cached repo dir
-///   - `[mcps.<name>]` and `[agents.<name>]` shipped by the plugin
+///   - `[mcps.<name>]` and `[agents.<name>]` shipped by the package
 ///
-/// Mutable per-user state lives in [`crate::storage::Storage`]; plugin
+/// Mutable per-user state lives in [`crate::storage::Storage`]; package
 /// manifests are read-only on-disk packaging that's re-read every boot.
 #[derive(Debug, Clone, Default, Deserialize)]
-struct PluginManifest {
+struct PackageManifest {
     #[serde(default)]
     package: Option<PackageMeta>,
     #[serde(default)]
@@ -33,7 +33,7 @@ struct PluginManifest {
     agents: BTreeMap<String, AgentConfig>,
 }
 
-/// Package metadata in a plugin manifest.
+/// Package metadata in a package manifest.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PackageMeta {
     /// Package name.
@@ -59,29 +59,29 @@ pub struct Setup {
 
 // ── Resolved directories ────────────────────────────────────────────
 
-/// Directories discovered at startup: local + plugin repos + external.
+/// Directories discovered at startup: local + package repos + external.
 /// Used to seed [`crate::storage::Storage`] with skill/agent roots and
-/// to surface MCPs/agents that ship inside a plugin TOML.
+/// to surface MCPs/agents that ship inside a package TOML.
 #[derive(Debug, Default)]
 pub struct ResolvedDirs {
-    /// Skill directories to scan (local first, then plugins, then external).
+    /// Skill directories to scan (local first, then packages, then external).
     pub skill_dirs: Vec<PathBuf>,
-    /// Agent directories to scan (local first, then plugins).
+    /// Agent directories to scan (local first, then packages).
     pub agent_dirs: Vec<PathBuf>,
-    /// Plugin name → skill directory for resolving qualified skill
+    /// Package name → skill directory for resolving qualified skill
     /// references (e.g. `"playwright"` → repo skill dir).
-    pub plugin_skill_dirs: BTreeMap<String, PathBuf>,
-    /// MCP servers declared in `plugins/*.toml` `[mcps.<name>]` blocks.
+    pub package_skill_dirs: BTreeMap<String, PathBuf>,
+    /// MCP servers declared in `packages/*.toml` `[mcps.<name>]` blocks.
     /// Storage MCPs (user-defined) win on name conflict.
-    pub plugin_mcps: BTreeMap<String, McpServerConfig>,
-    /// Agents declared in `plugins/*.toml` `[agents.<name>]` blocks.
+    pub package_mcps: BTreeMap<String, McpServerConfig>,
+    /// Agents declared in `packages/*.toml` `[agents.<name>]` blocks.
     /// Storage agents (user-defined) win on name conflict.
-    pub plugin_agents: BTreeMap<String, AgentConfig>,
+    pub package_agents: BTreeMap<String, AgentConfig>,
 }
 
-/// Discover skill, agent, and plugin directories under `config_dir`.
+/// Discover skill, agent, and package directories under `config_dir`.
 ///
-/// Walks `local/skills`, `local/agents`, every `plugins/*.toml` (whose
+/// Walks `local/skills`, `local/agents`, every `packages/*.toml` (whose
 /// `[package].repository` resolves to a cached repo under `.cache/repos/`),
 /// and well-known external skill roots (`~/.claude/skills` etc.).
 pub fn resolve_dirs(config_dir: &Path) -> ResolvedDirs {
@@ -96,15 +96,15 @@ pub fn resolve_dirs(config_dir: &Path) -> ResolvedDirs {
         resolved.agent_dirs.push(local_agents);
     }
 
-    let plugins_dir = config_dir.join(PLUGINS_DIR);
-    if let Ok(entries) = std::fs::read_dir(&plugins_dir) {
-        let mut plugin_entries: Vec<_> = entries.flatten().collect();
-        plugin_entries.sort_by_key(|e| e.file_name());
+    let packages_dir = config_dir.join(PACKAGES_DIR);
+    if let Ok(entries) = std::fs::read_dir(&packages_dir) {
+        let mut package_entries: Vec<_> = entries.flatten().collect();
+        package_entries.sort_by_key(|e| e.file_name());
 
-        for entry in plugin_entries {
+        for entry in package_entries {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "toml") {
-                load_plugin_dirs(config_dir, &path, &mut resolved);
+                load_package_dirs(config_dir, &path, &mut resolved);
             }
         }
     }
@@ -121,25 +121,25 @@ pub fn resolve_dirs(config_dir: &Path) -> ResolvedDirs {
     resolved
 }
 
-fn load_plugin_dirs(config_dir: &Path, path: &Path, resolved: &mut ResolvedDirs) {
+fn load_package_dirs(config_dir: &Path, path: &Path, resolved: &mut ResolvedDirs) {
     let source = path
-        .strip_prefix(config_dir.join(PLUGINS_DIR))
+        .strip_prefix(config_dir.join(PACKAGES_DIR))
         .unwrap_or(path)
         .to_string_lossy()
         .into_owned();
-    let plugin_id = source.strip_suffix(".toml").unwrap_or(&source).to_owned();
+    let package_id = source.strip_suffix(".toml").unwrap_or(&source).to_owned();
 
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => {
-            tracing::warn!("failed to read plugin manifest {}: {e}", path.display());
+            tracing::warn!("failed to read package manifest {}: {e}", path.display());
             return;
         }
     };
-    let manifest: PluginManifest = match toml::from_str(&content) {
+    let manifest: PackageManifest = match toml::from_str(&content) {
         Ok(m) => m,
         Err(e) => {
-            tracing::warn!("failed to parse plugin manifest {}: {e}", path.display());
+            tracing::warn!("failed to parse package manifest {}: {e}", path.display());
             return;
         }
     };
@@ -148,11 +148,11 @@ fn load_plugin_dirs(config_dir: &Path, path: &Path, resolved: &mut ResolvedDirs)
         if mcp.name.is_empty() {
             mcp.name = name.clone();
         }
-        resolved.plugin_mcps.entry(name).or_insert(mcp);
+        resolved.package_mcps.entry(name).or_insert(mcp);
     }
     for (name, mut agent) in manifest.agents {
         agent.name = name.clone();
-        resolved.plugin_agents.entry(name).or_insert(agent);
+        resolved.package_agents.entry(name).or_insert(agent);
     }
 
     let Some(pkg) = manifest.package else {
@@ -168,8 +168,8 @@ fn load_plugin_dirs(config_dir: &Path, path: &Path, resolved: &mut ResolvedDirs)
     }
     resolved.skill_dirs.push(repo_dir.clone());
     resolved
-        .plugin_skill_dirs
-        .insert(plugin_id, repo_dir.clone());
+        .package_skill_dirs
+        .insert(package_id, repo_dir.clone());
     let agents = repo_dir.join("agents");
     if agents.exists() && agents.is_dir() {
         resolved.agent_dirs.push(agents);

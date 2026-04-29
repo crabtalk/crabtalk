@@ -309,9 +309,9 @@ impl<P: Provider + 'static> Daemon<P> {
         Ok((os_hook, ask_hook, shared_memory))
     }
 
-    /// Load agents from storage (canonical) and plugin manifests.
+    /// Load agents from storage (canonical) and package manifests.
     /// Storage is seeded with the default `crab` agent by
-    /// [`Storage::scaffold`] before this runs. Plugin agents only
+    /// [`Storage::scaffold`] before this runs. Package agents only
     /// register if storage doesn't already shadow them by name.
     async fn register_agents(
         runtime: &mut Runtime<crate::daemon::DaemonCfg<P>>,
@@ -333,20 +333,20 @@ impl<P: Provider + 'static> Daemon<P> {
             runtime.add_agent(agent);
         }
 
-        // Plugin agents are disk-only — never persisted into storage —
-        // so updates flow through `crabtalk pull`, not the daemon
-        // mutating settings.toml.
-        for (name, agent) in &dirs.plugin_agents {
+        // Package agents are disk-only — never persisted into storage —
+        // so updates flow through `crabup add`, not the daemon mutating
+        // settings.toml.
+        for (name, agent) in &dirs.package_agents {
             if stored_names.contains(name) {
                 continue;
             }
             let agent = agent.clone();
             if agent.system_prompt.is_empty() {
-                tracing::warn!(name = %name, "plugin agent has no prompt — skipping");
+                tracing::warn!(name = %name, "package agent has no prompt — skipping");
                 continue;
             }
             if agent.model.is_empty() {
-                tracing::warn!(name = %name, "plugin agent has no model — skipping");
+                tracing::warn!(name = %name, "package agent has no model — skipping");
                 continue;
             }
             runtime.add_agent(agent);

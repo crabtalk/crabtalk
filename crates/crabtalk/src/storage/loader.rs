@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
-use wcore::paths::{AGENTS_DIR, CONFIG_FILE, LOCAL_DIR, PLUGINS_DIR, SETTINGS_FILE, SKILLS_DIR};
+use wcore::paths::{AGENTS_DIR, CONFIG_FILE, LOCAL_DIR, PACKAGES_DIR, SETTINGS_FILE, SKILLS_DIR};
 
 /// Default template for `config.toml` — the hand-edited install config
 /// (LLM endpoint, task pool, env vars).
@@ -27,8 +27,8 @@ pub fn scaffold_config_dir(config_dir: &Path) -> Result<()> {
         .context("failed to create agents directory")?;
     std::fs::create_dir_all(config_dir.join(SKILLS_DIR))
         .context("failed to create skills directory")?;
-    std::fs::create_dir_all(config_dir.join(PLUGINS_DIR))
-        .context("failed to create plugins directory")?;
+    std::fs::create_dir_all(config_dir.join(PACKAGES_DIR))
+        .context("failed to create packages directory")?;
 
     let config_toml = config_dir.join(CONFIG_FILE);
     if !config_toml.exists() {
@@ -51,7 +51,7 @@ pub fn scaffold_config_dir(config_dir: &Path) -> Result<()> {
 
 // ── Migration ───────────────────────────────────────────────────────
 
-/// Migrate from old config layouts to the current plugin-based layout.
+/// Migrate from old config layouts to the current package-based layout.
 ///
 /// Phase 1: Renames `crab.toml` → `config.toml`, moves `skills/` and
 /// `agents/` under `local/`.
@@ -59,8 +59,10 @@ pub fn scaffold_config_dir(config_dir: &Path) -> Result<()> {
 /// Phase 2: Extracts `[mcps.*]` from `config.toml` into
 /// `local/CrabTalk.toml`.
 ///
-/// Phase 4: Renames `packages/` → `plugins/` (flattening scope dirs),
-/// renames `hub/` → `registry/`.
+/// Phase 4: Flattens scope dirs in legacy `packages/`, renames `hub/`
+/// → `registry/`.
+///
+/// Phase 5: Renames `plugins/` → `packages/` (the canonical name).
 ///
 /// Each step is a no-op if already migrated. Errors are logged, not fatal.
 fn migrate_layout(config_dir: &Path) {
@@ -112,34 +114,28 @@ fn migrate_layout(config_dir: &Path) {
         migrate_disabled(&manifest_path, &config_path);
     }
 
-    // Phase 4: rename packages/ → plugins/ (flatten scope dirs)
-    let old_packages = config_dir.join("packages");
-    let new_plugins = config_dir.join(PLUGINS_DIR);
-    if old_packages.exists() && old_packages.is_dir() && !new_plugins.exists() {
-        let _ = std::fs::create_dir_all(&new_plugins);
-        if let Ok(scopes) = std::fs::read_dir(&old_packages) {
-            for scope_entry in scopes.flatten() {
-                let scope_path = scope_entry.path();
-                if scope_path.is_dir() {
-                    // Flatten: move scope/name.toml → plugins/name.toml
-                    if let Ok(manifests) = std::fs::read_dir(&scope_path) {
-                        for manifest in manifests.flatten() {
-                            let src = manifest.path();
-                            if src.extension().is_some_and(|e| e == "toml") {
-                                let dst = new_plugins.join(manifest.file_name());
-                                let _ = std::fs::rename(&src, &dst);
-                            }
-                        }
+    // Phase 4: flatten legacy scoped packages/scope/name.toml → packages/name.toml
+    let packages_dir = config_dir.join(PACKAGES_DIR);
+    if packages_dir.exists() && packages_dir.is_dir() {
+        let scopes: Vec<_> = std::fs::read_dir(&packages_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .collect();
+        for scope_entry in scopes {
+            let scope_path = scope_entry.path();
+            if let Ok(manifests) = std::fs::read_dir(&scope_path) {
+                for manifest in manifests.flatten() {
+                    let src = manifest.path();
+                    if src.extension().is_some_and(|e| e == "toml") {
+                        let dst = packages_dir.join(manifest.file_name());
+                        let _ = std::fs::rename(&src, &dst);
                     }
-                } else if scope_path.extension().is_some_and(|e| e == "toml") {
-                    // Already flat — just move it.
-                    let dst = new_plugins.join(scope_entry.file_name());
-                    let _ = std::fs::rename(&scope_path, &dst);
                 }
             }
+            let _ = std::fs::remove_dir_all(&scope_path);
         }
-        let _ = std::fs::remove_dir_all(&old_packages);
-        tracing::info!("migrated packages/ → plugins/");
     }
 
     // Phase 4: rename hub/ → registry/
@@ -150,6 +146,17 @@ fn migrate_layout(config_dir: &Path) {
             tracing::warn!("failed to rename hub/ → registry/: {e}");
         } else {
             tracing::info!("migrated hub/ → registry/");
+        }
+    }
+
+    // Phase 5: rename plugins/ → packages/ (canonical name).
+    let old_plugins = config_dir.join("plugins");
+    let new_packages = config_dir.join(PACKAGES_DIR);
+    if old_plugins.exists() && old_plugins.is_dir() && !new_packages.exists() {
+        if let Err(e) = std::fs::rename(&old_plugins, &new_packages) {
+            tracing::warn!("failed to rename plugins/ → packages/: {e}");
+        } else {
+            tracing::info!("migrated plugins/ → packages/");
         }
     }
 }

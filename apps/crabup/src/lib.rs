@@ -8,7 +8,7 @@ use crate::registry::Entry;
 
 pub mod cargo;
 pub mod list;
-pub mod plugin;
+pub mod package;
 pub mod ps;
 pub mod registry;
 pub mod service;
@@ -69,26 +69,26 @@ pub enum Command {
         action: ServiceAction,
     },
 
-    /// Install a crabtalk plugin.
+    /// Install a crabtalk package.
     Add {
-        /// Plugin short name.
+        /// Package short name.
         name: String,
-        /// Pin to a specific branch of the plugin's source repo.
+        /// Pin to a specific branch of the package's source repo.
         #[arg(long)]
         branch: Option<String>,
-        /// Local path to a plugin directory (skips registry sync).
+        /// Local path to a package directory (skips registry sync).
         #[arg(long)]
         path: Option<PathBuf>,
         /// Re-install if already present.
         #[arg(short, long)]
         force: bool,
     },
-    /// Uninstall a crabtalk plugin.
+    /// Uninstall a crabtalk package.
     Remove {
-        /// Plugin short name.
+        /// Package short name.
         name: String,
     },
-    /// Search the crabtalk plugin registry.
+    /// Search the crabtalk package registry.
     Find {
         /// Match name, description, or keywords. Empty lists everything.
         #[arg(default_value = "")]
@@ -168,7 +168,7 @@ impl Cli {
                 path,
                 force,
             } => {
-                plugin::install(
+                package::install(
                     &name,
                     branch.as_deref(),
                     path.as_deref(),
@@ -181,12 +181,12 @@ impl Cli {
                 Ok(())
             }
             Command::Remove { name } => {
-                plugin::uninstall(&name, |msg| println!("  {msg}")).await?;
+                package::uninstall(&name, |msg| println!("  {msg}")).await?;
                 println!("Done: {name}");
                 Ok(())
             }
             Command::Find { query } => {
-                let results = plugin::search(&query).await?;
+                let results = package::search(&query).await?;
                 for r in results {
                     let mark = if r.installed { "✓" } else { " " };
                     println!("{mark} {} — {}", r.name, r.description);

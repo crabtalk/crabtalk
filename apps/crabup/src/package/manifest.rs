@@ -1,4 +1,4 @@
-//! Crabtalk plugin manifest.
+//! Crabtalk package manifest.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -48,7 +48,7 @@ pub struct Package {
     pub setup: Option<Setup>,
 }
 
-/// An MCP server resource in a plugin manifest.
+/// An MCP server resource in a package manifest.
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub struct McpResource {
@@ -121,7 +121,7 @@ pub struct AgentResource {
     pub mcps: Vec<String>,
 }
 
-/// Command service metadata for plugin registration.
+/// Command service metadata for package registration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandConfig {
     /// Human-readable description.

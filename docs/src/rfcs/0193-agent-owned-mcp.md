@@ -88,11 +88,11 @@ The migration runs once. After the first startup on the new code, configs are un
 
 **Generic on `Daemon` for the resolver.** Even if a resolver lived in this repo, adding a second type parameter to `Daemon<P>` compounds complexity per the no-generics-for-future-use rule. Not worth it for a hypothetical hook.
 
-**Plugin-provided MCPs as agent templates.** Plugins are being removed, so this collapses. Future plugin-like artifacts (if any) will compose at the agent level rather than at a separate MCP-registry level.
+**Package-provided MCPs as agent templates.** Package install/uninstall lives in crabup, not the daemon, so this collapses. Future package-like artifacts compose at the agent level rather than at a separate MCP-registry level.
 
 ## Out of scope
 
 - Secret resolution, vaulting, or `${VAR}` interpolation. Cloud's problem, not the daemon's.
 - Auto-restart behavior for failed peers. Lifecycle events from PR #192 surface failures; whether a client retries is a client decision.
 - Discovery of port-file MCPs. Today `McpHandler` auto-connects services that drop a `*.port` file under `~/.crabtalk/run/`. That mechanism continues to work, but discovered servers now register against a synthetic per-process "discovery agent" (or are exposed only on the daemon-internal dispatch path) — the exact shape is a follow-up.
-- Plugin MCPs. Plugins are being removed; no migration needed.
+- Package MCPs. Package install lives in crabup; no daemon-side migration needed.
