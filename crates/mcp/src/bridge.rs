@@ -1,23 +1,25 @@
-//! Crabtalk MCP bridge — connects to MCP servers and dispatches tool calls.
+//! Crabtalk MCP bridge — connects to MCP servers and routes tool calls.
+//!
+//! Peers are keyed by an opaque `peer_id` chosen by the caller — today
+//! `McpHandler` passes the fingerprint hex of the config so identical
+//! configs share one peer. The bridge itself doesn't interpret the id;
+//! it just stores peers and routes calls.
 
 use crate::client::{self, McpPeer};
 use anyhow::Result;
-use std::collections::BTreeMap;
 use tokio::sync::Mutex;
 use wcore::model::Tool;
 
-/// A connected MCP server peer with its tool names.
+/// A connected MCP server peer with its tool definitions.
 struct ConnectedPeer {
-    name: String,
+    id: String,
     peer: McpPeer,
-    tools: Vec<String>,
+    tools: Vec<Tool>,
 }
 
 /// Bridge to one or more MCP servers.
 pub struct McpBridge {
     peers: Mutex<Vec<ConnectedPeer>>,
-    /// Cache of converted tools keyed by name.
-    tool_cache: Mutex<BTreeMap<String, Tool>>,
 }
 
 impl Default for McpBridge {
@@ -31,134 +33,90 @@ impl McpBridge {
     pub fn new() -> Self {
         Self {
             peers: Mutex::new(Vec::new()),
-            tool_cache: Mutex::new(BTreeMap::new()),
         }
     }
 
-    /// Connect to an MCP server by spawning a child process.
-    pub async fn connect_stdio(&self, command: tokio::process::Command) -> Result<()> {
-        let name = command
-            .as_std()
-            .get_program()
-            .to_string_lossy()
-            .into_owned();
-        self.connect_stdio_named(name, command).await?;
-        Ok(())
-    }
-
-    /// Connect to a named MCP server by spawning a child process.
+    /// Connect to a peer by spawning a child process.
     pub async fn connect_stdio_named(
         &self,
-        name: String,
+        id: String,
         command: tokio::process::Command,
     ) -> Result<Vec<String>> {
-        self.register_peer(name, McpPeer::stdio(command)?).await
+        self.register_peer(id, McpPeer::stdio(command)?).await
     }
 
-    /// Connect to a named MCP server via HTTP transport.
-    pub async fn connect_http_named(&self, name: String, url: &str) -> Result<Vec<String>> {
-        self.register_peer(name, McpPeer::http(url)).await
+    /// Connect to a peer over HTTP transport. `auth`, if present, is sent
+    /// verbatim as the `Authorization` header on every request.
+    pub async fn connect_http_named(
+        &self,
+        id: String,
+        url: &str,
+        auth: Option<String>,
+    ) -> Result<Vec<String>> {
+        self.register_peer(id, McpPeer::http(url, auth)).await
     }
 
-    /// Initialize a peer, register its tools, and store it.
-    async fn register_peer(&self, name: String, mut peer: McpPeer) -> Result<Vec<String>> {
+    /// Initialize a peer, fetch its tools, and store it.
+    async fn register_peer(&self, id: String, mut peer: McpPeer) -> Result<Vec<String>> {
         peer.initialize().await?;
         let mcp_tools = peer.list_all_tools().await?;
-
-        let mut tool_names = Vec::with_capacity(mcp_tools.len());
-        {
-            let mut cache = self.tool_cache.lock().await;
-            for mcp_tool in &mcp_tools {
-                let ct_tool = convert_tool(mcp_tool);
-                let tool_name = ct_tool.function.name.clone();
-                use std::collections::btree_map::Entry;
-                match cache.entry(tool_name.clone()) {
-                    Entry::Occupied(_) => tracing::warn!(
-                        "MCP tool '{}' from server '{}' conflicts with already-registered tool, skipping",
-                        tool_name,
-                        name
-                    ),
-                    Entry::Vacant(e) => {
-                        tool_names.push(tool_name);
-                        e.insert(ct_tool);
-                    }
-                }
-            }
-        }
-
-        self.peers.lock().await.push(ConnectedPeer {
-            name,
-            peer,
-            tools: tool_names.clone(),
-        });
-
+        let tools: Vec<Tool> = mcp_tools.iter().map(convert_tool).collect();
+        let tool_names: Vec<String> = tools.iter().map(|t| t.function.name.clone()).collect();
+        self.peers
+            .lock()
+            .await
+            .push(ConnectedPeer { id, peer, tools });
         Ok(tool_names)
     }
 
-    /// Disconnect all peers and clear the tool cache.
-    pub async fn clear(&self) {
-        self.peers.lock().await.clear();
-        self.tool_cache.lock().await.clear();
-    }
-
-    /// Remove a server by name, returning the tool names that were removed.
-    pub async fn remove_server(&self, name: &str) -> Vec<String> {
+    /// Remove a peer by id, returning the tool names that were dropped.
+    pub async fn remove_server(&self, id: &str) -> Vec<String> {
         let mut peers = self.peers.lock().await;
-        let mut removed_tools = Vec::new();
-
+        let mut removed = Vec::new();
         peers.retain(|p| {
-            if p.name.as_str() == name {
-                removed_tools.extend(p.tools.iter().cloned());
+            if p.id == id {
+                removed.extend(p.tools.iter().map(|t| t.function.name.clone()));
                 false
             } else {
                 true
             }
         });
+        removed
+    }
 
-        let mut cache = self.tool_cache.lock().await;
-        for tool_name in &removed_tools {
-            cache.remove(tool_name);
+    /// Tool definitions exposed by the listed peers, in the order they
+    /// were declared. Used by the dispatcher to render the per-agent
+    /// fuzzy listing without exposing tools the agent didn't ask for.
+    pub async fn tools_for(&self, peer_ids: &[String]) -> Vec<Tool> {
+        let peers = self.peers.lock().await;
+        let mut out: Vec<Tool> = Vec::new();
+        for id in peer_ids {
+            if let Some(peer) = peers.iter().find(|p| &p.id == id) {
+                out.extend(peer.tools.iter().cloned());
+            }
         }
-
-        removed_tools
+        out
     }
 
-    /// List all connected servers with their tool names.
-    pub async fn list_servers(&self) -> Vec<(String, Vec<String>)> {
-        self.peers
-            .lock()
-            .await
-            .iter()
-            .map(|p| (p.name.clone(), p.tools.clone()))
-            .collect()
-    }
-
-    /// List all tools available across all connected peers.
-    pub async fn tools(&self) -> Vec<Tool> {
-        self.tool_cache.lock().await.values().cloned().collect()
-    }
-
-    /// Try to list tools without blocking. Returns empty if the lock is held.
-    pub fn try_tools(&self) -> Vec<Tool> {
-        self.tool_cache
-            .try_lock()
-            .map(|cache| cache.values().cloned().collect())
-            .unwrap_or_default()
-    }
-
-    /// Call a tool by name, routing to the correct peer.
+    /// Call a tool on the named peer.
     ///
-    /// Returns `Ok` on success, `Err` for routing failures, arg parse
-    /// errors, MCP-reported tool errors, or transport failures.
-    pub async fn call(&self, name: &str, arguments: &str) -> Result<String, String> {
+    /// Routing is by `(peer_id, tool_name)` — two peers may export tools
+    /// with the same name without collision.
+    pub async fn call(
+        &self,
+        peer_id: &str,
+        tool_name: &str,
+        arguments: &str,
+    ) -> Result<String, String> {
         let mut peers = self.peers.lock().await;
-        let connected = peers
-            .iter_mut()
-            .find(|p| p.tools.iter().any(|t| t.as_str() == name));
-
-        let Some(connected) = connected else {
-            return Err(format!("mcp tool '{name}' not available"));
+        let Some(peer) = peers.iter_mut().find(|p| p.id == peer_id) else {
+            return Err(format!("mcp peer '{peer_id}' not connected"));
         };
+        if !peer.tools.iter().any(|t| t.function.name == tool_name) {
+            return Err(format!(
+                "mcp tool '{tool_name}' not exported by peer '{peer_id}'"
+            ));
+        }
 
         let args: Option<serde_json::Map<String, serde_json::Value>> = if arguments.is_empty() {
             None
@@ -169,7 +127,7 @@ impl McpBridge {
             )
         };
 
-        match connected.peer.call_tool(name, args).await {
+        match peer.peer.call_tool(tool_name, args).await {
             Ok(result) => {
                 let text = extract_text(&result.content);
                 if result.is_error == Some(true) {

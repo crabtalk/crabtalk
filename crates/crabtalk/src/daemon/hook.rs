@@ -14,7 +14,6 @@ use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 pub struct AgentScope {
     pub tools: Vec<String>,
     pub skills: Vec<String>,
-    pub mcps: Vec<String>,
 }
 
 /// Late-bindable sink for `agent:{name}:done` event publishes.
@@ -57,6 +56,8 @@ impl DaemonHook {
     /// Apply scoped tool whitelist and scope prompt for sub-agents.
     fn apply_scope(&self, config: &mut AgentConfig) {
         let has_scoping = !config.skills.is_empty() || !config.mcps.is_empty();
+        // Skills allowlist + MCP declarations both produce a tool whitelist
+        // that the dispatcher enforces. No declarations → no whitelist needed.
         if !has_scoping {
             return;
         }
@@ -137,7 +138,6 @@ impl Hook for DaemonHook {
             AgentScope {
                 tools: config.tools.clone(),
                 skills: config.skills.clone(),
-                mcps: config.mcps.clone(),
             },
         );
         for hook in self.hooks.values() {

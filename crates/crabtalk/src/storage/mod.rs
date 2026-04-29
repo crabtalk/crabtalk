@@ -6,5 +6,5 @@
 pub use self::fs::{FsStorage, default_crab};
 pub use loader::{DEFAULT_CONFIG, DEFAULT_SETTINGS, scaffold_config_dir};
 
-mod fs;
+pub(crate) mod fs;
 mod loader;

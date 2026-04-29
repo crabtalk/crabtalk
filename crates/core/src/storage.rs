@@ -4,9 +4,7 @@
 //! implementation per backend. Memory lives in its own `crabtalk-memory`
 //! crate and is not part of this trait.
 
-use crate::{
-    AgentConfig, AgentEvent, AgentId, AgentStep, DaemonConfig, McpServerConfig, model::HistoryEntry,
-};
+use crate::{AgentConfig, AgentEvent, AgentId, AgentStep, DaemonConfig, model::HistoryEntry};
 use anyhow::Result;
 use crabllm_core::Usage;
 use serde::{Deserialize, Serialize};
@@ -144,20 +142,6 @@ pub trait Storage: Send + Sync + 'static {
     /// here would produce an unusable agent, so callers must ensure a
     /// provider is configured first.
     fn scaffold(&self, default_model: &str) -> impl Future<Output = Result<()>> + Send;
-
-    // ── MCP servers ────────────────────────────────────────────────
-
-    /// List all persisted MCP server configs, keyed by name.
-    fn list_mcps(&self) -> impl Future<Output = Result<BTreeMap<String, McpServerConfig>>> + Send;
-
-    /// Load a single MCP server by name.
-    fn load_mcp(&self, name: &str) -> impl Future<Output = Result<Option<McpServerConfig>>> + Send;
-
-    /// Create or replace an MCP server config. Keyed by `config.name`.
-    fn upsert_mcp(&self, config: &McpServerConfig) -> impl Future<Output = Result<()>> + Send;
-
-    /// Delete an MCP server by name. `true` if it existed.
-    fn delete_mcp(&self, name: &str) -> impl Future<Output = Result<bool>> + Send;
 }
 
 /// Reject names that won't survive serialization as a TOML table key.

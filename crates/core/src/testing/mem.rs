@@ -1,16 +1,15 @@
 //! In-memory [`Storage`] implementation for tests.
 
 use crate::{
-    AgentConfig, AgentId, DaemonConfig, McpServerConfig,
+    AgentConfig, AgentId, DaemonConfig,
     model::HistoryEntry,
     storage::{
-        ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary, Skill,
-        Storage, validate_table_name,
+        ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage,
     },
 };
 use anyhow::Result;
 use parking_lot::Mutex;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 /// Per-session state in the in-memory backend.
 #[derive(Clone)]
@@ -28,7 +27,6 @@ pub struct InMemoryStorage {
     next_session_seq: Mutex<u32>,
     agents: Mutex<HashMap<String, (AgentConfig, String)>>,
     config: Mutex<DaemonConfig>,
-    mcps: Mutex<BTreeMap<String, McpServerConfig>>,
 }
 
 impl Default for InMemoryStorage {
@@ -39,7 +37,6 @@ impl Default for InMemoryStorage {
             next_session_seq: Mutex::new(0),
             agents: Mutex::new(HashMap::new()),
             config: Mutex::new(DaemonConfig::default()),
-            mcps: Mutex::new(BTreeMap::new()),
         }
     }
 }
@@ -280,25 +277,5 @@ impl Storage for InMemoryStorage {
 
     async fn scaffold(&self, _default_model: &str) -> Result<()> {
         Ok(())
-    }
-
-    // ── MCP servers ────────────────────────────────────────────────
-
-    async fn list_mcps(&self) -> Result<BTreeMap<String, McpServerConfig>> {
-        Ok(self.mcps.lock().clone())
-    }
-
-    async fn load_mcp(&self, name: &str) -> Result<Option<McpServerConfig>> {
-        Ok(self.mcps.lock().get(name).cloned())
-    }
-
-    async fn upsert_mcp(&self, config: &McpServerConfig) -> Result<()> {
-        validate_table_name("mcp", &config.name)?;
-        self.mcps.lock().insert(config.name.clone(), config.clone());
-        Ok(())
-    }
-
-    async fn delete_mcp(&self, name: &str) -> Result<bool> {
-        Ok(self.mcps.lock().remove(name).is_some())
     }
 }

@@ -14,33 +14,37 @@ use wcore::protocol::message::*;
 fn mcp_event_to_msg(event: McpEvent) -> McpEventMsg {
     let now = chrono::Utc::now().to_rfc3339();
     match event {
-        McpEvent::Connecting { name } => McpEventMsg {
+        McpEvent::Connecting { agent, name } => McpEventMsg {
             kind: McpEventKind::Connecting.into(),
             name,
             tools: Vec::new(),
             error: String::new(),
             timestamp: now,
+            agent,
         },
-        McpEvent::Connected { name, tools } => McpEventMsg {
+        McpEvent::Connected { agent, name, tools } => McpEventMsg {
             kind: McpEventKind::Connected.into(),
             name,
             tools,
             error: String::new(),
             timestamp: now,
+            agent,
         },
-        McpEvent::Failed { name, error } => McpEventMsg {
+        McpEvent::Failed { agent, name, error } => McpEventMsg {
             kind: McpEventKind::Failed.into(),
             name,
             tools: Vec::new(),
             error,
             timestamp: now,
+            agent,
         },
-        McpEvent::Disconnected { name } => McpEventMsg {
+        McpEvent::Disconnected { agent, name } => McpEventMsg {
             kind: McpEventKind::Disconnected.into(),
             name,
             tools: Vec::new(),
             error: String::new(),
             timestamp: now,
+            agent,
         },
     }
 }

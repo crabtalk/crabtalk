@@ -64,8 +64,9 @@ pub struct McpResource {
     pub auto_restart: bool,
     /// HTTP URL for streamable HTTP transport.
     pub url: Option<String>,
-    /// Whether this server requires OAuth authentication.
-    pub auth: bool,
+    /// Full `Authorization` header value (e.g. `"Bearer ..."`) attached
+    /// to every HTTP-transport request. Ignored for stdio transports.
+    pub auth: Option<String>,
 }
 
 impl Default for McpResource {
@@ -77,7 +78,7 @@ impl Default for McpResource {
             env: BTreeMap::new(),
             auto_restart: true,
             url: None,
-            auth: false,
+            auth: None,
         }
     }
 }
@@ -92,7 +93,7 @@ impl McpResource {
             env: self.env.clone(),
             auto_restart: self.auto_restart,
             url: self.url.clone(),
-            auth: self.auth,
+            auth: self.auth.clone(),
         }
     }
 }

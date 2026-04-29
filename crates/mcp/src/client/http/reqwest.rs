@@ -6,14 +6,16 @@ use anyhow::{Context, Result, bail};
 pub struct HttpTransport {
     client: reqwest::Client,
     url: String,
+    auth: Option<String>,
     session_id: Option<String>,
 }
 
 impl HttpTransport {
-    pub fn new(url: &str) -> Self {
+    pub fn new(url: &str, auth: Option<String>) -> Self {
         Self {
             client: reqwest::Client::new(),
             url: url.to_string(),
+            auth,
             session_id: None,
         }
     }
@@ -24,6 +26,9 @@ impl HttpTransport {
             .post(self.url.as_str())
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream");
+        if let Some(auth) = self.auth.as_deref() {
+            req = req.header("Authorization", auth);
+        }
         if let Some(sid) = self.session_id.as_deref() {
             req = req.header("Mcp-Session-Id", sid);
         }
@@ -59,6 +64,9 @@ impl HttpTransport {
             .client
             .post(self.url.as_str())
             .header("Content-Type", "application/json");
+        if let Some(auth) = self.auth.as_deref() {
+            req = req.header("Authorization", auth);
+        }
         if let Some(sid) = self.session_id.as_deref() {
             req = req.header("Mcp-Session-Id", sid);
         }

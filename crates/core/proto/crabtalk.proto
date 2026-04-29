@@ -244,16 +244,24 @@ message ListConversationsMsg {
   string sender = 2;
 }
 
-message ListMcpsMsg {}
+message ListMcpsMsg {
+  // Optional — when non-empty, list only this agent's declared MCPs.
+  // Empty = union view across every registered agent.
+  string agent = 1;
+}
 
 message UpsertMcpMsg {
   // JSON-encoded `McpServerConfig`. The MCP name lives inside the
   // payload — there is no separate identity field.
   string config = 1;
+  // Required — the agent whose `mcps` list is being modified.
+  string agent = 2;
 }
 
 message DeleteMcpMsg {
   string name = 1;
+  // Required — the agent whose `mcps` list is being modified.
+  string agent = 2;
 }
 
 message SetActiveModelMsg {
@@ -614,7 +622,9 @@ message McpInfo {
   repeated string args = 3;
   map<string, string> env = 4;
   string url = 5;
-  bool auth = 6;
+  // Full `Authorization` header value (e.g. `"Bearer eyJ..."`) sent on
+  // every HTTP-transport request. Empty string = no header.
+  string auth = 6;
   string source = 7;
   bool auto_restart = 8;
   reserved 9;
@@ -647,6 +657,10 @@ message McpEventMsg {
   // Populated for FAILED.
   string error = 4;
   string timestamp = 5;
+  // The agent whose declaration produced this event. Identical configs
+  // across agents share one peer, but events still fire per (agent, name)
+  // so consumers see lifecycle from each owner's point of view.
+  string agent = 6;
 }
 
 // ── Plugin Events ───────────────────────────────────────────────

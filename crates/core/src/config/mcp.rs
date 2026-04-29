@@ -20,8 +20,10 @@ pub struct McpServerConfig {
     /// HTTP URL for streamable HTTP transport. When set, the daemon connects
     /// via HTTP instead of spawning a child process.
     pub url: Option<String>,
-    /// Whether this server requires OAuth authentication.
-    pub auth: bool,
+    /// Full `Authorization` header value to send on every HTTP-transport
+    /// request, e.g. `"Bearer eyJ..."`. Caller picks the scheme. Ignored
+    /// for stdio transports.
+    pub auth: Option<String>,
 }
 
 impl Default for McpServerConfig {
@@ -33,7 +35,7 @@ impl Default for McpServerConfig {
             env: BTreeMap::new(),
             auto_restart: true,
             url: None,
-            auth: false,
+            auth: None,
         }
     }
 }
