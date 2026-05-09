@@ -268,9 +268,7 @@ async fn run_event_loop(
                                     if let (Some(agent), Some(sender)) = (app.ask_agent.take(), app.ask_sender.take()) {
                                         let conn_info = app.conn_info.clone();
                                         tokio::spawn(async move {
-                                            if let Ok(mut conn) = sdk::connect_from(&conn_info).await {
-                                                let _ = conn.reply_to_ask(agent, sender, reply).await;
-                                            }
+                                            let _ = conn_info.reply_to_ask(agent, sender, reply).await;
                                         });
                                     }
                                     app.ask_state = None;
@@ -363,9 +361,7 @@ async fn run_event_loop(
                                             let agent = app.agent.clone();
                                             let sender = app.os_user.clone();
                                             tokio::spawn(async move {
-                                                if let Ok(mut runner) = sdk::connect_from(&conn_info).await {
-                                                    let _ = runner.kill_conversation(agent, sender).await;
-                                                }
+                                                let _ = conn_info.kill_conversation(agent, sender).await;
                                             });
                                             app.renderer.buffer.push(ChatEntry::Text(vec![
                                                 welcome_line(&app.agent, app.model_name.as_deref()),

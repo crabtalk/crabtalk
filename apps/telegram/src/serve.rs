@@ -9,9 +9,7 @@ use std::collections::HashMap;
 use teloxide::prelude::*;
 use teloxide::types::{ChatAction, InlineKeyboardButton, InlineKeyboardMarkup};
 use tokio::sync::mpsc;
-use wcore::protocol::message::{
-    AskQuestion, ClientMessage, ReplyToAsk, ServerMessage, StreamMsg, server_message,
-};
+use wcore::protocol::message::{AskQuestion, StreamMsg};
 
 /// Run the Telegram app service.
 pub async fn run(conn_info: ConnectionInfo, config: &TelegramConfig) -> anyhow::Result<()> {
@@ -209,21 +207,15 @@ async fn tg_stream(
 ) -> StreamResult {
     use std::time::Duration;
 
-    let client_msg = ClientMessage::from(StreamMsg {
+    let req = StreamMsg {
         agent: agent.to_string(),
         content: content.to_string(),
         sender: Some(sender.to_string()),
         cwd: None,
         guest: None,
         tool_choice: None,
-    });
-    let mut server_rx = match conn_info.send(client_msg).await {
-        Ok(rx) => rx,
-        Err(e) => {
-            tracing::warn!(agent, chat_id, "failed to connect to daemon: {e}");
-            return StreamResult::Failed;
-        }
     };
+    let mut event_rx = conn_info.stream(req);
     let mut acc = StreamAccumulator::new();
     let mut msg_id: Option<teloxide::types::MessageId> = None;
     let mut last_sent_len: usize = 0;
@@ -248,9 +240,9 @@ async fn tg_stream(
 
     loop {
         tokio::select! {
-            server_msg = server_rx.recv() => {
-                match server_msg {
-                    Some(ServerMessage { msg: Some(server_message::Msg::Stream(event)) }) => {
+            ev = event_rx.recv() => {
+                match ev {
+                    Some(Ok(event)) => {
                         acc.push(&event);
 
                         // When ask_user fires, flush text and send inline keyboard.
@@ -291,11 +283,10 @@ async fn tg_stream(
                             break;
                         }
                     }
-                    Some(ServerMessage { msg: Some(server_message::Msg::Error(err)) }) => {
-                        acc.set_error(err.message);
+                    Some(Err(err)) => {
+                        acc.set_error(err.to_string());
                         break;
                     }
-                    Some(_) => {}
                     None => break,
                 }
             }
@@ -322,12 +313,9 @@ async fn tg_stream(
                     };
 
                     if let Some(json_reply) = resolved {
-                        let reply_msg = ClientMessage::from(ReplyToAsk {
-                            agent: agent.to_string(),
-                            sender: sender.to_string(),
-                            content: json_reply,
-                        });
-                        let _ = conn_info.send(reply_msg).await;
+                        let _ = conn_info
+                            .reply_to_ask(agent.to_string(), sender.to_string(), json_reply)
+                            .await;
                         pending_ask_questions = None;
                         multi_select_state.clear();
                     }

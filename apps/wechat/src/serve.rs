@@ -5,9 +5,7 @@ use crate::{ContextTokens, UserIdMap};
 use sdk::{ConnectionInfo, Message, StreamAccumulator, StreamResult};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::mpsc;
-use wcore::protocol::message::{
-    ClientMessage, ReplyToAsk, ServerMessage, StreamMsg, server_message,
-};
+use wcore::protocol::message::StreamMsg;
 
 /// Run the WeChat app service.
 pub async fn run(conn_info: ConnectionInfo, config: &WechatConfig) -> anyhow::Result<()> {
@@ -166,28 +164,22 @@ async fn wx_stream(
     user_ids: &UserIdMap,
 ) -> StreamResult {
     tracing::info!(agent, chat_id, %sender, "starting stream");
-    let client_msg = ClientMessage::from(StreamMsg {
+    let req = StreamMsg {
         agent: agent.to_string(),
         content: content.to_string(),
         sender: Some(sender.to_string()),
         cwd: None,
         guest: None,
         tool_choice: None,
-    });
-    let mut server_rx = match conn_info.send(client_msg).await {
-        Ok(rx) => rx,
-        Err(e) => {
-            tracing::warn!(agent, chat_id, "failed to connect to daemon: {e}");
-            return StreamResult::Failed;
-        }
     };
+    let mut event_rx = conn_info.stream(req);
     let mut acc = StreamAccumulator::new();
 
     loop {
         tokio::select! {
-            server_msg = server_rx.recv() => {
-                match server_msg {
-                    Some(ServerMessage { msg: Some(server_message::Msg::Stream(event)) }) => {
+            ev = event_rx.recv() => {
+                match ev {
+                    Some(Ok(event)) => {
                         acc.push(&event);
 
                         // Handle ask_user: send question text, accept free-text reply.
@@ -214,23 +206,19 @@ async fn wx_stream(
                             break;
                         }
                     }
-                    Some(ServerMessage { msg: Some(server_message::Msg::Error(err)) }) => {
-                        acc.set_error(err.message);
+                    Some(Err(err)) => {
+                        acc.set_error(err.to_string());
                         break;
                     }
-                    Some(_) => {}
                     None => break,
                 }
             }
             reply = reply_rx.recv() => {
                 if let Some(reply_content) = reply {
                     // Free-text reply for ask_user.
-                    let reply_msg = ClientMessage::from(ReplyToAsk {
-                        agent: agent.to_string(),
-                        sender: sender.to_string(),
-                        content: reply_content,
-                    });
-                    let _ = conn_info.send(reply_msg).await;
+                    let _ = conn_info
+                        .reply_to_ask(agent.to_string(), sender.to_string(), reply_content)
+                        .await;
                 }
             }
         }
