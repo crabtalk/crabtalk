@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-963d9a59.js";
+            window.path_to_searchindex_js = "searchindex-44fbef21.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-1cc83451.js"></script>
@@ -1161,10 +1161,10 @@ invocation)?</li>
 <li>Feature Name: Cron Scheduler</li>
 <li>Start Date: 2026-03-20</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/80">#80</a>, <a href="https://github.com/crabtalk/crabtalk/issues/183">#183</a></li>
-<li>Crates: <code>services/cron</code></li>
+<li>Crates: <code>apps/cron</code></li>
 </ul>
 <h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
-<p>Cron triggers skills into agents on a schedule. The scheduler runs as a standalone service outside the daemon and speaks the existing <code>StreamMsg</code> protocol — no cron-specific daemon knowledge, no cron-specific wire messages. The <code>services/cron</code> crate is desktop-oriented; alternate consumers (e.g. multi-tenant cloud schedulers) model their own entry shape, storage, and time-zone semantics — the shared surface between them is just the daemon’s <code>StreamMsg</code> protocol.</p>
+<p>Cron triggers skills into agents on a schedule. The scheduler runs as a standalone service outside the daemon and speaks the existing <code>StreamMsg</code> protocol — no cron-specific daemon knowledge, no cron-specific wire messages. The <code>apps/cron</code> crate is desktop-oriented; alternate consumers (e.g. multi-tenant cloud schedulers) model their own entry shape, storage, and time-zone semantics — the shared surface between them is just the daemon’s <code>StreamMsg</code> protocol.</p>
 <h2 id="motivation-6"><a class="header" href="#motivation-6">Motivation</a></h2>
 <p>Agents need periodic behavior — checking feeds, running maintenance, sending reminders. Time-based triggering is one form of <em>trigger</em>; chat messages, webhooks, and file-watch events are others. All of them produce the same shape: something happens → an agent runs with a payload. Cron is the first concrete implementation of this trigger role and deliberately uses the same <code>StreamMsg</code> path that chat gateways use.</p>
 <p>The session already carries the agent and sender. A cron entry needs the skill to fire, the agent to run, the sender to attribute it to, and the schedule expression — nothing else.</p>
@@ -1821,7 +1821,7 @@ crabup &lt;name&gt; stop
 crabup &lt;name&gt; restart
 crabup &lt;name&gt; logs [-f]
 </code></pre>
-<p><code>&lt;name&gt;</code> is a short name from the resolution table below, so <code>crabup daemon start</code>, <code>crabup telegram start</code>, <code>crabup search logs -f</code>. Each short name is both a pull/rm target and a service-command namespace. <code>pull</code>/<code>rm</code> mirror the existing <code>crabtalkd pull</code>/<code>rm</code> verbs for runtime plugins so the vocabulary is consistent across the user’s two install surfaces (binary-level and runtime-plugin-level).</p>
+<p><code>&lt;name&gt;</code> is a short name from the resolution table below, so <code>crabup daemon start</code>, <code>crabup telegram start</code>, <code>crabup search logs -f</code>. Each short name is both a pull/rm target and a service-command namespace. <code>pull</code>/<code>rm</code> install and remove crabtalk binaries via <code>cargo install</code>; <code>pkg add</code>/<code>pkg remove</code> install and remove crabtalk packages (manifests + cached source repos), so the user has one tool for both install surfaces.</p>
 <p><code>crabup update</code> is always batch — it bumps every installed <code>crabtalk-*</code> crate to the latest version on crates.io, same shape as <code>rustup update</code> over its components. There is no per-component update verb: if you only want to change one crate, that’s <code>crabup pull &lt;name&gt; --version &lt;X&gt;</code>. This makes “keep the set aligned” the default behavior of the only tool users will reach for when they want newer bits, without needing atomic-set machinery to enforce it.</p>
 <p>That’s it. No <code>pin</code>, no <code>doctor</code>, no <code>component add</code> vs <code>pull</code> split — <code>cargo install</code> already handles versions; a component is just a crate you can run as a service. No atomic-set enforcement; if a user mixes versions and breaks the wire, the fix is <code>crabup pull &lt;name&gt; --version &lt;matching&gt;</code> for the mismatched one or <code>crabup update</code> to bump everything.</p>
 <h3 id="pull-is-a-pass-through"><a class="header" href="#pull-is-a-pass-through"><code>pull</code> is a pass-through</a></h3>
@@ -1840,8 +1840,8 @@ crabup &lt;name&gt; logs [-f]
 <tr><td><code>tui</code></td><td><code>crabtalk-tui</code></td><td>REPL client</td></tr>
 <tr><td><code>telegram</code></td><td><code>crabtalk-telegram</code></td><td>Telegram gateway</td></tr>
 <tr><td><code>wechat</code></td><td><code>crabtalk-wechat</code></td><td>WeChat gateway</td></tr>
-<tr><td><code>search</code></td><td><code>crabtalk-search</code></td><td>meta-search plugin</td></tr>
-<tr><td><code>outlook</code></td><td><code>crabtalk-outlook</code></td><td>Outlook plugin</td></tr>
+<tr><td><code>search</code></td><td><code>crabtalk-search</code></td><td>meta-search service</td></tr>
+<tr><td><code>cron</code></td><td><code>crabtalk-cron</code></td><td>scheduler</td></tr>
 </tbody>
 </table>
 </div>
@@ -1883,7 +1883,7 @@ crabup &lt;name&gt; logs [-f]
 </tbody>
 </table>
 </div>
-<p>After this, <code>crabtalkd</code>’s CLI is <code>run</code> (the long-running process the service unit invokes, equivalent to today’s <code>--foreground</code>), <code>reload</code>, <code>events</code>, and the runtime plugin ops (<code>pull</code>/<code>rm</code>, which are live-daemon operations, not install).</p>
+<p>After this, <code>crabtalkd</code>’s CLI is <code>run</code> (the long-running process the service unit invokes, equivalent to today’s <code>--foreground</code>), <code>reload</code>, and <code>events</code>. Package install/uninstall live in crabup as <code>pkg add</code>/<code>pkg remove</code>, not in the daemon CLI.</p>
 <h2 id="alternatives-10"><a class="header" href="#alternatives-10">Alternatives</a></h2>
 <p><strong>Plain <code>cargo install</code>, no crabup.</strong> Installs are one command, but users hand-write <code>launchd</code>/<code>systemd</code> units per binary, and <code>ps</code>/<code>logs</code> across services don’t exist. The service-management gap is the whole reason crabup is a separate tool.</p>
 <p><strong>A real package manager with its own manifest, signed pre-built binaries, version coordination, atomic-set installs.</strong> Previously drafted; cut. Infrastructure we don’t need — crates.io is the registry, workspace-version inheritance is the coordination, and the non-developer audience that would need pre-built binaries doesn’t exist yet. If that audience materializes, pre-built becomes a second <code>crabup pull</code> backend alongside the <code>cargo install</code> path.</p>
@@ -2176,13 +2176,13 @@ pub struct WindowItem {
 <p><strong>Keep the global registry, add per-agent overrides.</strong> Allow <code>AgentConfig.mcps</code> to carry inline overrides on top of name references. Rejected because it doubles the configuration surface — every consumer has to handle “which wins, the override or the registry?” — without solving forkability. Forking an agent still depends on the destination daemon having the right names registered.</p>
 <p><strong>SecretResolver trait in this repo.</strong> Earlier draft. Cut because the daemon can stay secret-unaware: cloud handles canonical-vs-resolved at its control plane and only writes resolved configs into the daemon. Adding a trait here for a default that just reads env vars is complexity for a problem we don’t have.</p>
 <p><strong>Generic on <code>Daemon</code> for the resolver.</strong> Even if a resolver lived in this repo, adding a second type parameter to <code>Daemon&lt;P&gt;</code> compounds complexity per the no-generics-for-future-use rule. Not worth it for a hypothetical hook.</p>
-<p><strong>Plugin-provided MCPs as agent templates.</strong> Plugins are being removed, so this collapses. Future plugin-like artifacts (if any) will compose at the agent level rather than at a separate MCP-registry level.</p>
+<p><strong>Package-provided MCPs as agent templates.</strong> Package install/uninstall lives in crabup, not the daemon, so this collapses. Future package-like artifacts compose at the agent level rather than at a separate MCP-registry level.</p>
 <h2 id="out-of-scope-1"><a class="header" href="#out-of-scope-1">Out of scope</a></h2>
 <ul>
 <li>Secret resolution, vaulting, or <code>${VAR}</code> interpolation. Cloud’s problem, not the daemon’s.</li>
 <li>Auto-restart behavior for failed peers. Lifecycle events from PR #192 surface failures; whether a client retries is a client decision.</li>
 <li>Discovery of port-file MCPs. Today <code>McpHandler</code> auto-connects services that drop a <code>*.port</code> file under <code>~/.crabtalk/run/</code>. That mechanism continues to work, but discovered servers now register against a synthetic per-process “discovery agent” (or are exposed only on the daemon-internal dispatch path) — the exact shape is a follow-up.</li>
-<li>Plugin MCPs. Plugins are being removed; no migration needed.</li>
+<li>Package MCPs. Package install lives in crabup; no daemon-side migration needed.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="superseded-rfcs"><a class="header" href="#superseded-rfcs">Superseded RFCs</a></h1>

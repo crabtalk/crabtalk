@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-963d9a59.js";
+            window.path_to_searchindex_js = "../searchindex-44fbef21.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-1cc83451.js"></script>
@@ -239,13 +239,13 @@
 <p><strong>Keep the global registry, add per-agent overrides.</strong> Allow <code>AgentConfig.mcps</code> to carry inline overrides on top of name references. Rejected because it doubles the configuration surface — every consumer has to handle “which wins, the override or the registry?” — without solving forkability. Forking an agent still depends on the destination daemon having the right names registered.</p>
 <p><strong>SecretResolver trait in this repo.</strong> Earlier draft. Cut because the daemon can stay secret-unaware: cloud handles canonical-vs-resolved at its control plane and only writes resolved configs into the daemon. Adding a trait here for a default that just reads env vars is complexity for a problem we don’t have.</p>
 <p><strong>Generic on <code>Daemon</code> for the resolver.</strong> Even if a resolver lived in this repo, adding a second type parameter to <code>Daemon&lt;P&gt;</code> compounds complexity per the no-generics-for-future-use rule. Not worth it for a hypothetical hook.</p>
-<p><strong>Plugin-provided MCPs as agent templates.</strong> Plugins are being removed, so this collapses. Future plugin-like artifacts (if any) will compose at the agent level rather than at a separate MCP-registry level.</p>
+<p><strong>Package-provided MCPs as agent templates.</strong> Package install/uninstall lives in crabup, not the daemon, so this collapses. Future package-like artifacts compose at the agent level rather than at a separate MCP-registry level.</p>
 <h2 id="out-of-scope"><a class="header" href="#out-of-scope">Out of scope</a></h2>
 <ul>
 <li>Secret resolution, vaulting, or <code>${VAR}</code> interpolation. Cloud’s problem, not the daemon’s.</li>
 <li>Auto-restart behavior for failed peers. Lifecycle events from PR #192 surface failures; whether a client retries is a client decision.</li>
 <li>Discovery of port-file MCPs. Today <code>McpHandler</code> auto-connects services that drop a <code>*.port</code> file under <code>~/.crabtalk/run/</code>. That mechanism continues to work, but discovered servers now register against a synthetic per-process “discovery agent” (or are exposed only on the daemon-internal dispatch path) — the exact shape is a follow-up.</li>
-<li>Plugin MCPs. Plugins are being removed; no migration needed.</li>
+<li>Package MCPs. Package install lives in crabup; no daemon-side migration needed.</li>
 </ul>
 
                     </main>

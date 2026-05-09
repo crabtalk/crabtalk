@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-963d9a59.js";
+            window.path_to_searchindex_js = "../searchindex-44fbef21.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-1cc83451.js"></script>
@@ -185,10 +185,10 @@
 <li>Feature Name: Cron Scheduler</li>
 <li>Start Date: 2026-03-20</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/80">#80</a>, <a href="https://github.com/crabtalk/crabtalk/issues/183">#183</a></li>
-<li>Crates: <code>services/cron</code></li>
+<li>Crates: <code>apps/cron</code></li>
 </ul>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
-<p>Cron triggers skills into agents on a schedule. The scheduler runs as a standalone service outside the daemon and speaks the existing <code>StreamMsg</code> protocol — no cron-specific daemon knowledge, no cron-specific wire messages. The <code>services/cron</code> crate is desktop-oriented; alternate consumers (e.g. multi-tenant cloud schedulers) model their own entry shape, storage, and time-zone semantics — the shared surface between them is just the daemon’s <code>StreamMsg</code> protocol.</p>
+<p>Cron triggers skills into agents on a schedule. The scheduler runs as a standalone service outside the daemon and speaks the existing <code>StreamMsg</code> protocol — no cron-specific daemon knowledge, no cron-specific wire messages. The <code>apps/cron</code> crate is desktop-oriented; alternate consumers (e.g. multi-tenant cloud schedulers) model their own entry shape, storage, and time-zone semantics — the shared surface between them is just the daemon’s <code>StreamMsg</code> protocol.</p>
 <h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
 <p>Agents need periodic behavior — checking feeds, running maintenance, sending reminders. Time-based triggering is one form of <em>trigger</em>; chat messages, webhooks, and file-watch events are others. All of them produce the same shape: something happens → an agent runs with a payload. Cron is the first concrete implementation of this trigger role and deliberately uses the same <code>StreamMsg</code> path that chat gateways use.</p>
 <p>The session already carries the agent and sender. A cron entry needs the skill to fire, the agent to run, the sender to attribute it to, and the schedule expression — nothing else.</p>

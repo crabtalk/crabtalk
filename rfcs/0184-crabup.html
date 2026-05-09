@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-963d9a59.js";
+            window.path_to_searchindex_js = "../searchindex-44fbef21.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-1cc83451.js"></script>
@@ -211,7 +211,7 @@ crabup &lt;name&gt; stop
 crabup &lt;name&gt; restart
 crabup &lt;name&gt; logs [-f]
 </code></pre>
-<p><code>&lt;name&gt;</code> is a short name from the resolution table below, so <code>crabup daemon start</code>, <code>crabup telegram start</code>, <code>crabup search logs -f</code>. Each short name is both a pull/rm target and a service-command namespace. <code>pull</code>/<code>rm</code> mirror the existing <code>crabtalkd pull</code>/<code>rm</code> verbs for runtime plugins so the vocabulary is consistent across the user’s two install surfaces (binary-level and runtime-plugin-level).</p>
+<p><code>&lt;name&gt;</code> is a short name from the resolution table below, so <code>crabup daemon start</code>, <code>crabup telegram start</code>, <code>crabup search logs -f</code>. Each short name is both a pull/rm target and a service-command namespace. <code>pull</code>/<code>rm</code> install and remove crabtalk binaries via <code>cargo install</code>; <code>pkg add</code>/<code>pkg remove</code> install and remove crabtalk packages (manifests + cached source repos), so the user has one tool for both install surfaces.</p>
 <p><code>crabup update</code> is always batch — it bumps every installed <code>crabtalk-*</code> crate to the latest version on crates.io, same shape as <code>rustup update</code> over its components. There is no per-component update verb: if you only want to change one crate, that’s <code>crabup pull &lt;name&gt; --version &lt;X&gt;</code>. This makes “keep the set aligned” the default behavior of the only tool users will reach for when they want newer bits, without needing atomic-set machinery to enforce it.</p>
 <p>That’s it. No <code>pin</code>, no <code>doctor</code>, no <code>component add</code> vs <code>pull</code> split — <code>cargo install</code> already handles versions; a component is just a crate you can run as a service. No atomic-set enforcement; if a user mixes versions and breaks the wire, the fix is <code>crabup pull &lt;name&gt; --version &lt;matching&gt;</code> for the mismatched one or <code>crabup update</code> to bump everything.</p>
 <h3 id="pull-is-a-pass-through"><a class="header" href="#pull-is-a-pass-through"><code>pull</code> is a pass-through</a></h3>
@@ -230,8 +230,8 @@ crabup &lt;name&gt; logs [-f]
 <tr><td><code>tui</code></td><td><code>crabtalk-tui</code></td><td>REPL client</td></tr>
 <tr><td><code>telegram</code></td><td><code>crabtalk-telegram</code></td><td>Telegram gateway</td></tr>
 <tr><td><code>wechat</code></td><td><code>crabtalk-wechat</code></td><td>WeChat gateway</td></tr>
-<tr><td><code>search</code></td><td><code>crabtalk-search</code></td><td>meta-search plugin</td></tr>
-<tr><td><code>outlook</code></td><td><code>crabtalk-outlook</code></td><td>Outlook plugin</td></tr>
+<tr><td><code>search</code></td><td><code>crabtalk-search</code></td><td>meta-search service</td></tr>
+<tr><td><code>cron</code></td><td><code>crabtalk-cron</code></td><td>scheduler</td></tr>
 </tbody>
 </table>
 </div>
@@ -273,7 +273,7 @@ crabup &lt;name&gt; logs [-f]
 </tbody>
 </table>
 </div>
-<p>After this, <code>crabtalkd</code>’s CLI is <code>run</code> (the long-running process the service unit invokes, equivalent to today’s <code>--foreground</code>), <code>reload</code>, <code>events</code>, and the runtime plugin ops (<code>pull</code>/<code>rm</code>, which are live-daemon operations, not install).</p>
+<p>After this, <code>crabtalkd</code>’s CLI is <code>run</code> (the long-running process the service unit invokes, equivalent to today’s <code>--foreground</code>), <code>reload</code>, and <code>events</code>. Package install/uninstall live in crabup as <code>pkg add</code>/<code>pkg remove</code>, not in the daemon CLI.</p>
 <h2 id="alternatives"><a class="header" href="#alternatives">Alternatives</a></h2>
 <p><strong>Plain <code>cargo install</code>, no crabup.</strong> Installs are one command, but users hand-write <code>launchd</code>/<code>systemd</code> units per binary, and <code>ps</code>/<code>logs</code> across services don’t exist. The service-management gap is the whole reason crabup is a separate tool.</p>
 <p><strong>A real package manager with its own manifest, signed pre-built binaries, version coordination, atomic-set installs.</strong> Previously drafted; cut. Infrastructure we don’t need — crates.io is the registry, workspace-version inheritance is the coordination, and the non-developer audience that would need pre-built binaries doesn’t exist yet. If that audience materializes, pre-built becomes a second <code>crabup pull</code> backend alongside the <code>cargo install</code> path.</p>
