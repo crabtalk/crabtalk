@@ -851,12 +851,10 @@ dependencies = [
  "crabtalk",
  "crabtalk-core",
  "crabtalk-transport",
- "dialoguer",
  "futures-core",
  "futures-util",
  "serde_json",
  "tokio",
- "toml_edit",
  "tracing",
  "tracing-subscriber",
 ]

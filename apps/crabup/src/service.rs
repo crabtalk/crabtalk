@@ -46,6 +46,9 @@ impl Entry {
             println!("{} is already running", self.short);
             return Ok(());
         }
+        if self.short == "daemon" {
+            ensure_daemon_configured()?;
+        }
         let binary = self.require_binary()?;
         let rendered = command::render_service_template(&spec, &binary);
         command::install(&rendered, spec.label)?;
@@ -67,6 +70,9 @@ impl Entry {
 
     pub fn restart(&self) -> Result<()> {
         let spec = self.spec()?;
+        if self.short == "daemon" {
+            ensure_daemon_configured()?;
+        }
         if command::is_installed(spec.label) {
             command::uninstall(spec.label)?;
         }
@@ -83,4 +89,29 @@ impl Entry {
         }
         command::view_logs(self.short, tail_args)
     }
+}
+
+/// Refuse to start the daemon until an LLM endpoint is configured. The daemon
+/// itself only logs a warning at startup; the service unit would happily run
+/// with no model list, which is rarely what the user wants. Failing here gives
+/// them a single clear next step.
+fn ensure_daemon_configured() -> Result<()> {
+    let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
+    let base_url = std::fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|raw| raw.parse::<toml::Value>().ok())
+        .and_then(|doc| {
+            doc.get("llm")
+                .and_then(|llm| llm.get("base_url"))
+                .and_then(|v| v.as_str())
+                .map(str::to_owned)
+        })
+        .unwrap_or_default();
+    if base_url.trim().is_empty() {
+        bail!(
+            "no LLM endpoint configured — run `crabup login` or edit {}",
+            config_path.display()
+        );
+    }
+    Ok(())
 }
