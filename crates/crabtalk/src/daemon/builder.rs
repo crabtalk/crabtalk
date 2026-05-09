@@ -334,7 +334,7 @@ impl<P: Provider + 'static> Daemon<P> {
         }
 
         // Package agents are disk-only — never persisted into storage —
-        // so updates flow through `crabup add`, not the daemon mutating
+        // so updates flow through `crabup pkg add`, not the daemon mutating
         // settings.toml.
         for (name, agent) in &dirs.package_agents {
             if stored_names.contains(name) {

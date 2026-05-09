@@ -48,6 +48,19 @@ pub enum Command {
     /// List running crabtalk services.
     Ps,
 
+    /// Manage crabtalk packages (skills + MCPs).
+    Pkg {
+        #[command(subcommand)]
+        action: PkgAction,
+    },
+
+    /// `<name> <start|stop|restart|logs>` — service ops on a registry entry.
+    #[command(external_subcommand)]
+    Service(Vec<String>),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PkgAction {
     /// Install a crabtalk package.
     Add {
         /// Package short name.
@@ -67,10 +80,36 @@ pub enum Command {
         /// Package short name.
         name: String,
     },
+}
 
-    /// `<name> <start|stop|restart|logs>` — service ops on a registry entry.
-    #[command(external_subcommand)]
-    Service(Vec<String>),
+impl PkgAction {
+    async fn run(self) -> Result<()> {
+        match self {
+            Self::Add {
+                name,
+                branch,
+                path,
+                force,
+            } => {
+                package::install(
+                    &name,
+                    branch.as_deref(),
+                    path.as_deref(),
+                    force,
+                    |msg| println!("  {msg}"),
+                    |msg| println!("  {msg}"),
+                )
+                .await?;
+                println!("Done: {name}");
+                Ok(())
+            }
+            Self::Remove { name } => {
+                package::uninstall(&name, |msg| println!("  {msg}")).await?;
+                println!("Done: {name}");
+                Ok(())
+            }
+        }
+    }
 }
 
 #[derive(Parser, Debug)]
@@ -154,6 +193,7 @@ impl Cli {
                 Ok(())
             }
             Command::Ps => ps::run(),
+            Command::Pkg { action } => action.run().await,
             Command::Service(args) => {
                 let mut iter = args.into_iter();
                 let name = iter.next().ok_or_else(|| anyhow!("missing service name"))?;
@@ -161,29 +201,6 @@ impl Cli {
                     Entry::by_short(&name).ok_or_else(|| anyhow!("unknown service: {name}"))?;
                 let svc = ServiceArgs::try_parse_from(iter).unwrap_or_else(|e| e.exit());
                 svc.action.run(entry)
-            }
-            Command::Add {
-                name,
-                branch,
-                path,
-                force,
-            } => {
-                package::install(
-                    &name,
-                    branch.as_deref(),
-                    path.as_deref(),
-                    force,
-                    |msg| println!("  {msg}"),
-                    |msg| println!("  {msg}"),
-                )
-                .await?;
-                println!("Done: {name}");
-                Ok(())
-            }
-            Command::Remove { name } => {
-                package::uninstall(&name, |msg| println!("  {msg}")).await?;
-                println!("Done: {name}");
-                Ok(())
             }
         }
     }
