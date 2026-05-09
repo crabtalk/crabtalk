@@ -88,12 +88,6 @@ pub enum Command {
         /// Package short name.
         name: String,
     },
-    /// Search the crabtalk package registry.
-    Find {
-        /// Match name, description, or keywords. Empty lists everything.
-        #[arg(default_value = "")]
-        query: String,
-    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -183,14 +177,6 @@ impl Cli {
             Command::Remove { name } => {
                 package::uninstall(&name, |msg| println!("  {msg}")).await?;
                 println!("Done: {name}");
-                Ok(())
-            }
-            Command::Find { query } => {
-                let results = package::search(&query).await?;
-                for r in results {
-                    let mark = if r.installed { "✓" } else { " " };
-                    println!("{mark} {} — {}", r.name, r.description);
-                }
                 Ok(())
             }
         }
