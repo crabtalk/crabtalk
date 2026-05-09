@@ -136,8 +136,20 @@ impl Cli {
                 Ok(())
             }
             Command::List => {
-                for krate in list::installed()? {
-                    println!("{krate}");
+                let installed: std::collections::HashSet<String> =
+                    list::installed()?.into_iter().collect();
+                let width = Entry::all()
+                    .iter()
+                    .map(|e| e.short.len())
+                    .max()
+                    .unwrap_or(0);
+                for entry in Entry::all() {
+                    let mark = if installed.contains(entry.krate) {
+                        "(installed)"
+                    } else {
+                        ""
+                    };
+                    println!("{:<width$}  {mark}", entry.short, width = width);
                 }
                 Ok(())
             }

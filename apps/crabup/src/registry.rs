@@ -59,6 +59,11 @@ pub const CRON: Entry = Entry {
 const TABLE: &[&Entry] = &[&DAEMON, &TUI, &TELEGRAM, &WECHAT, &SEARCH, &CRON];
 
 impl Entry {
+    /// All known registry entries.
+    pub fn all() -> &'static [&'static Self] {
+        TABLE
+    }
+
     /// Look up a table entry by short name.
     pub fn by_short(short: &str) -> Option<&'static Self> {
         TABLE.iter().find(|e| e.short == short).copied()
