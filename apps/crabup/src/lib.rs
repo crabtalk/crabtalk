@@ -1,6 +1,6 @@
 //! crabup — package manager for the Crabtalk ecosystem.
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -48,27 +48,6 @@ pub enum Command {
     /// List running crabtalk services.
     Ps,
 
-    /// Daemon service commands.
-    Daemon {
-        #[command(subcommand)]
-        action: ServiceAction,
-    },
-    /// Telegram gateway service commands.
-    Telegram {
-        #[command(subcommand)]
-        action: ServiceAction,
-    },
-    /// WeChat gateway service commands.
-    Wechat {
-        #[command(subcommand)]
-        action: ServiceAction,
-    },
-    /// Search service commands.
-    Search {
-        #[command(subcommand)]
-        action: ServiceAction,
-    },
-
     /// Install a crabtalk package.
     Add {
         /// Package short name.
@@ -88,6 +67,17 @@ pub enum Command {
         /// Package short name.
         name: String,
     },
+
+    /// `<name> <start|stop|restart|logs>` — service ops on a registry entry.
+    #[command(external_subcommand)]
+    Service(Vec<String>),
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "crabup", no_binary_name = true)]
+struct ServiceArgs {
+    #[command(subcommand)]
+    action: ServiceAction,
 }
 
 #[derive(Subcommand, Debug)]
@@ -152,10 +142,14 @@ impl Cli {
                 Ok(())
             }
             Command::Ps => ps::run(),
-            Command::Daemon { action } => action.run(&registry::DAEMON),
-            Command::Telegram { action } => action.run(&registry::TELEGRAM),
-            Command::Wechat { action } => action.run(&registry::WECHAT),
-            Command::Search { action } => action.run(&registry::SEARCH),
+            Command::Service(args) => {
+                let mut iter = args.into_iter();
+                let name = iter.next().ok_or_else(|| anyhow!("missing service name"))?;
+                let entry =
+                    Entry::by_short(&name).ok_or_else(|| anyhow!("unknown service: {name}"))?;
+                let svc = ServiceArgs::try_parse_from(iter).unwrap_or_else(|e| e.exit());
+                svc.action.run(entry)
+            }
             Command::Add {
                 name,
                 branch,
