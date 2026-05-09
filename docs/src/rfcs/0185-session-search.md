@@ -11,7 +11,7 @@
 
 ## Summary
 
-Collapse the topic subsystem. Sessions persist unconditionally, always get auto-titled, and carry a small runtime-managed meta blob. Recall gains a second BM25 index — this one over conversation messages — returning windowed excerpts with bounded size. The runtime exposes narrow session primitives and two search tools; client UX owns `/clear`, `/new`, `/compact`, and session routing. The "topic" concept dissolves: content-derived session search (BM25) replaces tag-based grouping, and any curated grouping that survives is a client concern.
+Collapse the topic subsystem. Sessions persist unconditionally and carry a small runtime-managed meta blob. Recall gains a second BM25 index — this one over conversation messages — returning windowed excerpts with bounded size. The runtime exposes narrow session primitives and two search tools; client UX owns `/clear`, `/new`, `/compact`, titling, and session routing. The "topic" concept dissolves: content-derived session search (BM25) replaces tag-based grouping, and any curated grouping that survives is a client concern.
 
 ## Motivation
 
@@ -23,7 +23,7 @@ The reframe driving this RFC: *a topic is not a thing*. It was a name trying to 
 
 ### Layering: runtime vs. client
 
-The runtime's job is to provide mechanical primitives. UX decisions (when to clear, when to compact for cleanliness, which session to route a message to, how to surface archival browsing) belong one layer up in the client. The one exception is overflow compaction — a context-window overflow is a hard constraint the client can't see coming, so the runtime keeps automatic compaction on overflow as a safety net. Every other form of compaction, clearing, and switching is a client concern composed from primitives.
+The runtime's job is to provide mechanical primitives. UX and policy decisions — when to clear, when to compact, when to title, when to recall, which session to route a message to, how to surface archival browsing — belong one layer up in the client. RFC 0189 finished the move: the runtime no longer auto-compacts on overflow, no longer spawns title generation, no longer auto-recalls. Clients drive `compact_conversation`, future `generate_title`, and explicit memory search themselves, gated on `AgentEvent::ContextUsage` events.
 
 Runtime primitives (policy-free):
 
@@ -38,10 +38,7 @@ Search tools (agent-facing):
 - `search_memory(query) -> [Entry]` — unchanged. BM25 over memory entries; returns whole entries because entries are small.
 - `search_sessions(query, context_before=4, context_after=4, filters?) -> [SessionHit]` — new. BM25 over message text; returns bounded windowed excerpts.
 
-Auto-behaviors (runtime-owned, mechanical):
-
-- Auto-title generation after the first exchange (unchanged; already in `spawn_title_generation`).
-- Overflow compaction under context-window pressure, piggybacking to emit a `summary` into `ConversationMeta` so session search can boost it.
+Auto-behaviors: none. Both auto-titling and overflow compaction were removed by RFC 0189. The `summary` field on `ConversationMeta` is still populated when a client triggers `compact_conversation`, and session search still boosts on it; the runtime just doesn't *initiate* either step on its own.
 
 Client-owned (explicit non-goals for the runtime):
 
@@ -58,10 +55,10 @@ pub struct ConversationMeta {
     pub agent: String,            // immutable, set at creation
     pub created_by: String,       // immutable, set at creation
     pub created_at: String,       // immutable, set at creation
-    pub title: String,            // auto-generated after first exchange
+    pub title: String,            // empty until a client sets one (no auto-title; no wire RPC yet)
     pub updated_at: String,       // bumped on every append_message
     pub message_count: u64,       // bumped on every append_message
-    pub summary: Option<String>,  // emitted by overflow compaction
+    pub summary: Option<String>,  // populated when a client calls compact_conversation
 }
 ```
 
@@ -69,12 +66,12 @@ Removed: `topic` (subsumed by session search), `uptime_secs` (replaced by `updat
 
 Writers:
 
-| Field                               | Writer          | When                          |
-| ----------------------------------- | --------------- | ----------------------------- |
-| `agent`, `created_by`, `created_at` | runtime         | session creation              |
-| `title`                             | runtime         | auto-gen after 2+ messages    |
-| `updated_at`, `message_count`       | runtime         | every `append_message`        |
-| `summary`                           | runtime         | during overflow compaction    |
+| Field                               | Writer          | When                                               |
+| ----------------------------------- | --------------- | -------------------------------------------------- |
+| `agent`, `created_by`, `created_at` | runtime         | session creation                                   |
+| `title`                             | —               | empty by default; client-driven titling is a follow-up (no wire RPC yet) |
+| `updated_at`, `message_count`       | runtime         | every `append_message`                             |
+| `summary`                           | runtime         | when a client triggers `compact_conversation`      |
 
 Meta is not an agent-writable blob. The runtime owns every field. If a later RFC needs an agent-curated field (e.g., session-to-entry back-links to optimize resume hydration), it lands as a separate proposal with a measured recall-failure case justifying the code cost — not speculatively in this one.
 
