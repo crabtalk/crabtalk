@@ -1,12 +1,14 @@
 //! crabup — package manager for the Crabtalk ecosystem.
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 use crate::registry::Entry;
 
 pub mod cargo;
 pub mod list;
+pub mod package;
 pub mod ps;
 pub mod registry;
 pub mod service;
@@ -46,31 +48,75 @@ pub enum Command {
     /// List running crabtalk services.
     Ps,
 
-    /// Daemon service commands.
-    Daemon {
+    /// Manage crabtalk packages (skills + MCPs).
+    Pkg {
         #[command(subcommand)]
-        action: ServiceAction,
+        action: PkgAction,
     },
-    /// Telegram gateway service commands.
-    Telegram {
-        #[command(subcommand)]
-        action: ServiceAction,
+
+    /// `<name> <start|stop|restart|logs>` — service ops on a registry entry.
+    #[command(external_subcommand)]
+    Service(Vec<String>),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PkgAction {
+    /// Install a crabtalk package.
+    Add {
+        /// Package short name.
+        name: String,
+        /// Pin to a specific branch of the package's source repo.
+        #[arg(long)]
+        branch: Option<String>,
+        /// Local path to a package directory (skips registry sync).
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Re-install if already present.
+        #[arg(short, long)]
+        force: bool,
     },
-    /// WeChat gateway service commands.
-    Wechat {
-        #[command(subcommand)]
-        action: ServiceAction,
+    /// Uninstall a crabtalk package.
+    Remove {
+        /// Package short name.
+        name: String,
     },
-    /// Search service commands.
-    Search {
-        #[command(subcommand)]
-        action: ServiceAction,
-    },
-    /// Outlook service commands.
-    Outlook {
-        #[command(subcommand)]
-        action: ServiceAction,
-    },
+}
+
+impl PkgAction {
+    async fn run(self) -> Result<()> {
+        match self {
+            Self::Add {
+                name,
+                branch,
+                path,
+                force,
+            } => {
+                package::install(
+                    &name,
+                    branch.as_deref(),
+                    path.as_deref(),
+                    force,
+                    |msg| println!("  {msg}"),
+                    |msg| println!("  {msg}"),
+                )
+                .await?;
+                println!("Done: {name}");
+                Ok(())
+            }
+            Self::Remove { name } => {
+                package::uninstall(&name, |msg| println!("  {msg}")).await?;
+                println!("Done: {name}");
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "crabup", no_binary_name = true)]
+struct ServiceArgs {
+    #[command(subcommand)]
+    action: ServiceAction,
 }
 
 #[derive(Subcommand, Debug)]
@@ -105,7 +151,7 @@ impl ServiceAction {
 }
 
 impl Cli {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         match self.command {
             Command::Pull {
                 name,
@@ -129,17 +175,33 @@ impl Cli {
                 Ok(())
             }
             Command::List => {
-                for krate in list::installed()? {
-                    println!("{krate}");
+                let installed: std::collections::HashSet<String> =
+                    list::installed()?.into_iter().collect();
+                let width = Entry::all()
+                    .iter()
+                    .map(|e| e.short.len())
+                    .max()
+                    .unwrap_or(0);
+                for entry in Entry::all() {
+                    let mark = if installed.contains(entry.krate) {
+                        "(installed)"
+                    } else {
+                        ""
+                    };
+                    println!("{:<width$}  {mark}", entry.short, width = width);
                 }
                 Ok(())
             }
             Command::Ps => ps::run(),
-            Command::Daemon { action } => action.run(&registry::DAEMON),
-            Command::Telegram { action } => action.run(&registry::TELEGRAM),
-            Command::Wechat { action } => action.run(&registry::WECHAT),
-            Command::Search { action } => action.run(&registry::SEARCH),
-            Command::Outlook { action } => action.run(&registry::OUTLOOK),
+            Command::Pkg { action } => action.run().await,
+            Command::Service(args) => {
+                let mut iter = args.into_iter();
+                let name = iter.next().ok_or_else(|| anyhow!("missing service name"))?;
+                let entry =
+                    Entry::by_short(&name).ok_or_else(|| anyhow!("unknown service: {name}"))?;
+                let svc = ServiceArgs::try_parse_from(iter).unwrap_or_else(|e| e.exit());
+                svc.action.run(entry)
+            }
         }
     }
 }

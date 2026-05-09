@@ -49,13 +49,6 @@ pub const SEARCH: Entry = Entry {
     description: "Meta-search engine for Crabtalk",
 };
 
-pub const OUTLOOK: Entry = Entry {
-    short: "outlook",
-    krate: "crabtalk-outlook",
-    label: Some("ai.crabtalk.outlook"),
-    description: "Outlook integration for Crabtalk",
-};
-
 pub const CRON: Entry = Entry {
     short: "cron",
     krate: "crabtalk-cron",
@@ -63,9 +56,14 @@ pub const CRON: Entry = Entry {
     description: "Cron scheduler for Crabtalk",
 };
 
-const TABLE: &[&Entry] = &[&DAEMON, &TUI, &TELEGRAM, &WECHAT, &SEARCH, &OUTLOOK, &CRON];
+const TABLE: &[&Entry] = &[&DAEMON, &TUI, &TELEGRAM, &WECHAT, &SEARCH, &CRON];
 
 impl Entry {
+    /// All known registry entries.
+    pub fn all() -> &'static [&'static Self] {
+        TABLE
+    }
+
     /// Look up a table entry by short name.
     pub fn by_short(short: &str) -> Option<&'static Self> {
         TABLE.iter().find(|e| e.short == short).copied()

@@ -32,8 +32,8 @@ pub const CONFIG_FILE: &str = "config.toml";
 pub const SETTINGS_FILE: &str = "local/settings.toml";
 /// Local package directory (user's own skills, agents, MCPs).
 pub const LOCAL_DIR: &str = "local";
-/// Installed plugin manifests directory.
-pub const PLUGINS_DIR: &str = "plugins";
+/// Installed package manifests directory.
+pub const PACKAGES_DIR: &str = "packages";
 /// Agents subdirectory (contains *.md files).
 pub const AGENTS_DIR: &str = "local/agents";
 /// Skills subdirectory.

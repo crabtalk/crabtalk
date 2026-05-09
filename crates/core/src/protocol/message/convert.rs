@@ -2,9 +2,9 @@
 
 use crate::agent::AgentConfig;
 use crate::protocol::proto::{
-    AgentEventMsg, AgentInfo, ClientMessage, ConversationHistory, McpEventMsg, PluginEvent,
-    ReplyToAsk, SendMsg, SendResponse, ServerMessage, StreamEvent, StreamMsg, client_message,
-    plugin_event, server_message, stream_event,
+    AgentEventMsg, AgentInfo, ClientMessage, ConversationHistory, McpEventMsg, ReplyToAsk, SendMsg,
+    SendResponse, ServerMessage, StreamEvent, StreamMsg, client_message, server_message,
+    stream_event,
 };
 
 impl From<&AgentConfig> for AgentInfo {
@@ -83,14 +83,6 @@ impl From<McpEventMsg> for ServerMessage {
     }
 }
 
-impl From<PluginEvent> for ServerMessage {
-    fn from(e: PluginEvent) -> Self {
-        Self {
-            msg: Some(server_message::Msg::PluginEvent(e)),
-        }
-    }
-}
-
 impl From<ConversationHistory> for ServerMessage {
     fn from(h: ConversationHistory) -> Self {
         Self {
@@ -126,18 +118,6 @@ impl TryFrom<ServerMessage> for stream_event::Event {
         match msg.msg {
             Some(server_message::Msg::Stream(e)) => {
                 e.event.ok_or_else(|| anyhow::anyhow!("empty stream event"))
-            }
-            _ => Err(error_or_unexpected(msg)),
-        }
-    }
-}
-
-impl TryFrom<ServerMessage> for plugin_event::Event {
-    type Error = anyhow::Error;
-    fn try_from(msg: ServerMessage) -> anyhow::Result<Self> {
-        match msg.msg {
-            Some(server_message::Msg::PluginEvent(e)) => {
-                e.event.ok_or_else(|| anyhow::anyhow!("empty plugin event"))
             }
             _ => Err(error_or_unexpected(msg)),
         }

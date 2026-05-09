@@ -1,36 +1,37 @@
-//! Crabtalk plugin install/uninstall operations.
+//! Crabtalk package install/uninstall operations.
 //!
-//! Install copies a manifest to `plugins/name.toml` and clones the
+//! Install copies a manifest to `packages/name.toml` and clones the
 //! source repo to `.cache/repos/{slug}`. Skills and agents are discovered
 //! from the cached repo by convention on daemon reload.
 
-use crate::manifest;
+pub mod manifest;
+
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use wcore::paths::CONFIG_DIR;
 
-/// Remote URL of the crabtalk plugins registry.
-pub const PLUGINS_REGISTRY: &str = "https://github.com/crabtalk/plugins";
+/// Remote URL of the crabtalk packages registry.
+pub const PACKAGES_REGISTRY: &str = "https://github.com/crabtalk/plugins";
 
-/// Install a plugin.
+/// Install a package.
 ///
-/// Syncs the plugin registry, copies the manifest to `plugins/name.toml`,
+/// Syncs the package registry, copies the manifest to `packages/name.toml`,
 /// and clones the source repo to `.cache/repos/{slug}/`. Runs setup
 /// script if configured.
 pub async fn install(
-    plugin: &str,
+    package: &str,
     branch: Option<&str>,
     path: Option<&Path>,
     force: bool,
     on_step: impl Fn(&str),
     on_output: impl Fn(&str),
 ) -> Result<()> {
-    let name = validate_name(plugin)?;
+    let name = validate_name(package)?;
 
     // Check if already installed.
     if !force {
         let manifest_path = CONFIG_DIR
-            .join(wcore::paths::PLUGINS_DIR)
+            .join(wcore::paths::PACKAGES_DIR)
             .join(format!("{name}.toml"));
         if manifest_path.exists() {
             on_step("already installed, use --force to overwrite");
@@ -40,14 +41,14 @@ pub async fn install(
 
     // Resolve the registry directory — use a local path or sync from remote.
     let registry_dir = if let Some(p) = path {
-        anyhow::ensure!(p.exists(), "plugin path {} does not exist", p.display());
+        anyhow::ensure!(p.exists(), "package path {} does not exist", p.display());
         p.to_path_buf()
     } else {
-        on_step("syncing plugin registry…");
+        on_step("syncing package registry…");
         let dir = CONFIG_DIR.join("registry");
-        git_sync(PLUGINS_REGISTRY, &dir, branch)
+        git_sync(PACKAGES_REGISTRY, &dir, branch)
             .await
-            .context("failed to sync plugin registry")?;
+            .context("failed to sync package registry")?;
         dir
     };
 
@@ -55,8 +56,8 @@ pub async fn install(
     let manifest = read_manifest_from(&registry_dir, name)?;
     let manifest_src = registry_dir.join(format!("{name}.toml"));
 
-    // Clone the source repo if the plugin has resources that live in
-    // the repo (setup scripts, agents, or skills). Plugins that only
+    // Clone the source repo if the package has resources that live in
+    // the repo (setup scripts, agents, or skills). Packages that only
     // declare MCPs or commands don't need the repo — MCPs connect
     // directly and commands are installed via `cargo install`.
     let mcp_only =
@@ -135,13 +136,13 @@ pub async fn install(
         install_commands(&manifest, &on_step).await?;
     }
 
-    // Copy manifest to plugins/name.toml — done last so a failed
-    // setup doesn't leave a half-installed plugin that blocks re-install.
+    // Copy manifest to packages/name.toml — done last so a failed
+    // setup doesn't leave a half-installed package that blocks re-install.
     on_step("installing manifest…");
-    let plugins_dir = CONFIG_DIR.join(wcore::paths::PLUGINS_DIR);
-    std::fs::create_dir_all(&plugins_dir)
-        .with_context(|| format!("failed to create {}", plugins_dir.display()))?;
-    let manifest_dst = plugins_dir.join(format!("{name}.toml"));
+    let packages_dir = CONFIG_DIR.join(wcore::paths::PACKAGES_DIR);
+    std::fs::create_dir_all(&packages_dir)
+        .with_context(|| format!("failed to create {}", packages_dir.display()))?;
+    let manifest_dst = packages_dir.join(format!("{name}.toml"));
     std::fs::copy(&manifest_src, &manifest_dst).with_context(|| {
         format!(
             "failed to copy manifest {} → {}",
@@ -153,12 +154,12 @@ pub async fn install(
     Ok(())
 }
 
-/// Uninstall a plugin.
+/// Uninstall a package.
 ///
-/// Deletes the manifest from `plugins/name.toml` and optionally
+/// Deletes the manifest from `packages/name.toml` and optionally
 /// prunes the cached source repo.
-pub async fn uninstall(plugin: &str, on_step: impl Fn(&str)) -> Result<()> {
-    let name = validate_name(plugin)?;
+pub async fn uninstall(package: &str, on_step: impl Fn(&str)) -> Result<()> {
+    let name = validate_name(package)?;
 
     // Read manifest before deleting (need repository URL for cache cleanup).
     let manifest = read_manifest(name).ok();
@@ -177,17 +178,17 @@ pub async fn uninstall(plugin: &str, on_step: impl Fn(&str)) -> Result<()> {
         }
     }
 
-    // Delete manifest from plugins/.
+    // Delete manifest from packages/.
     on_step("removing manifest…");
     let manifest_path = CONFIG_DIR
-        .join(wcore::paths::PLUGINS_DIR)
+        .join(wcore::paths::PACKAGES_DIR)
         .join(format!("{name}.toml"));
     if manifest_path.exists() {
         std::fs::remove_file(&manifest_path)
             .with_context(|| format!("failed to remove {}", manifest_path.display()))?;
     }
 
-    // Prune cached repo if no other plugin references it.
+    // Prune cached repo if no other package references it.
     if let Some(manifest) = manifest
         && !manifest.package.repository.is_empty()
     {
@@ -255,99 +256,10 @@ pub async fn git_sync(url: &str, dest: &Path, branch: Option<&str>) -> Result<()
     Ok(())
 }
 
-/// Info about a plugin returned by [`search`].
-pub struct PluginEntry {
-    /// Plugin name.
-    pub name: String,
-    /// Human-readable description.
-    pub description: String,
-    /// Number of skills in the plugin.
-    pub skill_count: u32,
-    /// Number of MCP servers in the plugin.
-    pub mcp_count: u32,
-    /// Whether the plugin is installed locally.
-    pub installed: bool,
-    /// Source repository URL.
-    pub repository: String,
-}
-
-/// Search the plugin registry for plugins matching the query.
-///
-/// Syncs the registry repo, scans all `.toml` manifests, and returns
-/// matching plugins. An empty query returns all plugins.
-pub async fn search(query: &str) -> Result<Vec<PluginEntry>> {
-    let registry_dir = CONFIG_DIR.join("registry");
-    git_sync(PLUGINS_REGISTRY, &registry_dir, None)
-        .await
-        .context("failed to sync plugin registry")?;
-
-    let plugins_dir = CONFIG_DIR.join(wcore::paths::PLUGINS_DIR);
-    let query_lower = query.to_lowercase();
-    let mut results = Vec::new();
-
-    // Scan .toml manifests in the registry.
-    let Ok(entries) = std::fs::read_dir(&registry_dir) else {
-        return Ok(results);
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
-            continue;
-        }
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(manifest) = toml::from_str::<manifest::Manifest>(&content) else {
-            continue;
-        };
-
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
-            .to_string();
-
-        // Filter by query (match name, description, or keywords).
-        if !query_lower.is_empty() {
-            let matches = name.to_lowercase().contains(&query_lower)
-                || manifest
-                    .package
-                    .description
-                    .to_lowercase()
-                    .contains(&query_lower)
-                || manifest
-                    .package
-                    .keywords
-                    .iter()
-                    .any(|k| k.to_lowercase().contains(&query_lower));
-            if !matches {
-                continue;
-            }
-        }
-
-        let installed = plugins_dir.join(format!("{name}.toml")).exists();
-        let mcp_count = manifest.mcps.len() as u32;
-        results.push(PluginEntry {
-            name,
-            description: manifest.package.description,
-            skill_count: 0,
-            mcp_count,
-            installed,
-            repository: manifest.package.repository,
-        });
-    }
-
-    results.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(results)
-}
-
-/// Validate a plugin name is non-empty.
-fn validate_name(plugin: &str) -> Result<&str> {
-    let name = plugin.trim();
-    anyhow::ensure!(!name.is_empty(), "plugin name cannot be empty");
+/// Validate a package name is non-empty.
+fn validate_name(package: &str) -> Result<&str> {
+    let name = package.trim();
+    anyhow::ensure!(!name.is_empty(), "package name cannot be empty");
     Ok(name)
 }
 
@@ -417,7 +329,7 @@ fn which(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Read and deserialize a manifest from the default plugin registry directory.
+/// Read and deserialize a manifest from the default package registry directory.
 pub fn read_manifest(name: &str) -> Result<manifest::Manifest> {
     read_manifest_from(&CONFIG_DIR.join("registry"), name)
 }

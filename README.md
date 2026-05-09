@@ -5,7 +5,7 @@
 [![Discord][discord-badge]][discord]
 
 **Agent daemon.** Runs agents, dispatches tools, connects to MCP servers.
-Start it, talk to it, extend it with plugins.
+Start it, talk to it, extend it with packages.
 
 ```bash
 curl -fsSL https://crabtalk.ai/install.sh | sh
@@ -31,9 +31,9 @@ Full config reference: [`crates/crabtalk/config.toml`](crates/crabtalk/config.to
 The daemon ships with built-in tools (shell, task delegation, memory),
 MCP server integration, and skills (Markdown prompt files).
 
-Heavier capabilities live outside the daemon as [services](services/) —
-independent binaries that connect via auto-discovery. [Apps](apps/)
-are agent-powered experiences built on top of the daemon.
+[Apps](apps/) are agent-powered experiences and standalone services
+built on top of the daemon — independent binaries that connect via
+auto-discovery.
 
 ## Learn More
 
@@ -43,7 +43,7 @@ are agent-powered experiences built on top of the daemon.
 
 ## License
 
-MIT OR Apache-2.0
+MIT
 
 <!-- badges -->
 

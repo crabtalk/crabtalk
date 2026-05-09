@@ -11,8 +11,6 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-plugin.workspace = true
-command.workspace = true
 crabllm-core.workspace = true
 crabllm-provider = { workspace = true, features = ["hyper"] }
 mcp = { workspace = true, default-features = false, features = ["hyper"] }

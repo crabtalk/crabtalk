@@ -24,6 +24,14 @@ message ClientMessage {
   // Removed — cron now lives as a standalone service outside the daemon.
   reserved 27, 28, 29;
   reserved "create_cron", "delete_cron", "list_crons";
+  // Tags 24, 25, 26 were StartService/StopService/ServiceLogs.
+  // Removed — service management moved out of the daemon into crabup.
+  reserved 24, 25, 26;
+  reserved "start_service", "stop_service", "service_logs";
+  // Tags 20, 21, 22, 37 were InstallPlugin/UninstallPlugin/ListPlugins/SearchPlugins.
+  // Removed — package management moved out of the daemon into crabup.
+  reserved 20, 21, 22, 37;
+  reserved "install_plugin", "uninstall_plugin", "list_plugins", "search_plugins";
 
   oneof msg {
     // Execution
@@ -48,24 +56,14 @@ message ClientMessage {
     UpdateAgentMsg update_agent = 18;
     DeleteAgentMsg delete_agent = 19;
     RenameAgentMsg rename_agent = 51;
-    // Plugins
-    InstallPluginMsg install_plugin = 20;
-    UninstallPluginMsg uninstall_plugin = 21;
-    ListPluginsMsg list_plugins = 22;
     // Skills
     ListSkillsMsg list_skills = 23;
     // Models
     ListModelsMsg list_models = 36;
-    // Plugin search
-    SearchPluginsMsg search_plugins = 37;
     // Conversation history
     GetConversationHistoryMsg get_conversation_history = 38;
     // Delete conversation
     DeleteConversationMsg delete_conversation = 39;
-    // Services
-    StartServiceMsg start_service = 24;
-    StopServiceMsg stop_service = 25;
-    ServiceLogsMsg service_logs = 26;
     // Daemon lifecycle
     Ping ping = 30;
     GetConfig get_config = 31;
@@ -183,26 +181,9 @@ message RenameAgentMsg {
   string new_name = 2;
 }
 
-message InstallPluginMsg {
-  string plugin = 1;
-  string branch = 2;
-  string path = 3;
-  bool force = 4;
-}
-
-message UninstallPluginMsg {
-  string plugin = 1;
-}
-
-message ListPluginsMsg {}
-
 message ListSkillsMsg {}
 
 message ListModelsMsg {}
-
-message SearchPluginsMsg {
-  string query = 1;
-}
 
 message GetConversationHistoryMsg {
   string file_path = 1;
@@ -219,23 +200,10 @@ message ConversationHistory {
   string agent = 3;
 }
 
-message PluginInfo {
-  string name = 1;
-  string description = 2;
-  uint32 skill_count = 3;
-  uint32 mcp_count = 4;
-  bool installed = 5;
-  string repository = 6;
-}
-
-message PluginSearchList {
-  repeated PluginInfo plugins = 1;
-}
-
 enum SourceKind {
   SOURCE_KIND_UNKNOWN = 0;
   LOCAL = 1;
-  PLUGIN = 2;
+  PACKAGE = 2;
   EXTERNAL = 3;
 }
 
@@ -268,20 +236,6 @@ message SetActiveModelMsg {
   string model = 1;
 }
 
-message StartServiceMsg {
-  string name = 1;
-  bool force = 2;
-}
-
-message StopServiceMsg {
-  string name = 1;
-}
-
-message ServiceLogsMsg {
-  string name = 1;
-  uint32 lines = 2;
-}
-
 // ── Server Messages ──────────────────────────────────────────────
 
 message ServerMessage {
@@ -296,6 +250,13 @@ message ServerMessage {
   // Tags 17, 18 were CronInfo/CronList — removed with the cron extraction.
   reserved 17, 18;
   reserved "cron_info", "cron_list";
+  // Tag 16 was ServiceLogOutput — removed with service management.
+  reserved 16;
+  reserved "service_log_output";
+  // Tags 13, 14, 23 were PluginEvent/PluginList/PluginSearchList.
+  // Removed — package management moved out of the daemon into crabup.
+  reserved 13, 14, 23;
+  reserved "plugin_event", "plugin_list", "plugin_search_list";
 
   oneof msg {
     // Common
@@ -313,19 +274,12 @@ message ServerMessage {
     // Agent
     AgentInfo agent_info = 11;
     AgentList agent_list = 12;
-    // Plugins
-    PluginEvent plugin_event = 13;
-    PluginList plugin_list = 14;
     // Skills
     SkillList skill_list = 15;
     // Models
     ModelList model_list = 22;
-    // Plugin search
-    PluginSearchList plugin_search_list = 23;
     // Conversation history
     ConversationHistory conversation_history = 24;
-    // Services
-    ServiceLogOutput service_log_output = 16;
     // Daemon lifecycle
     ConfigMsg config = 19;
     DaemonStats stats = 20;
@@ -558,14 +512,6 @@ message AgentList {
   repeated AgentInfo agents = 1;
 }
 
-message PluginList {
-  repeated PluginInfo plugins = 1;
-}
-
-message ServiceLogOutput {
-  string content = 1;
-}
-
 message SkillInfo {
   string name = 1;
   reserved 2;
@@ -663,29 +609,3 @@ message McpEventMsg {
   string agent = 6;
 }
 
-// ── Plugin Events ───────────────────────────────────────────────
-
-message PluginEvent {
-  oneof event {
-    PluginStep step = 1;
-    PluginWarning warning = 2;
-    PluginSetupOutput setup_output = 3;
-    PluginDone done = 4;
-  }
-}
-
-message PluginStep {
-  string message = 1;
-}
-
-message PluginWarning {
-  string message = 1;
-}
-
-message PluginSetupOutput {
-  string content = 1;
-}
-
-message PluginDone {
-  string error = 1;
-}

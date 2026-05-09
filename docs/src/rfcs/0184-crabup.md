@@ -38,7 +38,7 @@ crabup <name> restart
 crabup <name> logs [-f]
 ```
 
-`<name>` is a short name from the resolution table below, so `crabup daemon start`, `crabup telegram start`, `crabup search logs -f`. Each short name is both a pull/rm target and a service-command namespace. `pull`/`rm` mirror the existing `crabtalkd pull`/`rm` verbs for runtime plugins so the vocabulary is consistent across the user's two install surfaces (binary-level and runtime-plugin-level).
+`<name>` is a short name from the resolution table below, so `crabup daemon start`, `crabup telegram start`, `crabup search logs -f`. Each short name is both a pull/rm target and a service-command namespace. `pull`/`rm` install and remove crabtalk binaries via `cargo install`; `pkg add`/`pkg remove` install and remove crabtalk packages (manifests + cached source repos), so the user has one tool for both install surfaces.
 
 `crabup update` is always batch — it bumps every installed `crabtalk-*` crate to the latest version on crates.io, same shape as `rustup update` over its components. There is no per-component update verb: if you only want to change one crate, that's `crabup pull <name> --version <X>`. This makes "keep the set aligned" the default behavior of the only tool users will reach for when they want newer bits, without needing atomic-set machinery to enforce it.
 
@@ -60,8 +60,8 @@ Name resolution is a small table compiled into crabup:
 | `tui`      | `crabtalk-tui`      | REPL client          |
 | `telegram` | `crabtalk-telegram` | Telegram gateway     |
 | `wechat`   | `crabtalk-wechat`   | WeChat gateway       |
-| `search`   | `crabtalk-search`   | meta-search plugin   |
-| `outlook`  | `crabtalk-outlook`  | Outlook plugin       |
+| `search`   | `crabtalk-search`   | meta-search service  |
+| `cron`     | `crabtalk-cron`     | scheduler            |
 
 `crabup pull <short>` resolves via the table; `crabup pull <anything-else>` passes through verbatim so `crabup pull some-third-party-crabtalk-gateway` still works without a table edit. New first-party binaries get a row added when they ship.
 
@@ -106,7 +106,7 @@ None of those are pressing yet. When one is, `crabtalk-llmd` becomes another cra
 | `ensure_config` + `attach::setup_llm` on first start | `crabup daemon start` first-run flow |
 | Duplicate forwarding in TUI (`--start`, `--stop`) | Removed |
 
-After this, `crabtalkd`'s CLI is `run` (the long-running process the service unit invokes, equivalent to today's `--foreground`), `reload`, `events`, and the runtime plugin ops (`pull`/`rm`, which are live-daemon operations, not install).
+After this, `crabtalkd`'s CLI is `run` (the long-running process the service unit invokes, equivalent to today's `--foreground`), `reload`, and `events`. Package install/uninstall live in crabup as `pkg add`/`pkg remove`, not in the daemon CLI.
 
 ## Alternatives
 

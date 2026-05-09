@@ -1,17 +1,16 @@
 [workspace]
 resolver = "3"
-members = ["apps/*", "crates/*", "services/*"]
+members = ["apps/*", "crates/*"]
 
 [workspace.package]
 version = "0.0.21"
 edition = "2024"
 authors = ["clearloop <tianyi.gc@gmail.com>"]
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/crabtalk/crabtalk"
 keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
-plugin = { path = "crates/plugins", package = "crabtalk-plugins", version = "0.0.21" }
 telegram = { path = "apps/telegram", package = "crabtalk-telegram", version = "0.0.21" }
 wechat = { path = "apps/wechat", package = "crabtalk-wechat", version = "0.0.21" }
 sdk = { path = "crates/sdk", package = "crabtalk-sdk", version = "0.0.21" }
@@ -26,9 +25,8 @@ memory = { path = "crates/memory", package = "crabtalk-memory", version = "0.0.2
 mcp = { path = "crates/mcp", package = "crabtalk-mcp", version = "0.0.21", default-features = false }
 command = { path = "crates/command", package = "crabtalk-command", version = "0.0.21" }
 command-codegen = { path = "crates/command-codegen", package = "crabtalk-command-codegen", version = "0.0.21" }
-outlook = { path = "services/outlook", package = "crabtalk-outlook", version = "0.0.21", default-features = false }
-search = { path = "services/search", package = "crabtalk-search", version = "0.0.21", default-features = false }
-crabtalk-cron = { path = "services/cron", version = "0.0.21" }
+search = { path = "apps/search", package = "crabtalk-search", version = "0.0.21", default-features = false }
+crabtalk-cron = { path = "apps/cron", version = "0.0.21" }
 
 # crabllm
 crabllm-core = "0.0.18"
@@ -70,14 +68,22 @@ reqwest = { version = "0.13", default-features = false, features = [
     "stream",
     "native-tls",
 ] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+] }
 rmcp = { version = "1.3", default-features = false }
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1"] }
 http = "1"
 http-body-util = "0.1"
 hyper-tls = "0.6"
-hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "ring", "webpki-tokio"] }
+hyper-rustls = { version = "0.27", default-features = false, features = [
+    "http1",
+    "ring",
+    "webpki-tokio",
+] }
 axum = { version = "0.8", default-features = false, features = [
     "http1",
     "query",
