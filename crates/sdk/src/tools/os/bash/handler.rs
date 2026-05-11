@@ -1,11 +1,11 @@
 //! Bash tool handler.
 
 use super::Bash;
-use crate::hooks::os::OsHook;
+use crate::tools::os::OsHook;
 use wcore::ToolDispatch;
 
 impl OsHook {
-    pub(in crate::hooks::os) async fn handle_bash(
+    pub(in crate::tools::os) async fn handle_bash(
         &self,
         call: ToolDispatch,
     ) -> Result<String, String> {

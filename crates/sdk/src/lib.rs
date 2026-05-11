@@ -8,6 +8,7 @@ pub mod command;
 pub mod conn;
 pub mod message;
 pub mod stream;
+pub mod tools;
 
 pub use command::{COMMAND_HINT, COMMANDS, Command, collect_candidates, parse_command};
 #[cfg(unix)]

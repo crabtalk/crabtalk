@@ -4,7 +4,6 @@ pub mod ask_user;
 pub mod delegate;
 pub mod mcp;
 pub mod memory;
-pub mod os;
 pub mod sessions;
 pub mod skill;
 

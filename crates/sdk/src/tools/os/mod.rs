@@ -1,6 +1,5 @@
 //! OS tools — bash, read, edit — as a Hook implementation.
 
-use crate::daemon::ConversationCwds;
 use bash::Bash;
 use edit::Edit;
 use parking_lot::{Mutex, RwLock};
@@ -12,14 +11,26 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
+use tokio::sync::Mutex as AsyncMutex;
 use wcore::{AgentConfig, BashConfig, ToolDispatch, ToolFuture, agent::AsTool};
 
 mod bash;
 mod edit;
 mod read;
 
-/// Per-conversation set of files that have been read (shared with DelegateHook
-/// for cleanup when delegated conversations close).
+/// Per-conversation working directory overrides.
+///
+/// Shared between the host's `Env::effective_cwd` implementation, `OsHook`
+/// (for tool dispatch), and any subsystem that needs to mutate per-call
+/// cwd (e.g. delegated child conversations).
+pub type ConversationCwds = Arc<AsyncMutex<HashMap<u64, PathBuf>>>;
+
+/// Per-conversation set of files that have been read.
+///
+/// Edit refuses to operate on a file that has not been read in the current
+/// conversation — the model must observe the file before mutating it.
+/// Shared with delegate-style subsystems that need to clean up entries
+/// when delegated conversations close.
 pub type ReadFiles = Arc<Mutex<HashMap<u64, HashSet<PathBuf>>>>;
 
 /// Maximum file size in bytes before refusing to read (50 MB).

@@ -4,6 +4,7 @@ use crate::{DaemonConfig, hooks, storage::FsStorage};
 use anyhow::Result;
 use crabllm_core::Provider;
 use runtime::Runtime;
+pub use sdk::tools::os::ConversationCwds;
 use std::collections::HashMap;
 use std::{
     path::{Path, PathBuf},
@@ -25,9 +26,6 @@ pub mod event;
 pub mod hook;
 pub mod host;
 mod transport;
-
-/// Per-conversation working directory overrides.
-pub type ConversationCwds = Arc<Mutex<HashMap<u64, PathBuf>>>;
 
 /// Pending ask_user oneshots (shared with AskUserHook and protocol layer).
 pub type PendingAsks = Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>;
@@ -57,7 +55,7 @@ pub struct Daemon<P: Provider + 'static = DefaultProvider> {
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<mcp::McpHandler>,
     /// OS tools hook — owns conversation CWDs and bash policy.
-    pub(crate) os_hook: Arc<hooks::os::OsHook>,
+    pub(crate) os_hook: Arc<sdk::tools::os::OsHook>,
     /// Ask-user hook — owns pending ask oneshots.
     pub(crate) ask_hook: Arc<hooks::ask_user::AskUserHook>,
 }

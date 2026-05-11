@@ -182,7 +182,7 @@ impl<P: Provider + 'static> Daemon<P> {
         Runtime<crate::daemon::DaemonCfg<P>>,
         Arc<McpHandler>,
         Arc<DaemonHook>,
-        Arc<crate::hooks::os::OsHook>,
+        Arc<sdk::tools::os::OsHook>,
         Arc<crate::hooks::ask_user::AskUserHook>,
     )> {
         let dirs = resolve_dirs(config_dir);
@@ -254,7 +254,7 @@ impl<P: Provider + 'static> Daemon<P> {
         conversation_cwds: crate::daemon::ConversationCwds,
         pending_asks: crate::daemon::PendingAsks,
     ) -> Result<(
-        Arc<crate::hooks::os::OsHook>,
+        Arc<sdk::tools::os::OsHook>,
         Arc<crate::hooks::ask_user::AskUserHook>,
         runtime::SharedMemory,
     )> {
@@ -262,10 +262,10 @@ impl<P: Provider + 'static> Daemon<P> {
         let shared_memory = memory_wrapper.shared();
         let memory = Arc::new(memory_wrapper);
         let scopes = node_hook.scopes.clone();
-        let read_files: crate::hooks::os::ReadFiles = Default::default();
+        let read_files: sdk::tools::os::ReadFiles = Default::default();
         let skills = storage.list_skills().await.unwrap_or_default();
 
-        let os_hook = Arc::new(crate::hooks::os::OsHook::new(
+        let os_hook = Arc::new(sdk::tools::os::OsHook::new(
             cwd,
             conversation_cwds.clone(),
             read_files.clone(),

@@ -1,9 +1,9 @@
 //! Delegate tool — as a Hook implementation.
 
-use crate::daemon::ConversationCwds;
-use crate::{daemon::SharedRuntime, hooks::os::ReadFiles};
+use crate::daemon::{ConversationCwds, SharedRuntime};
 use crabllm_core::Provider;
 use runtime::Hook;
+use sdk::tools::os::ReadFiles;
 use serde::Deserialize;
 use std::{
     path::PathBuf,
