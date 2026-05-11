@@ -3,7 +3,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use sdk::{ConnectionInfo, Transport};
-#[cfg(feature = "daemon")]
 pub mod agent;
 pub mod console;
 pub mod mcp;
@@ -15,18 +14,6 @@ pub mod mcp;
     about = "Crabtalk TUI — interactive agent client"
 )]
 pub struct Cli {
-    /// Run the daemon in the foreground (all-in-one mode).
-    #[cfg(feature = "daemon")]
-    #[arg(long)]
-    pub foreground: bool,
-    /// Hot-reload daemon config.
-    #[cfg(feature = "daemon")]
-    #[arg(long, group = "daemon_op")]
-    pub reload: bool,
-    /// Stream daemon events.
-    #[cfg(feature = "daemon")]
-    #[arg(long, group = "daemon_op")]
-    pub events: bool,
     /// Connect via TCP instead of Unix domain socket.
     #[arg(long)]
     pub tcp: bool,
@@ -55,31 +42,6 @@ pub enum Command {
 impl Cli {
     /// Parse and dispatch the CLI command.
     pub async fn run(self) -> Result<()> {
-        #[cfg(feature = "daemon")]
-        {
-            if self.foreground {
-                return crabtalkd::foreground::start().await;
-            }
-            if self.reload {
-                let daemon = crabtalkd::Cli {
-                    foreground: false,
-                    verbose: 0,
-                    tcp: self.tcp,
-                    command: Some(crabtalkd::Command::Reload),
-                };
-                return daemon.run().await;
-            }
-            if self.events {
-                let daemon = crabtalkd::Cli {
-                    foreground: false,
-                    verbose: 0,
-                    tcp: self.tcp,
-                    command: Some(crabtalkd::Command::Events),
-                };
-                return daemon.run().await;
-            }
-        }
-
         match self.command {
             None => {
                 let (transport, conn_info) = connect(self.tcp).await?;

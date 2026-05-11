@@ -802,7 +802,6 @@ dependencies = [
  "crabtalk-core",
  "crabtalk-sdk",
  "crabtalk-transport",
- "crabtalkd",
  "crossterm 0.28.1",
  "dialoguer",
  "dirs",
