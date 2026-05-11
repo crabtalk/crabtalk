@@ -46,45 +46,42 @@ impl StreamAccumulator {
     }
 
     /// Push a stream event into the accumulator.
-    pub fn push(&mut self, event: &StreamEvent) {
-        match &event.event {
-            Some(stream_event::Event::Start(s)) => {
+    pub fn push(&mut self, event: &stream_event::Event) {
+        match event {
+            stream_event::Event::Start(s) => {
                 self.agent = Some(s.agent.clone());
             }
-            Some(stream_event::Event::Chunk(c)) => {
+            stream_event::Event::Chunk(c) => {
                 self.text.push_str(&c.content);
             }
-            Some(stream_event::Event::Thinking(_)) => {
+            stream_event::Event::Thinking(_) => {
                 // Thinking content not shown in chat-platform messages.
             }
-            Some(stream_event::Event::ToolStart(ts)) => {
+            stream_event::Event::ToolStart(ts) => {
                 let names: Vec<&str> = ts.calls.iter().map(|c| c.name.as_str()).collect();
                 self.tool_line = Some(format!("[calling {}...]", names.join(", ")));
             }
-            Some(stream_event::Event::ToolResult(_)) => {}
-            Some(stream_event::Event::ToolsComplete(_)) => {
+            stream_event::Event::ToolResult(_) => {}
+            stream_event::Event::ToolsComplete(_) => {
                 self.tool_line = None;
             }
-            Some(stream_event::Event::End(end)) => {
+            stream_event::Event::End(end) => {
                 if !end.error.is_empty() {
                     self.set_error(end.error.clone());
                 }
                 self.done = true;
             }
-            Some(stream_event::Event::AskUser(ask)) => {
+            stream_event::Event::AskUser(ask) => {
                 let headers: Vec<&str> = ask.questions.iter().map(|q| q.header.as_str()).collect();
                 self.tool_line = Some(format!("[question: {}]", headers.join(", ")));
                 self.pending_questions = Some(ask.questions.clone());
             }
-            Some(stream_event::Event::UserSteered(_)) => {}
-            Some(stream_event::Event::ContextUsage(_)) => {}
-            Some(
-                stream_event::Event::TextStart(_)
-                | stream_event::Event::TextEnd(_)
-                | stream_event::Event::ThinkingStart(_)
-                | stream_event::Event::ThinkingEnd(_),
-            ) => {}
-            None => {}
+            stream_event::Event::UserSteered(_)
+            | stream_event::Event::ContextUsage(_)
+            | stream_event::Event::TextStart(_)
+            | stream_event::Event::TextEnd(_)
+            | stream_event::Event::ThinkingStart(_)
+            | stream_event::Event::ThinkingEnd(_) => {}
         }
     }
 

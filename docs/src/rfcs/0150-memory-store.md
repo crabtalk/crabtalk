@@ -128,9 +128,9 @@ enum Op {
 
 BM25 with Lucene-style IDF (`ln((n - df + 0.5)/(df + 0.5) + 1.0)`), k1=1.2, b=0.75. The index is an inverted index of tokens from entry content and aliases, keyed by `EntryId`. Search walks the posting lists for query terms instead of rescanning every entry on every query.
 
-### Auto-recall
+### Recall is model-driven
 
-Before each agent turn (`before_run`), the hook takes the first 8 words of the last user message, runs BM25 search, and injects hits as an auto-injected `<recall>` user turn. Auto-injected messages are not persisted and refresh every turn.
+There is no auto-recall. RFC 0189 removed the per-turn injection: the runtime never silently searches memory or prepends `<recall>` blocks. Recall happens only when the model calls the `recall` tool itself, or when a client explicitly searches memory before sending a user message. The `Memory::before_run` helper is gone; `MemoryHook` no longer participates in `on_before_run`.
 
 ### System prompt
 

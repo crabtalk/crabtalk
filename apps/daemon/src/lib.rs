@@ -10,7 +10,6 @@ use wcore::protocol::{
     message::{AgentEventKind, McpEventKind},
 };
 
-pub mod attach;
 pub mod foreground;
 
 /// Crabtalk — AI agent platform.
@@ -38,8 +37,6 @@ pub struct Cli {
 pub enum Command {
     /// Run the daemon in the foreground (what launchd/systemd invokes).
     Run,
-    /// Scaffold config and prompt for LLM endpoint on first run.
-    Setup,
     /// Hot-reload daemon config.
     Reload,
     /// Stream daemon events.
@@ -61,7 +58,6 @@ impl Cli {
 
         match command {
             Command::Run => foreground::start().await,
-            Command::Setup => ensure_config(),
             Command::Reload => {
                 let mut conn = connect(self.tcp).await?;
                 use wcore::protocol::message::{ClientMessage, client_message};
@@ -78,14 +74,10 @@ impl Cli {
     }
 }
 
-/// Scaffold config dir and prompt for LLM endpoint if none configured.
+/// Scaffold the config directory tree on first run. The LLM endpoint is set
+/// by editing `config.toml` directly or via `crabup login` (cloud auth flow).
 fn ensure_config() -> Result<()> {
     crabtalk::storage::scaffold_config_dir(&wcore::paths::CONFIG_DIR)?;
-    let config_path = wcore::paths::CONFIG_DIR.join(wcore::paths::CONFIG_FILE);
-    let config = crabtalk::DaemonConfig::load(&config_path)?;
-    if config.llm.base_url.is_empty() {
-        attach::setup_llm(&config_path)?;
-    }
     Ok(())
 }
 

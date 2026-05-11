@@ -7,7 +7,7 @@
 pub mod manifest;
 
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use wcore::paths::CONFIG_DIR;
 
 /// Remote URL of the crabtalk packages registry.
@@ -56,13 +56,11 @@ pub async fn install(
     let manifest = read_manifest_from(&registry_dir, name)?;
     let manifest_src = registry_dir.join(format!("{name}.toml"));
 
-    // Clone the source repo if the package has resources that live in
-    // the repo (setup scripts, agents, or skills). Packages that only
-    // declare MCPs or commands don't need the repo — MCPs connect
-    // directly and commands are installed via `cargo install`.
-    let mcp_only =
-        manifest.package.setup.is_none() && manifest.agents.is_empty() && !manifest.mcps.is_empty();
-    let repo_dir = if !manifest.package.repository.is_empty() && !mcp_only {
+    // Clone the source repo only when the package has resources that live
+    // inside it: a setup script or agent files. MCPs connect directly and
+    // commands are installed via `cargo install` — neither needs the repo.
+    let needs_repo = manifest.package.setup.is_some() || !manifest.agents.is_empty();
+    let repo_dir = if !manifest.package.repository.is_empty() && needs_repo {
         on_step("cloning source repo…");
         let slug = wcore::repo_slug(&manifest.package.repository);
         let dir = CONFIG_DIR.join(".cache").join("repos").join(&slug);
@@ -133,7 +131,7 @@ pub async fn install(
 
     // Auto-install command crates via `cargo install`.
     if !manifest.commands.is_empty() {
-        install_commands(&manifest, &on_step).await?;
+        install_commands(&manifest, &on_step)?;
     }
 
     // Copy manifest to packages/name.toml — done last so a failed
@@ -167,14 +165,10 @@ pub async fn uninstall(package: &str, on_step: impl Fn(&str)) -> Result<()> {
     // Uninstall command crates (best-effort — don't fail if already removed).
     if let Some(ref manifest) = manifest
         && !manifest.commands.is_empty()
-        && let Ok(cargo) = find_cargo(&on_step).await
     {
         for (name, cmd) in &manifest.commands {
             on_step(&format!("uninstalling command {name} ({})…", cmd.krate));
-            let _ = tokio::process::Command::new(&cargo)
-                .args(["uninstall", &cmd.krate])
-                .status()
-                .await;
+            let _ = crate::cargo::uninstall(&cmd.krate);
         }
     }
 
@@ -264,69 +258,12 @@ fn validate_name(package: &str) -> Result<&str> {
 }
 
 /// Install command crates from a manifest via `cargo install`.
-async fn install_commands(manifest: &manifest::Manifest, on_step: &impl Fn(&str)) -> Result<()> {
-    let cargo = find_cargo(on_step).await?;
+fn install_commands(manifest: &manifest::Manifest, on_step: &impl Fn(&str)) -> Result<()> {
     for (name, cmd) in &manifest.commands {
         on_step(&format!("installing command {name} ({})…", cmd.krate));
-        let status = tokio::process::Command::new(&cargo)
-            .args(["install", &cmd.krate])
-            .status()
-            .await
-            .with_context(|| format!("failed to run cargo install {}", cmd.krate))?;
-        anyhow::ensure!(
-            status.success(),
-            "cargo install {} failed with {status}",
-            cmd.krate
-        );
+        crate::cargo::install(&cmd.krate, Default::default())?;
     }
     Ok(())
-}
-
-/// Locate cargo, installing rustup if needed. Returns the path to the cargo binary.
-async fn find_cargo(on_step: &impl Fn(&str)) -> Result<PathBuf> {
-    if let Some(cargo) = which("cargo") {
-        return Ok(cargo);
-    }
-
-    on_step("installing Rust via rustup…");
-    let status = tokio::process::Command::new("sh")
-        .args([
-            "-c",
-            "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
-        ])
-        .status()
-        .await
-        .context("failed to run rustup installer")?;
-    anyhow::ensure!(status.success(), "rustup installation failed");
-
-    let home = std::env::var("HOME").unwrap_or_default();
-    let cargo = PathBuf::from(&home).join(".cargo/bin/cargo");
-    anyhow::ensure!(
-        cargo.exists(),
-        "cargo not found at {} after rustup install",
-        cargo.display()
-    );
-    Ok(cargo)
-}
-
-/// Look for a binary on PATH, falling back to `~/.cargo/bin`.
-fn which(name: &str) -> Option<PathBuf> {
-    let path = std::env::var("PATH").unwrap_or_default();
-    for dir in path.split(':') {
-        let candidate = PathBuf::from(dir).join(name);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    if let Ok(home) = std::env::var("HOME") {
-        let candidate = PathBuf::from(home).join(".cargo/bin").join(name);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    None
 }
 
 /// Read and deserialize a manifest from the default package registry directory.

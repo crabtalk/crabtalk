@@ -6,7 +6,6 @@ use clap::Args;
 use conversations::{ConversationView, render_conversation_view};
 use crossterm::event::{KeyCode, KeyModifiers};
 use events::EventEntry;
-use futures_util::StreamExt;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -36,21 +35,7 @@ impl Console {
         mut runner: Transport,
         conn_info: ConnectionInfo,
     ) -> Result<Option<std::path::PathBuf>> {
-        // Spawn background event subscription task.
-        let (event_tx, event_rx) = mpsc::unbounded_channel::<AgentEventMsg>();
-        let event_conn_info = conn_info.clone();
-        tokio::spawn(async move {
-            let Ok(mut sub) = sdk::connect_from(&event_conn_info).await else {
-                return;
-            };
-            let stream = sub.subscribe_events();
-            tokio::pin!(stream);
-            while let Some(Ok(msg)) = stream.next().await {
-                if event_tx.send(msg).is_err() {
-                    break;
-                }
-            }
-        });
+        let event_rx = conn_info.subscribe_events();
 
         let mut terminal = tui::setup()?;
 
@@ -80,7 +65,8 @@ impl Console {
         let mut idle_ticks: u8 = 0;
         let result = loop {
             // Drain pending events.
-            while let Ok(msg) = state.event_rx.try_recv() {
+            while let Ok(item) = state.event_rx.try_recv() {
+                let Ok(msg) = item else { continue };
                 let timestamp = chrono::DateTime::parse_from_rfc3339(&msg.timestamp)
                     .map(|dt| {
                         dt.with_timezone(&chrono::Local)
@@ -143,7 +129,7 @@ pub(crate) struct ConsoleState {
     conversation_view: ConversationView,
     daemon_conversations: Vec<wcore::protocol::message::ActiveConversationInfo>,
     events: VecDeque<EventEntry>,
-    event_rx: mpsc::UnboundedReceiver<AgentEventMsg>,
+    event_rx: mpsc::UnboundedReceiver<anyhow::Result<AgentEventMsg>>,
     event_scroll: usize,
 }
 

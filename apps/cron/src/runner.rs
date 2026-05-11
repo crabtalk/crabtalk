@@ -16,7 +16,7 @@ use tokio::{
     sync::{Mutex, broadcast},
     task::JoinHandle,
 };
-use wcore::protocol::message::{ClientMessage, StreamMsg};
+use wcore::protocol::message::StreamMsg;
 
 const FILE_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -183,21 +183,15 @@ fn spawn_timer(
 /// Errors inside the daemon surface as ErrorMsg in the stream and are logged
 /// by the SDK — the schedule continues on the next tick regardless.
 async fn fire(conn_info: &ConnectionInfo, entry: &CronEntry) {
-    let msg = ClientMessage::from(StreamMsg {
+    let req = StreamMsg {
         agent: entry.agent.clone(),
         content: format!("/{}", entry.skill),
         sender: Some(entry.sender.clone()),
         cwd: None,
         guest: None,
         tool_choice: None,
-    });
-    let mut rx = match conn_info.send(msg).await {
-        Ok(rx) => rx,
-        Err(e) => {
-            tracing::warn!("cron {}: failed to connect to daemon: {e}", entry.id);
-            return;
-        }
     };
+    let mut rx = conn_info.stream(req);
     while rx.recv().await.is_some() {}
 }
 

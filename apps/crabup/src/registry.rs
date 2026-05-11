@@ -14,59 +14,54 @@ pub struct Entry {
     pub description: &'static str,
 }
 
-pub const DAEMON: Entry = Entry {
-    short: "daemon",
-    krate: "crabtalkd",
-    label: Some("ai.crabtalk.daemon"),
-    description: "Crabtalk daemon",
-};
-
-pub const TUI: Entry = Entry {
-    short: "tui",
-    krate: "crabtalk-tui",
-    label: None,
-    description: "Crabtalk TUI client",
-};
-
-pub const TELEGRAM: Entry = Entry {
-    short: "telegram",
-    krate: "crabtalk-telegram",
-    label: Some("ai.crabtalk.telegram"),
-    description: "Telegram gateway for Crabtalk",
-};
-
-pub const WECHAT: Entry = Entry {
-    short: "wechat",
-    krate: "crabtalk-wechat",
-    label: Some("ai.crabtalk.wechat"),
-    description: "WeChat gateway for Crabtalk",
-};
-
-pub const SEARCH: Entry = Entry {
-    short: "search",
-    krate: "crabtalk-search",
-    label: Some("ai.crabtalk.search"),
-    description: "Meta-search engine for Crabtalk",
-};
-
-pub const CRON: Entry = Entry {
-    short: "cron",
-    krate: "crabtalk-cron",
-    label: Some("ai.crabtalk.cron"),
-    description: "Cron scheduler for Crabtalk",
-};
-
-const TABLE: &[&Entry] = &[&DAEMON, &TUI, &TELEGRAM, &WECHAT, &SEARCH, &CRON];
+const TABLE: &[Entry] = &[
+    Entry {
+        short: "daemon",
+        krate: "crabtalkd",
+        label: Some("ai.crabtalk.daemon"),
+        description: "Crabtalk daemon",
+    },
+    Entry {
+        short: "tui",
+        krate: "crabtalk-tui",
+        label: None,
+        description: "Crabtalk TUI client",
+    },
+    Entry {
+        short: "telegram",
+        krate: "crabtalk-telegram",
+        label: Some("ai.crabtalk.telegram"),
+        description: "Telegram gateway for Crabtalk",
+    },
+    Entry {
+        short: "wechat",
+        krate: "crabtalk-wechat",
+        label: Some("ai.crabtalk.wechat"),
+        description: "WeChat gateway for Crabtalk",
+    },
+    Entry {
+        short: "search",
+        krate: "crabtalk-search",
+        label: Some("ai.crabtalk.search"),
+        description: "Meta-search engine for Crabtalk",
+    },
+    Entry {
+        short: "cron",
+        krate: "crabtalk-cron",
+        label: Some("ai.crabtalk.cron"),
+        description: "Cron scheduler for Crabtalk",
+    },
+];
 
 impl Entry {
     /// All known registry entries.
-    pub fn all() -> &'static [&'static Self] {
+    pub fn all() -> &'static [Self] {
         TABLE
     }
 
     /// Look up a table entry by short name.
     pub fn by_short(short: &str) -> Option<&'static Self> {
-        TABLE.iter().find(|e| e.short == short).copied()
+        TABLE.iter().find(|e| e.short == short)
     }
 
     /// Resolve a short name to its crates.io crate name. Unknown names pass through.

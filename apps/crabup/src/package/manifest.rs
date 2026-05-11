@@ -83,21 +83,6 @@ impl Default for McpResource {
     }
 }
 
-impl McpResource {
-    /// Convert to the runtime MCP config.
-    pub fn to_server_config(&self) -> wcore::McpServerConfig {
-        wcore::McpServerConfig {
-            name: self.name.clone(),
-            command: self.command.clone(),
-            args: self.args.clone(),
-            env: self.env.clone(),
-            auto_restart: self.auto_restart,
-            url: self.url.clone(),
-            auth: self.auth.clone(),
-        }
-    }
-}
-
 /// An agent resource — discovered by convention from `agents/*.md`.
 #[derive(Serialize, Deserialize)]
 pub struct AgentResource {

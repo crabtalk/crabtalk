@@ -23,7 +23,7 @@ Layer 3 ─ Server
 Layer 4 ─ Adapters
   ├─ crabtalkd            Daemon CLI: run, setup, reload, events
   ├─ crabup               Package + service manager for the ecosystem
-  ├─ sdk                  NodeClient, message types for platform adapters
+  ├─ sdk                  Daemon client: connection, typed RPC sugars, stream adapters
   ├─ tui                  REPL, config TUI (optional daemon feature for all-in-one)
   └─ apps/                telegram, wechat (gateway clients); cron, search (standalone services)
 ```

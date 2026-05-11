@@ -5,11 +5,11 @@
 - Discussion: [#82](https://github.com/crabtalk/crabtalk/pull/82)
 - Crates: runtime, core
 
+> **Updated by [0193 (Agent-Owned MCP)](0193-agent-owned-mcp.md) (2026-04-28).** `AgentScope.mcps` was removed: agents now embed their MCP server configurations by value, so MCP scoping is intrinsic to the agent's declaration and no separate allowlist is needed.
+
 ## Summary
 
-A whitelist-based scoping system that restricts what an agent can access: tools,
-skills, and MCP servers. Enforced at dispatch time and advertised in the system
-prompt. This is a security boundary, not a hint.
+A whitelist-based scoping system that restricts what an agent can access: tools and skills. Enforced at dispatch time and advertised in the system prompt. This is a security boundary, not a hint. MCP scoping is no longer part of `AgentScope` — see [0193](0193-agent-owned-mcp.md) for the replacement model.
 
 Delegation is **not** scoped: crabtalk is a single-user runtime, and any
 registered agent can delegate to any other. Multi-tenant identity-based access
@@ -34,27 +34,21 @@ available. The runtime enforces it.
 pub struct AgentScope {
     pub tools: Vec<String>,     // empty = unrestricted
     pub skills: Vec<String>,    // empty = all skills
-    pub mcps: Vec<String>,      // empty = all MCP servers
 }
 ```
 
-Empty list means unrestricted. Non-empty means only listed items are allowed.
-This is an inclusive whitelist, not a denylist.
+Empty list means unrestricted. Non-empty means only listed items are allowed. This is an inclusive whitelist, not a denylist. MCPs are not part of `AgentScope`: `AgentConfig.mcps: Vec<McpServerConfig>` makes the declaration itself the scope (RFC 0193).
 
 ### Whitelist computation
 
-When an agent has any scoping (non-empty skills or mcps), the runtime computes
-a tool whitelist during `on_build_agent`:
+When an agent has any scoping (non-empty skills), the runtime computes a tool whitelist during `on_build_agent`:
 
-1. Start with `BASE_TOOLS`: `bash`, `ask_user`, `read`, `edit` — always
-   available.
+1. Start with `BASE_TOOLS`: `bash`, `ask_user`, `read`, `edit` — always available.
 2. If memory is enabled: add `recall`, `remember`, `memory`, `forget`.
 3. If skills list is non-empty: add `skill` tool.
-4. If mcps list is non-empty: add `mcp` tool.
+4. MCP tools the agent declared in `AgentConfig.mcps` are always included — declaration is the gate.
 
-The computed whitelist replaces `config.tools`. Tools not on the list are
-invisible to the agent. The `delegate` tool is always available — delegation
-is not gated by scope.
+The computed whitelist replaces `config.tools`. Tools not on the list are invisible to the agent. The `delegate` tool is always available — delegation is not gated by scope.
 
 ### Prompt injection
 
@@ -64,20 +58,19 @@ resources:
 ```xml
 <scope>
 skills: check-feeds, summarize
-mcp servers: search
 </scope>
 ```
 
-This tells the agent what it can use. The agent doesn't need to guess or
-discover — its boundaries are stated upfront.
+This tells the agent what it can use. The agent doesn't need to guess or discover — its boundaries are stated upfront. MCP servers are listed separately in the resource-hints block from the agent's own `mcps` declaration.
 
 ### Enforcement
 
-Scoping is enforced at three dispatch points:
+Scoping is enforced at two dispatch points:
 
-- **`dispatch_tool`** — rejects tool calls not in the agent's tool whitelist.
-- **`dispatch_skill`** — rejects skill names not in the agent's skill list.
-- **`dispatch_mcp`** — filters MCP server list to allowed servers.
+- **Tool dispatch** — rejects tool calls not in the agent's tool whitelist.
+- **Skill dispatch** — rejects skill names not in the agent's skill list.
+
+MCP dispatch needs no explicit gate: the agent only sees the MCPs it declared, so calls outside that set are structurally impossible.
 
 Enforcement happens at runtime, not just at prompt time. Even if the LLM
 ignores the `<scope>` block and tries to call a restricted tool, the dispatch
