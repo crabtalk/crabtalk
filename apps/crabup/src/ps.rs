@@ -39,8 +39,33 @@ pub fn run() -> Result<()> {
     }
 
     rows.sort();
+
+    let name_w = rows
+        .iter()
+        .map(|(n, _, _)| n.len())
+        .max()
+        .unwrap_or(0)
+        .max("NAME".len());
+    let port_w = rows
+        .iter()
+        .map(|(_, p, _)| p.to_string().len())
+        .max()
+        .unwrap_or(0)
+        .max("PORT".len());
+
+    println!(
+        "{:<name_w$}  {:>port_w$}  STATUS",
+        "NAME",
+        "PORT",
+        name_w = name_w,
+        port_w = port_w,
+    );
     for (name, port, status) in rows {
-        println!("{name}\t:{port}\t{status}");
+        println!(
+            "{name:<name_w$}  {port:>port_w$}  {status}",
+            name_w = name_w,
+            port_w = port_w,
+        );
     }
     Ok(())
 }
