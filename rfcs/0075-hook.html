@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-44fbef21.js";
+            window.path_to_searchindex_js = "../searchindex-7303227d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-1cc83451.js"></script>
@@ -188,81 +188,45 @@
 <li>Crates: core, runtime, daemon</li>
 </ul>
 <blockquote>
-<p><strong>Updated by <a href="0189-policy-at-the-edge.html">0189</a> (2026-04-28).</strong> <code>on_before_run</code> was removed; the trait now exposes <code>on_register_agent</code> / <code>on_unregister_agent</code> instead. See 0189 for the rationale.</p>
+<p><strong>Updated by <a href="https://github.com/crabtalk/crabtalk/pull/162">0162 (Hook-as-plugin)</a> and <a href="0189-policy-at-the-edge.html">0189 (Policy at the Edge)</a>.</strong> Hooks now own their tools (per-hook <code>schema()</code> + <code>dispatch()</code>) rather than registering through a shared <code>ToolRegistry</code>. <code>on_before_run</code> was removed and replaced by <code>on_register_agent</code> / <code>on_unregister_agent</code> for state tracking. <code>preprocess</code> returns <code>Option&lt;String&gt;</code> (None = pass through).</p>
 </blockquote>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
-<p>The Hook trait is the central extensibility point for agent lifecycle. It
-defines five methods that the runtime calls at specific points: building an
-agent, registering tools, preprocessing input, injecting context before a run,
-and observing events. Everything that customizes agent behavior — skills, memory,
-MCP, scoping, prompt injection — composes through this trait.</p>
+<p>The Hook trait is the central extensibility point for agent lifecycle. Each subsystem (skills, memory, MCP, scoping, OS tools) implements <code>Hook</code> to provide schemas, dispatch tool calls, contribute system-prompt fragments, observe events, preprocess messages, and track per-agent state. The runtime composes hooks behind a single facade and never reaches into a subsystem directly.</p>
 <h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
-<p>When the runtime was split out of the daemon (#75), a clean interface was needed
-between the runtime (which executes agents) and the hook implementations (which
-customize them). The runtime must not know about skills, memory, MCP, or daemon
-infrastructure. It only knows it has a <code>Hook</code> and calls its methods at the right
-times.</p>
-<p>This separation enables two modes: the daemon (full hook with skills, MCP,
-memory, event broadcasting) and embedded use (no hook, or a minimal one).</p>
+<p>When the runtime was split out of the daemon (#75), a clean interface was needed between the runtime (which executes agents) and the hook implementations (which customize them). The runtime must not know about skills, memory, MCP, or daemon infrastructure. It only knows it has a <code>Hook</code> and calls its methods at the right times.</p>
+<p>This separation enables two modes: the daemon (full hook with skills, MCP, memory, event broadcasting) and embedded use (no hook, or a minimal one).</p>
 <h2 id="design"><a class="header" href="#design">Design</a></h2>
 <h3 id="the-trait"><a class="header" href="#the-trait">The trait</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>pub trait Hook: Send + Sync {
-    fn on_build_agent(&amp;self, config: AgentConfig) -&gt; AgentConfig;
-    fn on_register_tools(&amp;self, tools: &amp;mut ToolRegistry) -&gt; impl Future&lt;Output = ()&gt;;
-    fn preprocess(&amp;self, agent: &amp;str, content: &amp;str) -&gt; String;
-    fn on_before_run(&amp;self, agent: &amp;str, session_id: u64, history: &amp;[Message]) -&gt; Vec&lt;Message&gt;;
-    fn on_event(&amp;self, agent: &amp;str, session_id: u64, event: &amp;AgentEvent);
+    fn schema(&amp;self) -&gt; Vec&lt;Tool&gt; { vec![] }
+    fn system_prompt(&amp;self) -&gt; Option&lt;String&gt; { None }
+    fn on_build_agent(&amp;self, config: AgentConfig) -&gt; AgentConfig { config }
+    fn on_register_agent(&amp;self, name: &amp;str, config: &amp;AgentConfig) {}
+    fn on_unregister_agent(&amp;self, name: &amp;str) {}
+    fn on_event(&amp;self, agent: &amp;str, conversation_id: u64, event: &amp;AgentEvent) {}
+    fn preprocess(&amp;self, agent: &amp;str, content: &amp;str) -&gt; Option&lt;String&gt; { None }
+    fn scoped_tools(&amp;self, config: &amp;AgentConfig) -&gt; (Vec&lt;String&gt;, Option&lt;String&gt;);
+    fn dispatch&lt;'a&gt;(&amp;'a self, name: &amp;'a str, call: ToolDispatch) -&gt; Option&lt;ToolFuture&lt;'a&gt;&gt; { None }
 }
 <span class="boring">}</span></code></pre>
 <p>All methods have default no-op implementations. <code>()</code> implements <code>Hook</code>.</p>
 <h3 id="lifecycle-points"><a class="header" href="#lifecycle-points">Lifecycle points</a></h3>
-<p><strong><code>on_build_agent</code></strong> — called when an agent is registered with the runtime.
-Receives the agent config, returns a modified config. This is where the system
-prompt is composed. The <code>Env</code> implementation chains:</p>
-<ol>
-<li>Environment block (OS, shell, platform).</li>
-<li>Memory prompt — behavioural guidance for the memory tools (see <a href="0150-memory-store.html">0150</a>).</li>
-<li>Resource hints (available MCP servers, available skills).</li>
-<li>Scope block (if agent has restricted skills/MCPs, appends a <code>&lt;scope&gt;</code>
-XML block listing allowed resources).</li>
-<li>Tool whitelist computation (restricts <code>config.tools</code> based on scope).</li>
-</ol>
-<p><strong><code>on_register_tools</code></strong> — called at runtime startup. Registers tool schemas
-(name, description, JSON schema) into the <code>ToolRegistry</code>. No handlers — dispatch
-is separate. <code>Env</code> registers: OS tools, skill tool, task/delegate tool,
-ask_user tool, memory tools (if enabled), and MCP-discovered tools.</p>
-<p><strong><code>preprocess</code></strong> — called before a user message enters the conversation. Used
-for slash command resolution: <code>/skill-name args</code> is transformed into the skill
-body wrapped in a <code>&lt;skill&gt;</code> tag. Happens before tool dispatch.</p>
-<p><strong><code>on_before_run</code></strong> — called before each agent execution (send/stream). Returns
-messages to inject into the conversation. <code>Env</code> injects:</p>
-<ol>
-<li>Agent descriptions (every registered agent’s name + description, so any
-agent can delegate to any other).</li>
-<li>Memory auto-recall (BM25 search on last user message, as <code>&lt;recall&gt;</code> block).</li>
-<li>Working directory announcement (as <code>&lt;environment&gt;</code> block).</li>
-</ol>
-<p>All injected messages are marked <code>auto_injected: true</code> — they’re ephemeral, not
-persisted, stripped before each run, and refreshed.</p>
-<p><strong><code>on_event</code></strong> — called after each agent step. Receives every <code>AgentEvent</code>
-(text deltas, tool calls, completions). <code>DaemonHost</code> uses this to broadcast
-events to console subscribers.</p>
+<p><strong><code>schema</code></strong> — the tools this hook owns. The composite hook unions every sub-hook’s <code>schema()</code> to expose the runtime-wide tool set. There is no shared <code>ToolRegistry</code> — each hook is the source of truth for its tools.</p>
+<p><strong><code>system_prompt</code></strong> — optional fragment appended to agent system prompts at build time. Used by hooks that always inject standing instructions (e.g. memory’s behavioural guidance).</p>
+<p><strong><code>on_build_agent</code></strong> — called when an agent is registered. Receives the agent config, returns a possibly-modified config. The composite implementation chains: environment block (OS, shell, platform), per-hook <code>system_prompt()</code> fragments, resource hints (available MCP servers, available skills), and a <code>&lt;scope&gt;</code> block when the agent restricts its tools/skills.</p>
+<p><strong><code>on_register_agent</code> / <code>on_unregister_agent</code></strong> — called when an agent is added to or removed from the runtime registry. Hooks that track per-agent state (scopes, descriptions, MCP fingerprint refcounts) record and clean up here. Symmetric: by the time <code>Runtime::agent()</code> returns the new agent, hook state is in place; by the time the agent is invisible, hook state has been dropped.</p>
+<p><strong><code>preprocess</code></strong> — called before a user message enters the conversation. Returns <code>Some(modified)</code> to transform, <code>None</code> to pass through. Slash-command resolution (<code>/skill-name args</code> → wrapped <code>&lt;skill&gt;</code> body) lives here.</p>
+<p><strong><code>scoped_tools</code></strong> — given an agent config, returns the subset of this hook’s tools the agent may call, plus an optional <code>&lt;scope&gt;</code> prompt line. Default: include every tool from <code>schema()</code> with no scope line. Hooks override to gate inclusion on <code>AgentConfig</code> fields (e.g. memory only when enabled, skill tool only when the agent has a skills list).</p>
+<p><strong><code>dispatch</code></strong> — called when an agent issues a tool call. Returns <code>Some(future)</code> if this hook owns the tool name, <code>None</code> otherwise. The composite walks hooks in order and dispatches to the first owner.</p>
+<p><strong><code>on_event</code></strong> — called after each agent step. Receives every <code>AgentEvent</code> (text deltas, tool calls, completions). <code>DaemonHook</code> uses this to broadcast events to subscribers.</p>
 <h3 id="composition"><a class="header" href="#composition">Composition</a></h3>
-<p><code>Env&lt;H: Host&gt;</code> is the engine environment. It composes <code>SkillHandler</code>,
-<code>McpHandler</code>, <code>Memory</code>, and <code>AgentScope</code> maps. It implements <code>Hook</code> by
-orchestrating all subsystems.</p>
-<p><code>DaemonEnv</code> is a type alias: <code>Env&lt;DaemonHost&gt;</code>. The daemon host
-adds ask_user dispatch, delegate dispatch, session CWD, and event broadcasting.</p>
-<p>For embedded use, <code>Env&lt;NoHost&gt;</code> provides the full engine without
-daemon infrastructure.</p>
+<p><code>DaemonHook</code> is the daemon’s composite hook. It holds a map of named sub-hooks (<code>skill</code>, <code>memory</code>, <code>mcp</code>, <code>os</code>, <code>delegate</code>, <code>ask_user</code>) and orchestrates them: <code>schema()</code> unions, <code>dispatch()</code> walks the registered owners, <code>on_build_agent</code> chains the system-prompt fragments, <code>on_register_agent</code>/<code>on_unregister_agent</code> fan out, <code>on_event</code> broadcasts.</p>
+<p>For embedded use, <code>()</code> implements <code>Hook</code> as a full no-op so the runtime works without any subsystems.</p>
 <h3 id="tool-dispatch"><a class="header" href="#tool-dispatch">Tool dispatch</a></h3>
-<p><code>Env::dispatch_tool</code> is the central routing table — a match on tool
-name. It’s not part of the <code>Hook</code> trait itself (the trait only registers
-schemas). The runtime calls <code>dispatch_tool</code> when an agent produces a tool call.
-Dispatch enforces scoping before routing.</p>
-<p>Dispatch returns <code>Result&lt;String, String&gt;</code>. <code>Ok</code> carries normal tool output; <code>Err</code> carries a handler-reported failure (invalid args, not found, scope rejection, operation error) or a dispatch-level failure (no tool sender, tool channel closed, reply dropped). The same convention applies to the <code>Host</code> trait methods for server-specific tools (<code>dispatch_ask_user</code>, <code>dispatch_delegate</code>, <code>dispatch_custom_tool</code>). The distinction propagates to the <code>AgentEvent::ToolResult.output</code> field and to the wire protocol’s <code>is_error</code> flag so UIs can render errors distinctly and agents can make retry decisions without string-matching error messages. <code>HistoryEntry::tool</code> still stores the inner string regardless of the arm — the LLM wire format has no <code>is_error</code> field, so the model sees the text either way.</p>
+<p>Dispatch is part of the <code>Hook</code> trait. When an agent produces a tool call, the runtime walks the composite hook and calls <code>dispatch(name, call)</code> until one returns <code>Some(future)</code>. Each hook owns the tools it declared via <code>schema()</code>; nothing else can claim them. Scope enforcement happens at the composite layer before walking sub-hooks.</p>
+<p>Dispatch returns <code>Result&lt;String, String&gt;</code>. <code>Ok</code> carries normal tool output; <code>Err</code> carries a handler-reported failure (invalid args, not found, scope rejection, operation error) or a dispatch-level failure (no tool sender, tool channel closed, reply dropped). The same convention applies to server-specific tools owned by the daemon (ask_user, delegate). The distinction propagates to the <code>AgentEvent::ToolResult.output</code> field and to the wire protocol’s <code>is_error</code> flag so UIs can render errors distinctly and agents can make retry decisions without string-matching error messages. <code>HistoryEntry::tool</code> still stores the inner string regardless of the arm — the LLM wire format has no <code>is_error</code> field, so the model sees the text either way.</p>
 <p>When an agent step produces multiple tool calls, the runtime dispatches them concurrently via <code>FuturesUnordered</code>; tool results are appended to history in the original call order (positional pairing with tool_calls is load-bearing for providers that correlate by index), but the <code>ToolResult</code> events fire in completion order so UIs show fast tools immediately without waiting on slow siblings.</p>
 <h2 id="alternatives"><a class="header" href="#alternatives">Alternatives</a></h2>
 <p><strong>Separate traits per concern.</strong> One trait for prompt building, one for tools,

@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-44fbef21.js";
+            window.path_to_searchindex_js = "searchindex-7303227d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-1cc83451.js"></script>
@@ -1065,81 +1065,45 @@ scanning only at startup/reload?</li>
 <li>Crates: core, runtime, daemon</li>
 </ul>
 <blockquote>
-<p><strong>Updated by <a href="#0189---policy-at-the-edge">0189</a> (2026-04-28).</strong> <code>on_before_run</code> was removed; the trait now exposes <code>on_register_agent</code> / <code>on_unregister_agent</code> instead. See 0189 for the rationale.</p>
+<p><strong>Updated by <a href="https://github.com/crabtalk/crabtalk/pull/162">0162 (Hook-as-plugin)</a> and <a href="#0189---policy-at-the-edge">0189 (Policy at the Edge)</a>.</strong> Hooks now own their tools (per-hook <code>schema()</code> + <code>dispatch()</code>) rather than registering through a shared <code>ToolRegistry</code>. <code>on_before_run</code> was removed and replaced by <code>on_register_agent</code> / <code>on_unregister_agent</code> for state tracking. <code>preprocess</code> returns <code>Option&lt;String&gt;</code> (None = pass through).</p>
 </blockquote>
 <h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
-<p>The Hook trait is the central extensibility point for agent lifecycle. It
-defines five methods that the runtime calls at specific points: building an
-agent, registering tools, preprocessing input, injecting context before a run,
-and observing events. Everything that customizes agent behavior — skills, memory,
-MCP, scoping, prompt injection — composes through this trait.</p>
+<p>The Hook trait is the central extensibility point for agent lifecycle. Each subsystem (skills, memory, MCP, scoping, OS tools) implements <code>Hook</code> to provide schemas, dispatch tool calls, contribute system-prompt fragments, observe events, preprocess messages, and track per-agent state. The runtime composes hooks behind a single facade and never reaches into a subsystem directly.</p>
 <h2 id="motivation-5"><a class="header" href="#motivation-5">Motivation</a></h2>
-<p>When the runtime was split out of the daemon (#75), a clean interface was needed
-between the runtime (which executes agents) and the hook implementations (which
-customize them). The runtime must not know about skills, memory, MCP, or daemon
-infrastructure. It only knows it has a <code>Hook</code> and calls its methods at the right
-times.</p>
-<p>This separation enables two modes: the daemon (full hook with skills, MCP,
-memory, event broadcasting) and embedded use (no hook, or a minimal one).</p>
+<p>When the runtime was split out of the daemon (#75), a clean interface was needed between the runtime (which executes agents) and the hook implementations (which customize them). The runtime must not know about skills, memory, MCP, or daemon infrastructure. It only knows it has a <code>Hook</code> and calls its methods at the right times.</p>
+<p>This separation enables two modes: the daemon (full hook with skills, MCP, memory, event broadcasting) and embedded use (no hook, or a minimal one).</p>
 <h2 id="design-5"><a class="header" href="#design-5">Design</a></h2>
 <h3 id="the-trait"><a class="header" href="#the-trait">The trait</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>pub trait Hook: Send + Sync {
-    fn on_build_agent(&amp;self, config: AgentConfig) -&gt; AgentConfig;
-    fn on_register_tools(&amp;self, tools: &amp;mut ToolRegistry) -&gt; impl Future&lt;Output = ()&gt;;
-    fn preprocess(&amp;self, agent: &amp;str, content: &amp;str) -&gt; String;
-    fn on_before_run(&amp;self, agent: &amp;str, session_id: u64, history: &amp;[Message]) -&gt; Vec&lt;Message&gt;;
-    fn on_event(&amp;self, agent: &amp;str, session_id: u64, event: &amp;AgentEvent);
+    fn schema(&amp;self) -&gt; Vec&lt;Tool&gt; { vec![] }
+    fn system_prompt(&amp;self) -&gt; Option&lt;String&gt; { None }
+    fn on_build_agent(&amp;self, config: AgentConfig) -&gt; AgentConfig { config }
+    fn on_register_agent(&amp;self, name: &amp;str, config: &amp;AgentConfig) {}
+    fn on_unregister_agent(&amp;self, name: &amp;str) {}
+    fn on_event(&amp;self, agent: &amp;str, conversation_id: u64, event: &amp;AgentEvent) {}
+    fn preprocess(&amp;self, agent: &amp;str, content: &amp;str) -&gt; Option&lt;String&gt; { None }
+    fn scoped_tools(&amp;self, config: &amp;AgentConfig) -&gt; (Vec&lt;String&gt;, Option&lt;String&gt;);
+    fn dispatch&lt;'a&gt;(&amp;'a self, name: &amp;'a str, call: ToolDispatch) -&gt; Option&lt;ToolFuture&lt;'a&gt;&gt; { None }
 }
 <span class="boring">}</span></code></pre>
 <p>All methods have default no-op implementations. <code>()</code> implements <code>Hook</code>.</p>
 <h3 id="lifecycle-points"><a class="header" href="#lifecycle-points">Lifecycle points</a></h3>
-<p><strong><code>on_build_agent</code></strong> — called when an agent is registered with the runtime.
-Receives the agent config, returns a modified config. This is where the system
-prompt is composed. The <code>Env</code> implementation chains:</p>
-<ol>
-<li>Environment block (OS, shell, platform).</li>
-<li>Memory prompt — behavioural guidance for the memory tools (see <a href="#0150---memory-store">0150</a>).</li>
-<li>Resource hints (available MCP servers, available skills).</li>
-<li>Scope block (if agent has restricted skills/MCPs, appends a <code>&lt;scope&gt;</code>
-XML block listing allowed resources).</li>
-<li>Tool whitelist computation (restricts <code>config.tools</code> based on scope).</li>
-</ol>
-<p><strong><code>on_register_tools</code></strong> — called at runtime startup. Registers tool schemas
-(name, description, JSON schema) into the <code>ToolRegistry</code>. No handlers — dispatch
-is separate. <code>Env</code> registers: OS tools, skill tool, task/delegate tool,
-ask_user tool, memory tools (if enabled), and MCP-discovered tools.</p>
-<p><strong><code>preprocess</code></strong> — called before a user message enters the conversation. Used
-for slash command resolution: <code>/skill-name args</code> is transformed into the skill
-body wrapped in a <code>&lt;skill&gt;</code> tag. Happens before tool dispatch.</p>
-<p><strong><code>on_before_run</code></strong> — called before each agent execution (send/stream). Returns
-messages to inject into the conversation. <code>Env</code> injects:</p>
-<ol>
-<li>Agent descriptions (every registered agent’s name + description, so any
-agent can delegate to any other).</li>
-<li>Memory auto-recall (BM25 search on last user message, as <code>&lt;recall&gt;</code> block).</li>
-<li>Working directory announcement (as <code>&lt;environment&gt;</code> block).</li>
-</ol>
-<p>All injected messages are marked <code>auto_injected: true</code> — they’re ephemeral, not
-persisted, stripped before each run, and refreshed.</p>
-<p><strong><code>on_event</code></strong> — called after each agent step. Receives every <code>AgentEvent</code>
-(text deltas, tool calls, completions). <code>DaemonHost</code> uses this to broadcast
-events to console subscribers.</p>
+<p><strong><code>schema</code></strong> — the tools this hook owns. The composite hook unions every sub-hook’s <code>schema()</code> to expose the runtime-wide tool set. There is no shared <code>ToolRegistry</code> — each hook is the source of truth for its tools.</p>
+<p><strong><code>system_prompt</code></strong> — optional fragment appended to agent system prompts at build time. Used by hooks that always inject standing instructions (e.g. memory’s behavioural guidance).</p>
+<p><strong><code>on_build_agent</code></strong> — called when an agent is registered. Receives the agent config, returns a possibly-modified config. The composite implementation chains: environment block (OS, shell, platform), per-hook <code>system_prompt()</code> fragments, resource hints (available MCP servers, available skills), and a <code>&lt;scope&gt;</code> block when the agent restricts its tools/skills.</p>
+<p><strong><code>on_register_agent</code> / <code>on_unregister_agent</code></strong> — called when an agent is added to or removed from the runtime registry. Hooks that track per-agent state (scopes, descriptions, MCP fingerprint refcounts) record and clean up here. Symmetric: by the time <code>Runtime::agent()</code> returns the new agent, hook state is in place; by the time the agent is invisible, hook state has been dropped.</p>
+<p><strong><code>preprocess</code></strong> — called before a user message enters the conversation. Returns <code>Some(modified)</code> to transform, <code>None</code> to pass through. Slash-command resolution (<code>/skill-name args</code> → wrapped <code>&lt;skill&gt;</code> body) lives here.</p>
+<p><strong><code>scoped_tools</code></strong> — given an agent config, returns the subset of this hook’s tools the agent may call, plus an optional <code>&lt;scope&gt;</code> prompt line. Default: include every tool from <code>schema()</code> with no scope line. Hooks override to gate inclusion on <code>AgentConfig</code> fields (e.g. memory only when enabled, skill tool only when the agent has a skills list).</p>
+<p><strong><code>dispatch</code></strong> — called when an agent issues a tool call. Returns <code>Some(future)</code> if this hook owns the tool name, <code>None</code> otherwise. The composite walks hooks in order and dispatches to the first owner.</p>
+<p><strong><code>on_event</code></strong> — called after each agent step. Receives every <code>AgentEvent</code> (text deltas, tool calls, completions). <code>DaemonHook</code> uses this to broadcast events to subscribers.</p>
 <h3 id="composition-1"><a class="header" href="#composition-1">Composition</a></h3>
-<p><code>Env&lt;H: Host&gt;</code> is the engine environment. It composes <code>SkillHandler</code>,
-<code>McpHandler</code>, <code>Memory</code>, and <code>AgentScope</code> maps. It implements <code>Hook</code> by
-orchestrating all subsystems.</p>
-<p><code>DaemonEnv</code> is a type alias: <code>Env&lt;DaemonHost&gt;</code>. The daemon host
-adds ask_user dispatch, delegate dispatch, session CWD, and event broadcasting.</p>
-<p>For embedded use, <code>Env&lt;NoHost&gt;</code> provides the full engine without
-daemon infrastructure.</p>
+<p><code>DaemonHook</code> is the daemon’s composite hook. It holds a map of named sub-hooks (<code>skill</code>, <code>memory</code>, <code>mcp</code>, <code>os</code>, <code>delegate</code>, <code>ask_user</code>) and orchestrates them: <code>schema()</code> unions, <code>dispatch()</code> walks the registered owners, <code>on_build_agent</code> chains the system-prompt fragments, <code>on_register_agent</code>/<code>on_unregister_agent</code> fan out, <code>on_event</code> broadcasts.</p>
+<p>For embedded use, <code>()</code> implements <code>Hook</code> as a full no-op so the runtime works without any subsystems.</p>
 <h3 id="tool-dispatch-1"><a class="header" href="#tool-dispatch-1">Tool dispatch</a></h3>
-<p><code>Env::dispatch_tool</code> is the central routing table — a match on tool
-name. It’s not part of the <code>Hook</code> trait itself (the trait only registers
-schemas). The runtime calls <code>dispatch_tool</code> when an agent produces a tool call.
-Dispatch enforces scoping before routing.</p>
-<p>Dispatch returns <code>Result&lt;String, String&gt;</code>. <code>Ok</code> carries normal tool output; <code>Err</code> carries a handler-reported failure (invalid args, not found, scope rejection, operation error) or a dispatch-level failure (no tool sender, tool channel closed, reply dropped). The same convention applies to the <code>Host</code> trait methods for server-specific tools (<code>dispatch_ask_user</code>, <code>dispatch_delegate</code>, <code>dispatch_custom_tool</code>). The distinction propagates to the <code>AgentEvent::ToolResult.output</code> field and to the wire protocol’s <code>is_error</code> flag so UIs can render errors distinctly and agents can make retry decisions without string-matching error messages. <code>HistoryEntry::tool</code> still stores the inner string regardless of the arm — the LLM wire format has no <code>is_error</code> field, so the model sees the text either way.</p>
+<p>Dispatch is part of the <code>Hook</code> trait. When an agent produces a tool call, the runtime walks the composite hook and calls <code>dispatch(name, call)</code> until one returns <code>Some(future)</code>. Each hook owns the tools it declared via <code>schema()</code>; nothing else can claim them. Scope enforcement happens at the composite layer before walking sub-hooks.</p>
+<p>Dispatch returns <code>Result&lt;String, String&gt;</code>. <code>Ok</code> carries normal tool output; <code>Err</code> carries a handler-reported failure (invalid args, not found, scope rejection, operation error) or a dispatch-level failure (no tool sender, tool channel closed, reply dropped). The same convention applies to server-specific tools owned by the daemon (ask_user, delegate). The distinction propagates to the <code>AgentEvent::ToolResult.output</code> field and to the wire protocol’s <code>is_error</code> flag so UIs can render errors distinctly and agents can make retry decisions without string-matching error messages. <code>HistoryEntry::tool</code> still stores the inner string regardless of the arm — the LLM wire format has no <code>is_error</code> field, so the model sees the text either way.</p>
 <p>When an agent step produces multiple tool calls, the runtime dispatches them concurrently via <code>FuturesUnordered</code>; tool results are appended to history in the original call order (positional pairing with tool_calls is load-bearing for providers that correlate by index), but the <code>ToolResult</code> events fire in completion order so UIs show fast tools immediately without waiting on slow siblings.</p>
 <h2 id="alternatives-5"><a class="header" href="#alternatives-5">Alternatives</a></h2>
 <p><strong>Separate traits per concern.</strong> One trait for prompt building, one for tools,
@@ -1196,7 +1160,7 @@ once = false
 <p>The scheduler reads <code>$CRABTALK_HOME/config/crons.toml</code>. To add, remove, or change a schedule, edit this file in place. The running service polls the mtime every 2 seconds and reconciles timers on change — abort removed schedules, start new ones. Atomic write (tmp + rename) keeps readers consistent.</p>
 <p>For <code>once</code> schedules the service deletes the entry after firing — the only mutation the service itself makes.</p>
 <h3 id="firing"><a class="header" href="#firing">Firing</a></h3>
-<p>On a scheduled tick the service opens a <code>NodeClient</code> to the daemon and sends:</p>
+<p>On a scheduled tick the service calls <code>ConnectionInfo::stream</code> from the SDK with:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>StreamMsg {
@@ -1206,7 +1170,7 @@ once = false
     ..Default::default()
 }
 <span class="boring">}</span></code></pre>
-<p>The reply stream is drained and discarded — output goes to conversation history through the daemon’s normal path. Failures surface as <code>ErrorMsg</code> frames; the schedule continues on the next tick.</p>
+<p>The reply stream is drained and discarded — output goes to conversation history through the daemon’s normal path. Failures surface as <code>Err</code> items on the receiver; the schedule continues on the next tick.</p>
 <h2 id="alternatives-6"><a class="header" href="#alternatives-6">Alternatives</a></h2>
 <p><strong>Keep cron inside the daemon.</strong> Rejected. Cron forced a <code>P: Provider</code> bound on the daemon struct for no reason other than that <code>CronStore</code> called <code>runtime.send_to</code>. Embedding also prevented alternate schedulers (e.g. multi-tenant cloud schedulers) from reusing the daemon without running cron.</p>
 <p><strong>Introduce an <code>InvokeSkill</code> protocol variant.</strong> Rejected. Cron already has everything it needs from <code>SendMsg</code> / <code>StreamMsg</code> — the content <code>/{skill}</code> pattern is what chat-driven slash commands use too. Adding a variant would fragment the trigger contract across consumers and force every downstream scheduler (e.g. external ones) to learn a new wire format.</p>
@@ -1226,10 +1190,11 @@ once = false
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/pull/82">#82</a></li>
 <li>Crates: runtime, core</li>
 </ul>
+<blockquote>
+<p><strong>Updated by <a href="#0193---agent-owned-mcp">0193 (Agent-Owned MCP)</a> (2026-04-28).</strong> <code>AgentScope.mcps</code> was removed: agents now embed their MCP server configurations by value, so MCP scoping is intrinsic to the agent’s declaration and no separate allowlist is needed.</p>
+</blockquote>
 <h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
-<p>A whitelist-based scoping system that restricts what an agent can access: tools,
-skills, and MCP servers. Enforced at dispatch time and advertised in the system
-prompt. This is a security boundary, not a hint.</p>
+<p>A whitelist-based scoping system that restricts what an agent can access: tools and skills. Enforced at dispatch time and advertised in the system prompt. This is a security boundary, not a hint. MCP scoping is no longer part of <code>AgentScope</code> — see <a href="#0193---agent-owned-mcp">0193</a> for the replacement model.</p>
 <p>Delegation is <strong>not</strong> scoped: crabtalk is a single-user runtime, and any
 registered agent can delegate to any other. Multi-tenant identity-based access
 control, if ever needed, belongs in a wrapper above the runtime, not inside
@@ -1248,41 +1213,33 @@ available. The runtime enforces it.</p>
 </span>pub struct AgentScope {
     pub tools: Vec&lt;String&gt;,     // empty = unrestricted
     pub skills: Vec&lt;String&gt;,    // empty = all skills
-    pub mcps: Vec&lt;String&gt;,      // empty = all MCP servers
 }
 <span class="boring">}</span></code></pre>
-<p>Empty list means unrestricted. Non-empty means only listed items are allowed.
-This is an inclusive whitelist, not a denylist.</p>
+<p>Empty list means unrestricted. Non-empty means only listed items are allowed. This is an inclusive whitelist, not a denylist. MCPs are not part of <code>AgentScope</code>: <code>AgentConfig.mcps: Vec&lt;McpServerConfig&gt;</code> makes the declaration itself the scope (RFC 0193).</p>
 <h3 id="whitelist-computation"><a class="header" href="#whitelist-computation">Whitelist computation</a></h3>
-<p>When an agent has any scoping (non-empty skills or mcps), the runtime computes
-a tool whitelist during <code>on_build_agent</code>:</p>
+<p>When an agent has any scoping (non-empty skills), the runtime computes a tool whitelist during <code>on_build_agent</code>:</p>
 <ol>
-<li>Start with <code>BASE_TOOLS</code>: <code>bash</code>, <code>ask_user</code>, <code>read</code>, <code>edit</code> — always
-available.</li>
+<li>Start with <code>BASE_TOOLS</code>: <code>bash</code>, <code>ask_user</code>, <code>read</code>, <code>edit</code> — always available.</li>
 <li>If memory is enabled: add <code>recall</code>, <code>remember</code>, <code>memory</code>, <code>forget</code>.</li>
 <li>If skills list is non-empty: add <code>skill</code> tool.</li>
-<li>If mcps list is non-empty: add <code>mcp</code> tool.</li>
+<li>MCP tools the agent declared in <code>AgentConfig.mcps</code> are always included — declaration is the gate.</li>
 </ol>
-<p>The computed whitelist replaces <code>config.tools</code>. Tools not on the list are
-invisible to the agent. The <code>delegate</code> tool is always available — delegation
-is not gated by scope.</p>
+<p>The computed whitelist replaces <code>config.tools</code>. Tools not on the list are invisible to the agent. The <code>delegate</code> tool is always available — delegation is not gated by scope.</p>
 <h3 id="prompt-injection"><a class="header" href="#prompt-injection">Prompt injection</a></h3>
 <p>A <code>&lt;scope&gt;</code> block is appended to the system prompt listing the agent’s allowed
 resources:</p>
 <pre><code class="language-xml">&lt;scope&gt;
 skills: check-feeds, summarize
-mcp servers: search
 &lt;/scope&gt;
 </code></pre>
-<p>This tells the agent what it can use. The agent doesn’t need to guess or
-discover — its boundaries are stated upfront.</p>
+<p>This tells the agent what it can use. The agent doesn’t need to guess or discover — its boundaries are stated upfront. MCP servers are listed separately in the resource-hints block from the agent’s own <code>mcps</code> declaration.</p>
 <h3 id="enforcement"><a class="header" href="#enforcement">Enforcement</a></h3>
-<p>Scoping is enforced at three dispatch points:</p>
+<p>Scoping is enforced at two dispatch points:</p>
 <ul>
-<li><strong><code>dispatch_tool</code></strong> — rejects tool calls not in the agent’s tool whitelist.</li>
-<li><strong><code>dispatch_skill</code></strong> — rejects skill names not in the agent’s skill list.</li>
-<li><strong><code>dispatch_mcp</code></strong> — filters MCP server list to allowed servers.</li>
+<li><strong>Tool dispatch</strong> — rejects tool calls not in the agent’s tool whitelist.</li>
+<li><strong>Skill dispatch</strong> — rejects skill names not in the agent’s skill list.</li>
 </ul>
+<p>MCP dispatch needs no explicit gate: the agent only sees the MCPs it declared, so calls outside that set are structurally impossible.</p>
 <p>Enforcement happens at runtime, not just at prompt time. Even if the LLM
 ignores the <code>&lt;scope&gt;</code> block and tries to call a restricted tool, the dispatch
 layer rejects it.</p>
@@ -1744,8 +1701,8 @@ struct Entry {
 <p><code>Memory::apply(op)</code> mutates + flushes. Callers never touch <code>fs::write</code> directly.</p>
 <h3 id="recall"><a class="header" href="#recall">Recall</a></h3>
 <p>BM25 with Lucene-style IDF (<code>ln((n - df + 0.5)/(df + 0.5) + 1.0)</code>), k1=1.2, b=0.75. The index is an inverted index of tokens from entry content and aliases, keyed by <code>EntryId</code>. Search walks the posting lists for query terms instead of rescanning every entry on every query.</p>
-<h3 id="auto-recall"><a class="header" href="#auto-recall">Auto-recall</a></h3>
-<p>Before each agent turn (<code>before_run</code>), the hook takes the first 8 words of the last user message, runs BM25 search, and injects hits as an auto-injected <code>&lt;recall&gt;</code> user turn. Auto-injected messages are not persisted and refresh every turn.</p>
+<h3 id="recall-is-model-driven"><a class="header" href="#recall-is-model-driven">Recall is model-driven</a></h3>
+<p>There is no auto-recall. RFC 0189 removed the per-turn injection: the runtime never silently searches memory or prepends <code>&lt;recall&gt;</code> blocks. Recall happens only when the model calls the <code>recall</code> tool itself, or when a client explicitly searches memory before sending a user message. The <code>Memory::before_run</code> helper is gone; <code>MemoryHook</code> no longer participates in <code>on_before_run</code>.</p>
 <h3 id="system-prompt"><a class="header" href="#system-prompt">System prompt</a></h3>
 <p>The hook contributes one <code>&lt;system_prompt&gt;</code> fragment: the contents of <code>prompts/memory.md</code>, which tells the agent <em>when</em> to use the memory tools (tool <em>signatures</em> come from each input struct’s <code>///</code> doc comment via schemars). The agent’s identity / behavior prompt is <strong>not</strong> the memory store’s responsibility — it’s <code>Crab.md</code>, layered from <code>&lt;config_dir&gt;/Crab.md</code> and any project-local <code>Crab.md</code> walked up from CWD (see <code>daemon::host::discover_instructions</code>).</p>
 <h3 id="tools"><a class="header" href="#tools">Tools</a></h3>
@@ -1909,13 +1866,13 @@ crabup &lt;name&gt; logs [-f]
 <p><strong>Updated by <a href="#0189---policy-at-the-edge">0189</a> (2026-04-28).</strong> The “automatic compaction on overflow as a safety net” carve-out and auto-title generation were both removed; clients drive both via <code>compact_conversation</code> and a future <code>generate_title</code> RPC, gated on the new <code>AgentEvent::ContextUsage</code> events. See 0189 for the rationale.</p>
 </blockquote>
 <h2 id="summary-12"><a class="header" href="#summary-12">Summary</a></h2>
-<p>Collapse the topic subsystem. Sessions persist unconditionally, always get auto-titled, and carry a small runtime-managed meta blob. Recall gains a second BM25 index — this one over conversation messages — returning windowed excerpts with bounded size. The runtime exposes narrow session primitives and two search tools; client UX owns <code>/clear</code>, <code>/new</code>, <code>/compact</code>, and session routing. The “topic” concept dissolves: content-derived session search (BM25) replaces tag-based grouping, and any curated grouping that survives is a client concern.</p>
+<p>Collapse the topic subsystem. Sessions persist unconditionally and carry a small runtime-managed meta blob. Recall gains a second BM25 index — this one over conversation messages — returning windowed excerpts with bounded size. The runtime exposes narrow session primitives and two search tools; client UX owns <code>/clear</code>, <code>/new</code>, <code>/compact</code>, titling, and session routing. The “topic” concept dissolves: content-derived session search (BM25) replaces tag-based grouping, and any curated grouping that survives is a client concern.</p>
 <h2 id="motivation-12"><a class="header" href="#motivation-12">Motivation</a></h2>
 <p>RFC 0171 introduced topic switching to partition a single <code>(agent, sender)</code> pair into N parallel threads keyed by title, with tmp chats that skip persistence until the agent “promotes” them by entering a topic. In practice it conflated four independent concerns into one knot — routing (“which conversation does this message land in?”), persistence policy (“should this session hit storage?”), recall indexing (“how do we find related past work?”), and lifecycle UX (“when does a chat end and a new one begin?”). Each wanted a different home, and riding one mechanism for all of them produced the <code>TopicRouter</code> reservation/rollback dance, the tmp/promote split, and agent-upfront title commitment on what should have been retrospective categorization.</p>
 <p>The reframe driving this RFC: <em>a topic is not a thing</em>. It was a name trying to be a routing key, a memory kind, a session tag, and a recall index simultaneously. With BM25 over session messages, content-derived recall eats the tag’s lunch — the agent searches “cron refactor” and gets back the conversations that actually discussed it, without any of them ever being classified upfront. What remains worth keeping is a <code>summary</code> field that boosts search ranking when one happens to exist (piggybacking on work the runtime already does during overflow compaction).</p>
 <h2 id="design-12"><a class="header" href="#design-12">Design</a></h2>
 <h3 id="layering-runtime-vs-client"><a class="header" href="#layering-runtime-vs-client">Layering: runtime vs. client</a></h3>
-<p>The runtime’s job is to provide mechanical primitives. UX decisions (when to clear, when to compact for cleanliness, which session to route a message to, how to surface archival browsing) belong one layer up in the client. The one exception is overflow compaction — a context-window overflow is a hard constraint the client can’t see coming, so the runtime keeps automatic compaction on overflow as a safety net. Every other form of compaction, clearing, and switching is a client concern composed from primitives.</p>
+<p>The runtime’s job is to provide mechanical primitives. UX and policy decisions — when to clear, when to compact, when to title, when to recall, which session to route a message to, how to surface archival browsing — belong one layer up in the client. RFC 0189 finished the move: the runtime no longer auto-compacts on overflow, no longer spawns title generation, no longer auto-recalls. Clients drive <code>compact_conversation</code>, future <code>generate_title</code>, and explicit memory search themselves, gated on <code>AgentEvent::ContextUsage</code> events.</p>
 <p>Runtime primitives (policy-free):</p>
 <ul>
 <li><code>new_session(agent, sender) -&gt; id</code> — always creates, always persists. No tmp, no deferred-persistence gate.</li>
@@ -1929,11 +1886,7 @@ crabup &lt;name&gt; logs [-f]
 <li><code>search_memory(query) -&gt; [Entry]</code> — unchanged. BM25 over memory entries; returns whole entries because entries are small.</li>
 <li><code>search_sessions(query, context_before=4, context_after=4, filters?) -&gt; [SessionHit]</code> — new. BM25 over message text; returns bounded windowed excerpts.</li>
 </ul>
-<p>Auto-behaviors (runtime-owned, mechanical):</p>
-<ul>
-<li>Auto-title generation after the first exchange (unchanged; already in <code>spawn_title_generation</code>).</li>
-<li>Overflow compaction under context-window pressure, piggybacking to emit a <code>summary</code> into <code>ConversationMeta</code> so session search can boost it.</li>
-</ul>
+<p>Auto-behaviors: none. Both auto-titling and overflow compaction were removed by RFC 0189. The <code>summary</code> field on <code>ConversationMeta</code> is still populated when a client triggers <code>compact_conversation</code>, and session search still boosts on it; the runtime just doesn’t <em>initiate</em> either step on its own.</p>
 <p>Client-owned (explicit non-goals for the runtime):</p>
 <ul>
 <li><code>/clear</code>, <code>/new</code>, <code>/compact</code>, “resume session by title”, session picker UX — composed from the primitives above.</li>
@@ -1948,10 +1901,10 @@ crabup &lt;name&gt; logs [-f]
     pub agent: String,            // immutable, set at creation
     pub created_by: String,       // immutable, set at creation
     pub created_at: String,       // immutable, set at creation
-    pub title: String,            // auto-generated after first exchange
+    pub title: String,            // empty until a client sets one (no auto-title; no wire RPC yet)
     pub updated_at: String,       // bumped on every append_message
     pub message_count: u64,       // bumped on every append_message
-    pub summary: Option&lt;String&gt;,  // emitted by overflow compaction
+    pub summary: Option&lt;String&gt;,  // populated when a client calls compact_conversation
 }
 <span class="boring">}</span></code></pre>
 <p>Removed: <code>topic</code> (subsumed by session search), <code>uptime_secs</code> (replaced by <code>updated_at</code>; uptime is derivable if a caller still needs it).</p>
@@ -1963,9 +1916,9 @@ crabup &lt;name&gt; logs [-f]
 </thead>
 <tbody>
 <tr><td><code>agent</code>, <code>created_by</code>, <code>created_at</code></td><td>runtime</td><td>session creation</td></tr>
-<tr><td><code>title</code></td><td>runtime</td><td>auto-gen after 2+ messages</td></tr>
+<tr><td><code>title</code></td><td>—</td><td>empty by default; client-driven titling is a follow-up (no wire RPC yet)</td></tr>
 <tr><td><code>updated_at</code>, <code>message_count</code></td><td>runtime</td><td>every <code>append_message</code></td></tr>
-<tr><td><code>summary</code></td><td>runtime</td><td>during overflow compaction</td></tr>
+<tr><td><code>summary</code></td><td>runtime</td><td>when a client triggers <code>compact_conversation</code></td></tr>
 </tbody>
 </table>
 </div>

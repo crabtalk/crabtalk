@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-44fbef21.js";
+            window.path_to_searchindex_js = "../searchindex-7303227d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-1cc83451.js"></script>
@@ -284,8 +284,8 @@ struct Entry {
 <p><code>Memory::apply(op)</code> mutates + flushes. Callers never touch <code>fs::write</code> directly.</p>
 <h3 id="recall"><a class="header" href="#recall">Recall</a></h3>
 <p>BM25 with Lucene-style IDF (<code>ln((n - df + 0.5)/(df + 0.5) + 1.0)</code>), k1=1.2, b=0.75. The index is an inverted index of tokens from entry content and aliases, keyed by <code>EntryId</code>. Search walks the posting lists for query terms instead of rescanning every entry on every query.</p>
-<h3 id="auto-recall"><a class="header" href="#auto-recall">Auto-recall</a></h3>
-<p>Before each agent turn (<code>before_run</code>), the hook takes the first 8 words of the last user message, runs BM25 search, and injects hits as an auto-injected <code>&lt;recall&gt;</code> user turn. Auto-injected messages are not persisted and refresh every turn.</p>
+<h3 id="recall-is-model-driven"><a class="header" href="#recall-is-model-driven">Recall is model-driven</a></h3>
+<p>There is no auto-recall. RFC 0189 removed the per-turn injection: the runtime never silently searches memory or prepends <code>&lt;recall&gt;</code> blocks. Recall happens only when the model calls the <code>recall</code> tool itself, or when a client explicitly searches memory before sending a user message. The <code>Memory::before_run</code> helper is gone; <code>MemoryHook</code> no longer participates in <code>on_before_run</code>.</p>
 <h3 id="system-prompt"><a class="header" href="#system-prompt">System prompt</a></h3>
 <p>The hook contributes one <code>&lt;system_prompt&gt;</code> fragment: the contents of <code>prompts/memory.md</code>, which tells the agent <em>when</em> to use the memory tools (tool <em>signatures</em> come from each input struct’s <code>///</code> doc comment via schemars). The agent’s identity / behavior prompt is <strong>not</strong> the memory store’s responsibility — it’s <code>Crab.md</code>, layered from <code>&lt;config_dir&gt;/Crab.md</code> and any project-local <code>Crab.md</code> walked up from CWD (see <code>daemon::host::discover_instructions</code>).</p>
 <h3 id="tools"><a class="header" href="#tools">Tools</a></h3>

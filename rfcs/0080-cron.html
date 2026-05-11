@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-44fbef21.js";
+            window.path_to_searchindex_js = "../searchindex-7303227d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-1cc83451.js"></script>
@@ -220,7 +220,7 @@ once = false
 <p>The scheduler reads <code>$CRABTALK_HOME/config/crons.toml</code>. To add, remove, or change a schedule, edit this file in place. The running service polls the mtime every 2 seconds and reconciles timers on change — abort removed schedules, start new ones. Atomic write (tmp + rename) keeps readers consistent.</p>
 <p>For <code>once</code> schedules the service deletes the entry after firing — the only mutation the service itself makes.</p>
 <h3 id="firing"><a class="header" href="#firing">Firing</a></h3>
-<p>On a scheduled tick the service opens a <code>NodeClient</code> to the daemon and sends:</p>
+<p>On a scheduled tick the service calls <code>ConnectionInfo::stream</code> from the SDK with:</p>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>StreamMsg {
@@ -230,7 +230,7 @@ once = false
     ..Default::default()
 }
 <span class="boring">}</span></code></pre>
-<p>The reply stream is drained and discarded — output goes to conversation history through the daemon’s normal path. Failures surface as <code>ErrorMsg</code> frames; the schedule continues on the next tick.</p>
+<p>The reply stream is drained and discarded — output goes to conversation history through the daemon’s normal path. Failures surface as <code>Err</code> items on the receiver; the schedule continues on the next tick.</p>
 <h2 id="alternatives"><a class="header" href="#alternatives">Alternatives</a></h2>
 <p><strong>Keep cron inside the daemon.</strong> Rejected. Cron forced a <code>P: Provider</code> bound on the daemon struct for no reason other than that <code>CronStore</code> called <code>runtime.send_to</code>. Embedding also prevented alternate schedulers (e.g. multi-tenant cloud schedulers) from reusing the daemon without running cron.</p>
 <p><strong>Introduce an <code>InvokeSkill</code> protocol variant.</strong> Rejected. Cron already has everything it needs from <code>SendMsg</code> / <code>StreamMsg</code> — the content <code>/{skill}</code> pattern is what chat-driven slash commands use too. Adding a variant would fragment the trigger contract across consumers and force every downstream scheduler (e.g. external ones) to learn a new wire format.</p>

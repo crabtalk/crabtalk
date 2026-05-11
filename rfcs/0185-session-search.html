@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-44fbef21.js";
+            window.path_to_searchindex_js = "../searchindex-7303227d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-1cc83451.js"></script>
@@ -193,13 +193,13 @@
 <p><strong>Updated by <a href="0189-policy-at-the-edge.html">0189</a> (2026-04-28).</strong> The “automatic compaction on overflow as a safety net” carve-out and auto-title generation were both removed; clients drive both via <code>compact_conversation</code> and a future <code>generate_title</code> RPC, gated on the new <code>AgentEvent::ContextUsage</code> events. See 0189 for the rationale.</p>
 </blockquote>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
-<p>Collapse the topic subsystem. Sessions persist unconditionally, always get auto-titled, and carry a small runtime-managed meta blob. Recall gains a second BM25 index — this one over conversation messages — returning windowed excerpts with bounded size. The runtime exposes narrow session primitives and two search tools; client UX owns <code>/clear</code>, <code>/new</code>, <code>/compact</code>, and session routing. The “topic” concept dissolves: content-derived session search (BM25) replaces tag-based grouping, and any curated grouping that survives is a client concern.</p>
+<p>Collapse the topic subsystem. Sessions persist unconditionally and carry a small runtime-managed meta blob. Recall gains a second BM25 index — this one over conversation messages — returning windowed excerpts with bounded size. The runtime exposes narrow session primitives and two search tools; client UX owns <code>/clear</code>, <code>/new</code>, <code>/compact</code>, titling, and session routing. The “topic” concept dissolves: content-derived session search (BM25) replaces tag-based grouping, and any curated grouping that survives is a client concern.</p>
 <h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
 <p>RFC 0171 introduced topic switching to partition a single <code>(agent, sender)</code> pair into N parallel threads keyed by title, with tmp chats that skip persistence until the agent “promotes” them by entering a topic. In practice it conflated four independent concerns into one knot — routing (“which conversation does this message land in?”), persistence policy (“should this session hit storage?”), recall indexing (“how do we find related past work?”), and lifecycle UX (“when does a chat end and a new one begin?”). Each wanted a different home, and riding one mechanism for all of them produced the <code>TopicRouter</code> reservation/rollback dance, the tmp/promote split, and agent-upfront title commitment on what should have been retrospective categorization.</p>
 <p>The reframe driving this RFC: <em>a topic is not a thing</em>. It was a name trying to be a routing key, a memory kind, a session tag, and a recall index simultaneously. With BM25 over session messages, content-derived recall eats the tag’s lunch — the agent searches “cron refactor” and gets back the conversations that actually discussed it, without any of them ever being classified upfront. What remains worth keeping is a <code>summary</code> field that boosts search ranking when one happens to exist (piggybacking on work the runtime already does during overflow compaction).</p>
 <h2 id="design"><a class="header" href="#design">Design</a></h2>
 <h3 id="layering-runtime-vs-client"><a class="header" href="#layering-runtime-vs-client">Layering: runtime vs. client</a></h3>
-<p>The runtime’s job is to provide mechanical primitives. UX decisions (when to clear, when to compact for cleanliness, which session to route a message to, how to surface archival browsing) belong one layer up in the client. The one exception is overflow compaction — a context-window overflow is a hard constraint the client can’t see coming, so the runtime keeps automatic compaction on overflow as a safety net. Every other form of compaction, clearing, and switching is a client concern composed from primitives.</p>
+<p>The runtime’s job is to provide mechanical primitives. UX and policy decisions — when to clear, when to compact, when to title, when to recall, which session to route a message to, how to surface archival browsing — belong one layer up in the client. RFC 0189 finished the move: the runtime no longer auto-compacts on overflow, no longer spawns title generation, no longer auto-recalls. Clients drive <code>compact_conversation</code>, future <code>generate_title</code>, and explicit memory search themselves, gated on <code>AgentEvent::ContextUsage</code> events.</p>
 <p>Runtime primitives (policy-free):</p>
 <ul>
 <li><code>new_session(agent, sender) -&gt; id</code> — always creates, always persists. No tmp, no deferred-persistence gate.</li>
@@ -213,11 +213,7 @@
 <li><code>search_memory(query) -&gt; [Entry]</code> — unchanged. BM25 over memory entries; returns whole entries because entries are small.</li>
 <li><code>search_sessions(query, context_before=4, context_after=4, filters?) -&gt; [SessionHit]</code> — new. BM25 over message text; returns bounded windowed excerpts.</li>
 </ul>
-<p>Auto-behaviors (runtime-owned, mechanical):</p>
-<ul>
-<li>Auto-title generation after the first exchange (unchanged; already in <code>spawn_title_generation</code>).</li>
-<li>Overflow compaction under context-window pressure, piggybacking to emit a <code>summary</code> into <code>ConversationMeta</code> so session search can boost it.</li>
-</ul>
+<p>Auto-behaviors: none. Both auto-titling and overflow compaction were removed by RFC 0189. The <code>summary</code> field on <code>ConversationMeta</code> is still populated when a client triggers <code>compact_conversation</code>, and session search still boosts on it; the runtime just doesn’t <em>initiate</em> either step on its own.</p>
 <p>Client-owned (explicit non-goals for the runtime):</p>
 <ul>
 <li><code>/clear</code>, <code>/new</code>, <code>/compact</code>, “resume session by title”, session picker UX — composed from the primitives above.</li>
@@ -232,10 +228,10 @@
     pub agent: String,            // immutable, set at creation
     pub created_by: String,       // immutable, set at creation
     pub created_at: String,       // immutable, set at creation
-    pub title: String,            // auto-generated after first exchange
+    pub title: String,            // empty until a client sets one (no auto-title; no wire RPC yet)
     pub updated_at: String,       // bumped on every append_message
     pub message_count: u64,       // bumped on every append_message
-    pub summary: Option&lt;String&gt;,  // emitted by overflow compaction
+    pub summary: Option&lt;String&gt;,  // populated when a client calls compact_conversation
 }
 <span class="boring">}</span></code></pre>
 <p>Removed: <code>topic</code> (subsumed by session search), <code>uptime_secs</code> (replaced by <code>updated_at</code>; uptime is derivable if a caller still needs it).</p>
@@ -247,9 +243,9 @@
 </thead>
 <tbody>
 <tr><td><code>agent</code>, <code>created_by</code>, <code>created_at</code></td><td>runtime</td><td>session creation</td></tr>
-<tr><td><code>title</code></td><td>runtime</td><td>auto-gen after 2+ messages</td></tr>
+<tr><td><code>title</code></td><td>—</td><td>empty by default; client-driven titling is a follow-up (no wire RPC yet)</td></tr>
 <tr><td><code>updated_at</code>, <code>message_count</code></td><td>runtime</td><td>every <code>append_message</code></td></tr>
-<tr><td><code>summary</code></td><td>runtime</td><td>during overflow compaction</td></tr>
+<tr><td><code>summary</code></td><td>runtime</td><td>when a client triggers <code>compact_conversation</code></td></tr>
 </tbody>
 </table>
 </div>
