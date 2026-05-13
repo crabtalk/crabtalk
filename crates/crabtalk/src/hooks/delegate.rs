@@ -1,16 +1,12 @@
 //! Delegate tool — as a Hook implementation.
 
-use crate::daemon::{ConversationCwds, SharedRuntime};
+use crate::daemon::SharedRuntime;
 use crabllm_core::Provider;
 use runtime::Hook;
-use sdk::tools::os::ReadFiles;
 use serde::Deserialize;
-use std::{
-    path::PathBuf,
-    sync::{
-        Arc, OnceLock,
-        atomic::{AtomicU64, Ordering},
-    },
+use std::sync::{
+    Arc, OnceLock,
+    atomic::{AtomicU64, Ordering},
 };
 use wcore::{ToolDispatch, ToolFuture, agent::AsTool};
 
@@ -37,32 +33,16 @@ pub struct DelegateTask {
     /// System prompt for an ephemeral agent.
     #[serde(default)]
     pub system_prompt: Option<String>,
-    /// Working directory for this task. Defaults to the parent's CWD.
-    #[serde(default)]
-    pub cwd: Option<String>,
 }
 
 /// Delegate subsystem: dispatch tasks to other agents.
-///
-/// Holds a late-bind runtime handle and the shared conversation CWD map
-/// for child task CWD overrides.
 pub struct DelegateHook<P: Provider + 'static> {
     runtime: Arc<OnceLock<SharedRuntime<P>>>,
-    conversation_cwds: ConversationCwds,
-    read_files: ReadFiles,
 }
 
 impl<P: Provider + 'static> DelegateHook<P> {
-    pub fn new(
-        runtime: Arc<OnceLock<SharedRuntime<P>>>,
-        conversation_cwds: ConversationCwds,
-        read_files: ReadFiles,
-    ) -> Self {
-        Self {
-            runtime,
-            conversation_cwds,
-            read_files,
-        }
+    pub fn new(runtime: Arc<OnceLock<SharedRuntime<P>>>) -> Self {
+        Self { runtime }
     }
 }
 
@@ -85,7 +65,7 @@ impl<P: Provider + 'static> Hook for DelegateHook<P> {
                 .runtime
                 .get()
                 .ok_or_else(|| "delegate: runtime not initialized".to_owned())?;
-            dispatch_delegate(input, shared, &self.conversation_cwds, &self.read_files).await
+            dispatch_delegate(input, shared).await
         }))
     }
 }
@@ -93,8 +73,6 @@ impl<P: Provider + 'static> Hook for DelegateHook<P> {
 async fn dispatch_delegate<P: Provider + 'static>(
     input: Delegate,
     shared: &SharedRuntime<P>,
-    conversation_cwds: &ConversationCwds,
-    read_files: &ReadFiles,
 ) -> Result<String, String> {
     let mut ephemeral_names = Vec::new();
     let mut tasks = Vec::with_capacity(input.tasks.len());
@@ -118,11 +96,8 @@ async fn dispatch_delegate<P: Provider + 'static>(
         let sender = delegate_sender();
         let handle = spawn_agent_task(
             shared.clone(),
-            conversation_cwds.clone(),
-            read_files.clone(),
             agent_name.clone(),
             task.message,
-            task.cwd,
             sender.clone(),
         );
         tasks.push((agent_name, sender, handle));
@@ -188,11 +163,8 @@ fn ephemeral_agent_name() -> String {
 
 fn spawn_agent_task<P: Provider + 'static>(
     shared: SharedRuntime<P>,
-    conversation_cwds: ConversationCwds,
-    read_files: ReadFiles,
     agent: String,
     message: String,
-    cwd: Option<String>,
     delegate_sender: String,
 ) -> tokio::task::JoinHandle<(Option<String>, Option<String>)> {
     tokio::spawn(async move {
@@ -204,12 +176,6 @@ fn spawn_agent_task<P: Provider + 'static>(
             Ok(id) => id,
             Err(e) => return (None, Some(e.to_string())),
         };
-        if let Some(cwd) = cwd {
-            conversation_cwds
-                .lock()
-                .await
-                .insert(conversation_id, PathBuf::from(cwd));
-        }
 
         let (result_content, error_msg) = match rt
             .send_to(conversation_id, &message, &delegate_sender, None)
@@ -219,8 +185,6 @@ fn spawn_agent_task<P: Provider + 'static>(
             Err(e) => (None, Some(e.to_string())),
         };
 
-        conversation_cwds.lock().await.remove(&conversation_id);
-        read_files.lock().remove(&conversation_id);
         rt.close(conversation_id).await;
 
         (result_content, error_msg)

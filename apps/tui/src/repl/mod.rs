@@ -84,11 +84,7 @@ impl ChatRepl {
             .map(|s| s.name)
             .collect();
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let os_tools = Arc::new(sdk::tools::os::OsHook::new(
-            cwd,
-            Default::default(),
-            Default::default(),
-        ));
+        let os_tools = Arc::new(sdk::tools::os::OsHook::new(cwd));
         let history = std::mem::take(&mut self.history);
         let mut app = App {
             renderer: MarkdownRenderer::new(),
@@ -440,14 +436,20 @@ fn send_or_queue(
 }
 
 fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<OutputChunk>> {
-    let cwd = std::env::current_dir()
+    // The daemon doesn't read the user's filesystem. We render local
+    // instructions (Crab.md) on this side and prepend them to the user
+    // message so the agent sees them in context.
+    let content = match std::env::current_dir()
         .ok()
-        .map(|p| p.to_string_lossy().into_owned());
+        .and_then(|cwd| sdk::tools::os::discover_instructions(&cwd))
+    {
+        Some(instr) => format!("<instructions>\n{instr}\n</instructions>\n\n{content}"),
+        None => content.to_string(),
+    };
     let req = StreamMsg {
         agent: app.agent.clone(),
-        content: content.to_string(),
+        content,
         sender: Some(app.os_user.clone()),
-        cwd,
         guest: None,
         tool_choice: None,
     };
@@ -507,7 +509,7 @@ fn handle_chunk(chunk: OutputChunk, app: &mut App) {
                     args: arguments,
                     agent: String::new(),
                     sender: String::new(),
-                    conversation_id: Some(1),
+                    conversation_id: None,
                     call_id: call_id.clone(),
                 };
                 let result = match <sdk::tools::os::OsHook as runtime::Hook>::dispatch(

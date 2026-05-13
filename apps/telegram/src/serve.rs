@@ -211,7 +211,6 @@ async fn tg_stream(
         agent: agent.to_string(),
         content: content.to_string(),
         sender: Some(sender.to_string()),
-        cwd: None,
         guest: None,
         tool_choice: None,
     };

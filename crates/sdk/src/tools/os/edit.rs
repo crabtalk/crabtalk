@@ -28,7 +28,7 @@ impl OsHook {
             return Err("old_string and new_string are identical".to_owned());
         }
 
-        let cwd = self.effective_cwd(call.conversation_id);
+        let cwd = self.effective_cwd();
 
         let path = if std::path::Path::new(&input.path).is_absolute() {
             std::path::PathBuf::from(&input.path)
@@ -36,12 +36,13 @@ impl OsHook {
             cwd.join(&input.path)
         };
 
-        if !self.was_read(call.conversation_id, &path) {
+        if !self.was_read(&path) {
             return Err(format!(
                 "you must read {} before editing it",
                 path.display()
             ));
         }
+        let _ = call;
 
         match std::fs::metadata(&path) {
             Ok(m) if m.len() > MAX_FILE_SIZE => {

@@ -2,14 +2,11 @@
 
 use runtime::Hook;
 use sdk::tools::os::OsHook;
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::sync::Mutex;
+use std::path::PathBuf;
 use wcore::ToolDispatch;
 
 fn hook(cwd: PathBuf) -> OsHook {
-    let cwds = Arc::new(Mutex::new(HashMap::new()));
-    let read_files = Default::default();
-    OsHook::new(cwd, cwds, read_files)
+    OsHook::new(cwd)
 }
 
 fn dispatch(args: &str) -> ToolDispatch {
@@ -17,7 +14,7 @@ fn dispatch(args: &str) -> ToolDispatch {
         args: args.to_owned(),
         agent: "agent".into(),
         sender: String::new(),
-        conversation_id: Some(1),
+        conversation_id: None,
         call_id: String::new(),
     }
 }

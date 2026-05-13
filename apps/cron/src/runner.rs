@@ -187,7 +187,6 @@ async fn fire(conn_info: &ConnectionInfo, entry: &CronEntry) {
         agent: entry.agent.clone(),
         content: format!("/{}", entry.skill),
         sender: Some(entry.sender.clone()),
-        cwd: None,
         guest: None,
         tool_choice: None,
     };

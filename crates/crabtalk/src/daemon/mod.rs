@@ -4,7 +4,6 @@ use crate::{DaemonConfig, hooks, storage::FsStorage};
 use anyhow::Result;
 use crabllm_core::Provider;
 use runtime::Runtime;
-pub use sdk::tools::os::ConversationCwds;
 use std::collections::HashMap;
 use std::{
     path::{Path, PathBuf},
@@ -54,10 +53,6 @@ pub struct Daemon<P: Provider + 'static = DefaultProvider> {
     pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<mcp::McpHandler>,
-    /// OS tools hook — owns conversation CWDs and read-files tracking.
-    /// Not registered as a runtime Hook: OS tool dispatch is forwarded to
-    /// the client via `client_tools_hook`.
-    pub(crate) os_hook: Arc<sdk::tools::os::OsHook>,
     /// Forwards OS-tool dispatches to the connected client.
     pub(crate) client_tools_hook: Arc<hooks::client_tools::ClientToolHook>,
     /// Ask-user hook — owns pending ask oneshots.
@@ -74,7 +69,6 @@ impl<P: Provider + 'static> Clone for Daemon<P> {
             events: self.events.clone(),
             build_provider: Arc::clone(&self.build_provider),
             mcp: self.mcp.clone(),
-            os_hook: self.os_hook.clone(),
             client_tools_hook: self.client_tools_hook.clone(),
             ask_hook: self.ask_hook.clone(),
         }

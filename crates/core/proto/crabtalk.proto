@@ -90,7 +90,11 @@ message SendMsg {
   string agent = 1;
   string content = 2;
   optional string sender = 4;
-  optional string cwd = 5;
+  // tag 5 was `cwd` — removed. The daemon does not read the user's
+  // filesystem. Clients render local instructions (e.g. Crab.md) into
+  // `content` themselves.
+  reserved 5;
+  reserved "cwd";
   optional string guest = 6;
   optional string tool_choice = 7;
 }
@@ -99,7 +103,8 @@ message StreamMsg {
   string agent = 1;
   string content = 2;
   optional string sender = 4;
-  optional string cwd = 5;
+  reserved 5;
+  reserved "cwd";
   optional string guest = 6;
   optional string tool_choice = 7;
 }

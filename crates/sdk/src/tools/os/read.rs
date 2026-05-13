@@ -26,7 +26,7 @@ impl OsHook {
     pub(super) async fn handle_read(&self, call: ToolDispatch) -> Result<String, String> {
         let input: Read =
             serde_json::from_str(&call.args).map_err(|e| format!("invalid arguments: {e}"))?;
-        let cwd = self.effective_cwd(call.conversation_id);
+        let cwd = self.effective_cwd();
 
         let path = if std::path::Path::new(&input.path).is_absolute() {
             std::path::PathBuf::from(&input.path)
@@ -78,9 +78,8 @@ impl OsHook {
             let _ = write!(buf, "\n--- {total} total lines ---");
         }
 
-        if let Some(id) = call.conversation_id {
-            self.record_read(id, path);
-        }
+        let _ = call;
+        self.record_read(path);
 
         Ok(buf)
     }

@@ -1,4 +1,9 @@
 //! OS tools — bash, read, edit — as a Hook implementation.
+//!
+//! Designed for client-side use: the daemon never executes these. A
+//! crabtalk client (TUI, custom host) builds one `OsHook` per session
+//! against the user's actual cwd, and answers daemon-forwarded
+//! `ToolCallForward` events through it.
 
 use bash::Bash;
 use edit::Edit;
@@ -6,32 +11,15 @@ use parking_lot::Mutex;
 use read::Read;
 use runtime::Hook;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fmt::Write,
-    path::PathBuf,
-    sync::Arc,
+    path::{Path, PathBuf},
 };
-use tokio::sync::Mutex as AsyncMutex;
 use wcore::{ToolDispatch, ToolFuture, agent::AsTool};
 
 mod bash;
 mod edit;
 mod read;
-
-/// Per-conversation working directory overrides.
-///
-/// Shared between the host's `Env::effective_cwd` implementation, `OsHook`
-/// (for tool dispatch), and any subsystem that needs to mutate per-call
-/// cwd (e.g. delegated child conversations).
-pub type ConversationCwds = Arc<AsyncMutex<HashMap<u64, PathBuf>>>;
-
-/// Per-conversation set of files that have been read.
-///
-/// Edit refuses to operate on a file that has not been read in the current
-/// conversation — the model must observe the file before mutating it.
-/// Shared with delegate-style subsystems that need to clean up entries
-/// when delegated conversations close.
-pub type ReadFiles = Arc<Mutex<HashMap<u64, HashSet<PathBuf>>>>;
 
 /// Maximum file size in bytes before refusing to read (50 MB).
 const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024;
@@ -46,66 +34,43 @@ fn environment_block() -> String {
 
 /// OS tools subsystem: bash, read, edit.
 ///
-/// Owns the base working directory and per-conversation CWD overrides.
-/// Injects the working directory environment block before each run.
+/// Scoped to a single session — the cwd is fixed at construction and the
+/// read-file invariant ("must read before edit") is enforced within the
+/// instance.
 pub struct OsHook {
     cwd: PathBuf,
-    conversation_cwds: ConversationCwds,
-    /// Files read per conversation — edit requires a prior read.
-    read_files: ReadFiles,
+    /// Files read by this session — edit requires a prior read.
+    read_files: Mutex<HashSet<PathBuf>>,
 }
 
 impl OsHook {
-    pub fn new(cwd: PathBuf, conversation_cwds: ConversationCwds, read_files: ReadFiles) -> Self {
+    pub fn new(cwd: PathBuf) -> Self {
         Self {
             cwd,
-            conversation_cwds,
-            read_files,
+            read_files: Mutex::new(HashSet::new()),
         }
     }
 
-    /// Per-conversation CWD overrides.
-    pub fn conversation_cwds(&self) -> &ConversationCwds {
-        &self.conversation_cwds
-    }
-
-    /// Record that a file was read in a conversation.
-    fn record_read(&self, conversation_id: u64, path: PathBuf) {
+    /// Record that a file was read.
+    fn record_read(&self, path: PathBuf) {
         let path = std::fs::canonicalize(&path).unwrap_or(path);
-        self.read_files
-            .lock()
-            .entry(conversation_id)
-            .or_default()
-            .insert(path);
+        self.read_files.lock().insert(path);
     }
 
-    /// Check whether a file was read in a conversation.
-    fn was_read(&self, conversation_id: Option<u64>, path: &std::path::Path) -> bool {
-        let Some(id) = conversation_id else {
-            return false;
-        };
+    /// Check whether a file was read.
+    fn was_read(&self, path: &Path) -> bool {
         let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        self.read_files
-            .lock()
-            .get(&id)
-            .is_some_and(|set| set.contains(&path))
+        self.read_files.lock().contains(&path)
     }
 
-    fn effective_cwd(&self, conversation_id: Option<u64>) -> PathBuf {
-        if let Some(id) = conversation_id
-            && let Ok(map) = self.conversation_cwds.try_lock()
-            && let Some(cwd) = map.get(&id)
-        {
-            return cwd.clone();
-        }
-        self.cwd.clone()
+    fn effective_cwd(&self) -> &Path {
+        &self.cwd
     }
 }
 
 /// The OS tool set's static schemas — bash, read, edit. Hosts that
 /// advertise these tools (daemon-side `ClientToolHook` for forwarding,
-/// TUI-side local execution) call this to avoid duplicating the schema
-/// derivations.
+/// client-side local execution) call this to avoid re-deriving them.
 pub fn schemas() -> Vec<wcore::model::Tool> {
     vec![Bash::as_tool(), Read::as_tool(), Edit::as_tool()]
 }
@@ -114,6 +79,46 @@ pub fn schemas() -> Vec<wcore::model::Tool> {
 /// dispatches that should be forwarded to the client.
 pub fn names() -> Vec<String> {
     schemas().into_iter().map(|t| t.function.name).collect()
+}
+
+/// Walk up from `cwd` collecting `Crab.md` files, plus the global one in
+/// the user's config dir. Returned text is the concatenation in
+/// deepest-first order (so project-local rules layer over global ones).
+///
+/// Clients call this each turn and prepend the result, wrapped in
+/// `<instructions>…</instructions>`, to the user message they send to
+/// the daemon. The daemon does not read the user's filesystem.
+pub fn discover_instructions(cwd: &Path) -> Option<String> {
+    let config_dir = &*wcore::paths::CONFIG_DIR;
+    let mut layers = Vec::new();
+
+    let global = config_dir.join("Crab.md");
+    if let Ok(content) = std::fs::read_to_string(&global) {
+        layers.push(content);
+    }
+
+    let mut found = Vec::new();
+    let mut dir = cwd;
+    loop {
+        let candidate = dir.join("Crab.md");
+        if candidate.is_file()
+            && !candidate.starts_with(config_dir)
+            && let Ok(content) = std::fs::read_to_string(&candidate)
+        {
+            found.push(content);
+        }
+        match dir.parent() {
+            Some(p) => dir = p,
+            None => break,
+        }
+    }
+    found.reverse();
+    layers.extend(found);
+
+    if layers.is_empty() {
+        return None;
+    }
+    Some(layers.join("\n\n"))
 }
 
 impl Hook for OsHook {

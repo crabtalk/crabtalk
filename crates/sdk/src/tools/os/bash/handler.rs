@@ -12,12 +12,12 @@ impl OsHook {
         let input: Bash =
             serde_json::from_str(&call.args).map_err(|e| format!("invalid arguments: {e}"))?;
 
-        let cwd = self.effective_cwd(call.conversation_id);
+        let cwd = self.effective_cwd();
 
         let mut cmd = tokio::process::Command::new("bash");
         cmd.args(["-c", &input.command])
             .envs(&input.env)
-            .current_dir(&cwd)
+            .current_dir(cwd)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 

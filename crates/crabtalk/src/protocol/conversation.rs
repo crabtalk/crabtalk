@@ -1,6 +1,6 @@
-//! Daemon-level conversation operations: send/stream (need os_hook cwd),
-//! kill (needs os_hook cwd cleanup), and reply_to_ask (needs ask_hook).
-//! Pure-runtime ops live on `Runtime<C>` directly.
+//! Daemon-level conversation operations: send/stream, kill, and
+//! ask/tool reply routing. Pure-runtime ops live on `Runtime<C>`
+//! directly.
 
 use crate::daemon::Daemon;
 use anyhow::Result;
@@ -15,17 +15,9 @@ impl<P: Provider + 'static> Daemon<P> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
         let created_by = if sender.is_empty() { "user" } else { sender };
-        let cwd = req.cwd.map(std::path::PathBuf::from);
         let conversation_id = rt
             .get_or_create_conversation(&req.agent, created_by)
             .await?;
-        if let Some(ref cwd) = cwd {
-            self.os_hook
-                .conversation_cwds()
-                .lock()
-                .await
-                .insert(conversation_id, cwd.clone());
-        }
         let tool_choice = req
             .tool_choice
             .map(|s| wcore::model::ToolChoice::from(s.as_str()));
@@ -45,12 +37,10 @@ impl<P: Provider + 'static> Daemon<P> {
         req: StreamMsg,
     ) -> impl futures_core::Stream<Item = Result<StreamEvent>> + Send + 'a {
         let runtime = self.runtime.clone();
-        let conversation_cwds = self.os_hook.conversation_cwds().clone();
         let client_tools_hook = self.client_tools_hook.clone();
         let agent = req.agent;
         let content = req.content;
         let sender = req.sender.unwrap_or_default();
-        let cwd = req.cwd.map(std::path::PathBuf::from);
         let guest = req.guest.unwrap_or_default();
         let tool_choice = req
             .tool_choice
@@ -59,9 +49,6 @@ impl<P: Provider + 'static> Daemon<P> {
             let rt: Arc<_> = runtime.read().await.clone();
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
             let conversation_id = rt.get_or_create_conversation(&agent, created_by.as_str()).await?;
-            if let Some(ref cwd) = cwd {
-                conversation_cwds.lock().await.insert(conversation_id, cwd.clone());
-            }
             // Register this conversation as having a stream listener so the
             // client-tools hook will forward dispatches here. The guard
             // unregisters on any exit path — stream end, early return on
@@ -195,11 +182,6 @@ impl<P: Provider + 'static> Daemon<P> {
         let Some(conversation_id) = rt.conversation_id(agent, sender).await else {
             return Ok(false);
         };
-        self.os_hook
-            .conversation_cwds()
-            .lock()
-            .await
-            .remove(&conversation_id);
         Ok(rt.close(conversation_id).await)
     }
 
