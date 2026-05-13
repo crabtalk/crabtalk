@@ -12,7 +12,6 @@ use read::Read;
 use runtime::Hook;
 use std::{
     collections::HashSet,
-    fmt::Write,
     path::{Path, PathBuf},
 };
 use wcore::{ToolDispatch, ToolFuture, agent::AsTool};
@@ -23,14 +22,6 @@ mod read;
 
 /// Maximum file size in bytes before refusing to read (50 MB).
 const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024;
-
-/// Build an `<environment>` XML block with OS info.
-fn environment_block() -> String {
-    let mut buf = String::from("\n\n<environment>\n");
-    let _ = writeln!(buf, "os: {}", std::env::consts::OS);
-    buf.push_str("</environment>");
-    buf
-}
 
 /// OS tools subsystem: bash, read, edit.
 ///
@@ -138,10 +129,6 @@ pub fn discover_instructions(cwd: &Path) -> Option<String> {
 impl Hook for OsHook {
     fn schema(&self) -> Vec<wcore::model::Tool> {
         schemas()
-    }
-
-    fn system_prompt(&self) -> Option<String> {
-        Some(environment_block())
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {

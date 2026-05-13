@@ -17,7 +17,10 @@
 
 use parking_lot::Mutex;
 use runtime::Hook;
-use std::{collections::HashMap, collections::HashSet, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 use tokio::sync::oneshot;
 use wcore::{ToolDispatch, ToolFuture, model::Tool};
 

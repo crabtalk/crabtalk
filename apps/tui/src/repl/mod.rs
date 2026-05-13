@@ -436,16 +436,21 @@ fn send_or_queue(
 }
 
 fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<OutputChunk>> {
-    // The daemon doesn't read the user's filesystem. We render local
-    // instructions (Crab.md) on this side and prepend them to the user
-    // message so the agent sees them in context.
-    let content = match std::env::current_dir()
+    // The daemon doesn't read the user's filesystem and doesn't know
+    // what OS the client runs on. We render local context (environment +
+    // Crab.md) on this side and prepend it to the user message.
+    let mut prefix = String::new();
+    prefix.push_str(&format!(
+        "<environment>\nos: {}\n</environment>\n\n",
+        std::env::consts::OS
+    ));
+    if let Some(instr) = std::env::current_dir()
         .ok()
         .and_then(|cwd| sdk::tools::os::discover_instructions(&cwd))
     {
-        Some(instr) => format!("<instructions>\n{instr}\n</instructions>\n\n{content}"),
-        None => content.to_string(),
-    };
+        prefix.push_str(&format!("<instructions>\n{instr}\n</instructions>\n\n"));
+    }
+    let content = format!("{prefix}{content}");
     let req = StreamMsg {
         agent: app.agent.clone(),
         content,
