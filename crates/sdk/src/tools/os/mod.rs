@@ -2,17 +2,17 @@
 
 use bash::Bash;
 use edit::Edit;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use read::Read;
 use runtime::Hook;
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     fmt::Write,
     path::PathBuf,
     sync::Arc,
 };
 use tokio::sync::Mutex as AsyncMutex;
-use wcore::{AgentConfig, BashConfig, ToolDispatch, ToolFuture, agent::AsTool};
+use wcore::{ToolDispatch, ToolFuture, agent::AsTool};
 
 mod bash;
 mod edit;
@@ -53,9 +53,6 @@ pub struct OsHook {
     conversation_cwds: ConversationCwds,
     /// Files read per conversation — edit requires a prior read.
     read_files: ReadFiles,
-    /// Per-agent bash policy cache, populated from `on_register_agent`.
-    /// Avoids an async storage roundtrip from the sync `dispatch` path.
-    configs: RwLock<BTreeMap<String, BashConfig>>,
 }
 
 impl OsHook {
@@ -64,26 +61,7 @@ impl OsHook {
             cwd,
             conversation_cwds,
             read_files,
-            configs: RwLock::new(BTreeMap::new()),
         }
-    }
-
-    /// Look up an agent's bash configuration. Falls back to
-    /// [`BashConfig::default`] for unknown agents — the dispatcher
-    /// rejects unknown agents anyway, so this only matters for
-    /// `scoped_tools`.
-    fn bash_config(&self, agent: &str) -> BashConfig {
-        self.configs.read().get(agent).cloned().unwrap_or_default()
-    }
-
-    /// Effective `disabled` flag for an agent.
-    pub fn bash_disabled(&self, agent: &str) -> bool {
-        self.bash_config(agent).disabled
-    }
-
-    /// Effective deny list for an agent.
-    pub fn bash_deny(&self, agent: &str) -> Vec<String> {
-        self.bash_config(agent).deny
     }
 
     /// Per-conversation CWD overrides.
@@ -140,39 +118,16 @@ pub fn names() -> Vec<String> {
 
 impl Hook for OsHook {
     fn schema(&self) -> Vec<wcore::model::Tool> {
-        // Always advertise bash at the global level; per-agent gating
-        // happens in `scoped_tools`. Skipping the schema here would make
-        // the tool invisible to every agent regardless of overrides.
-        vec![Bash::as_tool(), Read::as_tool(), Edit::as_tool()]
-    }
-
-    fn scoped_tools(&self, config: &AgentConfig) -> (Vec<String>, Option<String>) {
-        let mut tools = vec![Read::as_tool().function.name, Edit::as_tool().function.name];
-        let bash = &config.hooks.bash;
-        if !bash.disabled {
-            tools.insert(0, Bash::as_tool().function.name);
-        }
-        let policy = bash::config::prompt_block(bash);
-        (tools, policy)
+        schemas()
     }
 
     fn system_prompt(&self) -> Option<String> {
         Some(environment_block())
     }
 
-    fn on_register_agent(&self, name: &str, config: &AgentConfig) {
-        self.configs
-            .write()
-            .insert(name.to_owned(), config.hooks.bash.clone());
-    }
-
-    fn on_unregister_agent(&self, name: &str) {
-        self.configs.write().remove(name);
-    }
-
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
         match name {
-            "bash" if !self.bash_disabled(&call.agent) => Some(Box::pin(self.handle_bash(call))),
+            "bash" => Some(Box::pin(self.handle_bash(call))),
             "read" => Some(Box::pin(self.handle_read(call))),
             "edit" => Some(Box::pin(self.handle_edit(call))),
             _ => None,

@@ -8,7 +8,7 @@ pub mod mcp;
 pub mod system;
 
 pub use daemon::DaemonConfig;
-pub use hooks::{BashConfig, HooksConfig, MemoryConfig};
+pub use hooks::{HooksConfig, MemoryConfig};
 pub use llm::LlmConfig;
 pub use manifest::{
     PackageMeta, ResolvedDirs, Setup, check_skill_conflicts, external_source_name, load_agents_dir,

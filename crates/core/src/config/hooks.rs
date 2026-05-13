@@ -5,23 +5,15 @@
 use serde::{Deserialize, Serialize};
 
 /// Per-agent hook configuration.
+///
+/// OS-tool configuration used to live here under `bash`, but OS tool
+/// execution moved entirely client-side; the daemon no longer enforces
+/// any bash policy.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct HooksConfig {
-    /// Bash tool configuration (`hooks.bash` under an agent).
-    pub bash: BashConfig,
     /// Memory hook configuration (`hooks.memory` under an agent).
     pub memory: MemoryConfig,
-}
-
-/// Bash tool configuration.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(default)]
-pub struct BashConfig {
-    /// Disable the bash tool entirely.
-    pub disabled: bool,
-    /// Reject commands containing any of these strings (e.g. `".ssh"`).
-    pub deny: Vec<String>,
 }
 
 /// Built-in memory configuration.
