@@ -505,22 +505,7 @@ fn handle_chunk(chunk: OutputChunk, app: &mut App) {
             let tools = app.os_tools.clone();
             let conn_info = app.conn_info.clone();
             tokio::spawn(async move {
-                let call = wcore::ToolDispatch {
-                    args: arguments,
-                    agent: String::new(),
-                    sender: String::new(),
-                    conversation_id: None,
-                    call_id: call_id.clone(),
-                };
-                let result = match <sdk::tools::os::OsHook as runtime::Hook>::dispatch(
-                    tools.as_ref(),
-                    &name,
-                    call,
-                ) {
-                    Some(fut) => fut.await,
-                    None => Err(format!("tool not registered locally: {name}")),
-                };
-                let (output, is_error) = match result {
+                let (output, is_error) = match tools.execute(&name, &arguments).await {
                     Ok(s) => (s, false),
                     Err(e) => (e, true),
                 };

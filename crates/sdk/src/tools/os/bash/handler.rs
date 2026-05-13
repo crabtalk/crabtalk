@@ -2,15 +2,11 @@
 
 use super::Bash;
 use crate::tools::os::OsHook;
-use wcore::ToolDispatch;
 
 impl OsHook {
-    pub(in crate::tools::os) async fn handle_bash(
-        &self,
-        call: ToolDispatch,
-    ) -> Result<String, String> {
+    pub(in crate::tools::os) async fn handle_bash(&self, args: &str) -> Result<String, String> {
         let input: Bash =
-            serde_json::from_str(&call.args).map_err(|e| format!("invalid arguments: {e}"))?;
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 
         let cwd = self.effective_cwd();
 

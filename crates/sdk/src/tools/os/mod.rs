@@ -66,6 +66,20 @@ impl OsHook {
     fn effective_cwd(&self) -> &Path {
         &self.cwd
     }
+
+    /// Execute an OS tool by name. The canonical entry point for SDK
+    /// consumers that want to run these tools locally (e.g. a TUI
+    /// answering a daemon-forwarded `ToolCallForward`). Pure args in,
+    /// result out — no `ToolDispatch`, no agent identity, no runtime
+    /// trait machinery.
+    pub async fn execute(&self, name: &str, args: &str) -> Result<String, String> {
+        match name {
+            "bash" => self.handle_bash(args).await,
+            "read" => self.handle_read(args).await,
+            "edit" => self.handle_edit(args).await,
+            _ => Err(format!("tool not registered: {name}")),
+        }
+    }
 }
 
 /// The OS tool set's static schemas — bash, read, edit. Hosts that
@@ -131,11 +145,11 @@ impl Hook for OsHook {
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
-        match name {
-            "bash" => Some(Box::pin(self.handle_bash(call))),
-            "read" => Some(Box::pin(self.handle_read(call))),
-            "edit" => Some(Box::pin(self.handle_edit(call))),
-            _ => None,
+        if !matches!(name, "bash" | "read" | "edit") {
+            return None;
         }
+        Some(Box::pin(
+            async move { self.execute(name, &call.args).await },
+        ))
     }
 }
