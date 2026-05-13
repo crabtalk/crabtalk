@@ -362,19 +362,27 @@ message StreamEvent {
 // Daemon → client: forwarded tool invocation. The daemon emits this when
 // an agent calls a tool whose execution belongs on the client side (e.g.
 // the OS tool set). The client dispatches locally and replies with a
-// `ReplyToTool` carrying the same `call_id` on a fresh connection.
+// `ReplyToTool` echoing both `conversation_id` and `call_id` on a fresh
+// connection.
+//
+// `conversation_id` is an opaque routing token from the client's
+// perspective — it does not need to be interpreted, only echoed. The
+// daemon needs it to disambiguate `call_id`s, which come from the LLM
+// and are not globally unique across conversations.
 message ToolCallForwardEvent {
   string call_id = 1;
   string name = 2;
   string arguments = 3;
+  uint64 conversation_id = 4;
 }
 
 // Client → daemon: response to a `ToolCallForwardEvent`. Resolves the
-// daemon-side oneshot that's awaiting the result of the forwarded call.
+// daemon-side pending entry keyed by `(conversation_id, call_id)`.
 message ReplyToTool {
   string call_id = 1;
   string output = 2;
   bool is_error = 3;
+  uint64 conversation_id = 4;
 }
 
 // Real token counts reported by the provider after a completed step.

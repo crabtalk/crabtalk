@@ -113,10 +113,12 @@ pub trait Server: Sync {
         content: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
-    /// Handle `ReplyToTool` — deliver a client-side tool result for a pending
-    /// forwarded call. Resolves the oneshot keyed by `call_id`.
+    /// Handle `ReplyToTool` — deliver a client-side tool result for a
+    /// pending forwarded call. Resolves the pending entry keyed by
+    /// `(conversation_id, call_id)`.
     fn reply_to_tool(
         &self,
+        conversation_id: u64,
         call_id: String,
         output: String,
         is_error: bool,
@@ -297,7 +299,7 @@ pub trait Server: Sync {
                     };
                 }
                 client_message::Msg::ReplyToTool(msg) => {
-                    yield match self.reply_to_tool(msg.call_id, msg.output, msg.is_error).await {
+                    yield match self.reply_to_tool(msg.conversation_id, msg.call_id, msg.output, msg.is_error).await {
                         Ok(()) => server_pong(),
                         Err(e) => server_error(404, e.to_string()),
                     };

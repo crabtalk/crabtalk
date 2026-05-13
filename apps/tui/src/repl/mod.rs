@@ -495,13 +495,15 @@ fn handle_chunk(chunk: OutputChunk, app: &mut App) {
             app.ask_sender = Some(sender);
         }
         OutputChunk::ToolCallForward {
+            conversation_id,
             call_id,
             name,
             arguments,
         } => {
             // The daemon forwarded an OS-tool call. Dispatch locally and
             // send the result back on a fresh connection — same shape as
-            // the ask-user reply path.
+            // the ask-user reply path. `conversation_id` is an opaque
+            // routing token; just echo it.
             let tools = app.os_tools.clone();
             let conn_info = app.conn_info.clone();
             tokio::spawn(async move {
@@ -509,7 +511,9 @@ fn handle_chunk(chunk: OutputChunk, app: &mut App) {
                     Ok(s) => (s, false),
                     Err(e) => (e, true),
                 };
-                let _ = conn_info.reply_to_tool(call_id, output, is_error).await;
+                let _ = conn_info
+                    .reply_to_tool(conversation_id, call_id, output, is_error)
+                    .await;
             });
         }
         // Boundary markers — the renderer infers transitions from delta

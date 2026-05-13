@@ -52,8 +52,9 @@ impl<P: Provider + 'static> Daemon<P> {
             // Register this conversation as having a stream listener so the
             // client-tools hook will forward dispatches here. The guard
             // unregisters on any exit path — stream end, early return on
-            // Done, or consumer dropping the stream.
-            client_tools_hook.register_listener(conversation_id).await;
+            // Done, or consumer dropping the stream — and fails any
+            // pending forwarded calls so they don't sit until timeout.
+            client_tools_hook.register_listener(conversation_id);
             let _listener_guard = ListenerGuard::new(client_tools_hook.clone(), conversation_id);
 
             let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
@@ -120,6 +121,7 @@ impl<P: Provider + 'static> Daemon<P> {
                                 call_id: c.id.to_string(),
                                 name: c.function.name.to_string(),
                                 arguments: c.function.arguments.clone(),
+                                conversation_id,
                             })
                             .collect();
 
@@ -221,34 +223,28 @@ impl<P: Provider + 'static> Daemon<P> {
 
     pub(crate) async fn reply_to_tool(
         &self,
+        conversation_id: u64,
         call_id: &str,
         output: String,
         is_error: bool,
     ) -> Result<()> {
+        // No retry needed: `try_resolve` accepts replies that arrive
+        // before the agent's dispatch parks (stashed as `EarlyReply`),
+        // so the dispatch/reply race is handled symmetrically inside
+        // the hook rather than via sleep-and-pray here.
         if self
             .client_tools_hook
-            .try_resolve(call_id, output.clone(), is_error)
-            .await
+            .try_resolve(conversation_id, call_id, output, is_error)
         {
-            return Ok(());
+            Ok(())
+        } else {
+            anyhow::bail!("duplicate reply for call_id '{call_id}'")
         }
-        // The reply can race the dispatch — if the agent's tool dispatch
-        // hasn't parked its oneshot yet, retry once after a short delay.
-        // Same pattern as `reply_to_ask`.
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        if self
-            .client_tools_hook
-            .try_resolve(call_id, output, is_error)
-            .await
-        {
-            return Ok(());
-        }
-        anyhow::bail!("no pending forwarded tool call with id '{call_id}'")
     }
 }
 
-/// RAII guard that unregisters a stream's client-tool listener on drop.
-/// Spawns the async unregister on a background task so `Drop` stays sync.
+/// RAII guard that synchronously unregisters a stream's client-tool
+/// listener and drains pending forwarded calls on drop.
 struct ListenerGuard {
     hook: Arc<crate::hooks::client_tools::ClientToolHook>,
     conv_id: u64,
@@ -262,11 +258,7 @@ impl ListenerGuard {
 
 impl Drop for ListenerGuard {
     fn drop(&mut self) {
-        let hook = self.hook.clone();
-        let conv_id = self.conv_id;
-        tokio::spawn(async move {
-            hook.unregister_listener(conv_id).await;
-        });
+        self.hook.unregister_listener(self.conv_id);
     }
 }
 

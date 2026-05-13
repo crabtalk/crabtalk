@@ -94,8 +94,15 @@ impl<P: Provider + 'static> Server for Daemon<P> {
         self.reply_to_ask(&agent, &sender, content).await
     }
 
-    async fn reply_to_tool(&self, call_id: String, output: String, is_error: bool) -> Result<()> {
-        self.reply_to_tool(&call_id, output, is_error).await
+    async fn reply_to_tool(
+        &self,
+        conversation_id: u64,
+        call_id: String,
+        output: String,
+        is_error: bool,
+    ) -> Result<()> {
+        self.reply_to_tool(conversation_id, &call_id, output, is_error)
+            .await
     }
 
     async fn steer_session(&self, req: SteerSessionMsg) -> Result<()> {

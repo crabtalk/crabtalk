@@ -632,9 +632,10 @@ pub trait Client: Send {
     }
 
     /// Deliver a client-side tool result for a pending forwarded call. The
-    /// daemon resolves the oneshot keyed by `call_id`.
+    /// daemon resolves the pending entry keyed by `(conversation_id, call_id)`.
     fn reply_to_tool(
         &mut self,
+        conversation_id: u64,
         call_id: String,
         output: String,
         is_error: bool,
@@ -642,6 +643,7 @@ pub trait Client: Send {
         async move {
             let msg = ClientMessage {
                 msg: Some(client_message::Msg::ReplyToTool(ReplyToTool {
+                    conversation_id,
                     call_id,
                     output,
                     is_error,

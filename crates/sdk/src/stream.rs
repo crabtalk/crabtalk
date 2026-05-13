@@ -149,9 +149,10 @@ pub enum OutputChunk {
         sender: String,
     },
     /// Daemon forwarded a tool call for the client to dispatch locally.
-    /// The client must respond by sending `ReplyToTool { call_id, ... }`
-    /// on a fresh connection.
+    /// The client must respond by sending `ReplyToTool` on a fresh
+    /// connection, echoing both `conversation_id` and `call_id`.
     ToolCallForward {
+        conversation_id: u64,
         call_id: String,
         name: String,
         arguments: String,
@@ -222,6 +223,7 @@ pub fn stream_chunks<'a>(
                 })),
                 Ok(stream_event::Event::ToolCallForward(fwd)) => {
                     Some(Ok(OutputChunk::ToolCallForward {
+                        conversation_id: fwd.conversation_id,
                         call_id: fwd.call_id,
                         name: fwd.name,
                         arguments: fwd.arguments,
