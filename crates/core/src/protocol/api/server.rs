@@ -113,6 +113,15 @@ pub trait Server: Sync {
         content: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
+    /// Handle `ReplyToTool` — deliver a client-side tool result for a pending
+    /// forwarded call. Resolves the oneshot keyed by `call_id`.
+    fn reply_to_tool(
+        &self,
+        call_id: String,
+        output: String,
+        is_error: bool,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
     /// Handle `SteerSession` — inject a user message into an active stream.
     fn steer_session(
         &self,
@@ -283,6 +292,12 @@ pub trait Server: Sync {
                 }
                 client_message::Msg::ReplyToAsk(msg) => {
                     yield match self.reply_to_ask(msg.agent, msg.sender, msg.content).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(404, e.to_string()),
+                    };
+                }
+                client_message::Msg::ReplyToTool(msg) => {
+                    yield match self.reply_to_tool(msg.call_id, msg.output, msg.is_error).await {
                         Ok(()) => server_pong(),
                         Err(e) => server_error(404, e.to_string()),
                     };

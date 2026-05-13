@@ -94,6 +94,10 @@ impl<P: Provider + 'static> Server for Daemon<P> {
         self.reply_to_ask(&agent, &sender, content).await
     }
 
+    async fn reply_to_tool(&self, call_id: String, output: String, is_error: bool) -> Result<()> {
+        self.reply_to_tool(&call_id, output, is_error).await
+    }
+
     async fn steer_session(&self, req: SteerSessionMsg) -> Result<()> {
         let rt = self.runtime.read().await.clone();
         let sender = if req.sender.is_empty() {

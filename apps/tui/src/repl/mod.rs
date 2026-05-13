@@ -17,7 +17,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 use sdk::{ConnectionInfo, OutputChunk, Transport};
-use std::{collections::VecDeque, path::PathBuf, time::Duration};
+use std::{collections::VecDeque, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use wcore::protocol::api::Client as _;
 use wcore::protocol::message::StreamMsg;
@@ -83,6 +83,12 @@ impl ChatRepl {
             .into_iter()
             .map(|s| s.name)
             .collect();
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let os_tools = Arc::new(sdk::tools::os::OsHook::new(
+            cwd,
+            Default::default(),
+            Default::default(),
+        ));
         let history = std::mem::take(&mut self.history);
         let mut app = App {
             renderer: MarkdownRenderer::new(),
@@ -101,6 +107,7 @@ impl ChatRepl {
             ask_state: None,
             ask_agent: None,
             ask_sender: None,
+            os_tools,
         };
 
         // Push welcome banner as first chat entry.
@@ -184,6 +191,10 @@ struct App {
     ask_agent: Option<String>,
     /// Sender for the pending ask reply.
     ask_sender: Option<String>,
+    /// Local OS tools dispatcher — answers forwarded tool calls from the
+    /// daemon (bash, read, edit). Shared across stream turns so the
+    /// "must read before edit" invariant persists.
+    os_tools: Arc<sdk::tools::os::OsHook>,
 }
 
 // ── Event loop ───────────────────────────────────────────────────
@@ -480,6 +491,39 @@ fn handle_chunk(chunk: OutputChunk, app: &mut App) {
             app.ask_state = Some(AskState::new(&questions));
             app.ask_agent = Some(agent);
             app.ask_sender = Some(sender);
+        }
+        OutputChunk::ToolCallForward {
+            call_id,
+            name,
+            arguments,
+        } => {
+            // The daemon forwarded an OS-tool call. Dispatch locally and
+            // send the result back on a fresh connection — same shape as
+            // the ask-user reply path.
+            let tools = app.os_tools.clone();
+            let conn_info = app.conn_info.clone();
+            tokio::spawn(async move {
+                let call = wcore::ToolDispatch {
+                    args: arguments,
+                    agent: String::new(),
+                    sender: String::new(),
+                    conversation_id: Some(1),
+                    call_id: call_id.clone(),
+                };
+                let result = match <sdk::tools::os::OsHook as runtime::Hook>::dispatch(
+                    tools.as_ref(),
+                    &name,
+                    call,
+                ) {
+                    Some(fut) => fut.await,
+                    None => Err(format!("tool not registered locally: {name}")),
+                };
+                let (output, is_error) = match result {
+                    Ok(s) => (s, false),
+                    Err(e) => (e, true),
+                };
+                let _ = conn_info.reply_to_tool(call_id, output, is_error).await;
+            });
         }
         // Boundary markers — the renderer infers transitions from delta
         // arrival, so Start markers are inert. ThinkingEnd above is the

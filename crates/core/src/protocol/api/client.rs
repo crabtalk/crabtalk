@@ -631,6 +631,34 @@ pub trait Client: Send {
         }
     }
 
+    /// Deliver a client-side tool result for a pending forwarded call. The
+    /// daemon resolves the oneshot keyed by `call_id`.
+    fn reply_to_tool(
+        &mut self,
+        call_id: String,
+        output: String,
+        is_error: bool,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            let msg = ClientMessage {
+                msg: Some(client_message::Msg::ReplyToTool(ReplyToTool {
+                    call_id,
+                    output,
+                    is_error,
+                })),
+            };
+            match self.request(msg).await? {
+                ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => anyhow::bail!("server error ({code}): {message}"),
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
     /// List active (in-memory) conversations on the daemon.
     fn list_active_conversations(
         &mut self,

@@ -15,6 +15,7 @@ name = "crabtalk"
 path = "src/bin/main.rs"
 
 [dependencies]
+runtime.workspace = true
 sdk.workspace = true
 transport.workspace = true
 wcore.workspace = true

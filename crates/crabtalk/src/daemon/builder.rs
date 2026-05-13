@@ -45,7 +45,7 @@ impl<P: Provider + 'static> Daemon<P> {
         let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
         let node_hook = DaemonHook::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
-        let (runtime, mcp, node_hook, os_hook, ask_hook) = Self::build_all(
+        let (runtime, mcp, node_hook, os_hook, client_tools_hook, ask_hook) = Self::build_all(
             config,
             config_dir,
             &build_provider,
@@ -124,6 +124,7 @@ impl<P: Provider + 'static> Daemon<P> {
             build_provider,
             mcp,
             os_hook,
+            client_tools_hook,
             ask_hook,
         })
     }
@@ -139,7 +140,7 @@ impl<P: Provider + 'static> Daemon<P> {
 
         let node_hook = DaemonHook::new(self.hook.scopes.clone());
 
-        let (mut new_runtime, _mcp, new_hook, _, _) = Self::build_all(
+        let (mut new_runtime, _mcp, new_hook, _, _, _) = Self::build_all(
             &config,
             &self.config_dir,
             &self.build_provider,
@@ -183,6 +184,7 @@ impl<P: Provider + 'static> Daemon<P> {
         Arc<McpHandler>,
         Arc<DaemonHook>,
         Arc<sdk::tools::os::OsHook>,
+        Arc<crate::hooks::client_tools::ClientToolHook>,
         Arc<crate::hooks::ask_user::AskUserHook>,
     )> {
         let dirs = resolve_dirs(config_dir);
@@ -194,7 +196,7 @@ impl<P: Provider + 'static> Daemon<P> {
 
         let model = build_provider(config, &models)?;
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::empty());
-        let (os_hook, ask_hook, shared_memory) = Self::register_tools(
+        let (os_hook, client_tools_hook, ask_hook, shared_memory) = Self::register_tools(
             &mut node_hook,
             storage.clone(),
             config_dir,
@@ -224,7 +226,14 @@ impl<P: Provider + 'static> Daemon<P> {
         runtime.set_models(models);
         let mut runtime = runtime;
         Self::register_agents(&mut runtime, &dirs).await?;
-        Ok((runtime, mcp_handler, node_hook, os_hook, ask_hook))
+        Ok((
+            runtime,
+            mcp_handler,
+            node_hook,
+            os_hook,
+            client_tools_hook,
+            ask_hook,
+        ))
     }
 
     fn build_storage(config_dir: &Path, dirs: &ResolvedDirs) -> Arc<FsStorage> {
@@ -255,6 +264,7 @@ impl<P: Provider + 'static> Daemon<P> {
         pending_asks: crate::daemon::PendingAsks,
     ) -> Result<(
         Arc<sdk::tools::os::OsHook>,
+        Arc<crate::hooks::client_tools::ClientToolHook>,
         Arc<crate::hooks::ask_user::AskUserHook>,
         runtime::SharedMemory,
     )> {
@@ -265,12 +275,18 @@ impl<P: Provider + 'static> Daemon<P> {
         let read_files: sdk::tools::os::ReadFiles = Default::default();
         let skills = storage.list_skills().await.unwrap_or_default();
 
+        // `os_hook` remains as a state container for per-conversation cwd
+        // overrides used by Crab.md discovery and delegate. Its `Hook`
+        // surface is not registered with the daemon — OS tool dispatch
+        // goes through `ClientToolHook` and runs on the client.
         let os_hook = Arc::new(sdk::tools::os::OsHook::new(
             cwd,
             conversation_cwds.clone(),
             read_files.clone(),
         ));
-        node_hook.register_hook("os", os_hook.clone());
+
+        let client_tools_hook = Arc::new(crate::hooks::client_tools::ClientToolHook::new());
+        node_hook.register_hook("client_tools", client_tools_hook.clone());
 
         node_hook.register_hook(
             "memory",
@@ -306,7 +322,7 @@ impl<P: Provider + 'static> Daemon<P> {
             "mcp",
             Arc::new(crate::hooks::mcp::McpHook::new(mcp_handler, env_overlay)),
         );
-        Ok((os_hook, ask_hook, shared_memory))
+        Ok((os_hook, client_tools_hook, ask_hook, shared_memory))
     }
 
     /// Load agents from storage (canonical) and package manifests.

@@ -79,6 +79,8 @@ message ClientMessage {
     SteerSessionMsg steer_session = 44;
     // MCP lifecycle event subscription
     SubscribeMcpEventsMsg subscribe_mcp_events = 52;
+    // Client-tool reply (response to ToolCallForwardEvent)
+    ReplyToTool reply_to_tool = 53;
     // Extension point for downstream products.
     bytes extension = 100;
   }
@@ -348,7 +350,26 @@ message StreamEvent {
     ThinkingStartEvent thinking_start = 12;
     ThinkingEndEvent thinking_end = 13;
     ContextUsageEvent context_usage = 14;
+    ToolCallForwardEvent tool_call_forward = 15;
   }
+}
+
+// Daemon → client: forwarded tool invocation. The daemon emits this when
+// an agent calls a tool whose execution belongs on the client side (e.g.
+// the OS tool set). The client dispatches locally and replies with a
+// `ReplyToTool` carrying the same `call_id` on a fresh connection.
+message ToolCallForwardEvent {
+  string call_id = 1;
+  string name = 2;
+  string arguments = 3;
+}
+
+// Client → daemon: response to a `ToolCallForwardEvent`. Resolves the
+// daemon-side oneshot that's awaiting the result of the forwarded call.
+message ReplyToTool {
+  string call_id = 1;
+  string output = 2;
+  bool is_error = 3;
 }
 
 // Real token counts reported by the provider after a completed step.

@@ -806,6 +806,7 @@ dependencies = [
  "clap",
  "console",
  "crabtalk-core",
+ "crabtalk-runtime",
  "crabtalk-sdk",
  "crabtalk-transport",
  "crossterm 0.28.1",

@@ -124,6 +124,20 @@ impl OsHook {
     }
 }
 
+/// The OS tool set's static schemas — bash, read, edit. Hosts that
+/// advertise these tools (daemon-side `ClientToolHook` for forwarding,
+/// TUI-side local execution) call this to avoid duplicating the schema
+/// derivations.
+pub fn schemas() -> Vec<wcore::model::Tool> {
+    vec![Bash::as_tool(), Read::as_tool(), Edit::as_tool()]
+}
+
+/// Names of the OS tool set. Used by `ClientToolHook` to recognise
+/// dispatches that should be forwarded to the client.
+pub fn names() -> Vec<String> {
+    schemas().into_iter().map(|t| t.function.name).collect()
+}
+
 impl Hook for OsHook {
     fn schema(&self) -> Vec<wcore::model::Tool> {
         // Always advertise bash at the global level; per-agent gating

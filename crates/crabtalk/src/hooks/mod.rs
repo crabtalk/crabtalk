@@ -1,6 +1,7 @@
 //! Built-in hook implementations — tool subsystems registered on Env.
 
 pub mod ask_user;
+pub mod client_tools;
 pub mod delegate;
 pub mod mcp;
 pub mod memory;

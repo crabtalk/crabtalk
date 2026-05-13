@@ -46,6 +46,7 @@ impl<P: Provider + 'static> Daemon<P> {
     ) -> impl futures_core::Stream<Item = Result<StreamEvent>> + Send + 'a {
         let runtime = self.runtime.clone();
         let conversation_cwds = self.os_hook.conversation_cwds().clone();
+        let client_tools_hook = self.client_tools_hook.clone();
         let agent = req.agent;
         let content = req.content;
         let sender = req.sender.unwrap_or_default();
@@ -61,6 +62,12 @@ impl<P: Provider + 'static> Daemon<P> {
             if let Some(ref cwd) = cwd {
                 conversation_cwds.lock().await.insert(conversation_id, cwd.clone());
             }
+            // Register this conversation as having a stream listener so the
+            // client-tools hook will forward dispatches here. The guard
+            // unregisters on any exit path — stream end, early return on
+            // Done, or consumer dropping the stream.
+            client_tools_hook.register_listener(conversation_id).await;
+            let _listener_guard = ListenerGuard::new(client_tools_hook.clone(), conversation_id);
 
             let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
             yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.clone() })) };
@@ -119,6 +126,16 @@ impl<P: Provider + 'static> Daemon<P> {
                             })
                             .collect();
 
+                        let forwards: Vec<ToolCallForwardEvent> = calls
+                            .iter()
+                            .filter(|c| client_tools_hook.is_client_tool(&c.function.name))
+                            .map(|c| ToolCallForwardEvent {
+                                call_id: c.id.to_string(),
+                                name: c.function.name.to_string(),
+                                arguments: c.function.arguments.clone(),
+                            })
+                            .collect();
+
                         yield StreamEvent { event: Some(stream_event::Event::ToolStart(ToolStartEvent {
                             calls: calls.into_iter().map(|c| ToolCallInfo {
                                 name: c.function.name.to_string(),
@@ -128,6 +145,10 @@ impl<P: Provider + 'static> Daemon<P> {
 
                         if !ask_questions.is_empty() {
                             yield StreamEvent { event: Some(stream_event::Event::AskUser(AskUserEvent { questions: ask_questions })) };
+                        }
+
+                        for fwd in forwards {
+                            yield StreamEvent { event: Some(stream_event::Event::ToolCallForward(fwd)) };
                         }
                     }
                     AgentEvent::ToolResult { call_id, output, duration_ms } => {
@@ -214,6 +235,56 @@ impl<P: Provider + 'static> Daemon<P> {
             return Ok(());
         }
         anyhow::bail!("no pending ask_user for agent='{agent}' sender='{sender}'")
+    }
+
+    pub(crate) async fn reply_to_tool(
+        &self,
+        call_id: &str,
+        output: String,
+        is_error: bool,
+    ) -> Result<()> {
+        if self
+            .client_tools_hook
+            .try_resolve(call_id, output.clone(), is_error)
+            .await
+        {
+            return Ok(());
+        }
+        // The reply can race the dispatch — if the agent's tool dispatch
+        // hasn't parked its oneshot yet, retry once after a short delay.
+        // Same pattern as `reply_to_ask`.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if self
+            .client_tools_hook
+            .try_resolve(call_id, output, is_error)
+            .await
+        {
+            return Ok(());
+        }
+        anyhow::bail!("no pending forwarded tool call with id '{call_id}'")
+    }
+}
+
+/// RAII guard that unregisters a stream's client-tool listener on drop.
+/// Spawns the async unregister on a background task so `Drop` stays sync.
+struct ListenerGuard {
+    hook: Arc<crate::hooks::client_tools::ClientToolHook>,
+    conv_id: u64,
+}
+
+impl ListenerGuard {
+    fn new(hook: Arc<crate::hooks::client_tools::ClientToolHook>, conv_id: u64) -> Self {
+        Self { hook, conv_id }
+    }
+}
+
+impl Drop for ListenerGuard {
+    fn drop(&mut self) {
+        let hook = self.hook.clone();
+        let conv_id = self.conv_id;
+        tokio::spawn(async move {
+            hook.unregister_listener(conv_id).await;
+        });
     }
 }
 
