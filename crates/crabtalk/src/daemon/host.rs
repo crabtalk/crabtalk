@@ -171,8 +171,9 @@ impl wcore::ToolDispatcher for DaemonEnv {
         agent: &'a str,
         sender: &'a str,
         conversation_id: Option<u64>,
+        call_id: &'a str,
     ) -> wcore::ToolFuture<'a> {
-        runtime::env::dispatch_tool(self, name, args, agent, sender, conversation_id)
+        runtime::env::dispatch_tool(self, name, args, agent, sender, conversation_id, call_id)
     }
 }
 

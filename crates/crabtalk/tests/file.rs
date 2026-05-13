@@ -18,6 +18,7 @@ fn dispatch(args: &str) -> ToolDispatch {
         agent: "agent".into(),
         sender: String::new(),
         conversation_id: Some(1),
+        call_id: String::new(),
     }
 }
 
@@ -241,6 +242,7 @@ async fn read_allowed_for_gateway_sender() {
         agent: "agent".into(),
         sender: "gateway:telegram".into(),
         conversation_id: None,
+        call_id: String::new(),
     };
     let result = h
         .dispatch("read", call)

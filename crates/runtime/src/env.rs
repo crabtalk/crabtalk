@@ -52,12 +52,14 @@ pub fn dispatch_tool<'a, E: Env>(
     agent: &'a str,
     sender: &'a str,
     conversation_id: Option<u64>,
+    call_id: &'a str,
 ) -> ToolFuture<'a> {
     let call = ToolDispatch {
         args: args.to_owned(),
         agent: agent.to_owned(),
         sender: sender.to_owned(),
         conversation_id,
+        call_id: call_id.to_owned(),
     };
 
     match env.hook().dispatch(name, call) {

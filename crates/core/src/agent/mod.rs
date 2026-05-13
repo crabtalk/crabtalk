@@ -190,6 +190,7 @@ impl<P: Provider + 'static> Agent<P> {
                     &tc.function.arguments,
                     &sender,
                     conversation_id,
+                    &tc.id,
                 )
             }))
             .await;
@@ -222,6 +223,7 @@ impl<P: Provider + 'static> Agent<P> {
         args: &str,
         sender: &str,
         conversation_id: Option<u64>,
+        call_id: &str,
     ) -> Result<String, String> {
         let Some(dispatcher) = &self.dispatcher else {
             return Err(format!(
@@ -229,7 +231,14 @@ impl<P: Provider + 'static> Agent<P> {
             ));
         };
         dispatcher
-            .dispatch(name, args, &self.config.name, sender, conversation_id)
+            .dispatch(
+                name,
+                args,
+                &self.config.name,
+                sender,
+                conversation_id,
+                call_id,
+            )
             .await
     }
 
@@ -454,6 +463,7 @@ impl<P: Provider + 'static> Agent<P> {
                                 &tc.function.arguments,
                                 &sender,
                                 conversation_id,
+                                &tc.id,
                             );
                             // `start` is captured inside the async block so
                             // it measures actual polled runtime, not the time
