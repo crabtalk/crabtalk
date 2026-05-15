@@ -1,28 +1,19 @@
 //! Bash tool handler.
 
 use super::Bash;
-use crate::hooks::os::OsHook;
-use wcore::ToolDispatch;
+use crate::tools::os::OsHook;
 
 impl OsHook {
-    pub(in crate::hooks::os) async fn handle_bash(
-        &self,
-        call: ToolDispatch,
-    ) -> Result<String, String> {
+    pub(in crate::tools::os) async fn handle_bash(&self, args: &str) -> Result<String, String> {
         let input: Bash =
-            serde_json::from_str(&call.args).map_err(|e| format!("invalid arguments: {e}"))?;
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 
-        let deny = self.bash_deny(&call.agent);
-        if let Some(reason) = super::config::check_deny(&deny, &input.command) {
-            return Err(reason);
-        }
-
-        let cwd = self.effective_cwd(call.conversation_id);
+        let cwd = self.effective_cwd();
 
         let mut cmd = tokio::process::Command::new("bash");
         cmd.args(["-c", &input.command])
             .envs(&input.env)
-            .current_dir(&cwd)
+            .current_dir(cwd)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 

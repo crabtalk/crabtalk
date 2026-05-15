@@ -42,17 +42,14 @@ impl<P: Provider + 'static> Daemon<P> {
     ) -> Result<Self> {
         let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
 
-        let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
         let node_hook = DaemonHook::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
-        let (runtime, mcp, node_hook, os_hook, ask_hook) = Self::build_all(
+        let (runtime, mcp, node_hook, client_tools_hook, ask_hook) = Self::build_all(
             config,
             config_dir,
             &build_provider,
             runtime_once.clone(),
-            cwd.clone(),
             node_hook,
-            Default::default(),
             Default::default(),
         )
         .await?;
@@ -123,7 +120,7 @@ impl<P: Provider + 'static> Daemon<P> {
             events,
             build_provider,
             mcp,
-            os_hook,
+            client_tools_hook,
             ask_hook,
         })
     }
@@ -135,8 +132,6 @@ impl<P: Provider + 'static> Daemon<P> {
             .set(self.runtime.clone())
             .unwrap_or_else(|_| panic!("runtime_once already set"));
 
-        let cwd = self.runtime.read().await.env.cwd.clone();
-
         let node_hook = DaemonHook::new(self.hook.scopes.clone());
 
         let (mut new_runtime, _mcp, new_hook, _, _) = Self::build_all(
@@ -144,9 +139,7 @@ impl<P: Provider + 'static> Daemon<P> {
             &self.config_dir,
             &self.build_provider,
             runtime_once,
-            cwd,
             node_hook,
-            self.os_hook.conversation_cwds().clone(),
             self.ask_hook.pending_asks().clone(),
         )
         .await?;
@@ -168,21 +161,18 @@ impl<P: Provider + 'static> Daemon<P> {
     }
 
     /// Build DaemonHook, DaemonEnv, and Runtime in one shot.
-    #[allow(clippy::too_many_arguments)]
     async fn build_all(
         config: &DaemonConfig,
         config_dir: &Path,
         build_provider: &BuildProvider<P>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
-        cwd: PathBuf,
         mut node_hook: DaemonHook,
-        conversation_cwds: crate::daemon::ConversationCwds,
         pending_asks: crate::daemon::PendingAsks,
     ) -> Result<(
         Runtime<crate::daemon::DaemonCfg<P>>,
         Arc<McpHandler>,
         Arc<DaemonHook>,
-        Arc<crate::hooks::os::OsHook>,
+        Arc<crate::hooks::client_tools::ClientToolHook>,
         Arc<crate::hooks::ask_user::AskUserHook>,
     )> {
         let dirs = resolve_dirs(config_dir);
@@ -194,15 +184,13 @@ impl<P: Provider + 'static> Daemon<P> {
 
         let model = build_provider(config, &models)?;
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::empty());
-        let (os_hook, ask_hook, shared_memory) = Self::register_tools(
+        let (client_tools_hook, ask_hook, shared_memory) = Self::register_tools(
             &mut node_hook,
             storage.clone(),
             config_dir,
             mcp_handler.clone(),
             config.env.clone(),
             runtime_once,
-            cwd.clone(),
-            conversation_cwds.clone(),
             pending_asks,
         )
         .await?;
@@ -211,8 +199,6 @@ impl<P: Provider + 'static> Daemon<P> {
         let (events_tx, _) = broadcast::channel(256);
         let env = Arc::new(DaemonEnv {
             events_tx,
-            cwd,
-            conversation_cwds,
             hook: node_hook.clone(),
         });
 
@@ -224,7 +210,7 @@ impl<P: Provider + 'static> Daemon<P> {
         runtime.set_models(models);
         let mut runtime = runtime;
         Self::register_agents(&mut runtime, &dirs).await?;
-        Ok((runtime, mcp_handler, node_hook, os_hook, ask_hook))
+        Ok((runtime, mcp_handler, node_hook, client_tools_hook, ask_hook))
     }
 
     fn build_storage(config_dir: &Path, dirs: &ResolvedDirs) -> Arc<FsStorage> {
@@ -242,7 +228,6 @@ impl<P: Provider + 'static> Daemon<P> {
         ))
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn register_tools(
         node_hook: &mut DaemonHook,
         storage: Arc<FsStorage>,
@@ -250,11 +235,9 @@ impl<P: Provider + 'static> Daemon<P> {
         mcp_handler: Arc<McpHandler>,
         env_overlay: BTreeMap<String, String>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
-        cwd: PathBuf,
-        conversation_cwds: crate::daemon::ConversationCwds,
         pending_asks: crate::daemon::PendingAsks,
     ) -> Result<(
-        Arc<crate::hooks::os::OsHook>,
+        Arc<crate::hooks::client_tools::ClientToolHook>,
         Arc<crate::hooks::ask_user::AskUserHook>,
         runtime::SharedMemory,
     )> {
@@ -262,15 +245,10 @@ impl<P: Provider + 'static> Daemon<P> {
         let shared_memory = memory_wrapper.shared();
         let memory = Arc::new(memory_wrapper);
         let scopes = node_hook.scopes.clone();
-        let read_files: crate::hooks::os::ReadFiles = Default::default();
         let skills = storage.list_skills().await.unwrap_or_default();
 
-        let os_hook = Arc::new(crate::hooks::os::OsHook::new(
-            cwd,
-            conversation_cwds.clone(),
-            read_files.clone(),
-        ));
-        node_hook.register_hook("os", os_hook.clone());
+        let client_tools_hook = Arc::new(crate::hooks::client_tools::ClientToolHook::new());
+        node_hook.register_hook("client_tools", client_tools_hook.clone());
 
         node_hook.register_hook(
             "memory",
@@ -293,11 +271,7 @@ impl<P: Provider + 'static> Daemon<P> {
         );
         node_hook.register_hook(
             "delegate",
-            Arc::new(delegate::DelegateHook::<P>::new(
-                runtime_once,
-                conversation_cwds,
-                read_files,
-            )),
+            Arc::new(delegate::DelegateHook::<P>::new(runtime_once)),
         );
         let ask_hook = Arc::new(crate::hooks::ask_user::AskUserHook::new(pending_asks));
         node_hook.register_hook("ask_user", ask_hook.clone());
@@ -306,7 +280,7 @@ impl<P: Provider + 'static> Daemon<P> {
             "mcp",
             Arc::new(crate::hooks::mcp::McpHook::new(mcp_handler, env_overlay)),
         );
-        Ok((os_hook, ask_hook, shared_memory))
+        Ok((client_tools_hook, ask_hook, shared_memory))
     }
 
     /// Load agents from storage (canonical) and package manifests.

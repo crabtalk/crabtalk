@@ -76,7 +76,8 @@ impl StreamAccumulator {
                 self.tool_line = Some(format!("[question: {}]", headers.join(", ")));
                 self.pending_questions = Some(ask.questions.clone());
             }
-            stream_event::Event::UserSteered(_)
+            stream_event::Event::ToolCallForward(_)
+            | stream_event::Event::UserSteered(_)
             | stream_event::Event::ContextUsage(_)
             | stream_event::Event::TextStart(_)
             | stream_event::Event::TextEnd(_)
@@ -147,6 +148,15 @@ pub enum OutputChunk {
         agent: String,
         sender: String,
     },
+    /// Daemon forwarded a tool call for the client to dispatch locally.
+    /// The client must respond by sending `ReplyToTool` on a fresh
+    /// connection, echoing both `conversation_id` and `call_id`.
+    ToolCallForward {
+        conversation_id: u64,
+        call_id: String,
+        name: String,
+        arguments: String,
+    },
 }
 
 /// Open a fresh connection from `conn_info` and stream chunks for `req` over
@@ -211,6 +221,14 @@ pub fn stream_chunks<'a>(
                     agent: state.0.clone(),
                     sender: state.1.clone(),
                 })),
+                Ok(stream_event::Event::ToolCallForward(fwd)) => {
+                    Some(Ok(OutputChunk::ToolCallForward {
+                        conversation_id: fwd.conversation_id,
+                        call_id: fwd.call_id,
+                        name: fwd.name,
+                        arguments: fwd.arguments,
+                    }))
+                }
                 Ok(stream_event::Event::TextStart(_)) => Some(Ok(OutputChunk::TextStart)),
                 Ok(stream_event::Event::TextEnd(_)) => Some(Ok(OutputChunk::TextEnd)),
                 Ok(stream_event::Event::ThinkingStart(_)) => Some(Ok(OutputChunk::ThinkingStart)),

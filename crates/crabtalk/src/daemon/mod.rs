@@ -26,9 +26,6 @@ pub mod hook;
 pub mod host;
 mod transport;
 
-/// Per-conversation working directory overrides.
-pub type ConversationCwds = Arc<Mutex<HashMap<u64, PathBuf>>>;
-
 /// Pending ask_user oneshots (shared with AskUserHook and protocol layer).
 pub type PendingAsks = Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>;
 
@@ -56,8 +53,8 @@ pub struct Daemon<P: Provider + 'static = DefaultProvider> {
     pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<mcp::McpHandler>,
-    /// OS tools hook — owns conversation CWDs and bash policy.
-    pub(crate) os_hook: Arc<hooks::os::OsHook>,
+    /// Forwards OS-tool dispatches to the connected client.
+    pub(crate) client_tools_hook: Arc<hooks::client_tools::ClientToolHook>,
     /// Ask-user hook — owns pending ask oneshots.
     pub(crate) ask_hook: Arc<hooks::ask_user::AskUserHook>,
 }
@@ -72,7 +69,7 @@ impl<P: Provider + 'static> Clone for Daemon<P> {
             events: self.events.clone(),
             build_provider: Arc::clone(&self.build_provider),
             mcp: self.mcp.clone(),
-            os_hook: self.os_hook.clone(),
+            client_tools_hook: self.client_tools_hook.clone(),
             ask_hook: self.ask_hook.clone(),
         }
     }

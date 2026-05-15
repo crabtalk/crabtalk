@@ -33,32 +33,19 @@ impl<C: Config> Runtime<C> {
 
         conversation.history.retain(|e| !e.auto_injected);
 
-        // Layered instructions (Crab.md) and guest agent framing —
-        // both are still daemon-side per-turn injections that should
-        // move to client-supplied prompts. See issue #188.
-        let mut injected: Vec<HistoryEntry> = Vec::new();
-        let cwd = self.env.effective_cwd(conversation.id);
-        if let Some(instructions) = self.env.discover_instructions(&cwd) {
-            injected.push(
-                HistoryEntry::user(format!("<instructions>\n{instructions}\n</instructions>"))
-                    .auto_injected(),
-            );
-        }
+        // Guest agent framing — auto-injected so it refreshes per turn.
+        // Local instructions (e.g. `Crab.md`) used to be injected here
+        // too but moved client-side: clients render them into `content`
+        // before sending.
         if conversation.history.iter().any(|e| !e.agent.is_empty()) {
-            injected.push(
-                HistoryEntry::user(
-                    "Messages wrapped in <from agent=\"...\"> tags are from guest agents \
-                     who were consulted in this conversation. Continue responding as yourself."
-                        .to_string(),
-                )
-                .auto_injected(),
-            );
-        }
-        if !injected.is_empty() {
+            let framing = HistoryEntry::user(
+                "Messages wrapped in <from agent=\"...\"> tags are from guest agents \
+                 who were consulted in this conversation. Continue responding as yourself."
+                    .to_string(),
+            )
+            .auto_injected();
             let insert_pos = conversation.history.len().saturating_sub(1);
-            for (i, entry) in injected.into_iter().enumerate() {
-                conversation.history.insert(insert_pos + i, entry);
-            }
+            conversation.history.insert(insert_pos, framing);
         }
     }
 

@@ -79,6 +79,8 @@ message ClientMessage {
     SteerSessionMsg steer_session = 44;
     // MCP lifecycle event subscription
     SubscribeMcpEventsMsg subscribe_mcp_events = 52;
+    // Client-tool reply (response to ToolCallForwardEvent)
+    ReplyToTool reply_to_tool = 53;
     // Extension point for downstream products.
     bytes extension = 100;
   }
@@ -88,7 +90,11 @@ message SendMsg {
   string agent = 1;
   string content = 2;
   optional string sender = 4;
-  optional string cwd = 5;
+  // tag 5 was `cwd` — removed. The daemon does not read the user's
+  // filesystem. Clients render local instructions (e.g. Crab.md) into
+  // `content` themselves.
+  reserved 5;
+  reserved "cwd";
   optional string guest = 6;
   optional string tool_choice = 7;
 }
@@ -97,7 +103,8 @@ message StreamMsg {
   string agent = 1;
   string content = 2;
   optional string sender = 4;
-  optional string cwd = 5;
+  reserved 5;
+  reserved "cwd";
   optional string guest = 6;
   optional string tool_choice = 7;
 }
@@ -348,7 +355,34 @@ message StreamEvent {
     ThinkingStartEvent thinking_start = 12;
     ThinkingEndEvent thinking_end = 13;
     ContextUsageEvent context_usage = 14;
+    ToolCallForwardEvent tool_call_forward = 15;
   }
+}
+
+// Daemon → client: forwarded tool invocation. The daemon emits this when
+// an agent calls a tool whose execution belongs on the client side (e.g.
+// the OS tool set). The client dispatches locally and replies with a
+// `ReplyToTool` echoing both `conversation_id` and `call_id` on a fresh
+// connection.
+//
+// `conversation_id` is an opaque routing token from the client's
+// perspective — it does not need to be interpreted, only echoed. The
+// daemon needs it to disambiguate `call_id`s, which come from the LLM
+// and are not globally unique across conversations.
+message ToolCallForwardEvent {
+  string call_id = 1;
+  string name = 2;
+  string arguments = 3;
+  uint64 conversation_id = 4;
+}
+
+// Client → daemon: response to a `ToolCallForwardEvent`. Resolves the
+// daemon-side pending entry keyed by `(conversation_id, call_id)`.
+message ReplyToTool {
+  string call_id = 1;
+  string output = 2;
+  bool is_error = 3;
+  uint64 conversation_id = 4;
 }
 
 // Real token counts reported by the provider after a completed step.

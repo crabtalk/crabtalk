@@ -4,7 +4,6 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
-pub(super) mod config;
 mod handler;
 
 /// Run a shell command.

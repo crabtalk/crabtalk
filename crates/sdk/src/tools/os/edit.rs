@@ -3,7 +3,6 @@
 use super::{MAX_FILE_SIZE, OsHook};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use wcore::ToolDispatch;
 
 /// Replace an exact string in a file. Fails if the string is not found or appears more than once.
 #[derive(Deserialize, JsonSchema)]
@@ -17,9 +16,9 @@ pub struct Edit {
 }
 
 impl OsHook {
-    pub(super) async fn handle_edit(&self, call: ToolDispatch) -> Result<String, String> {
+    pub(super) async fn handle_edit(&self, args: &str) -> Result<String, String> {
         let input: Edit =
-            serde_json::from_str(&call.args).map_err(|e| format!("invalid arguments: {e}"))?;
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 
         if input.old_string.is_empty() {
             return Err("old_string must not be empty".to_owned());
@@ -28,7 +27,7 @@ impl OsHook {
             return Err("old_string and new_string are identical".to_owned());
         }
 
-        let cwd = self.effective_cwd(call.conversation_id);
+        let cwd = self.effective_cwd();
 
         let path = if std::path::Path::new(&input.path).is_absolute() {
             std::path::PathBuf::from(&input.path)
@@ -36,7 +35,7 @@ impl OsHook {
             cwd.join(&input.path)
         };
 
-        if !self.was_read(call.conversation_id, &path) {
+        if !self.was_read(&path) {
             return Err(format!(
                 "you must read {} before editing it",
                 path.display()

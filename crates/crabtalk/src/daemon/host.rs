@@ -1,11 +1,8 @@
-//! DaemonEnv — server-specific Host implementation and DaemonEnv type alias.
+//! DaemonEnv — server-specific Host implementation.
 
-use crate::daemon::{ConversationCwds, hook::DaemonHook};
+use crate::daemon::hook::DaemonHook;
 use runtime::Env;
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use wcore::{
     AgentEvent,
@@ -15,16 +12,13 @@ use wcore::{
 /// Tool result output is truncated to this many bytes in the broadcast.
 const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
 
-/// Server-specific host for the daemon — event broadcasting and
-/// instruction discovery.
+/// Server-specific host for the daemon — event broadcasting only.
+/// The daemon does not read the user's filesystem; clients render any
+/// local context (Crab.md, etc.) into the message content themselves.
 #[derive(Clone)]
 pub struct DaemonEnv {
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
-    /// Base working directory.
-    pub(crate) cwd: PathBuf,
-    /// Per-conversation CWD overrides (shared with DaemonHook + OsHook + DelegateHook).
-    pub(crate) conversation_cwds: ConversationCwds,
     /// Composite hook owning all sub-hooks and shared state.
     pub(crate) hook: Arc<DaemonHook>,
 }
@@ -148,19 +142,6 @@ impl Env for DaemonEnv {
     fn subscribe_events(&self) -> Option<broadcast::Receiver<AgentEventMsg>> {
         Some(self.events_tx.subscribe())
     }
-
-    fn discover_instructions(&self, cwd: &Path) -> Option<String> {
-        discover_instructions(cwd)
-    }
-
-    fn effective_cwd(&self, conversation_id: u64) -> PathBuf {
-        if let Ok(map) = self.conversation_cwds.try_lock()
-            && let Some(cwd) = map.get(&conversation_id)
-        {
-            return cwd.clone();
-        }
-        self.cwd.clone()
-    }
 }
 
 impl wcore::ToolDispatcher for DaemonEnv {
@@ -171,42 +152,10 @@ impl wcore::ToolDispatcher for DaemonEnv {
         agent: &'a str,
         sender: &'a str,
         conversation_id: Option<u64>,
+        call_id: &'a str,
     ) -> wcore::ToolFuture<'a> {
-        runtime::env::dispatch_tool(self, name, args, agent, sender, conversation_id)
+        runtime::env::dispatch_tool(self, name, args, agent, sender, conversation_id, call_id)
     }
-}
-
-fn discover_instructions(cwd: &Path) -> Option<String> {
-    let config_dir = &*wcore::paths::CONFIG_DIR;
-    let mut layers = Vec::new();
-
-    let global = config_dir.join("Crab.md");
-    if let Ok(content) = std::fs::read_to_string(&global) {
-        layers.push(content);
-    }
-
-    let mut found = Vec::new();
-    let mut dir = cwd;
-    loop {
-        let candidate = dir.join("Crab.md");
-        if candidate.is_file()
-            && !candidate.starts_with(config_dir)
-            && let Ok(content) = std::fs::read_to_string(&candidate)
-        {
-            found.push(content);
-        }
-        match dir.parent() {
-            Some(p) => dir = p,
-            None => break,
-        }
-    }
-    found.reverse();
-    layers.extend(found);
-
-    if layers.is_empty() {
-        return None;
-    }
-    Some(layers.join("\n\n"))
 }
 
 fn format_usage(response: &wcore::AgentResponse) -> String {

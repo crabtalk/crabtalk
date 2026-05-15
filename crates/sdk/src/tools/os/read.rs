@@ -4,7 +4,6 @@ use super::{MAX_FILE_SIZE, OsHook};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::fmt::Write;
-use wcore::ToolDispatch;
 
 /// Default maximum number of lines to return per read.
 const DEFAULT_LIMIT: usize = 2000;
@@ -23,10 +22,10 @@ pub struct Read {
 }
 
 impl OsHook {
-    pub(super) async fn handle_read(&self, call: ToolDispatch) -> Result<String, String> {
+    pub(super) async fn handle_read(&self, args: &str) -> Result<String, String> {
         let input: Read =
-            serde_json::from_str(&call.args).map_err(|e| format!("invalid arguments: {e}"))?;
-        let cwd = self.effective_cwd(call.conversation_id);
+            serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
+        let cwd = self.effective_cwd();
 
         let path = if std::path::Path::new(&input.path).is_absolute() {
             std::path::PathBuf::from(&input.path)
@@ -78,9 +77,7 @@ impl OsHook {
             let _ = write!(buf, "\n--- {total} total lines ---");
         }
 
-        if let Some(id) = call.conversation_id {
-            self.record_read(id, path);
-        }
+        self.record_read(path);
 
         Ok(buf)
     }

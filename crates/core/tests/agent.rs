@@ -34,6 +34,7 @@ where
         _agent: &'a str,
         _sender: &'a str,
         _conversation_id: Option<u64>,
+        _call_id: &'a str,
     ) -> ToolFuture<'a> {
         (self.0)(name.to_owned())
     }

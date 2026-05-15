@@ -5,7 +5,6 @@
 //! instruction discovery, and a composite Hook. Tests use `()`.
 
 use crate::Hook;
-use std::path::{Path, PathBuf};
 use tokio::sync::broadcast;
 use wcore::{AgentEvent, ToolDispatch, ToolFuture, protocol::message};
 
@@ -29,18 +28,6 @@ pub trait Env: Send + Sync + 'static {
     fn subscribe_events(&self) -> Option<broadcast::Receiver<message::AgentEventMsg>> {
         None
     }
-
-    /// Collect layered instructions (e.g. `Crab.md` files) for the
-    /// given working directory.
-    fn discover_instructions(&self, _cwd: &Path) -> Option<String> {
-        None
-    }
-
-    /// Effective working directory for a conversation. Defaults to the
-    /// process CWD.
-    fn effective_cwd(&self, _conversation_id: u64) -> PathBuf {
-        std::env::current_dir().unwrap_or_default()
-    }
 }
 
 /// Dispatch a tool call through an Env's hook. Utility for Env
@@ -52,12 +39,14 @@ pub fn dispatch_tool<'a, E: Env>(
     agent: &'a str,
     sender: &'a str,
     conversation_id: Option<u64>,
+    call_id: &'a str,
 ) -> ToolFuture<'a> {
     let call = ToolDispatch {
         args: args.to_owned(),
         agent: agent.to_owned(),
         sender: sender.to_owned(),
         conversation_id,
+        call_id: call_id.to_owned(),
     };
 
     match env.hook().dispatch(name, call) {
