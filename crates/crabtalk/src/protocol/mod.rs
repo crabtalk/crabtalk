@@ -90,10 +90,6 @@ impl<P: Provider + 'static> Server for CrabTalk<P> {
         Ok(())
     }
 
-    async fn reply_to_ask(&self, agent: String, sender: String, content: String) -> Result<()> {
-        self.reply_to_ask(&agent, &sender, content).await
-    }
-
     async fn reply_to_tool(
         &self,
         conversation_id: u64,

@@ -94,25 +94,6 @@ impl<P: Provider + 'static> CrabTalk<P> {
                         })) };
                     }
                     AgentEvent::ToolCallsStart(calls) => {
-                        let ask_questions: Vec<AskQuestion> = calls
-                            .iter()
-                            .filter(|c| c.function.name == "ask_user")
-                            .filter_map(|c| {
-                                serde_json::from_str::<crate::hooks::ask_user::AskUser>(&c.function.arguments)
-                                    .ok()
-                            })
-                            .flat_map(|a| a.questions)
-                            .map(|q| AskQuestion {
-                                question: q.question,
-                                header: q.header,
-                                options: q.options.into_iter().map(|o| AskOption {
-                                    label: o.label,
-                                    description: o.description,
-                                }).collect(),
-                                multi_select: q.multi_select,
-                            })
-                            .collect();
-
                         let forwards: Vec<ToolCallForwardEvent> = calls
                             .iter()
                             .filter(|c| client_tools_hook.is_client_tool(&c.function.name))
@@ -130,10 +111,6 @@ impl<P: Provider + 'static> CrabTalk<P> {
                                 arguments: c.function.arguments,
                             }).collect(),
                         })) };
-
-                        if !ask_questions.is_empty() {
-                            yield StreamEvent { event: Some(stream_event::Event::AskUser(AskUserEvent { questions: ask_questions })) };
-                        }
 
                         for fwd in forwards {
                             yield StreamEvent { event: Some(stream_event::Event::ToolCallForward(fwd)) };
@@ -184,40 +161,6 @@ impl<P: Provider + 'static> CrabTalk<P> {
             return Ok(false);
         };
         Ok(rt.close(conversation_id).await)
-    }
-
-    pub(crate) async fn reply_to_ask(
-        &self,
-        agent: &str,
-        sender: &str,
-        content: String,
-    ) -> Result<()> {
-        let rt = self.runtime.read().await.clone();
-        let conversation_id = rt.require_conversation_id(agent, sender).await?;
-        if let Some(tx) = self
-            .ask_hook
-            .pending_asks()
-            .lock()
-            .await
-            .remove(&conversation_id)
-        {
-            let _ = tx.send(content);
-            return Ok(());
-        }
-        // Retry once after a short delay — the ask_user handler may not have
-        // inserted the oneshot yet if the reply races the tool call.
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        if let Some(tx) = self
-            .ask_hook
-            .pending_asks()
-            .lock()
-            .await
-            .remove(&conversation_id)
-        {
-            let _ = tx.send(content);
-            return Ok(());
-        }
-        anyhow::bail!("no pending ask_user for agent='{agent}' sender='{sender}'")
     }
 
     pub(crate) async fn reply_to_tool(

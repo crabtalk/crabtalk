@@ -11,8 +11,8 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Tabs},
 };
+use sdk::tools::ask_user::Question;
 use std::collections::{BTreeSet, HashMap};
-use wcore::protocol::message::AskQuestion;
 
 // ── Action returned by handle_key ────────────────────────────────
 
@@ -36,7 +36,7 @@ pub struct AskState {
 }
 
 struct QuestionState {
-    question: AskQuestion,
+    question: Question,
     selected: BTreeSet<usize>,
     cursor: usize,
     other_text: Option<String>,
@@ -49,7 +49,7 @@ enum InputMode {
 }
 
 impl AskState {
-    pub fn new(questions: &[AskQuestion]) -> Self {
+    pub fn new(questions: &[Question]) -> Self {
         Self {
             questions: questions.iter().map(QuestionState::new).collect(),
             focused: 0,
@@ -296,7 +296,7 @@ impl AskState {
 }
 
 impl QuestionState {
-    fn new(q: &AskQuestion) -> Self {
+    fn new(q: &Question) -> Self {
         let mut question = q.clone();
         question
             .options

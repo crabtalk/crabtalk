@@ -4,12 +4,11 @@ use crate::{hooks, storage::FsStorage};
 use anyhow::Result;
 use crabllm_core::Provider;
 use runtime::Runtime;
-use std::collections::HashMap;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio::sync::{Mutex, RwLock, broadcast, oneshot};
+use tokio::sync::{RwLock, broadcast};
 pub use transport::{bridge_shutdown, setup_tcp};
 use {
     builder::{BuildProvider, DefaultProvider, build_default_provider},
@@ -25,9 +24,6 @@ pub mod event;
 pub mod hook;
 pub mod host;
 mod transport;
-
-/// Pending ask_user oneshots (shared with AskUserHook and protocol layer).
-pub type PendingAsks = Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>;
 
 /// Shared runtime handle.
 pub type SharedRuntime<P> = Arc<RwLock<Arc<Runtime<SystemCfg<P>>>>>;
@@ -53,10 +49,8 @@ pub struct CrabTalk<P: Provider + 'static = DefaultProvider> {
     pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<mcp::McpHandler>,
-    /// Forwards OS-tool dispatches to the connected client.
+    /// Forwards client-tool dispatches (OS tools, ask_user) to the connected client.
     pub(crate) client_tools_hook: Arc<hooks::client_tools::ClientToolHook>,
-    /// Ask-user hook — owns pending ask oneshots.
-    pub(crate) ask_hook: Arc<hooks::ask_user::AskUserHook>,
 }
 
 impl<P: Provider + 'static> Clone for CrabTalk<P> {
@@ -70,7 +64,6 @@ impl<P: Provider + 'static> Clone for CrabTalk<P> {
             build_provider: Arc::clone(&self.build_provider),
             mcp: self.mcp.clone(),
             client_tools_hook: self.client_tools_hook.clone(),
-            ask_hook: self.ask_hook.clone(),
         }
     }
 }

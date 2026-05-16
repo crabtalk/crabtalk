@@ -173,6 +173,8 @@ async fn wx_stream(
     };
     let mut event_rx = conn_info.stream(req);
     let mut acc = StreamAccumulator::new();
+    let mut pending_ask_conv_id: Option<u64> = None;
+    let mut pending_ask_call_id: Option<String> = None;
 
     loop {
         tokio::select! {
@@ -181,9 +183,8 @@ async fn wx_stream(
                     Some(Ok(event)) => {
                         acc.push(&event);
 
-                        // Handle ask_user: send question text, accept free-text reply.
-                        if let Some(questions) = acc.take_pending_questions() {
-                            let question_text = questions
+                        if let Some(ask) = acc.take_pending_ask() {
+                            let question_text = ask.questions
                                 .iter()
                                 .map(|q| format!("{}: {}", q.header, q.question))
                                 .collect::<Vec<_>>()
@@ -199,6 +200,8 @@ async fn wx_stream(
                                     http, base_url, token, &to, &ct, &question_text,
                                 ).await;
                             }
+                            pending_ask_conv_id = Some(ask.conversation_id);
+                            pending_ask_call_id = Some(ask.call_id);
                         }
 
                         if acc.done {
@@ -213,11 +216,14 @@ async fn wx_stream(
                 }
             }
             reply = reply_rx.recv() => {
-                if let Some(reply_content) = reply {
-                    // Free-text reply for ask_user.
+                if let Some(reply_content) = reply
+                    && let (Some(conv_id), Some(call_id)) = (pending_ask_conv_id, pending_ask_call_id.clone())
+                {
                     let _ = conn_info
-                        .reply_to_ask(agent.to_string(), sender.to_string(), reply_content)
+                        .reply_to_tool(conv_id, call_id, reply_content, false)
                         .await;
+                    pending_ask_conv_id = None;
+                    pending_ask_call_id = None;
                 }
             }
         }

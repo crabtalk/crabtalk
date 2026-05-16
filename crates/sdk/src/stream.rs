@@ -1,7 +1,10 @@
 //! Stream helpers — accumulator for chat-platform apps and an [`OutputChunk`]
 //! adapter for richer UI consumers (TUI).
 
-use crate::conn::{ConnectionInfo, Transport, connect_from};
+use crate::{
+    conn::{ConnectionInfo, Transport, connect_from},
+    tools::ask_user::{AskUser, Question},
+};
 use anyhow::Result;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -23,8 +26,15 @@ pub struct StreamAccumulator {
     error: Option<String>,
     /// Whether the stream has ended.
     pub done: bool,
-    /// Pending structured questions from an `AskUserEvent`.
-    pending_questions: Option<Vec<AskQuestion>>,
+    /// Pending structured questions from a forwarded `ask_user` call.
+    pending_ask: Option<PendingAsk>,
+}
+
+/// A forwarded `ask_user` tool call awaiting a reply.
+pub struct PendingAsk {
+    pub questions: Vec<Question>,
+    pub conversation_id: u64,
+    pub call_id: String,
 }
 
 impl Default for StreamAccumulator {
@@ -41,7 +51,7 @@ impl StreamAccumulator {
             agent: None,
             error: None,
             done: false,
-            pending_questions: None,
+            pending_ask: None,
         }
     }
 
@@ -54,9 +64,7 @@ impl StreamAccumulator {
             stream_event::Event::Chunk(c) => {
                 self.text.push_str(&c.content);
             }
-            stream_event::Event::Thinking(_) => {
-                // Thinking content not shown in chat-platform messages.
-            }
+            stream_event::Event::Thinking(_) => {}
             stream_event::Event::ToolStart(ts) => {
                 let names: Vec<&str> = ts.calls.iter().map(|c| c.name.as_str()).collect();
                 self.tool_line = Some(format!("[calling {}...]", names.join(", ")));
@@ -71,10 +79,21 @@ impl StreamAccumulator {
                 }
                 self.done = true;
             }
+            stream_event::Event::ToolCallForward(fwd) if fwd.name == "ask_user" => {
+                if let Ok(ask) = serde_json::from_str::<AskUser>(&fwd.arguments) {
+                    let headers: Vec<&str> =
+                        ask.questions.iter().map(|q| q.header.as_str()).collect();
+                    self.tool_line = Some(format!("[question: {}]", headers.join(", ")));
+                    self.pending_ask = Some(PendingAsk {
+                        questions: ask.questions,
+                        conversation_id: fwd.conversation_id,
+                        call_id: fwd.call_id.clone(),
+                    });
+                }
+            }
             stream_event::Event::AskUser(ask) => {
                 let headers: Vec<&str> = ask.questions.iter().map(|q| q.header.as_str()).collect();
                 self.tool_line = Some(format!("[question: {}]", headers.join(", ")));
-                self.pending_questions = Some(ask.questions.clone());
             }
             stream_event::Event::ToolCallForward(_)
             | stream_event::Event::UserSteered(_)
@@ -96,20 +115,17 @@ impl StreamAccumulator {
         self.error.as_deref()
     }
 
-    /// Pending questions from an `AskUserEvent`, if any.
-    pub fn pending_questions(&self) -> Option<&[AskQuestion]> {
-        self.pending_questions.as_deref()
+    /// Pending ask_user call, if any.
+    pub fn pending_ask(&self) -> Option<&PendingAsk> {
+        self.pending_ask.as_ref()
     }
 
-    /// Take and clear the pending questions.
-    pub fn take_pending_questions(&mut self) -> Option<Vec<AskQuestion>> {
-        self.pending_questions.take()
+    /// Take and clear the pending ask.
+    pub fn take_pending_ask(&mut self) -> Option<PendingAsk> {
+        self.pending_ask.take()
     }
 
     /// Render the current state: accumulated text + inline tool status.
-    ///
-    /// Returns the text to display in the chat message. If tools are
-    /// currently running, appends the tool status line.
     pub fn render(&self) -> String {
         let mut out = self.text.clone();
         if let Some(ref line) = self.tool_line {
@@ -142,11 +158,13 @@ pub enum OutputChunk {
     ToolResult(String, String),
     /// Tool execution completed (true = success, false = failure).
     ToolDone(bool),
-    /// Agent is asking the user structured questions. Carries questions and agent identity.
+    /// Agent is asking the user structured questions via a forwarded
+    /// `ask_user` tool call. Reply with `ReplyToTool` echoing
+    /// `conversation_id` and `call_id`.
     AskUser {
-        questions: Vec<AskQuestion>,
-        agent: String,
-        sender: String,
+        questions: Vec<Question>,
+        conversation_id: u64,
+        call_id: String,
     },
     /// Daemon forwarded a tool call for the client to dispatch locally.
     /// The client must respond by sending `ReplyToTool` on a fresh
@@ -162,9 +180,6 @@ pub enum OutputChunk {
 /// Open a fresh connection from `conn_info` and stream chunks for `req` over
 /// an unbounded channel. The spawned task closes the connection when the
 /// daemon ends the stream or the receiver is dropped.
-///
-/// Suits non-blocking UI loops (TUI, chat-platform apps) that consume chunks
-/// from a `select!` arm.
 pub fn spawn_stream(
     conn_info: ConnectionInfo,
     req: StreamMsg,
@@ -196,11 +211,9 @@ pub fn stream_chunks<'a>(
     transport: &'a mut Transport,
     req: StreamMsg,
 ) -> impl Stream<Item = Result<OutputChunk>> + Send + 'a {
-    let agent = req.agent.clone();
-    let sender = req.sender.clone().unwrap_or_default();
     transport
         .stream(req)
-        .scan((agent, sender), |state, result| {
+        .scan((), |_state, result| {
             let chunk = match result {
                 Ok(stream_event::Event::Chunk(c)) => Some(Ok(OutputChunk::Text(c.content))),
                 Ok(stream_event::Event::Thinking(t)) => Some(Ok(OutputChunk::Thinking(t.content))),
@@ -216,11 +229,21 @@ pub fn stream_chunks<'a>(
                     Some(Ok(OutputChunk::ToolResult(tr.call_id, tr.output)))
                 }
                 Ok(stream_event::Event::ToolsComplete(_)) => Some(Ok(OutputChunk::ToolDone(true))),
-                Ok(stream_event::Event::AskUser(ask)) => Some(Ok(OutputChunk::AskUser {
-                    questions: ask.questions,
-                    agent: state.0.clone(),
-                    sender: state.1.clone(),
-                })),
+                Ok(stream_event::Event::ToolCallForward(fwd)) if fwd.name == "ask_user" => {
+                    match serde_json::from_str::<AskUser>(&fwd.arguments) {
+                        Ok(ask) => Some(Ok(OutputChunk::AskUser {
+                            questions: ask.questions,
+                            conversation_id: fwd.conversation_id,
+                            call_id: fwd.call_id,
+                        })),
+                        Err(_) => Some(Ok(OutputChunk::ToolCallForward {
+                            conversation_id: fwd.conversation_id,
+                            call_id: fwd.call_id,
+                            name: fwd.name,
+                            arguments: fwd.arguments,
+                        })),
+                    }
+                }
                 Ok(stream_event::Event::ToolCallForward(fwd)) => {
                     Some(Ok(OutputChunk::ToolCallForward {
                         conversation_id: fwd.conversation_id,
@@ -234,6 +257,7 @@ pub fn stream_chunks<'a>(
                 Ok(stream_event::Event::ThinkingStart(_)) => Some(Ok(OutputChunk::ThinkingStart)),
                 Ok(stream_event::Event::ThinkingEnd(_)) => Some(Ok(OutputChunk::ThinkingEnd)),
                 Ok(stream_event::Event::Start(_))
+                | Ok(stream_event::Event::AskUser(_))
                 | Ok(stream_event::Event::UserSteered(_))
                 | Ok(stream_event::Event::ContextUsage(_))
                 | Ok(stream_event::Event::End(_)) => None,

@@ -51,8 +51,10 @@ pub struct ClientToolHook {
 
 impl ClientToolHook {
     pub fn new() -> Self {
-        let schemas = sdk::tools::os::schemas();
-        let names = sdk::tools::os::names();
+        let mut schemas = sdk::tools::os::schemas();
+        schemas.push(sdk::tools::ask_user::schema());
+        let mut names = sdk::tools::os::names();
+        names.push(sdk::tools::ask_user::name());
         Self {
             schemas,
             names,

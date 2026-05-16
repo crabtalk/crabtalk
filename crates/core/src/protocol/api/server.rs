@@ -104,14 +104,6 @@ pub trait Server: Sync {
         sender: String,
     ) -> impl std::future::Future<Output = Result<String>> + Send;
 
-    /// Handle `ReplyToAsk` — deliver a user reply to a pending `ask_user` tool call.
-    fn reply_to_ask(
-        &self,
-        agent: String,
-        sender: String,
-        content: String,
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
-
     /// Handle `ReplyToTool` — deliver a client-side tool result for a
     /// pending forwarded call. Resolves the pending entry keyed by
     /// `(conversation_id, call_id)`.
@@ -291,11 +283,8 @@ pub trait Server: Sync {
                         Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                client_message::Msg::ReplyToAsk(msg) => {
-                    yield match self.reply_to_ask(msg.agent, msg.sender, msg.content).await {
-                        Ok(()) => server_pong(),
-                        Err(e) => server_error(404, e.to_string()),
-                    };
+                client_message::Msg::ReplyToAsk(_) => {
+                    yield server_error(410, "ReplyToAsk removed — use ReplyToTool".into());
                 }
                 client_message::Msg::ReplyToTool(msg) => {
                     yield match self.reply_to_tool(msg.conversation_id, msg.call_id, msg.output, msg.is_error).await {
