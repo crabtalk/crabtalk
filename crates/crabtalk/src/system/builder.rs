@@ -44,7 +44,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         let node_hook = CompositeHook::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
-        let (runtime, mcp, node_hook, client_tools_hook) = Self::build_all(
+        let (runtime, mcp, node_hook, tool_hook) = Self::build_all(
             config,
             config_dir,
             &build_provider,
@@ -119,7 +119,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
             events,
             build_provider,
             mcp,
-            client_tools_hook,
+            tool_hook,
         })
     }
 
@@ -168,7 +168,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         Runtime<crate::system::SystemCfg<P>>,
         Arc<McpHandler>,
         Arc<CompositeHook>,
-        Arc<crate::hooks::client_tools::ClientToolHook>,
+        Arc<crate::hooks::tool::ToolHook>,
     )> {
         let dirs = resolve_dirs(config_dir);
         let storage = Self::build_storage(config_dir, &dirs);
@@ -179,7 +179,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         let model = build_provider(config, &models)?;
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::empty());
-        let (client_tools_hook, shared_memory) = Self::register_tools(
+        let (tool_hook, shared_memory) = Self::register_tools(
             &mut node_hook,
             storage.clone(),
             config_dir,
@@ -204,7 +204,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         runtime.set_models(models);
         let mut runtime = runtime;
         Self::register_agents(&mut runtime, &dirs).await?;
-        Ok((runtime, mcp_handler, node_hook, client_tools_hook))
+        Ok((runtime, mcp_handler, node_hook, tool_hook))
     }
 
     fn build_storage(config_dir: &Path, dirs: &ResolvedDirs) -> Arc<FsStorage> {
@@ -229,18 +229,15 @@ impl<P: Provider + 'static> CrabTalk<P> {
         mcp_handler: Arc<McpHandler>,
         env_overlay: BTreeMap<String, String>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
-    ) -> Result<(
-        Arc<crate::hooks::client_tools::ClientToolHook>,
-        runtime::SharedMemory,
-    )> {
+    ) -> Result<(Arc<crate::hooks::tool::ToolHook>, runtime::SharedMemory)> {
         let memory_wrapper = Memory::open(config_dir.join("memory.db"))?;
         let shared_memory = memory_wrapper.shared();
         let memory = Arc::new(memory_wrapper);
         let scopes = node_hook.scopes.clone();
         let skills = storage.list_skills().await.unwrap_or_default();
 
-        let client_tools_hook = Arc::new(crate::hooks::client_tools::ClientToolHook::new());
-        node_hook.register_hook("client_tools", client_tools_hook.clone());
+        let tool_hook = Arc::new(crate::hooks::tool::ToolHook::new());
+        node_hook.register_hook("tool", tool_hook.clone());
 
         node_hook.register_hook(
             "memory",
@@ -270,7 +267,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
             "mcp",
             Arc::new(crate::hooks::mcp::McpHook::new(mcp_handler, env_overlay)),
         );
-        Ok((client_tools_hook, shared_memory))
+        Ok((tool_hook, shared_memory))
     }
 
     async fn register_agents(
