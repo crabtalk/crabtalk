@@ -1,7 +1,7 @@
 //! Sessions hook — `search_sessions`. BM25 over conversation messages
 //! with windowed excerpts. See RFC 0185.
 
-use crate::daemon::SharedRuntime;
+use crate::system::SharedRuntime;
 use crabllm_core::Provider;
 use runtime::Hook;
 use search::SearchSessions;

@@ -1,13 +1,13 @@
-use crabtalk::{DaemonConfig, storage::DEFAULT_CONFIG};
+use crabtalk::{Config, storage::DEFAULT_CONFIG};
 
 #[test]
 fn parse_default_config_template() {
-    DaemonConfig::from_toml(DEFAULT_CONFIG).expect("default config template should parse");
+    Config::from_toml(DEFAULT_CONFIG).expect("default config template should parse");
 }
 
 #[test]
 fn empty_config() {
-    let config = DaemonConfig::from_toml("").unwrap();
+    let config = Config::from_toml("").unwrap();
     assert!(config.llm.base_url.is_empty());
     assert!(config.llm.api_key.is_empty());
     assert!(config.env.is_empty());
@@ -15,13 +15,13 @@ fn empty_config() {
 
 #[test]
 fn invalid_toml_syntax() {
-    let result = DaemonConfig::from_toml("this is not [valid toml");
+    let result = Config::from_toml("this is not [valid toml");
     assert!(result.is_err());
 }
 
 #[test]
 fn task_defaults() {
-    let config = DaemonConfig::from_toml("").unwrap();
+    let config = Config::from_toml("").unwrap();
     assert_eq!(config.tasks.max_concurrent, 4);
     assert_eq!(config.tasks.viewable_window, 16);
     assert_eq!(config.tasks.task_timeout, 300);
@@ -34,7 +34,7 @@ fn task_overrides() {
 max_concurrent = 8
 task_timeout = 600
 "#;
-    let config = DaemonConfig::from_toml(toml).unwrap();
+    let config = Config::from_toml(toml).unwrap();
     assert_eq!(config.tasks.max_concurrent, 8);
     assert_eq!(config.tasks.task_timeout, 600);
 }
@@ -46,7 +46,7 @@ fn env_vars_parsed() {
 FOO = "bar"
 BAZ = "qux"
 "#;
-    let config = DaemonConfig::from_toml(toml).unwrap();
+    let config = Config::from_toml(toml).unwrap();
     assert_eq!(config.env.get("FOO").unwrap(), "bar");
     assert_eq!(config.env.get("BAZ").unwrap(), "qux");
 }
@@ -58,7 +58,7 @@ fn llm_section_parsed() {
 base_url = "http://localhost:4000/v1"
 api_key = "sk-test"
 "#;
-    let config = DaemonConfig::from_toml(toml).unwrap();
+    let config = Config::from_toml(toml).unwrap();
     assert_eq!(config.llm.base_url, "http://localhost:4000/v1");
     assert_eq!(config.llm.api_key, "sk-test");
 }
@@ -77,5 +77,5 @@ command = "my-mcp-server"
 [agents.helper]
 description = "A helper agent"
 "#;
-    DaemonConfig::from_toml(toml).unwrap();
+    Config::from_toml(toml).unwrap();
 }

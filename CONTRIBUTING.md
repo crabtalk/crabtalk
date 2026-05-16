@@ -1,7 +1,7 @@
 # Contributing
 
-Crabtalk is a workspace of crates and apps. The daemon is the product — everything
-else either powers it or connects to it.
+Crabtalk is a workspace of crates and apps. The `crabtalk` library is the
+product — everything else either powers it or connects to it.
 
 ## Layering
 
@@ -17,14 +17,14 @@ Layer 1 ─ Backends (independent of each other)
 Layer 2 ─ Engine
   └─ runtime              Env, tool dispatch, MCP, skills, memory
 
-Layer 3 ─ Server
-  └─ crabtalk             Daemon core: event loop, transport setup, config, hot reload
+Layer 3 ─ Library
+  └─ crabtalk             Hooks, storage, protocol, composite hook, builder (CrabTalk)
 
 Layer 4 ─ Adapters
   ├─ crabtalkd            Daemon CLI: run, setup, reload, events
   ├─ crabup               Package + service manager for the ecosystem
-  ├─ sdk                  Daemon client: connection, typed RPC sugars, stream adapters
-  ├─ tui                  REPL, config TUI (optional daemon feature for all-in-one)
+  ├─ sdk                  Client: connection, typed RPC sugars, stream adapters
+  ├─ tui                  REPL, config TUI
   └─ apps/                telegram, wechat (gateway clients); cron, search (standalone services)
 ```
 
@@ -36,7 +36,7 @@ Layer 4 ─ Adapters
 | Does it add or configure an LLM provider? | model |
 | Does it add a wire transport? | transport |
 | Does it add a tool the agent can call, a skill, or memory? | runtime |
-| Does it need network I/O, scheduling, or process lifecycle? | crabtalk |
+| Does it need network I/O, scheduling, or process lifecycle? | crabtalk (system) |
 | Does it adapt a platform or parse bot commands? | sdk |
 | Does it add a daemon admin command (over the socket)? | crabtalkd |
 | Does it install, update, or service-manage a crabtalk binary? | crabup |
@@ -47,18 +47,18 @@ Layer 4 ─ Adapters
 
 - **Runtime** — never initiates I/O. It only responds. No sockets, timers, or listeners.
 - **Runtime owns mechanics, clients own UX.** The runtime exposes session primitives (`new_session`, `append_message`, `list_sessions`, `list_messages`, `get_session_meta`, `search_sessions`) and runs auto-compaction only as a context-window safety net. Discretionary lifecycle — `/clear`, `/new`, `/compact`, session selection, archival browsing, saved searches — is composed in the client from those primitives. See [RFC 0185](docs/src/rfcs/0185-session-search.md).
-- **Crabtalk (daemon core)** — never interprets tool semantics. It only routes. Cron and config are daemon concerns (process-lifetime, not session-lifetime).
+- **Crabtalk (library)** — never interprets tool semantics. It only routes. Cron and config are system concerns (process-lifetime, not session-lifetime).
 - **SDK** — no dependency on runtime or model. Adapter-centric, not agent-centric.
 - **Core** — defines traits and types only. If a core change pulls in runtime or daemon deps, the abstraction is wrong.
 
-`Host` is the seam between daemon and runtime. The daemon constructs the
-runtime, feeds it messages, and receives tool calls back through the event
-channel.
+`Env` is the seam between the library and the runtime engine. The library
+constructs the runtime, feeds it messages, and receives tool calls back
+through the event channel.
 
 ## Data Flow
 
 ```
-Client (TUI/Telegram/etc) → UDS/TCP → Daemon event loop
+Client (TUI/Telegram/Desktop) → UDS/TCP or in-process → CrabTalk
   → Agent.step(): config + history + tools → Model.send()/stream()
   → Tool calls dispatched via ToolDispatcher → Env.dispatch_tool()
 ```
@@ -68,8 +68,7 @@ Client (TUI/Telegram/etc) → UDS/TCP → Daemon event loop
 - `Agent<P: Provider>` — immutable definition + execution (step/run/run_stream)
 - `Session` — conversation history container
 - `Runtime<C: Config>` — agents + sessions + tool dispatch
-- `Env<H, S>` — engine environment: skills, MCP, memory, tool routing
-- `Host` — trait for server-specific tools (ask_user, delegate, session CWD)
+- `Env` — engine environment: skills, MCP, memory, tool routing
 - `Storage` — wcore trait; pluggable KV backend reached through `Config::Storage`
 - `ToolDispatcher` — wcore trait the agent calls to execute a tool
 - Protocol — `ClientMessage` / `ServerMessage` (protobuf)

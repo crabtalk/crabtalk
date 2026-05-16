@@ -1,8 +1,7 @@
-//! Daemon-level conversation operations: send/stream, kill, and
-//! ask/tool reply routing. Pure-runtime ops live on `Runtime<C>`
-//! directly.
+//! Conversation operations: send/stream, kill, and ask/tool reply
+//! routing. Pure-runtime ops live on `Runtime<C>` directly.
 
-use crate::daemon::Daemon;
+use crate::system::CrabTalk;
 use anyhow::Result;
 use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
@@ -10,7 +9,7 @@ use std::sync::Arc;
 use wcore::AgentEvent;
 use wcore::protocol::message::*;
 
-impl<P: Provider + 'static> Daemon<P> {
+impl<P: Provider + 'static> CrabTalk<P> {
     pub(crate) async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");

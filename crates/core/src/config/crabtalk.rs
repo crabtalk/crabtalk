@@ -1,11 +1,11 @@
-//! Daemon configuration loaded from `config.toml`.
+//! Top-level configuration loaded from `config.toml`.
 
 use crate::config::{LlmConfig, system::TasksConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Top-level daemon configuration (`config.toml`).
+/// Top-level configuration (`config.toml`).
 ///
 /// Holds immutable per-install settings: the LLM endpoint, task executor
 /// pool, and env vars passed to MCP processes. Mutable runtime records
@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 /// customization (hooks, etc.) lives directly on each
 /// [`crate::AgentConfig`].
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DaemonConfig {
+pub struct Config {
     /// LLM endpoint (`[llm]`) — single OpenAI-compatible endpoint.
     #[serde(default)]
     pub llm: LlmConfig,
@@ -25,8 +25,7 @@ pub struct DaemonConfig {
     pub env: BTreeMap<String, String>,
 }
 
-impl DaemonConfig {
-    /// Parse a TOML string into a `DaemonConfig`.
+impl Config {
     pub fn from_toml(toml_str: &str) -> Result<Self> {
         Ok(toml::from_str(toml_str)?)
     }

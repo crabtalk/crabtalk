@@ -1,11 +1,11 @@
-//! Daemon construction and lifecycle methods.
+//! CrabTalk construction and lifecycle methods.
 
 use crate::{
-    Daemon, DaemonConfig,
-    daemon::{SharedRuntime, hook::DaemonHook},
-    daemon::{event, host::DaemonEnv},
+    CrabTalk,
     hooks::{Memory, delegate},
     storage::FsStorage,
+    system::{SharedRuntime, hook::CompositeHook},
+    system::{event, host::SystemEnv},
 };
 use anyhow::Result;
 use crabllm_core::Provider;
@@ -22,27 +22,27 @@ use wcore::{LlmConfig, ResolvedDirs, model::Model, resolve_dirs, storage::Storag
 
 pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
 
-/// Build the LLM `Model<P>` given the daemon config and the list of models
+/// Build the LLM `Model<P>` given the config and the list of models
 /// advertised by the endpoint (fetched from `/v1/models` at startup).
 pub type BuildProvider<P> =
-    Arc<dyn Fn(&DaemonConfig, &[String]) -> Result<wcore::model::Model<P>> + Send + Sync>;
+    Arc<dyn Fn(&wcore::Config, &[String]) -> Result<wcore::model::Model<P>> + Send + Sync>;
 
 pub fn build_default_provider(
-    config: &DaemonConfig,
+    config: &wcore::Config,
     models: &[String],
 ) -> Result<Model<DefaultProvider>> {
     build_providers(config, models)
 }
 
-impl<P: Provider + 'static> Daemon<P> {
+impl<P: Provider + 'static> CrabTalk<P> {
     pub(crate) async fn build(
-        config: &DaemonConfig,
+        config: &wcore::Config,
         config_dir: &Path,
         build_provider: BuildProvider<P>,
     ) -> Result<Self> {
         let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
 
-        let node_hook = DaemonHook::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
+        let node_hook = CompositeHook::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
         let (runtime, mcp, node_hook, client_tools_hook, ask_hook) = Self::build_all(
             config,
@@ -105,7 +105,7 @@ impl<P: Provider + 'static> Daemon<P> {
 
         {
             let events_for_sink = events.clone();
-            let sink: crate::daemon::hook::EventSink =
+            let sink: crate::system::hook::EventSink =
                 Arc::new(move |source: &str, payload: &str| {
                     events_for_sink.lock().publish(source, payload);
                 });
@@ -126,13 +126,13 @@ impl<P: Provider + 'static> Daemon<P> {
     }
 
     pub async fn reload(&self) -> Result<()> {
-        let config = DaemonConfig::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
+        let config = wcore::Config::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
         let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
         runtime_once
             .set(self.runtime.clone())
             .unwrap_or_else(|_| panic!("runtime_once already set"));
 
-        let node_hook = DaemonHook::new(self.hook.scopes.clone());
+        let node_hook = CompositeHook::new(self.hook.scopes.clone());
 
         let (mut new_runtime, _mcp, new_hook, _, _) = Self::build_all(
             &config,
@@ -149,29 +149,29 @@ impl<P: Provider + 'static> Daemon<P> {
         }
         {
             let events_for_sink = self.events.clone();
-            let sink: crate::daemon::hook::EventSink =
+            let sink: crate::system::hook::EventSink =
                 Arc::new(move |source: &str, payload: &str| {
                     events_for_sink.lock().publish(source, payload);
                 });
             new_hook.set_event_sink(sink);
         }
         *self.runtime.write().await = Arc::new(new_runtime);
-        tracing::info!("daemon reloaded");
+        tracing::info!("configuration reloaded");
         Ok(())
     }
 
-    /// Build DaemonHook, DaemonEnv, and Runtime in one shot.
+    /// Build CompositeHook, SystemEnv, and Runtime in one shot.
     async fn build_all(
-        config: &DaemonConfig,
+        config: &wcore::Config,
         config_dir: &Path,
         build_provider: &BuildProvider<P>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
-        mut node_hook: DaemonHook,
-        pending_asks: crate::daemon::PendingAsks,
+        mut node_hook: CompositeHook,
+        pending_asks: crate::system::PendingAsks,
     ) -> Result<(
-        Runtime<crate::daemon::DaemonCfg<P>>,
+        Runtime<crate::system::SystemCfg<P>>,
         Arc<McpHandler>,
-        Arc<DaemonHook>,
+        Arc<CompositeHook>,
         Arc<crate::hooks::client_tools::ClientToolHook>,
         Arc<crate::hooks::ask_user::AskUserHook>,
     )> {
@@ -197,7 +197,7 @@ impl<P: Provider + 'static> Daemon<P> {
         let node_hook = Arc::new(node_hook);
 
         let (events_tx, _) = broadcast::channel(256);
-        let env = Arc::new(DaemonEnv {
+        let env = Arc::new(SystemEnv {
             events_tx,
             hook: node_hook.clone(),
         });
@@ -229,13 +229,13 @@ impl<P: Provider + 'static> Daemon<P> {
     }
 
     async fn register_tools(
-        node_hook: &mut DaemonHook,
+        node_hook: &mut CompositeHook,
         storage: Arc<FsStorage>,
         config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         env_overlay: BTreeMap<String, String>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
-        pending_asks: crate::daemon::PendingAsks,
+        pending_asks: crate::system::PendingAsks,
     ) -> Result<(
         Arc<crate::hooks::client_tools::ClientToolHook>,
         Arc<crate::hooks::ask_user::AskUserHook>,
@@ -283,12 +283,8 @@ impl<P: Provider + 'static> Daemon<P> {
         Ok((client_tools_hook, ask_hook, shared_memory))
     }
 
-    /// Load agents from storage (canonical) and package manifests.
-    /// Storage is seeded with the default `crab` agent by
-    /// [`Storage::scaffold`] before this runs. Package agents only
-    /// register if storage doesn't already shadow them by name.
     async fn register_agents(
-        runtime: &mut Runtime<crate::daemon::DaemonCfg<P>>,
+        runtime: &mut Runtime<crate::system::SystemCfg<P>>,
         dirs: &ResolvedDirs,
     ) -> Result<()> {
         let stored_agents = runtime.storage().list_agents().await?;
@@ -307,9 +303,6 @@ impl<P: Provider + 'static> Daemon<P> {
             runtime.add_agent(agent);
         }
 
-        // Package agents are disk-only — never persisted into storage —
-        // so updates flow through `crabup pkg add`, not the daemon mutating
-        // settings.toml.
         for (name, agent) in &dirs.package_agents {
             if stored_names.contains(name) {
                 continue;
@@ -330,7 +323,7 @@ impl<P: Provider + 'static> Daemon<P> {
     }
 }
 
-fn build_providers(config: &DaemonConfig, models: &[String]) -> Result<Model<DefaultProvider>> {
+fn build_providers(config: &wcore::Config, models: &[String]) -> Result<Model<DefaultProvider>> {
     let llm = &config.llm;
     let provider_cfg = crabllm_core::ProviderConfig {
         kind: crabllm_core::ProviderKind::Openai,
@@ -359,8 +352,8 @@ fn build_providers(config: &DaemonConfig, models: &[String]) -> Result<Model<Def
 }
 
 /// Fetch `/v1/models` from the configured LLM endpoint. Returns an empty
-/// list on failure (logged as a warning) so the daemon still starts — the
-/// next reload will retry.
+/// list on failure (logged as a warning) so startup proceeds — the next
+/// reload will retry.
 async fn fetch_models(llm: &LlmConfig) -> Vec<String> {
     if llm.base_url.is_empty() {
         tracing::warn!("no llm.base_url configured in config.toml — model list is empty");

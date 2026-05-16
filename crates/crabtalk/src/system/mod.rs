@@ -1,6 +1,6 @@
-//! Daemon — the core struct composing runtime, transports, and lifecycle.
+//! CrabTalk — the core struct composing runtime, hooks, and protocol.
 
-use crate::{DaemonConfig, hooks, storage::FsStorage};
+use crate::{hooks, storage::FsStorage};
 use anyhow::Result;
 use crabllm_core::Provider;
 use runtime::Runtime;
@@ -14,7 +14,7 @@ pub use transport::{bridge_shutdown, setup_tcp};
 use {
     builder::{BuildProvider, DefaultProvider, build_default_provider},
     event::EventBus,
-    host::DaemonEnv,
+    host::SystemEnv,
 };
 
 #[cfg(unix)]
@@ -30,24 +30,24 @@ mod transport;
 pub type PendingAsks = Arc<Mutex<HashMap<u64, oneshot::Sender<String>>>>;
 
 /// Shared runtime handle.
-pub type SharedRuntime<P> = Arc<RwLock<Arc<Runtime<DaemonCfg<P>>>>>;
+pub type SharedRuntime<P> = Arc<RwLock<Arc<Runtime<SystemCfg<P>>>>>;
 
-/// Config binding for a node.
-pub struct DaemonCfg<P: Provider + 'static = DefaultProvider> {
+/// Config binding for the runtime.
+pub struct SystemCfg<P: Provider + 'static = DefaultProvider> {
     _marker: std::marker::PhantomData<P>,
 }
 
-impl<P: Provider + 'static> runtime::Config for DaemonCfg<P> {
+impl<P: Provider + 'static> runtime::Config for SystemCfg<P> {
     type Storage = FsStorage;
     type Provider = P;
-    type Env = DaemonEnv;
+    type Env = SystemEnv;
 }
 
-/// Shared daemon state.
-pub struct Daemon<P: Provider + 'static = DefaultProvider> {
+/// Core crabtalk instance — runtime, hooks, and protocol.
+pub struct CrabTalk<P: Provider + 'static = DefaultProvider> {
     pub runtime: SharedRuntime<P>,
     /// Composite hook owning all sub-hooks and shared state.
-    pub hook: Arc<hook::DaemonHook>,
+    pub hook: Arc<hook::CompositeHook>,
     pub(crate) config_dir: PathBuf,
     pub(crate) started_at: std::time::Instant,
     pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,
@@ -59,7 +59,7 @@ pub struct Daemon<P: Provider + 'static = DefaultProvider> {
     pub(crate) ask_hook: Arc<hooks::ask_user::AskUserHook>,
 }
 
-impl<P: Provider + 'static> Clone for Daemon<P> {
+impl<P: Provider + 'static> Clone for CrabTalk<P> {
     fn clone(&self) -> Self {
         Self {
             runtime: self.runtime.clone(),
@@ -75,35 +75,35 @@ impl<P: Provider + 'static> Clone for Daemon<P> {
     }
 }
 
-impl Daemon<DefaultProvider> {
-    pub async fn start(config_dir: &Path) -> Result<DaemonHandle<DefaultProvider>> {
+impl CrabTalk<DefaultProvider> {
+    pub async fn start(config_dir: &Path) -> Result<CrabTalkHandle<DefaultProvider>> {
         let config_path = config_dir.join(wcore::paths::CONFIG_FILE);
-        let config = DaemonConfig::load(&config_path)?;
+        let config = wcore::Config::load(&config_path)?;
         tracing::info!("loaded configuration from {}", config_path.display());
 
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
         let build_provider: BuildProvider<DefaultProvider> =
-            Arc::new(|config: &DaemonConfig, models: &[String]| {
+            Arc::new(|config: &wcore::Config, models: &[String]| {
                 build_default_provider(config, models)
             });
 
-        let daemon = Daemon::build(&config, config_dir, build_provider).await?;
+        let ct = CrabTalk::build(&config, config_dir, build_provider).await?;
 
-        Ok(DaemonHandle {
+        Ok(CrabTalkHandle {
             config,
             shutdown_tx,
-            daemon,
+            inner: ct,
         })
     }
 }
 
-pub struct DaemonHandle<P: Provider + 'static = DefaultProvider> {
-    pub config: DaemonConfig,
+pub struct CrabTalkHandle<P: Provider + 'static = DefaultProvider> {
+    pub config: wcore::Config,
     pub shutdown_tx: broadcast::Sender<()>,
-    pub daemon: Daemon<P>,
+    pub inner: CrabTalk<P>,
 }
 
-impl<P: Provider + 'static> DaemonHandle<P> {
+impl<P: Provider + 'static> CrabTalkHandle<P> {
     pub async fn wait_until_ready(&self) -> Result<()> {
         Ok(())
     }

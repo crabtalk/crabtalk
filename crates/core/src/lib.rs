@@ -18,7 +18,7 @@ pub use agent::{
     },
 };
 pub use config::{
-    DaemonConfig, HooksConfig, LlmConfig, McpServerConfig, MemoryConfig, PackageMeta, ResolvedDirs,
+    Config, HooksConfig, LlmConfig, McpServerConfig, MemoryConfig, PackageMeta, ResolvedDirs,
     Setup, TasksConfig, check_skill_conflicts, external_source_name, load_agents_dir,
     load_agents_dirs, repo_slug, resolve_dirs, scan_skill_names,
 };

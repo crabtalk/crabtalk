@@ -1,6 +1,6 @@
 //! Transport wiring — UDS/TCP accept loops, protocol dispatch callback, shutdown bridging.
 
-use super::Daemon;
+use super::CrabTalk;
 use anyhow::Result;
 use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
@@ -9,7 +9,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use wcore::protocol::{api::Server, message::ClientMessage};
 
 fn dispatch_callback<P: Provider + 'static>(
-    daemon: Daemon<P>,
+    daemon: CrabTalk<P>,
 ) -> impl Fn(ClientMessage, mpsc::Sender<wcore::protocol::message::ServerMessage>) + Clone + Send + 'static
 {
     move |msg, reply| {
@@ -28,7 +28,7 @@ fn dispatch_callback<P: Provider + 'static>(
 
 #[cfg(unix)]
 pub fn setup_socket<P: Provider + 'static>(
-    daemon: Daemon<P>,
+    daemon: CrabTalk<P>,
     shutdown_tx: &broadcast::Sender<()>,
 ) -> Result<(&'static Path, tokio::task::JoinHandle<()>)> {
     let resolved_path: &'static Path = &wcore::paths::SOCKET_PATH;
@@ -53,7 +53,7 @@ pub fn setup_socket<P: Provider + 'static>(
 }
 
 pub fn setup_tcp<P: Provider + 'static>(
-    daemon: Daemon<P>,
+    daemon: CrabTalk<P>,
     shutdown_tx: &broadcast::Sender<()>,
 ) -> Result<(tokio::task::JoinHandle<()>, u16)> {
     let (std_listener, addr) = ::transport::tcp::bind()?;

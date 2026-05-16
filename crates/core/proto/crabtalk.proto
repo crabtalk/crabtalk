@@ -287,9 +287,9 @@ message ServerMessage {
     ModelList model_list = 22;
     // Conversation history
     ConversationHistory conversation_history = 24;
-    // Daemon lifecycle
+    // Lifecycle
     ConfigMsg config = 19;
-    DaemonStats stats = 20;
+    Stats stats = 20;
     AgentEventMsg agent_event = 21;
     // Event bus
     SubscriptionInfo subscription_info = 25;
@@ -303,7 +303,7 @@ message ServerMessage {
   }
 }
 
-message DaemonStats {
+message Stats {
   uint64 uptime_secs = 1;
   uint32 active_conversations = 2;
   uint32 registered_agents = 3;

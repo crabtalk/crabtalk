@@ -79,7 +79,7 @@ pub trait Client: Send {
     }
 
     /// Get daemon stats including the active model name.
-    fn get_stats(&mut self) -> impl std::future::Future<Output = Result<DaemonStats>> + Send {
+    fn get_stats(&mut self) -> impl std::future::Future<Output = Result<Stats>> + Send {
         async move {
             match self
                 .request(ClientMessage {
