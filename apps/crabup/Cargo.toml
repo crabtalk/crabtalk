@@ -20,5 +20,5 @@ anyhow.workspace = true
 clap.workspace = true
 dirs.workspace = true
 serde.workspace = true
-tokio = { workspace = true, features = ["macros", "rt", "process", "io-util"] }
+tokio = { workspace = true, features = ["macros", "rt", "process", "io-util", "net"] }
 toml.workspace = true

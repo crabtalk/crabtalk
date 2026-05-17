@@ -8,6 +8,7 @@ use crate::registry::Entry;
 
 pub mod cargo;
 pub mod list;
+pub mod login;
 pub mod package;
 pub mod ps;
 pub mod registry;
@@ -48,6 +49,12 @@ pub enum Command {
     /// List running crabtalk services.
     Ps,
 
+    /// Cloud authentication.
+    Auth {
+        #[command(subcommand)]
+        action: AuthAction,
+    },
+
     /// Manage crabtalk packages (skills + MCPs).
     Pkg {
         #[command(subcommand)]
@@ -57,6 +64,23 @@ pub enum Command {
     /// `<name> <start|stop|restart|logs>` — service ops on a registry entry.
     #[command(external_subcommand)]
     Service(Vec<String>),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AuthAction {
+    /// Log in to CrabTalk cloud (opens browser for Google OAuth).
+    Login,
+    /// Log out — remove gateway credentials from config.
+    Logout,
+}
+
+impl AuthAction {
+    async fn run(self) -> Result<()> {
+        match self {
+            Self::Login => login::login().await,
+            Self::Logout => login::logout(),
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -193,6 +217,7 @@ impl Cli {
                 Ok(())
             }
             Command::Ps => ps::run(),
+            Command::Auth { action } => action.run().await,
             Command::Pkg { action } => action.run().await,
             Command::Service(args) => {
                 let mut iter = args.into_iter();
