@@ -67,32 +67,38 @@ impl HistoryEntry {
         entry
     }
 
-    /// Create a new assistant entry.
-    ///
-    /// Preserves the `content: null` vs empty-string discrimination:
-    /// - assistant + non-empty `tool_calls` + empty content → `"content": null`
-    /// - assistant + empty `tool_calls` + empty content → `"content": ""`
-    /// - anything else → `"content": "<the text>"`
+    /// Create a new assistant entry from content blocks.
     pub fn assistant(
         content: impl Into<String>,
         reasoning: Option<String>,
         tool_calls: Option<&[ToolCall]>,
     ) -> Self {
-        let content: String = content.into();
-        let has_tool_calls = tool_calls.is_some_and(|tcs| !tcs.is_empty());
-        let message_content = if content.is_empty() && has_tool_calls {
-            Some(serde_json::Value::Null)
-        } else {
-            Some(serde_json::Value::String(content))
-        };
+        use crabllm_core::ContentBlock;
+        let mut blocks = Vec::new();
+        if let Some(r) = reasoning.filter(|s| !s.is_empty()) {
+            blocks.push(ContentBlock::Thinking {
+                thinking: r,
+                signature: None,
+            });
+        }
+        let text: String = content.into();
+        if !text.is_empty() || tool_calls.is_none_or(|tcs| tcs.is_empty()) {
+            blocks.push(ContentBlock::Text { text });
+        }
+        if let Some(tcs) = tool_calls {
+            for tc in tcs {
+                let input = crabllm_core::json::from_str(&tc.function.arguments)
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                blocks.push(ContentBlock::ToolUse {
+                    id: tc.id.clone(),
+                    name: tc.function.name.clone(),
+                    input,
+                });
+            }
+        }
         Self::from_message(Message {
             role: Role::Assistant,
-            content: message_content,
-            tool_calls: tool_calls.map(|tcs| tcs.to_vec()),
-            tool_call_id: None,
-            name: None,
-            reasoning_content: reasoning.filter(|s| !s.is_empty()),
-            extra: Default::default(),
+            content: blocks,
         })
     }
 
@@ -131,39 +137,62 @@ impl HistoryEntry {
         self.message.content_str().unwrap_or("")
     }
 
-    /// The reasoning content, or empty if absent.
+    /// The reasoning/thinking content, or empty if absent.
     pub fn reasoning(&self) -> &str {
-        self.message.reasoning_content.as_deref().unwrap_or("")
+        self.message.thinking().unwrap_or("")
     }
 
-    /// The tool calls on this entry, or an empty slice if absent.
-    pub fn tool_calls(&self) -> &[ToolCall] {
-        self.message.tool_calls.as_deref().unwrap_or(&[])
+    /// The tool calls on this entry as ToolCall structs.
+    pub fn tool_calls(&self) -> Vec<ToolCall> {
+        self.message
+            .content
+            .iter()
+            .filter_map(|b| {
+                if let crabllm_core::ContentBlock::ToolUse { id, name, input } = b {
+                    Some(ToolCall {
+                        index: None,
+                        id: id.clone(),
+                        kind: crabllm_core::ToolType::Function,
+                        function: crabllm_core::FunctionCall {
+                            name: name.clone(),
+                            arguments: crabllm_core::json::to_string(input).unwrap_or_default(),
+                        },
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
-    /// The tool call ID on this (tool) entry, or empty if absent.
+    /// The tool_use_id from the first ToolResult block, or empty.
     pub fn tool_call_id(&self) -> &str {
-        self.message.tool_call_id.as_deref().unwrap_or("")
+        for block in &self.message.content {
+            if let crabllm_core::ContentBlock::ToolResult { tool_use_id, .. } = block {
+                return tool_use_id.as_str();
+            }
+        }
+        ""
     }
 
     /// Project to a `crabllm_core::Message` for sending to a provider.
     ///
     /// If this is a guest assistant message (`agent` non-empty and role is
-    /// Assistant), wraps the content in `<from agent="...">` tags so other
+    /// Assistant), wraps the text content in `<from agent="...">` tags so other
     /// agents can distinguish speakers in multi-agent conversations.
     pub fn to_wire_message(&self) -> Message {
         if self.message.role != Role::Assistant || self.agent.is_empty() {
             return self.message.clone();
         }
-        let tagged = format!("<from agent=\"{}\">\n{}\n</from>", self.agent, self.text());
+        let mut blocks = self.message.content.clone();
+        for block in &mut blocks {
+            if let crabllm_core::ContentBlock::Text { text } = block {
+                *text = format!("<from agent=\"{}\">\n{}\n</from>", self.agent, text);
+            }
+        }
         Message {
             role: Role::Assistant,
-            content: Some(serde_json::Value::String(tagged)),
-            tool_calls: self.message.tool_calls.clone(),
-            tool_call_id: self.message.tool_call_id.clone(),
-            name: self.message.name.clone(),
-            reasoning_content: self.message.reasoning_content.clone(),
-            extra: self.message.extra.clone(),
+            content: blocks,
         }
     }
 }
@@ -264,34 +293,41 @@ impl MessageBuilder {
 
     /// Finalize the builder into a `crabllm_core::Message`.
     pub fn build(self) -> Message {
+        use crabllm_core::ContentBlock;
+
+        let mut blocks = Vec::new();
+
+        if !self.reasoning.is_empty() {
+            blocks.push(ContentBlock::Thinking {
+                thinking: self.reasoning,
+                signature: None,
+            });
+        }
+
         let tool_calls: Vec<ToolCall> = self
             .calls
             .into_values()
             .filter(|c| !c.id.is_empty() && !c.function.name.is_empty())
             .collect();
         let has_tool_calls = !tool_calls.is_empty();
-        let content = if self.content.is_empty() && has_tool_calls && self.role == Role::Assistant {
-            Some(serde_json::Value::Null)
-        } else {
-            Some(serde_json::Value::String(self.content))
-        };
-        let reasoning_content = if self.reasoning.is_empty() {
-            None
-        } else {
-            Some(self.reasoning)
-        };
+
+        if !self.content.is_empty() || !has_tool_calls {
+            blocks.push(ContentBlock::Text { text: self.content });
+        }
+
+        for tc in tool_calls {
+            let input = crabllm_core::json::from_str(&tc.function.arguments)
+                .unwrap_or(serde_json::Value::Object(Default::default()));
+            blocks.push(ContentBlock::ToolUse {
+                id: tc.id,
+                name: tc.function.name,
+                input,
+            });
+        }
+
         Message {
             role: self.role,
-            content,
-            tool_calls: if has_tool_calls {
-                Some(tool_calls)
-            } else {
-                None
-            },
-            tool_call_id: None,
-            name: None,
-            reasoning_content,
-            extra: Default::default(),
+            content: blocks,
         }
     }
 }

@@ -12,7 +12,9 @@ use anyhow::Result;
 use async_stream::stream;
 pub use builder::AgentBuilder;
 pub use config::AgentConfig;
-use crabllm_core::{ChatCompletionRequest, Provider, Role, Tool, ToolCall, ToolChoice, Usage};
+use crabllm_core::{
+    ChatCompletionRequest, ContentBlock, Provider, Role, Tool, ToolCall, ToolChoice, Usage,
+};
 use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
 use futures_core::Stream;
 use futures_util::{StreamExt, future::join_all, stream::FuturesUnordered};
@@ -34,13 +36,26 @@ pub mod tool;
 fn empty_assistant_message() -> crabllm_core::Message {
     crabllm_core::Message {
         role: Role::Assistant,
-        content: Some(serde_json::Value::String(String::new())),
-        tool_calls: None,
-        tool_call_id: None,
-        name: None,
-        reasoning_content: None,
-        extra: Default::default(),
+        content: Vec::new(),
     }
+}
+
+fn extract_tool_calls(blocks: &[ContentBlock]) -> Vec<ToolCall> {
+    blocks
+        .iter()
+        .filter_map(|b| match b {
+            ContentBlock::ToolUse { id, name, input } => Some(ToolCall {
+                index: None,
+                id: id.clone(),
+                kind: crabllm_core::ToolType::Function,
+                function: crabllm_core::FunctionCall {
+                    name: name.clone(),
+                    arguments: crabllm_core::json::to_string(input).unwrap_or_default(),
+                },
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Extract sender from the last user entry in history.
@@ -161,7 +176,10 @@ impl<P: Provider + 'static> Agent<P> {
     ) -> Result<AgentStep> {
         let request = self.build_request(history, None);
         let response = self.model.send_ct(request).await?;
-        let tool_calls: Vec<ToolCall> = response.tool_calls().to_vec();
+        let tool_calls: Vec<ToolCall> = response
+            .message()
+            .map(|m| extract_tool_calls(&m.content))
+            .unwrap_or_default();
         let finish_reason = response.finish_reason().cloned();
         let usage = response.usage.clone().unwrap_or_default();
 
@@ -244,13 +262,7 @@ impl<P: Provider + 'static> Agent<P> {
 
     /// Determine the stop reason for a step with no tool calls.
     fn stop_reason(step: &AgentStep) -> AgentStopReason {
-        let has_text = step
-            .message
-            .content
-            .as_ref()
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty());
-        if has_text {
+        if step.message.content_str().is_some() {
             AgentStopReason::TextResponse
         } else {
             AgentStopReason::NoAction
@@ -408,14 +420,8 @@ impl<P: Provider + 'static> Agent<P> {
                 // already drops degenerate (id-less or name-less) tool call
                 // fragments, so any tool_calls present here are well-formed.
                 let message = builder.build();
-                let tool_calls: Vec<ToolCall> =
-                    message.tool_calls.clone().unwrap_or_default();
-                let content = message
-                    .content
-                    .as_ref()
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-                    .map(|s| s.to_owned());
+                let tool_calls: Vec<ToolCall> = extract_tool_calls(&message.content);
+                let content = message.content_str().map(|s| s.to_owned());
                 let usage = last_usage.unwrap_or_default();
                 let has_tool_calls = !tool_calls.is_empty();
 
@@ -539,9 +545,7 @@ impl<P: Provider + 'static> Agent<P> {
 
             let final_response = steps
                 .last()
-                .and_then(|s| s.message.content.as_ref())
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
+                .and_then(|s| s.message.content_str())
                 .map(|s| s.to_owned());
             yield AgentEvent::Done(AgentResponse {
                 final_response,

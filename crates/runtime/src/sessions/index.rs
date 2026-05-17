@@ -420,14 +420,22 @@ fn make_snippet(entry: &HistoryEntry) -> (String, bool) {
 }
 
 fn extract_tool_name(entry: &HistoryEntry) -> Option<String> {
-    if matches!(entry.role(), Role::Tool) {
-        return entry.message.name.clone().filter(|s| !s.is_empty());
+    for block in &entry.message.content {
+        match block {
+            crabllm_core::ContentBlock::ToolResult { name, .. } => {
+                if let Some(n) = name {
+                    if !n.is_empty() {
+                        return Some(n.clone());
+                    }
+                }
+            }
+            crabllm_core::ContentBlock::ToolUse { name, .. } => {
+                return Some(name.clone());
+            }
+            _ => {}
+        }
     }
-    let calls = entry.tool_calls();
-    if calls.is_empty() {
-        return None;
-    }
-    Some(calls[0].function.name.clone())
+    None
 }
 
 /// Per-role / per-kind score multiplier. Defaults from the community

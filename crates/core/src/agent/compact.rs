@@ -1,7 +1,7 @@
 //! Context compaction — summarize conversation history and replace it.
 
 use crate::model::HistoryEntry;
-use crabllm_core::{ChatCompletionRequest, Message, Provider, Role};
+use crabllm_core::{ChatCompletionRequest, ContentBlock, Message, Provider, ToolResultContent};
 
 pub(crate) const COMPACT_PROMPT: &str = include_str!("../../prompts/compact.md");
 
@@ -28,12 +28,16 @@ impl<P: Provider + 'static> super::Agent<P> {
         let max_len = self.config.compact_tool_max_len;
         for entry in history {
             let mut msg = entry.to_wire_message();
-            if *entry.role() == Role::Tool
-                && let Some(serde_json::Value::String(text)) = msg.content.as_mut()
-                && text.len() > max_len
-            {
-                text.truncate(text.floor_char_boundary(max_len));
-                text.push_str("... [truncated]");
+            for block in &mut msg.content {
+                if let ContentBlock::ToolResult {
+                    content: ToolResultContent::Text(text),
+                    ..
+                } = block
+                    && text.len() > max_len
+                {
+                    text.truncate(text.floor_char_boundary(max_len));
+                    text.push_str("... [truncated]");
+                }
             }
             messages.push(msg);
         }

@@ -21,7 +21,6 @@ use crabllm_core::{
     ToolCallDelta, ToolType,
 };
 use parking_lot::Mutex;
-use serde_json::{Map, Value};
 use std::{collections::VecDeque, sync::Arc};
 
 /// A mock provider that returns scripted responses in order.
@@ -124,17 +123,25 @@ pub fn text_response(content: &str) -> ChatCompletionResponse {
 /// `content: Null` to match the OpenAI wire convention for tool-call-only
 /// assistant messages (where text content is absent rather than empty).
 pub fn tool_response(calls: Vec<ToolCall>) -> ChatCompletionResponse {
+    use crabllm_core::ContentBlock;
+    let blocks: Vec<ContentBlock> = calls
+        .into_iter()
+        .map(|tc| {
+            let input = crabllm_core::json::from_str(&tc.function.arguments)
+                .unwrap_or(serde_json::Value::Object(Default::default()));
+            ContentBlock::ToolUse {
+                id: tc.id,
+                name: tc.function.name,
+                input,
+            }
+        })
+        .collect();
     ChatCompletionResponse {
         choices: vec![Choice {
             index: 0,
             message: Message {
                 role: Role::Assistant,
-                content: Some(Value::Null),
-                tool_calls: Some(calls),
-                tool_call_id: None,
-                name: None,
-                reasoning_content: None,
-                extra: Map::new(),
+                content: blocks,
             },
             finish_reason: Some(FinishReason::ToolCalls),
             logprobs: None,

@@ -29,8 +29,8 @@ search = { path = "apps/search", package = "crabtalk-search", version = "0.0.21"
 crabtalk-cron = { path = "apps/cron", version = "0.0.21" }
 
 # crabllm
-crabllm-core = "0.0.18"
-crabllm-provider = { version = "0.0.18", default-features = false }
+crabllm-core = { git = "https://github.com/crabtalk/crabllm.git", branch = "dev" }
+crabllm-provider = { git = "https://github.com/crabtalk/crabllm.git", branch = "dev", default-features = false }
 
 # bench
 criterion = { version = "0.5", features = ["html_reports"] }
