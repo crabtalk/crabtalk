@@ -313,7 +313,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
 fn build_providers(config: &wcore::Config, models: &[String]) -> Result<Model<DefaultProvider>> {
     let llm = &config.llm;
     let provider_cfg = crabllm_core::ProviderConfig {
-        kind: crabllm_core::ProviderKind::Openai,
+        kind: crabllm_core::ProviderKind::Anthropic,
         base_url: (!llm.base_url.is_empty()).then(|| llm.base_url.clone()),
         api_key: (!llm.api_key.is_empty()).then(|| llm.api_key.clone()),
         models: models.to_vec(),
