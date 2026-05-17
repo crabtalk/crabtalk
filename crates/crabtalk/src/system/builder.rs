@@ -4,7 +4,7 @@ use crate::{
     CrabTalk,
     hooks::{Memory, delegate},
     storage::FsStorage,
-    system::{SharedRuntime, hook::CompositeHook},
+    system::{SharedRuntime, hook::RootHook},
     system::{event, host::SystemEnv},
 };
 use anyhow::Result;
@@ -42,7 +42,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
     ) -> Result<Self> {
         let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
 
-        let node_hook = CompositeHook::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
+        let node_hook = RootHook::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
         let (runtime, mcp, node_hook, tool_hook) = Self::build_all(
             config,
@@ -130,7 +130,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
             .set(self.runtime.clone())
             .unwrap_or_else(|_| panic!("runtime_once already set"));
 
-        let node_hook = CompositeHook::new(self.hook.scopes.clone());
+        let node_hook = RootHook::new(self.hook.scopes.clone());
 
         let (mut new_runtime, _mcp, new_hook, _) = Self::build_all(
             &config,
@@ -157,17 +157,17 @@ impl<P: Provider + 'static> CrabTalk<P> {
         Ok(())
     }
 
-    /// Build CompositeHook, SystemEnv, and Runtime in one shot.
+    /// Build RootHook, SystemEnv, and Runtime in one shot.
     async fn build_all(
         config: &wcore::Config,
         config_dir: &Path,
         build_provider: &BuildProvider<P>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
-        mut node_hook: CompositeHook,
+        mut node_hook: RootHook,
     ) -> Result<(
         Runtime<crate::system::SystemCfg<P>>,
         Arc<McpHandler>,
-        Arc<CompositeHook>,
+        Arc<RootHook>,
         Arc<crate::hooks::tool::ToolHook>,
     )> {
         let dirs = resolve_dirs(config_dir);
@@ -223,7 +223,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
     }
 
     async fn register_tools(
-        node_hook: &mut CompositeHook,
+        node_hook: &mut RootHook,
         storage: Arc<FsStorage>,
         config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
