@@ -12,33 +12,9 @@ use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 /// All methods have default no-op implementations so subsystems only
 /// override what they need.
 pub trait Hook: Send + Sync {
-    /// Optional namespace prefix for this hook's tools.
-    ///
-    /// When `Some("ns")`, `RootHook` prefixes every tool name from
-    /// `schema()` as `ns::name` in the dispatch map and advertised schemas.
-    /// The hook's `dispatch()` receives the full namespaced name.
-    fn namespace(&self) -> Option<&str> {
-        None
-    }
-
     /// Tool schemas this hook provides.
     fn schema(&self) -> Vec<Tool> {
         vec![]
-    }
-
-    /// Namespaced tool schemas — prefixes `namespace()::` onto each tool
-    /// name when a namespace is declared, otherwise returns `schema()` as-is.
-    fn ns_schema(&self) -> Vec<Tool> {
-        let Some(ns) = self.namespace() else {
-            return self.schema();
-        };
-        self.schema()
-            .into_iter()
-            .map(|mut t| {
-                t.function.name = format!("{ns}::{}", t.function.name);
-                t
-            })
-            .collect()
     }
 
     /// System prompt fragment appended to agent configs at build time.
@@ -80,7 +56,7 @@ pub trait Hook: Send + Sync {
     /// scope line. Override to gate inclusion on agent config fields.
     fn scoped_tools(&self, _config: &AgentConfig) -> (Vec<String>, Option<String>) {
         let tools = self
-            .ns_schema()
+            .schema()
             .iter()
             .map(|t| t.function.name.clone())
             .collect();

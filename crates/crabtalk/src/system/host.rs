@@ -1,6 +1,6 @@
 //! SystemEnv — the runtime environment implementation.
 
-use crate::system::hook::RootHook;
+use crate::system::hook::CompositeHook;
 use runtime::Env;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -18,13 +18,13 @@ pub struct SystemEnv {
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
     /// Composite hook owning all sub-hooks and shared state.
-    pub(crate) hook: Arc<RootHook>,
+    pub(crate) hook: Arc<CompositeHook>,
 }
 
 impl Env for SystemEnv {
-    type Hook = RootHook;
+    type Hook = CompositeHook;
 
-    fn hook(&self) -> &RootHook {
+    fn hook(&self) -> &CompositeHook {
         &self.hook
     }
 

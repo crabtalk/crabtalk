@@ -1,4 +1,4 @@
-//! Root hook aggregating all sub-hooks with shared state.
+//! Composite hook aggregating all sub-hooks with shared state.
 //!
 //! This is the single Hook the runtime Env sees. It owns all sub-hooks
 //! (os, memory, skill, delegate, ask_user, mcp), the dispatch map, scope
@@ -20,7 +20,7 @@ pub struct AgentScope {
 pub type EventSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
 /// Composite hook aggregating all sub-hooks.
-pub struct RootHook {
+pub struct CompositeHook {
     pub scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
     agent_descriptions: RwLock<BTreeMap<String, String>>,
     hooks: BTreeMap<String, Arc<dyn Hook>>,
@@ -28,7 +28,7 @@ pub struct RootHook {
     event_sink: RwLock<Option<EventSink>>,
 }
 
-impl RootHook {
+impl CompositeHook {
     pub fn new(scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>) -> Self {
         Self {
             scopes,
@@ -41,7 +41,7 @@ impl RootHook {
 
     /// Register a sub-hook by name.
     pub fn register_hook(&mut self, name: impl Into<String>, hook: Arc<dyn Hook>) {
-        for tool in hook.ns_schema() {
+        for tool in hook.schema() {
             self.dispatch_map
                 .insert(tool.function.name.clone(), hook.clone());
         }
@@ -81,9 +81,9 @@ impl RootHook {
     }
 }
 
-impl Hook for RootHook {
+impl Hook for CompositeHook {
     fn schema(&self) -> Vec<crabllm_core::Tool> {
-        self.hooks.values().flat_map(|h| h.ns_schema()).collect()
+        self.hooks.values().flat_map(|h| h.schema()).collect()
     }
 
     fn system_prompt(&self) -> Option<String> {
