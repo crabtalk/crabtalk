@@ -1,30 +1,24 @@
-//! crabup — package manager for the Crabtalk ecosystem.
+//! crabup — version manager for the Crabtalk ecosystem.
 
 use anyhow::{Result, anyhow};
-use clap::{Parser, Subcommand};
-use std::path::PathBuf;
 
 use crate::registry::Entry;
 
 pub mod cargo;
 pub mod list;
-pub mod login;
-pub mod package;
-pub mod ps;
 pub mod registry;
-pub mod service;
 
-#[derive(Parser, Debug)]
-#[command(name = "crabup", about = "Crabtalk package and service manager")]
+#[derive(clap::Parser, Debug)]
+#[command(name = "crabup", about = "Crabtalk version manager")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(clap::Subcommand, Debug)]
 pub enum Command {
     /// Install a crabtalk binary from crates.io.
-    Pull {
+    Install {
         /// Short name (daemon, tui, telegram, …) or crate name.
         name: String,
         /// Pin to a specific version.
@@ -38,146 +32,24 @@ pub enum Command {
         no_default_features: bool,
     },
     /// Uninstall a crabtalk binary.
-    Rm {
+    Uninstall {
         /// Short name or crate name.
         name: String,
     },
     /// Bump every installed crabtalk-* crate to the latest version.
     Update,
-    /// List installed crabtalk-* crates.
+    /// List available crabtalk binaries (installed + running status).
     List,
-    /// List running crabtalk services.
-    Ps,
 
-    /// Cloud authentication.
-    Auth {
-        #[command(subcommand)]
-        action: AuthAction,
-    },
-
-    /// Manage crabtalk packages (skills + MCPs).
-    Pkg {
-        #[command(subcommand)]
-        action: PkgAction,
-    },
-
-    /// `<name> <start|stop|restart|logs>` — service ops on a registry entry.
+    /// `<name> <args…>` — forward to the service binary.
     #[command(external_subcommand)]
     Service(Vec<String>),
 }
 
-#[derive(Subcommand, Debug)]
-pub enum AuthAction {
-    /// Log in to CrabTalk cloud (opens browser for Google OAuth).
-    Login,
-    /// Log out — remove gateway credentials from config.
-    Logout,
-}
-
-impl AuthAction {
-    async fn run(self) -> Result<()> {
-        match self {
-            Self::Login => login::login().await,
-            Self::Logout => login::logout(),
-        }
-    }
-}
-
-#[derive(Subcommand, Debug)]
-pub enum PkgAction {
-    /// Install a crabtalk package.
-    Add {
-        /// Package short name.
-        name: String,
-        /// Pin to a specific branch of the package's source repo.
-        #[arg(long)]
-        branch: Option<String>,
-        /// Local path to a package directory (skips registry sync).
-        #[arg(long)]
-        path: Option<PathBuf>,
-        /// Re-install if already present.
-        #[arg(short, long)]
-        force: bool,
-    },
-    /// Uninstall a crabtalk package.
-    Remove {
-        /// Package short name.
-        name: String,
-    },
-}
-
-impl PkgAction {
-    async fn run(self) -> Result<()> {
-        match self {
-            Self::Add {
-                name,
-                branch,
-                path,
-                force,
-            } => {
-                package::install(
-                    &name,
-                    branch.as_deref(),
-                    path.as_deref(),
-                    force,
-                    |msg| println!("  {msg}"),
-                    |msg| println!("  {msg}"),
-                )
-                .await?;
-                println!("Done: {name}");
-                Ok(())
-            }
-            Self::Remove { name } => {
-                package::uninstall(&name, |msg| println!("  {msg}")).await?;
-                println!("Done: {name}");
-                Ok(())
-            }
-        }
-    }
-}
-
-#[derive(Parser, Debug)]
-#[command(name = "crabup", no_binary_name = true)]
-struct ServiceArgs {
-    #[command(subcommand)]
-    action: ServiceAction,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum ServiceAction {
-    /// Install and start the service.
-    Start {
-        /// Re-install even if already running.
-        #[arg(short, long)]
-        force: bool,
-    },
-    /// Stop and uninstall the service.
-    Stop,
-    /// Restart the service.
-    Restart,
-    /// View service logs.
-    Logs {
-        /// Arguments passed through to `tail` (e.g. `-f`, `-n 100`).
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        tail_args: Vec<String>,
-    },
-}
-
-impl ServiceAction {
-    fn run(self, entry: &Entry) -> Result<()> {
-        match self {
-            Self::Start { force } => entry.start(force),
-            Self::Stop => entry.stop(),
-            Self::Restart => entry.restart(),
-            Self::Logs { tail_args } => entry.logs(&tail_args),
-        }
-    }
-}
-
 impl Cli {
-    pub async fn run(self) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         match self.command {
-            Command::Pull {
+            Command::Install {
                 name,
                 version,
                 features,
@@ -190,7 +62,7 @@ impl Cli {
                     no_default_features,
                 },
             ),
-            Command::Rm { name } => cargo::uninstall(Entry::resolve(&name)),
+            Command::Uninstall { name } => cargo::uninstall(Entry::resolve(&name)),
             Command::Update => {
                 for krate in list::installed()? {
                     println!("==> {krate}");
@@ -198,35 +70,30 @@ impl Cli {
                 }
                 Ok(())
             }
-            Command::List => {
-                let installed: std::collections::HashSet<String> =
-                    list::installed()?.into_iter().collect();
-                let width = Entry::all()
-                    .iter()
-                    .map(|e| e.short.len())
-                    .max()
-                    .unwrap_or(0);
-                for entry in Entry::all() {
-                    let mark = if installed.contains(entry.krate) {
-                        "(installed)"
-                    } else {
-                        ""
-                    };
-                    println!("{:<width$}  {mark}", entry.short, width = width);
-                }
-                Ok(())
-            }
-            Command::Ps => ps::run(),
-            Command::Auth { action } => action.run().await,
-            Command::Pkg { action } => action.run().await,
-            Command::Service(args) => {
-                let mut iter = args.into_iter();
-                let name = iter.next().ok_or_else(|| anyhow!("missing service name"))?;
-                let entry =
-                    Entry::by_short(&name).ok_or_else(|| anyhow!("unknown service: {name}"))?;
-                let svc = ServiceArgs::try_parse_from(iter).unwrap_or_else(|e| e.exit());
-                svc.action.run(entry)
-            }
+            Command::List => list::run(),
+            Command::Service(args) => forward_service(args),
         }
     }
+}
+
+fn forward_service(args: Vec<String>) -> Result<()> {
+    let mut iter = args.into_iter();
+    let name = iter.next().ok_or_else(|| anyhow!("missing service name"))?;
+    let entry = Entry::by_short(&name).ok_or_else(|| anyhow!("unknown service: {name}"))?;
+    let binary = entry.binary_path().ok_or_else(|| {
+        anyhow!(
+            "{} not installed — run `crabup install {}` first",
+            entry.krate,
+            entry.short
+        )
+    })?;
+    let remaining: Vec<String> = iter.collect();
+    let status = std::process::Command::new(&binary)
+        .args(&remaining)
+        .status()
+        .map_err(|e| anyhow!("failed to exec {}: {e}", binary.display()))?;
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(())
 }

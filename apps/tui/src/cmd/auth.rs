@@ -1,4 +1,4 @@
-//! OAuth login flow for CrabTalk cloud.
+//! Cloud authentication commands.
 
 use anyhow::{Result, bail};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

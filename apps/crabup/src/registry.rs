@@ -22,10 +22,10 @@ const TABLE: &[Entry] = &[
         description: "Crabtalk daemon",
     },
     Entry {
-        short: "tui",
-        krate: "crabtalk-tui",
+        short: "cli",
+        krate: "crabtalk-cli",
         label: None,
-        description: "Crabtalk TUI client",
+        description: "Crabtalk CLI client",
     },
     Entry {
         short: "telegram",

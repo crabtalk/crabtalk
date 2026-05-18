@@ -513,7 +513,8 @@ dependencies = [
 [[package]]
 name = "crabllm-core"
 version = "0.0.19"
-source = "git+https://github.com/crabtalk/crabllm.git?branch=dev#574781d19f6410e9ff3a629b5de6713330a38ce9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d904fc5f2d1f435b23d44da5f7ad0c780afd1d0e804b0b3c8af3845b18b4c688"
 dependencies = [
  "bytes",
  "futures-core",
@@ -524,7 +525,8 @@ dependencies = [
 [[package]]
 name = "crabllm-provider"
 version = "0.0.19"
-source = "git+https://github.com/crabtalk/crabllm.git?branch=dev#574781d19f6410e9ff3a629b5de6713330a38ce9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9fd5f5a1eac17b34abcb4ca8c2c4a8c462cf2a7a9dcea64d6445eb1533010fa"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -594,6 +596,35 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "crabtalk-cli"
+version = "0.0.21"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "chrono",
+ "clap",
+ "console",
+ "crabtalk-core",
+ "crabtalk-sdk",
+ "crabtalk-transport",
+ "crossterm 0.28.1",
+ "dialoguer",
+ "dirs",
+ "futures-core",
+ "futures-util",
+ "heck",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "termimad",
+ "tokio",
+ "toml",
+ "toml_edit",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -795,34 +826,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabtalk-tui"
-version = "0.0.21"
-dependencies = [
- "anyhow",
- "async-stream",
- "chrono",
- "clap",
- "console",
- "crabtalk-core",
- "crabtalk-sdk",
- "crabtalk-transport",
- "crossterm 0.28.1",
- "dialoguer",
- "dirs",
- "futures-core",
- "futures-util",
- "heck",
- "ratatui",
- "serde_json",
- "termimad",
- "tokio",
- "toml",
- "toml_edit",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "crabtalk-wechat"
 version = "0.0.21"
 dependencies = [
@@ -849,17 +852,12 @@ name = "crabtalkd"
 version = "0.0.21"
 dependencies = [
  "anyhow",
- "async-stream",
  "clap",
  "crabtalk",
+ "crabtalk-command",
  "crabtalk-core",
- "crabtalk-transport",
- "futures-core",
- "futures-util",
- "serde_json",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -868,11 +866,8 @@ version = "0.0.21"
 dependencies = [
  "anyhow",
  "clap",
- "crabtalk-command",
  "crabtalk-core",
  "dirs",
- "serde",
- "tokio",
  "toml",
 ]
 

@@ -1,8 +1,8 @@
-//! Crabtalk TUI binary entry point.
+//! Crabtalk CLI binary entry point.
 
 use anyhow::Result;
 use clap::Parser;
-use crabtalk_tui::Cli;
+use crabtalk_cli::Cli;
 
 #[tokio::main]
 async fn main() -> Result<()> {
