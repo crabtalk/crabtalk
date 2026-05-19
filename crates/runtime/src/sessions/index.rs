@@ -369,13 +369,13 @@ impl SessionIndex {
 fn extract_indexable_text(entry: &HistoryEntry) -> String {
     match entry.role() {
         Role::User | Role::Assistant => {
+            if has_tool_result(entry) {
+                return String::new();
+            }
             let text = entry.text();
             if !text.is_empty() {
                 return text.to_owned();
             }
-            // Tool-call assistants have no text — index function names
-            // so "find sessions where I ran shell" works. Arguments
-            // are deliberately excluded.
             entry
                 .tool_calls()
                 .iter()
@@ -385,6 +385,14 @@ fn extract_indexable_text(entry: &HistoryEntry) -> String {
         }
         _ => String::new(),
     }
+}
+
+fn has_tool_result(entry: &HistoryEntry) -> bool {
+    entry
+        .message
+        .content
+        .iter()
+        .any(|b| matches!(b, crabllm_core::ContentBlock::ToolResult { .. }))
 }
 
 /// Display text for window items. Unlike indexable text, this returns
