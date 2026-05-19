@@ -5,6 +5,5 @@ pub mod mcp;
 pub mod memory;
 pub mod sessions;
 pub mod skill;
-pub mod tool;
 
 pub use memory::Memory;

@@ -2,6 +2,7 @@
 
 use crate::{
     CrabTalk,
+    bridge::ClientBridge,
     hooks::{Memory, delegate},
     storage::FsStorage,
     system::{SharedRuntime, hook::CompositeHook},
@@ -44,7 +45,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         let node_hook = CompositeHook::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
-        let (runtime, mcp, node_hook, tool_hook) = Self::build_all(
+        let (runtime, mcp, node_hook, bridge) = Self::build_all(
             config,
             config_dir,
             &build_provider,
@@ -119,7 +120,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
             events,
             build_provider,
             mcp,
-            tool_hook,
+            bridge,
         })
     }
 
@@ -132,7 +133,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         let node_hook = CompositeHook::new(self.hook.scopes.clone());
 
-        let (mut new_runtime, _mcp, new_hook, _) = Self::build_all(
+        let (mut new_runtime, _mcp, new_hook, _bridge) = Self::build_all(
             &config,
             &self.config_dir,
             &self.build_provider,
@@ -168,7 +169,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         Runtime<crate::system::SystemCfg<P>>,
         Arc<McpHandler>,
         Arc<CompositeHook>,
-        Arc<crate::hooks::tool::ToolHook>,
+        Arc<ClientBridge>,
     )> {
         let dirs = resolve_dirs(config_dir);
         let storage = Self::build_storage(config_dir, &dirs);
@@ -179,7 +180,8 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         let model = build_provider(config, &models)?;
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::empty());
-        let (tool_hook, shared_memory) = Self::register_tools(
+        let bridge = Arc::new(ClientBridge::new());
+        let shared_memory = Self::register_hooks(
             &mut node_hook,
             storage.clone(),
             config_dir,
@@ -194,17 +196,21 @@ impl<P: Provider + 'static> CrabTalk<P> {
         let env = Arc::new(SystemEnv {
             events_tx,
             hook: node_hook.clone(),
+            bridge: bridge.clone(),
         });
 
         let mut tools = wcore::ToolRegistry::new();
         for schema in Hook::schema(node_hook.as_ref()) {
             tools.insert(schema);
         }
+        for schema in bridge.schemas() {
+            tools.insert(schema);
+        }
         let runtime = Runtime::new(model, env, storage, shared_memory, tools);
         runtime.set_models(models);
         let mut runtime = runtime;
         Self::register_agents(&mut runtime, &dirs).await?;
-        Ok((runtime, mcp_handler, node_hook, tool_hook))
+        Ok((runtime, mcp_handler, node_hook, bridge))
     }
 
     fn build_storage(config_dir: &Path, dirs: &ResolvedDirs) -> Arc<FsStorage> {
@@ -222,22 +228,19 @@ impl<P: Provider + 'static> CrabTalk<P> {
         ))
     }
 
-    async fn register_tools(
+    async fn register_hooks(
         node_hook: &mut CompositeHook,
         storage: Arc<FsStorage>,
         config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         env_overlay: BTreeMap<String, String>,
         runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
-    ) -> Result<(Arc<crate::hooks::tool::ToolHook>, runtime::SharedMemory)> {
+    ) -> Result<runtime::SharedMemory> {
         let memory_wrapper = Memory::open(config_dir.join("memory.db"))?;
         let shared_memory = memory_wrapper.shared();
         let memory = Arc::new(memory_wrapper);
         let scopes = node_hook.scopes.clone();
         let skills = storage.list_skills().await.unwrap_or_default();
-
-        let tool_hook = Arc::new(crate::hooks::tool::ToolHook::new());
-        node_hook.register_hook("tool", tool_hook.clone());
 
         node_hook.register_hook(
             "memory",
@@ -267,7 +270,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
             "mcp",
             Arc::new(crate::hooks::mcp::McpHook::new(mcp_handler, env_overlay)),
         );
-        Ok((tool_hook, shared_memory))
+        Ok(shared_memory)
     }
 
     async fn register_agents(

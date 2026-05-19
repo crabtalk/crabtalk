@@ -1,11 +1,11 @@
 //! SystemEnv — the runtime environment implementation.
 
-use crate::system::hook::CompositeHook;
-use runtime::Env;
+use crate::{bridge::ClientBridge, system::hook::CompositeHook};
+use runtime::{Env, Hook};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use wcore::{
-    AgentEvent,
+    AgentEvent, ToolDispatch,
     protocol::message::{AgentEventKind, AgentEventMsg, ToolCallInfo},
 };
 
@@ -19,6 +19,8 @@ pub struct SystemEnv {
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
     /// Composite hook owning all sub-hooks and shared state.
     pub(crate) hook: Arc<CompositeHook>,
+    /// Client-tool bridge — forwards dispatches to the connected client.
+    pub(crate) bridge: Arc<ClientBridge>,
 }
 
 impl Env for SystemEnv {
@@ -152,7 +154,25 @@ impl wcore::ToolDispatcher for SystemEnv {
         conversation_id: Option<u64>,
         call_id: &'a str,
     ) -> wcore::ToolFuture<'a> {
-        runtime::env::dispatch_tool(self, name, args, agent, sender, conversation_id, call_id)
+        let call = ToolDispatch {
+            args: args.to_owned(),
+            agent: agent.to_owned(),
+            sender: sender.to_owned(),
+            conversation_id,
+            call_id: call_id.to_owned(),
+        };
+
+        // System tools — daemon-side hooks (memory, delegate, sessions, etc.)
+        if let Some(fut) = self.hook.dispatch(name, call.clone()) {
+            return fut;
+        }
+
+        // Client tools — forwarded to the connected client via the bridge.
+        if let Some(fut) = self.bridge.dispatch(name, call) {
+            return fut;
+        }
+
+        Box::pin(async move { Err(format!("tool not registered: {name}")) })
     }
 }
 

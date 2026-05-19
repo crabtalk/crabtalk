@@ -1,5 +1,6 @@
 //! Crabtalk — runtime, hooks, and protocol.
 
+pub mod bridge;
 pub mod hooks;
 mod protocol;
 pub mod provider;

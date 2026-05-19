@@ -1,6 +1,6 @@
 //! CrabTalk — the core struct composing runtime, hooks, and protocol.
 
-use crate::{hooks, storage::FsStorage};
+use crate::{bridge::ClientBridge, storage::FsStorage};
 use anyhow::Result;
 use crabllm_core::Provider;
 use runtime::Runtime;
@@ -49,8 +49,8 @@ pub struct CrabTalk<P: Provider + 'static = DefaultProvider> {
     pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<mcp::McpHandler>,
-    /// Forwards tool dispatches (OS tools, ask_user) to the connected client.
-    pub(crate) tool_hook: Arc<hooks::tool::ToolHook>,
+    /// Forwards client-tool dispatches to the connected client.
+    pub(crate) bridge: Arc<ClientBridge>,
 }
 
 impl<P: Provider + 'static> Clone for CrabTalk<P> {
@@ -63,7 +63,7 @@ impl<P: Provider + 'static> Clone for CrabTalk<P> {
             events: self.events.clone(),
             build_provider: Arc::clone(&self.build_provider),
             mcp: self.mcp.clone(),
-            tool_hook: self.tool_hook.clone(),
+            bridge: self.bridge.clone(),
         }
     }
 }

@@ -1,21 +1,17 @@
-//! Tool forwarding hook — forwards dispatches over the active stream and
-//! awaits a `ReplyToTool` from the connected client.
+//! Client bridge — forwards tool dispatches to the connected client and
+//! awaits replies.
 //!
-//! Tools that execute on the client side (OS tools, ask_user) are
-//! advertised by this hook so the LLM sees them. When the agent dispatches
-//! one, this hook hands the call off to the connected client: the protocol
-//! layer emits a `ToolCallForward` event on the same stream, the client
-//! dispatches locally, and posts `ReplyToTool` which resolves via
-//! [`ToolHook::try_resolve`].
+//! This is the client-side dispatch layer. System capabilities (memory,
+//! delegate, sessions, skill, mcp) dispatch through daemon-side hooks.
+//! Client tools (bash, read, edit, ask_user) dispatch through this bridge:
+//! the protocol layer emits a `ToolCallForward` event, the client executes
+//! locally, and posts a reply which resolves via [`ClientBridge::try_resolve`].
 //!
-//! Pending calls are keyed by `(conversation_id, call_id)`. The LLM's
-//! `call_id` is not globally unique across conversations, so we namespace
-//! it. The map also handles the dispatch/reply race symmetrically: if the
-//! reply arrives before the agent's dispatch parks, we stash it as
-//! `EarlyReply` and the dispatch picks it up immediately.
+//! Pending calls are keyed by `(conversation_id, call_id)`. The map handles
+//! the dispatch/reply race symmetrically: if the reply arrives before the
+//! dispatch parks, it's stashed as `EarlyReply`.
 
 use parking_lot::Mutex;
-use runtime::Hook;
 use std::{
     collections::{HashMap, HashSet},
     time::Duration,
@@ -23,32 +19,25 @@ use std::{
 use tokio::sync::oneshot;
 use wcore::{ToolDispatch, ToolFuture, model::Tool};
 
-/// How long a forwarded call waits for a `ReplyToTool` before failing.
+/// How long a forwarded call waits for a reply before failing.
 const FORWARD_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// State of a pending forwarded call.
 enum PendingState {
-    /// Agent's dispatch parked first; reply will resolve the sender.
     AwaitingReply(oneshot::Sender<Result<String, String>>),
-    /// Reply arrived first; dispatch will take the stashed result.
     EarlyReply(Result<String, String>),
 }
 
 type PendingKey = (u64, String);
 
-/// Hook that forwards OS-tool dispatches to a connected client.
-pub struct ToolHook {
-    /// Schemas advertised to the LLM.
+/// Bridge that forwards client-tool dispatches over the active stream.
+pub struct ClientBridge {
     schemas: Vec<Tool>,
-    /// Names this hook claims. Membership check on every dispatch.
     names: Vec<String>,
-    /// Conversations whose stream is currently listening for forwarded calls.
     listeners: Mutex<HashSet<u64>>,
-    /// Pending forwarded calls keyed by `(conversation_id, call_id)`.
     pending: Mutex<HashMap<PendingKey, PendingState>>,
 }
 
-impl ToolHook {
+impl ClientBridge {
     pub fn new() -> Self {
         let mut schemas = sdk::tools::os::schemas();
         schemas.push(sdk::tools::ask_user::schema());
@@ -62,21 +51,23 @@ impl ToolHook {
         }
     }
 
-    /// Whether `name` is part of the client-tool set this hook forwards.
+    /// Tool schemas this bridge provides (for merging into ToolRegistry).
+    pub fn schemas(&self) -> Vec<Tool> {
+        self.schemas.clone()
+    }
+
+    /// Whether `name` is a client tool this bridge handles.
     pub fn is_client_tool(&self, name: &str) -> bool {
         self.names.iter().any(|n| n == name)
     }
 
     /// Mark `conversation_id` as having an active stream listener.
-    /// Synchronous so RAII guards can call it from `Drop`.
     pub fn register_listener(&self, conversation_id: u64) {
         self.listeners.lock().insert(conversation_id);
     }
 
     /// Drop the listener and fail-fast any pending calls for this
-    /// conversation. `AwaitingReply` entries get a stream-closed error;
-    /// `EarlyReply` entries (unclaimed by a dispatch) are dropped.
-    /// Synchronous so RAII guards can call it from `Drop`.
+    /// conversation.
     pub fn unregister_listener(&self, conversation_id: u64) {
         self.listeners.lock().remove(&conversation_id);
         let mut pending = self.pending.lock();
@@ -92,10 +83,7 @@ impl ToolHook {
         }
     }
 
-    /// Resolve a forwarded call. If the agent's dispatch has already parked,
-    /// fires the oneshot. Otherwise stashes the result as `EarlyReply` so
-    /// the upcoming dispatch picks it up. Returns `false` only on duplicate
-    /// reply for the same call (rare, ignored).
+    /// Resolve a forwarded call. Returns `false` on duplicate reply.
     pub fn try_resolve(
         &self,
         conversation_id: u64,
@@ -118,20 +106,10 @@ impl ToolHook {
             }
         }
     }
-}
 
-impl Default for ToolHook {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Hook for ToolHook {
-    fn schema(&self) -> Vec<Tool> {
-        self.schemas.clone()
-    }
-
-    fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
+    /// Dispatch a client tool call. Returns `None` if this bridge doesn't
+    /// own the tool.
+    pub fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
         if !self.is_client_tool(name) {
             return None;
         }

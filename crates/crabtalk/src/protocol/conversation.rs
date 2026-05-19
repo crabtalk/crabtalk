@@ -36,7 +36,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         req: StreamMsg,
     ) -> impl futures_core::Stream<Item = Result<StreamEvent>> + Send + 'a {
         let runtime = self.runtime.clone();
-        let tool_hook = self.tool_hook.clone();
+        let bridge = self.bridge.clone();
         let agent = req.agent;
         let content = req.content;
         let sender = req.sender.unwrap_or_default();
@@ -49,12 +49,12 @@ impl<P: Provider + 'static> CrabTalk<P> {
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
             let conversation_id = rt.get_or_create_conversation(&agent, created_by.as_str()).await?;
             // Register this conversation as having a stream listener so the
-            // client-tools hook will forward dispatches here. The guard
+            // bridge will forward dispatches here. The guard
             // unregisters on any exit path — stream end, early return on
             // Done, or consumer dropping the stream — and fails any
             // pending forwarded calls so they don't sit until timeout.
-            tool_hook.register_listener(conversation_id);
-            let _listener_guard = ListenerGuard::new(tool_hook.clone(), conversation_id);
+            bridge.register_listener(conversation_id);
+            let _listener_guard = ListenerGuard::new(bridge.clone(), conversation_id);
 
             let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
             yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.clone() })) };
@@ -96,7 +96,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
                     AgentEvent::ToolCallsStart(calls) => {
                         let forwards: Vec<ToolCallForwardEvent> = calls
                             .iter()
-                            .filter(|c| tool_hook.is_client_tool(&c.function.name))
+                            .filter(|c| bridge.is_client_tool(&c.function.name))
                             .map(|c| ToolCallForwardEvent {
                                 call_id: c.id.to_string(),
                                 name: c.function.name.to_string(),
@@ -173,9 +173,9 @@ impl<P: Provider + 'static> CrabTalk<P> {
         // No retry needed: `try_resolve` accepts replies that arrive
         // before the agent's dispatch parks (stashed as `EarlyReply`),
         // so the dispatch/reply race is handled symmetrically inside
-        // the hook rather than via sleep-and-pray here.
+        // the bridge rather than via sleep-and-pray here.
         if self
-            .tool_hook
+            .bridge
             .try_resolve(conversation_id, call_id, output, is_error)
         {
             Ok(())
@@ -188,19 +188,19 @@ impl<P: Provider + 'static> CrabTalk<P> {
 /// RAII guard that synchronously unregisters a stream's client-tool
 /// listener and drains pending forwarded calls on drop.
 struct ListenerGuard {
-    hook: Arc<crate::hooks::tool::ToolHook>,
+    bridge: Arc<crate::bridge::ClientBridge>,
     conv_id: u64,
 }
 
 impl ListenerGuard {
-    fn new(hook: Arc<crate::hooks::tool::ToolHook>, conv_id: u64) -> Self {
-        Self { hook, conv_id }
+    fn new(bridge: Arc<crate::bridge::ClientBridge>, conv_id: u64) -> Self {
+        Self { bridge, conv_id }
     }
 }
 
 impl Drop for ListenerGuard {
     fn drop(&mut self) {
-        self.hook.unregister_listener(self.conv_id);
+        self.bridge.unregister_listener(self.conv_id);
     }
 }
 
