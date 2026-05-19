@@ -98,7 +98,7 @@ fn main() {
     }
 
     let cli = CrabtalkCli::parse();
-    if matches!(&cli.action, TelegramAppCommand::Start { .. })
+    if matches!(&cli.action, Some(TelegramAppCommand::Start { .. }))
         && let Err(e) = ensure_config()
     {
         eprintln!("Error: {e}");

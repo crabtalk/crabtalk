@@ -3,11 +3,10 @@
 use crate::protocol::message::{
     ActiveConversationInfo, ActiveConversationList, AgentEventMsg, AgentInfo, AgentList,
     ClientMessage, CompactResponse, ConversationHistory, ConversationInfo, ConversationList,
-    CreateAgentMsg, DaemonStats, DeleteMcpMsg, ErrorMsg, ListMcpsMsg, McpEventMsg, McpInfo,
-    McpList, ModelInfo, ModelList, Pong, PublishEventMsg, SendMsg, SendResponse, ServerMessage,
-    SkillInfo, SkillList, SteerSessionMsg, StreamEvent, StreamMsg, SubscribeEventMsg,
-    SubscriptionInfo, SubscriptionList, UpdateAgentMsg, UpsertMcpMsg, client_message,
-    server_message,
+    CreateAgentMsg, DeleteMcpMsg, ErrorMsg, ListMcpsMsg, McpEventMsg, McpInfo, McpList, ModelInfo,
+    ModelList, Pong, PublishEventMsg, SendMsg, SendResponse, ServerMessage, SkillInfo, SkillList,
+    Stats, SteerSessionMsg, StreamEvent, StreamMsg, SubscribeEventMsg, SubscriptionInfo,
+    SubscriptionList, UpdateAgentMsg, UpsertMcpMsg, client_message, server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -75,8 +74,8 @@ pub trait Server: Sync {
     /// Handle `Reload` — hot-reload runtime from disk.
     fn reload(&self) -> impl std::future::Future<Output = Result<()>> + Send;
 
-    /// Handle `GetStats` — return daemon-level stats.
-    fn get_stats(&self) -> impl std::future::Future<Output = Result<DaemonStats>> + Send;
+    /// Handle `GetStats` — return runtime stats.
+    fn get_stats(&self) -> impl std::future::Future<Output = Result<Stats>> + Send;
 
     /// Handle `SubscribeEvent` — create an event bus subscription.
     fn subscribe_event(
@@ -104,14 +103,6 @@ pub trait Server: Sync {
         agent: String,
         sender: String,
     ) -> impl std::future::Future<Output = Result<String>> + Send;
-
-    /// Handle `ReplyToAsk` — deliver a user reply to a pending `ask_user` tool call.
-    fn reply_to_ask(
-        &self,
-        agent: String,
-        sender: String,
-        content: String,
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Handle `ReplyToTool` — deliver a client-side tool result for a
     /// pending forwarded call. Resolves the pending entry keyed by
@@ -292,11 +283,8 @@ pub trait Server: Sync {
                         Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                client_message::Msg::ReplyToAsk(msg) => {
-                    yield match self.reply_to_ask(msg.agent, msg.sender, msg.content).await {
-                        Ok(()) => server_pong(),
-                        Err(e) => server_error(404, e.to_string()),
-                    };
+                client_message::Msg::ReplyToAsk(_) => {
+                    yield server_error(410, "ReplyToAsk removed — use ReplyToTool".into());
                 }
                 client_message::Msg::ReplyToTool(msg) => {
                     yield match self.reply_to_tool(msg.conversation_id, msg.call_id, msg.output, msg.is_error).await {

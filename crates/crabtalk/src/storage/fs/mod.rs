@@ -17,7 +17,7 @@ use std::{
 };
 use tokio::fs;
 use wcore::{
-    AgentConfig, AgentId, ConversationMeta, DaemonConfig, EventLine,
+    AgentConfig, AgentId, Config, ConversationMeta, EventLine,
     model::HistoryEntry,
     storage::{SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage},
 };
@@ -204,11 +204,11 @@ impl Storage for FsStorage {
         agents::rename_agent(self, id, new_name).await
     }
 
-    async fn load_config(&self) -> Result<DaemonConfig> {
+    async fn load_config(&self) -> Result<Config> {
         config::load_config(self).await
     }
 
-    async fn save_config(&self, config: &DaemonConfig) -> Result<()> {
+    async fn save_config(&self, config: &Config) -> Result<()> {
         config::save_config(self, config).await
     }
 

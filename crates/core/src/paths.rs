@@ -39,6 +39,9 @@ pub const AGENTS_DIR: &str = "local/agents";
 /// Skills subdirectory.
 pub const SKILLS_DIR: &str = "local/skills";
 
+/// Managed binary directory (`~/.crabtalk/bin/`).
+pub static BIN_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("bin"));
+
 /// OAuth token storage directory (`~/.crabtalk/tokens/`).
 pub static TOKENS_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("tokens"));
 

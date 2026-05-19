@@ -1,6 +1,6 @@
-//! Daemon-level configuration mutations: active model, MCP, skills.
+//! Configuration mutations: active model, MCP, skills.
 
-use crate::daemon::Daemon;
+use crate::system::CrabTalk;
 use anyhow::{Context, Result};
 use crabllm_core::Provider;
 use mcp::{McpServerState, ServerStatus};
@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use wcore::protocol::message::*;
 use wcore::storage::Storage;
 
-impl<P: Provider + 'static> Daemon<P> {
+impl<P: Provider + 'static> CrabTalk<P> {
     pub(crate) async fn set_active_model(&self, model: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
         let storage = rt.storage();

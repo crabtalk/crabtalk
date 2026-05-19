@@ -14,9 +14,8 @@
 use anyhow::Result;
 use futures_util::StreamExt;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::Path;
 #[cfg(unix)]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use wcore::protocol::{
     api::Client as _,
@@ -97,13 +96,6 @@ impl ConnectionInfo {
             }
         });
         rx
-    }
-
-    /// Open a fresh connection, deliver `content` as a reply to the pending
-    /// `ask_user` tool call for `(agent, sender)`, and close.
-    pub async fn reply_to_ask(&self, agent: String, sender: String, content: String) -> Result<()> {
-        let mut t = connect_from(self).await?;
-        t.reply_to_ask(agent, sender, content).await
     }
 
     /// Open a fresh connection, deliver a client-side tool result for the

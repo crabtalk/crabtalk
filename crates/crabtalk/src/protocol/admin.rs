@@ -1,8 +1,7 @@
-//! Daemon-level administrative operations: stats, events.
-//! `reload` is defined alongside the daemon builder (crates/crabtalk/src/daemon/builder.rs).
+//! Administrative operations: stats, events.
 
-use crate::daemon::Daemon;
-use crate::daemon::event::EventSubscription;
+use crate::system::CrabTalk;
+use crate::system::event::EventSubscription;
 use anyhow::Result;
 use crabllm_core::Provider;
 use mcp::McpEvent;
@@ -47,14 +46,14 @@ fn mcp_event_to_msg(event: McpEvent) -> McpEventMsg {
     }
 }
 
-impl<P: Provider + 'static> Daemon<P> {
-    pub(crate) async fn get_stats(&self) -> Result<DaemonStats> {
+impl<P: Provider + 'static> CrabTalk<P> {
+    pub(crate) async fn get_stats(&self) -> Result<Stats> {
         let rt = self.runtime.read().await.clone();
         let active = rt.conversation_count().await;
         let agents = rt.agents().len() as u32;
         let uptime = self.started_at.elapsed().as_secs();
         let active_model = rt.active_model().await;
-        Ok(DaemonStats {
+        Ok(Stats {
             uptime_secs: uptime,
             active_conversations: active as u32,
             registered_agents: agents,

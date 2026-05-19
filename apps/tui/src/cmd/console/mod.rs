@@ -290,10 +290,8 @@ fn handle_events_key(code: KeyCode, state: &mut ConsoleState) {
         KeyCode::Up | KeyCode::Char('k') => {
             state.event_scroll = state.event_scroll.saturating_sub(1);
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if !state.events.is_empty() {
-                state.event_scroll = (state.event_scroll + 1).min(state.events.len() - 1);
-            }
+        KeyCode::Down | KeyCode::Char('j') if !state.events.is_empty() => {
+            state.event_scroll = (state.event_scroll + 1).min(state.events.len() - 1);
         }
         _ => {}
     }

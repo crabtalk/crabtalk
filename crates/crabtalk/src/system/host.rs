@@ -1,6 +1,6 @@
-//! DaemonEnv — server-specific Host implementation.
+//! SystemEnv — the runtime environment implementation.
 
-use crate::daemon::hook::DaemonHook;
+use crate::system::hook::CompositeHook;
 use runtime::Env;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -12,21 +12,19 @@ use wcore::{
 /// Tool result output is truncated to this many bytes in the broadcast.
 const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
 
-/// Server-specific host for the daemon — event broadcasting only.
-/// The daemon does not read the user's filesystem; clients render any
-/// local context (Crab.md, etc.) into the message content themselves.
+/// Runtime environment — event broadcasting and tool dispatch.
 #[derive(Clone)]
-pub struct DaemonEnv {
+pub struct SystemEnv {
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
     /// Composite hook owning all sub-hooks and shared state.
-    pub(crate) hook: Arc<DaemonHook>,
+    pub(crate) hook: Arc<CompositeHook>,
 }
 
-impl Env for DaemonEnv {
-    type Hook = DaemonHook;
+impl Env for SystemEnv {
+    type Hook = CompositeHook;
 
-    fn hook(&self) -> &DaemonHook {
+    fn hook(&self) -> &CompositeHook {
         &self.hook
     }
 
@@ -144,7 +142,7 @@ impl Env for DaemonEnv {
     }
 }
 
-impl wcore::ToolDispatcher for DaemonEnv {
+impl wcore::ToolDispatcher for SystemEnv {
     fn dispatch<'a>(
         &'a self,
         name: &'a str,

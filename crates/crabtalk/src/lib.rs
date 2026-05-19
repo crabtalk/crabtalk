@@ -1,12 +1,12 @@
-//! Crabtalk daemon — runtime + transports + protocol adapter.
+//! Crabtalk — runtime, hooks, and protocol.
 
-pub mod daemon;
 pub mod hooks;
 mod protocol;
 pub mod provider;
 pub mod storage;
+pub mod system;
 
 #[cfg(unix)]
-pub use daemon::setup_socket;
-pub use daemon::{Daemon, DaemonHandle, bridge_shutdown, setup_tcp};
-pub use wcore::DaemonConfig;
+pub use system::setup_socket;
+pub use system::{CrabTalk, CrabTalkHandle, bridge_shutdown, setup_tcp};
+pub use wcore::Config;

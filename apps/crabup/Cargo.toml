@@ -1,6 +1,6 @@
 [package]
 name = "crabup"
-description = "Package and service manager for the Crabtalk ecosystem"
+description = "Version manager for the Crabtalk ecosystem"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -12,13 +12,21 @@ keywords.workspace = true
 name = "crabup"
 path = "src/bin/main.rs"
 
+[features]
+default = ["native-tls"]
+native-tls = ["reqwest/native-tls"]
+rustls = ["reqwest/rustls"]
+
 [dependencies]
-command.workspace = true
 wcore.workspace = true
 
 anyhow.workspace = true
 clap.workspace = true
 dirs.workspace = true
+flate2.workspace = true
+indicatif.workspace = true
+reqwest = { workspace = true, default-features = false, features = ["blocking"] }
 serde.workspace = true
-tokio = { workspace = true, features = ["macros", "rt", "process", "io-util"] }
+serde_json.workspace = true
+tar.workspace = true
 toml.workspace = true

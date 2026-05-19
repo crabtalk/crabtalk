@@ -1,13 +1,12 @@
-//! Client-tools hook — forwards dispatches over the active stream and
+//! Tool forwarding hook — forwards dispatches over the active stream and
 //! awaits a `ReplyToTool` from the connected client.
 //!
-//! The daemon never executes the OS tool set itself. Instead it advertises
-//! the schemas (sourced from [`sdk::tools::os::schemas`]) so the LLM sees
-//! them, and when the agent dispatches one of those names this hook hands
-//! the call off to the connected client: the protocol layer emits a
-//! `ToolCallForward` event on the same stream, the client dispatches
-//! locally, and posts `ReplyToTool` which the daemon resolves via
-//! [`ClientToolHook::try_resolve`].
+//! Tools that execute on the client side (OS tools, ask_user) are
+//! advertised by this hook so the LLM sees them. When the agent dispatches
+//! one, this hook hands the call off to the connected client: the protocol
+//! layer emits a `ToolCallForward` event on the same stream, the client
+//! dispatches locally, and posts `ReplyToTool` which resolves via
+//! [`ToolHook::try_resolve`].
 //!
 //! Pending calls are keyed by `(conversation_id, call_id)`. The LLM's
 //! `call_id` is not globally unique across conversations, so we namespace
@@ -38,7 +37,7 @@ enum PendingState {
 type PendingKey = (u64, String);
 
 /// Hook that forwards OS-tool dispatches to a connected client.
-pub struct ClientToolHook {
+pub struct ToolHook {
     /// Schemas advertised to the LLM.
     schemas: Vec<Tool>,
     /// Names this hook claims. Membership check on every dispatch.
@@ -49,10 +48,12 @@ pub struct ClientToolHook {
     pending: Mutex<HashMap<PendingKey, PendingState>>,
 }
 
-impl ClientToolHook {
+impl ToolHook {
     pub fn new() -> Self {
-        let schemas = sdk::tools::os::schemas();
-        let names = sdk::tools::os::names();
+        let mut schemas = sdk::tools::os::schemas();
+        schemas.push(sdk::tools::ask_user::schema());
+        let mut names = sdk::tools::os::names();
+        names.push(sdk::tools::ask_user::name());
         Self {
             schemas,
             names,
@@ -119,13 +120,13 @@ impl ClientToolHook {
     }
 }
 
-impl Default for ClientToolHook {
+impl Default for ToolHook {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Hook for ClientToolHook {
+impl Hook for ToolHook {
     fn schema(&self) -> Vec<Tool> {
         self.schemas.clone()
     }

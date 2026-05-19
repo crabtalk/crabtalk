@@ -16,9 +16,11 @@ path = "src/bin/main.rs"
 required-features = ["cli"]
 
 [features]
-default = ["cli", "mcp"]
+default = ["cli", "mcp", "native-tls"]
 cli = ["dep:clap", "dep:tracing-subscriber"]
 mcp = ["dep:rmcp", "dep:schemars", "dep:axum", "dep:command", "dep:anyhow", "cli"]
+native-tls = ["reqwest/native-tls"]
+rustls = ["reqwest/rustls"]
 
 [dependencies]
 base64.workspace = true

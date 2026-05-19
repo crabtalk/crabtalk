@@ -6,7 +6,7 @@ After=network-online.target
 Type=simple
 WorkingDirectory={config_dir}
 Environment=PATH={path}
-ExecStart={binary} run -v
+ExecStart={binary} -v
 Restart=always
 RestartSec=3
 

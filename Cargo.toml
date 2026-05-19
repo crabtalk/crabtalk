@@ -3,7 +3,7 @@ resolver = "3"
 members = ["apps/*", "crates/*"]
 
 [workspace.package]
-version = "0.0.21"
+version = "0.0.22"
 edition = "2024"
 authors = ["clearloop <tianyi.gc@gmail.com>"]
 license = "MIT"
@@ -11,26 +11,26 @@ repository = "https://github.com/crabtalk/crabtalk"
 keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
-telegram = { path = "apps/telegram", package = "crabtalk-telegram", version = "0.0.21" }
-wechat = { path = "apps/wechat", package = "crabtalk-wechat", version = "0.0.21" }
-sdk = { path = "crates/sdk", package = "crabtalk-sdk", version = "0.0.21" }
-tui = { path = "apps/tui", package = "crabtalk-tui", version = "0.0.21" }
-crabtalk = { path = "crates/crabtalk", package = "crabtalk", version = "0.0.21", default-features = false }
-crabtalkd = { path = "apps/daemon", package = "crabtalkd", version = "0.0.21" }
-crabup = { path = "apps/crabup", package = "crabup", version = "0.0.21" }
-runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.0.21" }
-transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.21" }
-wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.21" }
-memory = { path = "crates/memory", package = "crabtalk-memory", version = "0.0.21" }
-mcp = { path = "crates/mcp", package = "crabtalk-mcp", version = "0.0.21", default-features = false }
-command = { path = "crates/command", package = "crabtalk-command", version = "0.0.21" }
-command-codegen = { path = "crates/command-codegen", package = "crabtalk-command-codegen", version = "0.0.21" }
-search = { path = "apps/search", package = "crabtalk-search", version = "0.0.21", default-features = false }
-crabtalk-cron = { path = "apps/cron", version = "0.0.21" }
+telegram = { path = "apps/telegram", package = "crabtalk-telegram", version = "0.0.22" }
+wechat = { path = "apps/wechat", package = "crabtalk-wechat", version = "0.0.22" }
+sdk = { path = "crates/sdk", package = "crabtalk-sdk", version = "0.0.22" }
+cli = { path = "apps/tui", package = "crabtalk-cli", version = "0.0.22" }
+crabtalk = { path = "crates/crabtalk", package = "crabtalk", version = "0.0.22", default-features = false }
+crabtalkd = { path = "apps/daemon", package = "crabtalkd", version = "0.0.22" }
+crabup = { path = "apps/crabup", package = "crabup", version = "0.0.22" }
+runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.0.22" }
+transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.22" }
+wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.22" }
+memory = { path = "crates/memory", package = "crabtalk-memory", version = "0.0.22" }
+mcp = { path = "crates/mcp", package = "crabtalk-mcp", version = "0.0.22", default-features = false }
+command = { path = "crates/command", package = "crabtalk-command", version = "0.0.22" }
+command-codegen = { path = "crates/command-codegen", package = "crabtalk-command-codegen", version = "0.0.22" }
+search = { path = "apps/search", package = "crabtalk-search", version = "0.0.22", default-features = false }
+crabtalk-cron = { path = "apps/cron", version = "0.0.22" }
 
 # crabllm
-crabllm-core = "0.0.18"
-crabllm-provider = { version = "0.0.18", default-features = false }
+crabllm-core = { git = "https://github.com/crabtalk/crabllm", branch = "dev" }
+crabllm-provider = { git = "https://github.com/crabtalk/crabllm", branch = "dev", default-features = false }
 
 # bench
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -51,6 +51,7 @@ console = "0.15"
 crossterm = { version = "0.28", features = ["event-stream"] }
 dialoguer = "0.11"
 dirs = "6"
+flate2 = "1"
 heck = "0.5"
 indicatif = "0.18"
 futures-core = "0.3"
@@ -63,10 +64,10 @@ scraper = "0.22"
 prost = "0.13"
 prost-build = "0.13"
 reqwest = { version = "0.13", default-features = false, features = [
+    "blocking",
     "json",
     "query",
     "stream",
-    "native-tls",
 ] }
 rustls = { version = "0.23", default-features = false, features = [
     "ring",
@@ -95,6 +96,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yml = "0.0.12"
 termimad = "0.34"
+tar = "0.4"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = [
@@ -104,6 +106,7 @@ tokio = { version = "1", features = [
     "io-util",
     "io-std",
     "net",
+    "process",
     "sync",
     "time",
 ] }

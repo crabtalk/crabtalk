@@ -1,6 +1,6 @@
 [package]
-name = "crabtalk-tui"
-description = "Run autonomous agents with built-in LLM inference"
+name = "crabtalk-cli"
+description = "Crabtalk CLI — TUI client and management commands"
 documentation = "https://docs.rs/crabtalk"
 readme = "README.md"
 version.workspace = true
@@ -32,6 +32,7 @@ futures-core.workspace = true
 futures-util.workspace = true
 heck.workspace = true
 ratatui.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 termimad.workspace = true
 tokio.workspace = true

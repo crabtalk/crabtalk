@@ -101,8 +101,8 @@ impl ChatRepl {
             os_user,
             model_name: model,
             ask_state: None,
-            ask_agent: None,
-            ask_sender: None,
+            ask_conversation_id: None,
+            ask_call_id: None,
             os_tools,
         };
 
@@ -183,10 +183,10 @@ struct App {
     model_name: Option<String>,
     /// Active ask-user modal (if any).
     ask_state: Option<AskState>,
-    /// Agent name for the pending ask reply.
-    ask_agent: Option<String>,
-    /// Sender for the pending ask reply.
-    ask_sender: Option<String>,
+    /// Conversation ID for the pending ask_user reply.
+    ask_conversation_id: Option<u64>,
+    /// Call ID for the pending ask_user reply.
+    ask_call_id: Option<String>,
     /// Local OS tools dispatcher — answers forwarded tool calls from the
     /// daemon (bash, read, edit). Shared across stream turns so the
     /// "must read before edit" invariant persists.
@@ -267,15 +267,15 @@ async fn run_event_loop(
                                 AskAction::Noop => {}
                                 AskAction::Cancelled => {
                                     app.ask_state = None;
-                                    app.ask_agent = None;
-                                    app.ask_sender = None;
+                                    app.ask_conversation_id = None;
+                                    app.ask_call_id = None;
                                 }
                                 AskAction::Submitted(answers) => {
                                     let reply = serde_json::to_string(&answers).unwrap_or_default();
-                                    if let (Some(agent), Some(sender)) = (app.ask_agent.take(), app.ask_sender.take()) {
+                                    if let (Some(conv_id), Some(call_id)) = (app.ask_conversation_id.take(), app.ask_call_id.take()) {
                                         let conn_info = app.conn_info.clone();
                                         tokio::spawn(async move {
-                                            let _ = conn_info.reply_to_ask(agent, sender, reply).await;
+                                            let _ = conn_info.reply_to_tool(conv_id, call_id, reply, false).await;
                                         });
                                     }
                                     app.ask_state = None;
@@ -491,13 +491,13 @@ fn handle_chunk(chunk: OutputChunk, app: &mut App) {
         }
         OutputChunk::AskUser {
             questions,
-            agent,
-            sender,
+            conversation_id,
+            call_id,
         } => {
             app.renderer.finish();
             app.ask_state = Some(AskState::new(&questions));
-            app.ask_agent = Some(agent);
-            app.ask_sender = Some(sender);
+            app.ask_conversation_id = Some(conversation_id);
+            app.ask_call_id = Some(call_id);
         }
         OutputChunk::ToolCallForward {
             conversation_id,

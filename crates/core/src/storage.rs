@@ -4,7 +4,7 @@
 //! implementation per backend. Memory lives in its own `crabtalk-memory`
 //! crate and is not part of this trait.
 
-use crate::{AgentConfig, AgentEvent, AgentId, AgentStep, DaemonConfig, model::HistoryEntry};
+use crate::{AgentConfig, AgentEvent, AgentId, AgentStep, Config, model::HistoryEntry};
 use anyhow::Result;
 use crabllm_core::Usage;
 use serde::{Deserialize, Serialize};
@@ -129,10 +129,10 @@ pub trait Storage: Send + Sync + 'static {
     // ── Config ──────────────────────────────────────────────────────
 
     /// Load the daemon configuration (`config.toml`).
-    fn load_config(&self) -> impl Future<Output = Result<DaemonConfig>> + Send;
+    fn load_config(&self) -> impl Future<Output = Result<Config>> + Send;
 
     /// Overwrite the daemon configuration.
-    fn save_config(&self, config: &DaemonConfig) -> impl Future<Output = Result<()>> + Send;
+    fn save_config(&self, config: &Config) -> impl Future<Output = Result<()>> + Send;
 
     /// Create the initial config directory structure and seed the
     /// default `crab` agent if no agent is stored yet.

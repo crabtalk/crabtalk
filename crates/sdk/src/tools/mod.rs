@@ -1,7 +1,8 @@
 //! Built-in tool implementations reusable across crabtalk hosts.
 //!
-//! Today: OS tools (bash, read, edit) packaged as a [`runtime::Hook`].
-//! Hosts that wire these in get filesystem + process execution capabilities
-//! without re-deriving the schemas or handler logic.
+//! OS tools (bash, read, edit) and ask_user are client-side tools:
+//! the daemon forwards calls via `ToolCallForward`, the client
+//! dispatches locally and replies via `ReplyToTool`.
 
+pub mod ask_user;
 pub mod os;

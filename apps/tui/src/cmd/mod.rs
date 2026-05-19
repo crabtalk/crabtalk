@@ -3,15 +3,20 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use sdk::{ConnectionInfo, Transport};
+use std::path::PathBuf;
+
 pub mod agent;
+pub mod auth;
 pub mod console;
 pub mod mcp;
+pub mod package;
+pub mod reload;
 
-/// Crabtalk TUI — interactive agent client.
+/// Crabtalk CLI — interactive agent client.
 #[derive(Parser, Debug)]
 #[command(
-    name = "crabtalk-tui",
-    about = "Crabtalk TUI — interactive agent client"
+    name = "crabtalk",
+    about = "Crabtalk CLI — TUI client and management commands"
 )]
 pub struct Cli {
     /// Connect via TCP instead of Unix domain socket.
@@ -37,10 +42,55 @@ pub enum Command {
         /// Conversation file to resume. If omitted, shows a conversation picker.
         file: Option<String>,
     },
+
+    /// Cloud authentication.
+    Auth {
+        #[command(subcommand)]
+        action: AuthAction,
+    },
+
+    /// Manage crabtalk packages (skills + MCPs).
+    Pkg {
+        #[command(subcommand)]
+        action: PkgAction,
+    },
+
+    /// Hot-reload daemon configuration.
+    Reload,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AuthAction {
+    /// Log in to CrabTalk cloud (opens browser for Google OAuth).
+    Login,
+    /// Log out — remove gateway credentials from config.
+    Logout,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PkgAction {
+    /// Install a crabtalk package.
+    Add {
+        /// Package short name.
+        name: String,
+        /// Pin to a specific branch of the package's source repo.
+        #[arg(long)]
+        branch: Option<String>,
+        /// Local path to a package directory (skips registry sync).
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Re-install if already present.
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Uninstall a crabtalk package.
+    Remove {
+        /// Package short name.
+        name: String,
+    },
 }
 
 impl Cli {
-    /// Parse and dispatch the CLI command.
     pub async fn run(self) -> Result<()> {
         match self.command {
             None => {
@@ -68,11 +118,40 @@ impl Cli {
             }
             Some(Command::Agent(cmd)) => cmd.run(self.tcp).await,
             Some(Command::Mcp(cmd)) => cmd.run(self.tcp).await,
+            Some(Command::Auth { action }) => match action {
+                AuthAction::Login => auth::login().await,
+                AuthAction::Logout => auth::logout(),
+            },
+            Some(Command::Pkg { action }) => match action {
+                PkgAction::Add {
+                    name,
+                    branch,
+                    path,
+                    force,
+                } => {
+                    package::install(
+                        &name,
+                        branch.as_deref(),
+                        path.as_deref(),
+                        force,
+                        |msg| println!("  {msg}"),
+                        |msg| println!("  {msg}"),
+                    )
+                    .await?;
+                    println!("Done: {name}");
+                    Ok(())
+                }
+                PkgAction::Remove { name } => {
+                    package::uninstall(&name, |msg| println!("  {msg}")).await?;
+                    println!("Done: {name}");
+                    Ok(())
+                }
+            },
+            Some(Command::Reload) => reload::run(self.tcp).await,
         }
     }
 }
 
-/// Connect to daemon, failing with a clear message pointing at crabup if down.
 async fn connect(use_tcp: bool) -> Result<(Transport, ConnectionInfo)> {
     if use_tcp {
         connect_tcp().await
@@ -81,7 +160,6 @@ async fn connect(use_tcp: bool) -> Result<(Transport, ConnectionInfo)> {
     }
 }
 
-/// Connect using the platform default transport: UDS on Unix, TCP on Windows.
 pub(crate) async fn connect_default() -> Result<(Transport, ConnectionInfo)> {
     #[cfg(unix)]
     {
@@ -101,7 +179,6 @@ pub(crate) async fn connect_default() -> Result<(Transport, ConnectionInfo)> {
     }
 }
 
-/// Read the contents of a file path, or stdin if the path is `-`.
 pub(crate) fn read_path_or_stdin(path: &std::path::Path) -> Result<String> {
     if path.as_os_str() == "-" {
         let mut buf = String::new();
@@ -113,7 +190,6 @@ pub(crate) fn read_path_or_stdin(path: &std::path::Path) -> Result<String> {
     }
 }
 
-/// Connect to crabtalk daemon via TCP, reading the port from the port file.
 pub(crate) async fn connect_tcp() -> Result<(Transport, ConnectionInfo)> {
     let tcp_port_file = &*wcore::paths::TCP_PORT_FILE;
     let port_str = std::fs::read_to_string(tcp_port_file).with_context(|| {

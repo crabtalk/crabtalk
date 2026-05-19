@@ -1,13 +1,13 @@
 //! Shared configuration types used across crates.
 
-pub mod daemon;
+pub mod crabtalk;
 pub mod hooks;
 pub mod llm;
 pub mod manifest;
 pub mod mcp;
 pub mod system;
 
-pub use daemon::DaemonConfig;
+pub use crabtalk::Config;
 pub use hooks::{HooksConfig, MemoryConfig};
 pub use llm::LlmConfig;
 pub use manifest::{

@@ -79,7 +79,7 @@ pub trait Client: Send {
     }
 
     /// Get daemon stats including the active model name.
-    fn get_stats(&mut self) -> impl std::future::Future<Output = Result<DaemonStats>> + Send {
+    fn get_stats(&mut self) -> impl std::future::Future<Output = Result<Stats>> + Send {
         async move {
             match self
                 .request(ClientMessage {
@@ -599,33 +599,6 @@ pub trait Client: Send {
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
-                other => anyhow::bail!("unexpected response: {other:?}"),
-            }
-        }
-    }
-
-    /// Deliver a user reply to a pending `ask_user` tool call.
-    fn reply_to_ask(
-        &mut self,
-        agent: String,
-        sender: String,
-        content: String,
-    ) -> impl std::future::Future<Output = Result<()>> + Send {
-        async move {
-            match self
-                .request(ClientMessage::from(ReplyToAsk {
-                    agent,
-                    sender,
-                    content,
-                }))
-                .await?
-            {
-                ServerMessage {
-                    msg: Some(server_message::Msg::Pong(_)),
-                } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
-                } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
         }

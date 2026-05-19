@@ -1,8 +1,7 @@
-//! Daemon-level conversation operations: send/stream, kill, and
-//! ask/tool reply routing. Pure-runtime ops live on `Runtime<C>`
-//! directly.
+//! Conversation operations: send/stream, kill, and ask/tool reply
+//! routing. Pure-runtime ops live on `Runtime<C>` directly.
 
-use crate::daemon::Daemon;
+use crate::system::CrabTalk;
 use anyhow::Result;
 use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
@@ -10,7 +9,7 @@ use std::sync::Arc;
 use wcore::AgentEvent;
 use wcore::protocol::message::*;
 
-impl<P: Provider + 'static> Daemon<P> {
+impl<P: Provider + 'static> CrabTalk<P> {
     pub(crate) async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
@@ -37,7 +36,7 @@ impl<P: Provider + 'static> Daemon<P> {
         req: StreamMsg,
     ) -> impl futures_core::Stream<Item = Result<StreamEvent>> + Send + 'a {
         let runtime = self.runtime.clone();
-        let client_tools_hook = self.client_tools_hook.clone();
+        let tool_hook = self.tool_hook.clone();
         let agent = req.agent;
         let content = req.content;
         let sender = req.sender.unwrap_or_default();
@@ -54,8 +53,8 @@ impl<P: Provider + 'static> Daemon<P> {
             // unregisters on any exit path — stream end, early return on
             // Done, or consumer dropping the stream — and fails any
             // pending forwarded calls so they don't sit until timeout.
-            client_tools_hook.register_listener(conversation_id);
-            let _listener_guard = ListenerGuard::new(client_tools_hook.clone(), conversation_id);
+            tool_hook.register_listener(conversation_id);
+            let _listener_guard = ListenerGuard::new(tool_hook.clone(), conversation_id);
 
             let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
             yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.clone() })) };
@@ -95,28 +94,9 @@ impl<P: Provider + 'static> Daemon<P> {
                         })) };
                     }
                     AgentEvent::ToolCallsStart(calls) => {
-                        let ask_questions: Vec<AskQuestion> = calls
-                            .iter()
-                            .filter(|c| c.function.name == "ask_user")
-                            .filter_map(|c| {
-                                serde_json::from_str::<crate::hooks::ask_user::AskUser>(&c.function.arguments)
-                                    .ok()
-                            })
-                            .flat_map(|a| a.questions)
-                            .map(|q| AskQuestion {
-                                question: q.question,
-                                header: q.header,
-                                options: q.options.into_iter().map(|o| AskOption {
-                                    label: o.label,
-                                    description: o.description,
-                                }).collect(),
-                                multi_select: q.multi_select,
-                            })
-                            .collect();
-
                         let forwards: Vec<ToolCallForwardEvent> = calls
                             .iter()
-                            .filter(|c| client_tools_hook.is_client_tool(&c.function.name))
+                            .filter(|c| tool_hook.is_client_tool(&c.function.name))
                             .map(|c| ToolCallForwardEvent {
                                 call_id: c.id.to_string(),
                                 name: c.function.name.to_string(),
@@ -131,10 +111,6 @@ impl<P: Provider + 'static> Daemon<P> {
                                 arguments: c.function.arguments,
                             }).collect(),
                         })) };
-
-                        if !ask_questions.is_empty() {
-                            yield StreamEvent { event: Some(stream_event::Event::AskUser(AskUserEvent { questions: ask_questions })) };
-                        }
 
                         for fwd in forwards {
                             yield StreamEvent { event: Some(stream_event::Event::ToolCallForward(fwd)) };
@@ -187,40 +163,6 @@ impl<P: Provider + 'static> Daemon<P> {
         Ok(rt.close(conversation_id).await)
     }
 
-    pub(crate) async fn reply_to_ask(
-        &self,
-        agent: &str,
-        sender: &str,
-        content: String,
-    ) -> Result<()> {
-        let rt = self.runtime.read().await.clone();
-        let conversation_id = rt.require_conversation_id(agent, sender).await?;
-        if let Some(tx) = self
-            .ask_hook
-            .pending_asks()
-            .lock()
-            .await
-            .remove(&conversation_id)
-        {
-            let _ = tx.send(content);
-            return Ok(());
-        }
-        // Retry once after a short delay — the ask_user handler may not have
-        // inserted the oneshot yet if the reply races the tool call.
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        if let Some(tx) = self
-            .ask_hook
-            .pending_asks()
-            .lock()
-            .await
-            .remove(&conversation_id)
-        {
-            let _ = tx.send(content);
-            return Ok(());
-        }
-        anyhow::bail!("no pending ask_user for agent='{agent}' sender='{sender}'")
-    }
-
     pub(crate) async fn reply_to_tool(
         &self,
         conversation_id: u64,
@@ -233,7 +175,7 @@ impl<P: Provider + 'static> Daemon<P> {
         // so the dispatch/reply race is handled symmetrically inside
         // the hook rather than via sleep-and-pray here.
         if self
-            .client_tools_hook
+            .tool_hook
             .try_resolve(conversation_id, call_id, output, is_error)
         {
             Ok(())
@@ -246,12 +188,12 @@ impl<P: Provider + 'static> Daemon<P> {
 /// RAII guard that synchronously unregisters a stream's client-tool
 /// listener and drains pending forwarded calls on drop.
 struct ListenerGuard {
-    hook: Arc<crate::hooks::client_tools::ClientToolHook>,
+    hook: Arc<crate::hooks::tool::ToolHook>,
     conv_id: u64,
 }
 
 impl ListenerGuard {
-    fn new(hook: Arc<crate::hooks::client_tools::ClientToolHook>, conv_id: u64) -> Self {
+    fn new(hook: Arc<crate::hooks::tool::ToolHook>, conv_id: u64) -> Self {
         Self { hook, conv_id }
     }
 }

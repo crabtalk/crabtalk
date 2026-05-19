@@ -1,6 +1,7 @@
 //! Telegram app serve logic.
 
 use crate::config::TelegramConfig;
+use sdk::tools::ask_user::Question;
 use sdk::{
     COMMAND_HINT, ConnectionInfo, KnownBots, Message, StreamAccumulator, StreamResult,
     attachment_summary, parse_command,
@@ -9,7 +10,7 @@ use std::collections::HashMap;
 use teloxide::prelude::*;
 use teloxide::types::{ChatAction, InlineKeyboardButton, InlineKeyboardMarkup};
 use tokio::sync::mpsc;
-use wcore::protocol::message::{AskQuestion, StreamMsg};
+use wcore::protocol::message::StreamMsg;
 
 /// Run the Telegram app service.
 pub async fn run(conn_info: ConnectionInfo, config: &TelegramConfig) -> anyhow::Result<()> {
@@ -220,7 +221,7 @@ async fn tg_stream(
     let mut last_sent_len: usize = 0;
     let mut debounce = tokio::time::interval(Duration::from_millis(1500));
     debounce.reset();
-    let mut pending_ask_questions: Option<Vec<AskQuestion>> = None;
+    let mut pending_ask: Option<sdk::stream::PendingAsk> = None;
     let mut multi_select_state: HashMap<usize, Vec<usize>> = HashMap::new();
 
     let typing_bot = bot.clone();
@@ -245,7 +246,7 @@ async fn tg_stream(
                         acc.push(&event);
 
                         // When ask_user fires, flush text and send inline keyboard.
-                        if let Some(questions) = acc.take_pending_questions() {
+                        if let Some(ask) = acc.take_pending_ask() {
                             let rendered = acc.render();
                             if !rendered.is_empty() && rendered.len() != last_sent_len {
                                 let reply_to = is_group.then_some(teloxide::types::MessageId(reply_to_msg_id as i32));
@@ -263,8 +264,7 @@ async fn tg_stream(
                                     }
                                 }
                             }
-                            // Send each question with an inline keyboard.
-                            for (qi, q) in questions.iter().enumerate() {
+                            for (qi, q) in ask.questions.iter().enumerate() {
                                 let keyboard = build_ask_keyboard(qi, q);
                                 let text = format!("📋 {}\n{}", q.header, q.question);
                                 if let Err(e) = bot
@@ -275,7 +275,7 @@ async fn tg_stream(
                                     tracing::warn!(agent, "failed to send ask keyboard: {e}");
                                 }
                             }
-                            pending_ask_questions = Some(questions);
+                            pending_ask = Some(ask);
                         }
 
                         if acc.done {
@@ -291,21 +291,19 @@ async fn tg_stream(
             }
             reply = reply_rx.recv() => {
                 if let Some(reply_content) = reply
-                    && let Some(ref questions) = pending_ask_questions
+                    && let Some(ref ask) = pending_ask
                 {
-                    // Try to parse as callback data: "ask:qi:oi" or "ask:qi:done"
                     let resolved = if reply_content.starts_with("ask:") {
                         handle_ask_callback(
                             &reply_content,
-                            questions,
+                            &ask.questions,
                             &mut multi_select_state,
                             bot,
                             ChatId(chat_id),
                         ).await
                     } else {
-                        // Raw text reply — use as-is for the first question.
                         let mut answers = HashMap::new();
-                        if let Some(q) = questions.first() {
+                        if let Some(q) = ask.questions.first() {
                             answers.insert(q.question.clone(), reply_content);
                         }
                         Some(serde_json::to_string(&answers).unwrap_or_default())
@@ -313,9 +311,9 @@ async fn tg_stream(
 
                     if let Some(json_reply) = resolved {
                         let _ = conn_info
-                            .reply_to_ask(agent.to_string(), sender.to_string(), json_reply)
+                            .reply_to_tool(ask.conversation_id, ask.call_id.clone(), json_reply, false)
                             .await;
-                        pending_ask_questions = None;
+                        pending_ask = None;
                         multi_select_state.clear();
                     }
                 }
@@ -390,7 +388,7 @@ async fn tg_stream(
 }
 
 /// Build an inline keyboard for a single question.
-fn build_ask_keyboard(question_idx: usize, q: &AskQuestion) -> InlineKeyboardMarkup {
+fn build_ask_keyboard(question_idx: usize, q: &Question) -> InlineKeyboardMarkup {
     let mut rows: Vec<Vec<InlineKeyboardButton>> = q
         .options
         .iter()
@@ -425,7 +423,7 @@ fn build_ask_keyboard(question_idx: usize, q: &AskQuestion) -> InlineKeyboardMar
 /// option (waiting for "Done").
 async fn handle_ask_callback(
     data: &str,
-    questions: &[AskQuestion],
+    questions: &[Question],
     multi_state: &mut HashMap<usize, Vec<usize>>,
     bot: &Bot,
     chat_id: ChatId,

@@ -1,6 +1,6 @@
 //! Server trait implementation — thin delegates to domain modules.
 
-use crate::daemon::Daemon;
+use crate::system::CrabTalk;
 use anyhow::Result;
 use crabllm_core::Provider;
 use wcore::protocol::api::Server;
@@ -27,7 +27,7 @@ fn format_date_label(created_at: &str) -> String {
     }
 }
 
-impl<P: Provider + 'static> Server for Daemon<P> {
+impl<P: Provider + 'static> Server for CrabTalk<P> {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         self.send(req).await
     }
@@ -69,7 +69,7 @@ impl<P: Provider + 'static> Server for Daemon<P> {
         self.reload().await
     }
 
-    async fn get_stats(&self) -> Result<DaemonStats> {
+    async fn get_stats(&self) -> Result<Stats> {
         self.get_stats().await
     }
 
@@ -88,10 +88,6 @@ impl<P: Provider + 'static> Server for Daemon<P> {
     async fn publish_event(&self, req: PublishEventMsg) -> Result<()> {
         self.publish_event(&req.source, &req.payload);
         Ok(())
-    }
-
-    async fn reply_to_ask(&self, agent: String, sender: String, content: String) -> Result<()> {
-        self.reply_to_ask(&agent, &sender, content).await
     }
 
     async fn reply_to_tool(

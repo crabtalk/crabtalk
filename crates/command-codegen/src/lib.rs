@@ -102,7 +102,7 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
             #[arg(short, long, action = clap::ArgAction::Count, global = true)]
             pub verbose: u8,
             #[command(subcommand)]
-            pub action: #command_enum,
+            pub action: Option<#command_enum>,
         }
 
         #[derive(Debug, clap::Subcommand)]
@@ -145,8 +145,9 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
         impl CrabtalkCli {
             /// Init tracing, build a tokio runtime, and run the command.
             pub fn start(self, svc: #struct_name) {
+                let action = self.action.unwrap_or(#command_enum::Run);
                 command::run(self.verbose, move || async move {
-                    svc.exec(self.action).await
+                    svc.exec(action).await
                 });
             }
         }
