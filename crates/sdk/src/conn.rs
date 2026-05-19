@@ -14,9 +14,8 @@
 use anyhow::Result;
 use futures_util::StreamExt;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::Path;
 #[cfg(unix)]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use wcore::protocol::{
     api::Client as _,

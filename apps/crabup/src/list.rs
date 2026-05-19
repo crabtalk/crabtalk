@@ -5,7 +5,7 @@ use std::net::TcpStream;
 
 use crate::registry::Entry;
 
-/// Return the set of installed crabtalk-owned crates, sorted.
+/// Return the set of installed crabtalk-owned crates (from cargo), sorted.
 pub fn installed() -> Result<Vec<String>> {
     let path = dirs::home_dir()
         .context("could not resolve home directory")?
@@ -47,7 +47,8 @@ fn running_port(name: &str) -> Option<u16> {
 
 struct Row {
     name: &'static str,
-    state: &'static str,
+    state: String,
+    version: String,
     status: &'static str,
     port: String,
     sort_key: u8,
@@ -55,23 +56,37 @@ struct Row {
 
 /// Print a unified list of available crabtalk binaries.
 pub fn run() -> Result<()> {
-    let installed_set: std::collections::HashSet<String> = installed()?.into_iter().collect();
+    let cargo_set: std::collections::HashSet<String> = installed()?.into_iter().collect();
+    let manifest = crate::manifest::all().unwrap_or_default();
 
     let mut rows: Vec<Row> = Entry::all()
         .iter()
         .map(|e| {
-            let installed = installed_set.contains(e.krate);
+            let managed = wcore::paths::BIN_DIR.join(e.bin).exists();
+            let cargo = cargo_set.contains(e.krate);
+            let installed = managed || cargo;
             let serviceable = e.label.is_some();
             let port = running_port(e.short);
-            let (state, status, port_str, sort_key) = match (installed, serviceable, port) {
-                (true, true, Some(p)) => ("installed", "running", p.to_string(), 0),
-                (true, true, None) => ("installed", "", String::new(), 1),
-                (true, false, _) => ("installed", "-", "-".to_owned(), 2),
-                (false, _, _) => ("", "", String::new(), 3),
+
+            let state = match (managed, cargo) {
+                (true, _) => "installed".to_string(),
+                (false, true) => "cargo".to_string(),
+                _ => String::new(),
             };
+
+            let version = manifest.get(e.short).cloned().unwrap_or_default();
+
+            let (status, port_str, sort_key) = match (installed, serviceable, port) {
+                (true, true, Some(p)) => ("running", p.to_string(), 0),
+                (true, true, None) => ("", String::new(), 1),
+                (true, false, _) => ("-", "-".to_owned(), 2),
+                (false, _, _) => ("", String::new(), 3),
+            };
+
             Row {
                 name: e.short,
                 state,
+                version,
                 status,
                 port: port_str,
                 sort_key,
@@ -83,6 +98,12 @@ pub fn run() -> Result<()> {
 
     let nw = rows.iter().map(|r| r.name.len()).max().unwrap_or(0).max(4);
     let sw = rows.iter().map(|r| r.state.len()).max().unwrap_or(0).max(5);
+    let vw = rows
+        .iter()
+        .map(|r| r.version.len())
+        .max()
+        .unwrap_or(0)
+        .max(7);
     let tw = rows
         .iter()
         .map(|r| r.status.len())
@@ -90,12 +111,16 @@ pub fn run() -> Result<()> {
         .unwrap_or(0)
         .max(6);
 
-    println!("{:<nw$}  {:<sw$}  {:<tw$}  PORT", "NAME", "STATE", "STATUS");
+    println!(
+        "{:<nw$}  {:<sw$}  {:<vw$}  {:<tw$}  PORT",
+        "NAME", "STATE", "VERSION", "STATUS"
+    );
     for row in &rows {
         println!(
-            "{:<nw$}  {:<sw$}  {:<tw$}  {port}",
+            "{:<nw$}  {:<sw$}  {:<vw$}  {:<tw$}  {port}",
             row.name,
             row.state,
+            row.version,
             row.status,
             port = row.port,
         );

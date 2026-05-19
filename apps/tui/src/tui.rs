@@ -115,13 +115,11 @@ pub fn char_to_byte(s: &str, char_idx: usize) -> usize {
 /// Handle standard text-input key events on a buffer + cursor.
 pub fn handle_text_input(code: KeyCode, buf: &mut String, cursor: &mut usize) {
     match code {
-        KeyCode::Backspace => {
-            if *cursor > 0 {
-                let start = char_to_byte(buf, *cursor - 1);
-                let end = char_to_byte(buf, *cursor);
-                buf.drain(start..end);
-                *cursor -= 1;
-            }
+        KeyCode::Backspace if *cursor > 0 => {
+            let start = char_to_byte(buf, *cursor - 1);
+            let end = char_to_byte(buf, *cursor);
+            buf.drain(start..end);
+            *cursor -= 1;
         }
         KeyCode::Delete => {
             let char_count = buf.chars().count();

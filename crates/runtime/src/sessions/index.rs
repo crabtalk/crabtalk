@@ -422,12 +422,8 @@ fn make_snippet(entry: &HistoryEntry) -> (String, bool) {
 fn extract_tool_name(entry: &HistoryEntry) -> Option<String> {
     for block in &entry.message.content {
         match block {
-            crabllm_core::ContentBlock::ToolResult { name, .. } => {
-                if let Some(n) = name {
-                    if !n.is_empty() {
-                        return Some(n.clone());
-                    }
-                }
+            crabllm_core::ContentBlock::ToolResult { name: Some(n), .. } if !n.is_empty() => {
+                return Some(n.clone());
             }
             crabllm_core::ContentBlock::ToolUse { name, .. } => {
                 return Some(name.clone());

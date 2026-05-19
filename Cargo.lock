@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "adler2"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -468,6 +474,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "console"
+version = "0.16.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d64e8af5551369d19cf50138de61f1c42074ab970f74e99be916646777f8fc87"
+dependencies = [
+ "encode_unicode",
+ "libc",
+ "unicode-width 0.2.0",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -548,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -582,7 +600,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-bench"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "crabllm-core",
  "crabtalk",
@@ -600,13 +618,13 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-cli"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "async-stream",
  "chrono",
  "clap",
- "console",
+ "console 0.15.11",
  "crabtalk-core",
  "crabtalk-sdk",
  "crabtalk-transport",
@@ -629,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-command"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "axum",
@@ -646,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-command-codegen"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -656,7 +674,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-core"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -682,7 +700,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-cron"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "chrono",
@@ -699,7 +717,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-mcp"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "bytes",
@@ -720,7 +738,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-memory"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "chrono",
@@ -730,7 +748,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-runtime"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -748,7 +766,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-sdk"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "crabtalk-core",
@@ -768,7 +786,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-search"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "axum",
@@ -794,7 +812,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-telegram"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "clap",
@@ -814,7 +832,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-transport"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -827,7 +845,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-wechat"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "base64",
@@ -849,7 +867,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalkd"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "clap",
@@ -862,13 +880,28 @@ dependencies = [
 
 [[package]]
 name = "crabup"
-version = "0.0.21"
+version = "0.0.22"
 dependencies = [
  "anyhow",
  "clap",
  "crabtalk-core",
  "dirs",
+ "flate2",
+ "indicatif",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "tar",
  "toml",
+]
+
+[[package]]
+name = "crc32fast"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
@@ -1178,7 +1211,7 @@ version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "658bce805d770f407bc62102fca7c2c64ceef2fbcb2b8bd19d2765ce093980de"
 dependencies = [
- "console",
+ "console 0.15.11",
  "shell-words",
  "tempfile",
  "thiserror 1.0.69",
@@ -1314,6 +1347,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
+name = "filetime"
+version = "0.2.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
+dependencies = [
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1324,6 +1367,16 @@ name = "fixedbitset"
 version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
+
+[[package]]
+name = "flate2"
+version = "1.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
+dependencies = [
+ "crc32fast",
+ "miniz_oxide",
+]
 
 [[package]]
 name = "foldhash"
@@ -1888,6 +1941,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "indicatif"
+version = "0.18.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25470f23803092da7d239834776d653104d551bc4d7eacaf31e6837854b8e9eb"
+dependencies = [
+ "console 0.16.3",
+ "portable-atomic",
+ "unicode-width 0.2.0",
+ "unit-prefix",
+ "web-time",
+]
+
+[[package]]
 name = "indoc"
 version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2209,6 +2275,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "miniz_oxide"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
+dependencies = [
+ "adler2",
+ "simd-adler32",
+]
+
+[[package]]
 name = "mio"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2518,6 +2594,12 @@ checksum = "51bae2ac328883f7acdfea3d66a7c35751187f870bc81f94563733a154d7a670"
 dependencies = [
  "plotters-backend",
 ]
+
+[[package]]
+name = "portable-atomic"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
 
 [[package]]
 name = "potential_utf"
@@ -2974,6 +3056,7 @@ checksum = "ab3f43e3283ab1488b624b44b0e988d0acea0b3214e694730a055cb6b2efa801"
 dependencies = [
  "base64",
  "bytes",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "http",
@@ -3526,6 +3609,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "simd-adler32"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "703d5c7ef118737c72f1af64ad2f6f8c5e1921f818cdcb97b8fe6fc69bf66214"
+
+[[package]]
 name = "siphasher"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3698,6 +3787,17 @@ name = "takecell"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20f34339676cdcab560c9a82300c4c2581f68b9369aedf0fae86f2ff9565ff3e"
+
+[[package]]
+name = "tar"
+version = "0.4.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
+]
 
 [[package]]
 name = "teloxide"
@@ -4189,6 +4289,12 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
+name = "unit-prefix"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81e544489bf3d8ef66c953931f56617f423cd4b5494be343d9b9d3dda037b9a3"
 
 [[package]]
 name = "untrusted"
@@ -4805,6 +4911,16 @@ name = "writeable"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
+
+[[package]]
+name = "xattr"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
+dependencies = [
+ "libc",
+ "rustix 1.1.4",
+]
 
 [[package]]
 name = "yoke"

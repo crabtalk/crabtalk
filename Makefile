@@ -1,19 +1,22 @@
 # Crabtalk Makefile
 #
-# Cross-platform builds for crabtalk CLI and extension services.
+# Cross-platform builds for the crabtalk ecosystem.
 #
 # Usage:
-# make crabtalk   (CLI only, all platforms)
-# make bundle     (CLI + services, all platforms)
-# make macos-arm64
-# make macos-amd64
-# make linux-arm64
-# make linux-amd64
-# make windows-amd64
+# make release        (core binaries, all platforms)
+# make bundle         (core + services, all platforms)
+# make macos-arm64    (all packages, one platform)
 VERSION = v$(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
 CARGO = cargo b --profile prod
-PACKAGES = -p crabtalkd -p crabtalk-search -p crabtalk-telegram
-BINS = crabtalk crabtalk-search crabtalk-telegram
+
+CORE_PACKAGES = -p crabup -p crabtalkd -p crabtalk-cli
+CORE_BINS = crabup crabtalkd crabtalk
+
+SERVICE_PACKAGES = -p crabtalk-search -p crabtalk-telegram
+SERVICE_BINS = crabtalk-search crabtalk-telegram
+
+ALL_PACKAGES = $(CORE_PACKAGES) $(SERVICE_PACKAGES)
+ALL_BINS = $(CORE_BINS) $(SERVICE_BINS)
 
 # TLS backend: native-tls on macOS, rustls on Linux/Windows.
 tls-macos-arm64 =
@@ -49,22 +52,27 @@ ext-windows-amd64 = .exe
 
 PLATFORMS = macos-arm64 macos-amd64 linux-amd64 linux-arm64 windows-amd64
 
-# build only the crabtalk CLI for all platforms
-crabtalk: $(addprefix crabtalk-,$(PLATFORMS))
+# Build core binaries for all platforms, produce per-binary tarballs.
+release: $(addprefix release-,$(PLATFORMS))
 	mkdir -p target/bundle
-	$(foreach p,$(PLATFORMS),\
-		tar -czf target/bundle/crabtalk-$(VERSION)-$(p).tar.gz -C target/$(triple-$(p))/prod crabtalk$(ext-$(p));)
+	$(foreach bin,$(CORE_BINS),$(foreach p,$(PLATFORMS),\
+		tar -czf target/bundle/$(bin)-$(VERSION)-$(p).tar.gz -C target/$(triple-$(p))/prod $(bin)$(ext-$(p));))
 
-crabtalk-%:
-	$(build-$*) -p crabtalkd $(tls-$*)
+release-%:
+	$(build-$*) $(CORE_PACKAGES) $(tls-$*)
 
-# build all packages for all platforms
+# Build all packages (core + services) for all platforms.
 bundle: $(PLATFORMS) tar-all
 
 tar-all:
 	mkdir -p target/bundle
-	$(foreach bin,$(BINS),$(foreach p,$(PLATFORMS),\
+	$(foreach bin,$(ALL_BINS),$(foreach p,$(PLATFORMS),\
 		tar -czf target/bundle/$(bin)-$(VERSION)-$(p).tar.gz -C target/$(triple-$(p))/prod $(bin)$(ext-$(p));))
 
 macos-arm64 macos-amd64 linux-arm64 linux-amd64 windows-amd64:
-	$(build-$@) $(PACKAGES)
+	$(build-$@) $(ALL_PACKAGES) $(tls-$@)
+
+# Create a GitHub release and upload all core tarballs.
+# Assumes `make release` has been run and tarballs exist in target/bundle/.
+publish:
+	gh release create $(VERSION) --title "$(VERSION)" --generate-notes target/bundle/*-$(VERSION)-*.tar.gz

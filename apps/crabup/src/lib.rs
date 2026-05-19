@@ -5,7 +5,9 @@ use anyhow::{Result, anyhow};
 use crate::registry::Entry;
 
 pub mod cargo;
+pub mod github;
 pub mod list;
+pub mod manifest;
 pub mod registry;
 
 #[derive(clap::Parser, Debug)]
@@ -17,17 +19,21 @@ pub struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
-    /// Install a crabtalk binary from crates.io.
+    /// Install a crabtalk binary (downloads prebuilt from GitHub releases).
     Install {
-        /// Short name (daemon, tui, telegram, …) or crate name.
-        name: String,
-        /// Pin to a specific version.
+        /// Short name (daemon, cli, telegram, …) or crate name.
+        #[arg(required = true)]
+        names: Vec<String>,
+        /// Pin to a specific version (e.g. v0.0.21).
         #[arg(long)]
         version: Option<String>,
-        /// Comma-separated cargo features to enable.
+        /// Build from source via cargo install instead of downloading.
+        #[arg(long)]
+        source: bool,
+        /// Comma-separated cargo features (implies --source).
         #[arg(long, value_delimiter = ',')]
         features: Vec<String>,
-        /// Disable default cargo features.
+        /// Disable default cargo features (implies --source).
         #[arg(long)]
         no_default_features: bool,
     },
@@ -36,7 +42,7 @@ pub enum Command {
         /// Short name or crate name.
         name: String,
     },
-    /// Bump every installed crabtalk-* crate to the latest version.
+    /// Update all installed crabtalk binaries to the latest version.
     Update,
     /// List available crabtalk binaries (installed + running status).
     List,
@@ -50,25 +56,105 @@ impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
             Command::Install {
-                name,
+                names,
                 version,
+                source,
                 features,
                 no_default_features,
-            } => cargo::install(
-                Entry::resolve(&name),
-                cargo::InstallOpts {
-                    version: version.as_deref(),
-                    features: &features,
-                    no_default_features,
-                },
-            ),
-            Command::Uninstall { name } => cargo::uninstall(Entry::resolve(&name)),
-            Command::Update => {
-                for krate in list::installed()? {
-                    println!("==> {krate}");
-                    cargo::install(&krate, cargo::InstallOpts::default())?;
+            } => {
+                let use_source = source || !features.is_empty() || no_default_features;
+                if use_source {
+                    for name in &names {
+                        let krate = Entry::resolve(name);
+                        cargo::install(
+                            krate,
+                            cargo::InstallOpts {
+                                version: version.as_deref(),
+                                features: &features,
+                                no_default_features,
+                            },
+                        )?;
+                    }
+                    return Ok(());
                 }
+
+                let mut entries: Vec<&Entry> = Vec::new();
+                let mut cargo_names: Vec<&str> = Vec::new();
+                for name in &names {
+                    match Entry::by_short(name) {
+                        Some(entry) => entries.push(entry),
+                        None => cargo_names.push(name),
+                    }
+                }
+
+                if !entries.is_empty() {
+                    match github::install(&entries, version.as_deref()) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            eprintln!(
+                                "warn: github download failed ({e:#}), falling back to cargo install"
+                            );
+                            for entry in &entries {
+                                cargo::install(
+                                    entry.krate,
+                                    cargo::InstallOpts {
+                                        version: version.as_deref(),
+                                        ..Default::default()
+                                    },
+                                )?;
+                            }
+                        }
+                    }
+                }
+
+                for name in cargo_names {
+                    cargo::install(
+                        name,
+                        cargo::InstallOpts {
+                            version: version.as_deref(),
+                            ..Default::default()
+                        },
+                    )?;
+                }
+
                 Ok(())
+            }
+            Command::Uninstall { name } => {
+                if let Some(entry) = Entry::by_short(&name) {
+                    let managed = wcore::paths::BIN_DIR.join(entry.bin);
+                    if managed.exists() {
+                        std::fs::remove_file(&managed)?;
+                        manifest::remove(entry.short)?;
+                        println!("info: removed {}", managed.display());
+                        return Ok(());
+                    }
+                }
+                cargo::uninstall(Entry::resolve(&name))
+            }
+            Command::Update => {
+                let installed = manifest::all()?;
+                if installed.is_empty() {
+                    println!("nothing installed via crabup");
+                    return Ok(());
+                }
+
+                println!("info: checking latest version...");
+                let latest = github::latest_version()?;
+                println!("info: latest version: {latest}");
+
+                let outdated: Vec<&Entry> = installed
+                    .iter()
+                    .filter(|(_, v)| v.as_str() != latest)
+                    .filter_map(|(short, _)| Entry::by_short(short))
+                    .collect();
+
+                if outdated.is_empty() {
+                    println!("everything is up to date");
+                    return Ok(());
+                }
+
+                println!("info: updating {} component(s)", outdated.len());
+                github::install(&outdated, Some(&latest))
             }
             Command::List => list::run(),
             Command::Service(args) => forward_service(args),
@@ -83,7 +169,7 @@ fn forward_service(args: Vec<String>) -> Result<()> {
     let binary = entry.binary_path().ok_or_else(|| {
         anyhow!(
             "{} not installed — run `crabup install {}` first",
-            entry.krate,
+            entry.bin,
             entry.short
         )
     })?;

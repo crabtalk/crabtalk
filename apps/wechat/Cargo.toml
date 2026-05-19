@@ -12,6 +12,11 @@ keywords.workspace = true
 name = "crabtalk-wechat"
 path = "src/bin/main.rs"
 
+[features]
+default = ["native-tls"]
+native-tls = ["reqwest/native-tls"]
+rustls = ["reqwest/rustls"]
+
 [dependencies]
 sdk.workspace = true
 wcore.workspace = true

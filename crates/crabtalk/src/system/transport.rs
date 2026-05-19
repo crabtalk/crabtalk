@@ -4,6 +4,7 @@ use super::CrabTalk;
 use anyhow::Result;
 use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
+#[cfg(unix)]
 use std::path::Path;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use wcore::protocol::{api::Server, message::ClientMessage};

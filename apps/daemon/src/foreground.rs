@@ -1,7 +1,9 @@
 //! Run the daemon in the foreground with live logging.
 
 use anyhow::Result;
-use wcore::paths::{CONFIG_DIR, SOCKET_PATH, TCP_PORT_FILE};
+#[cfg(unix)]
+use wcore::paths::SOCKET_PATH;
+use wcore::paths::{CONFIG_DIR, TCP_PORT_FILE};
 
 pub async fn start() -> Result<()> {
     crate::ensure_config()?;

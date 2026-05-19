@@ -43,8 +43,8 @@ ulid.workspace = true
 
 [features]
 default = ["native-tls"]
-native-tls = ["crabllm-provider/native-tls", "mcp/native-tls"]
-rustls = ["crabllm-provider/rustls", "mcp/rustls"]
+native-tls = ["crabllm-provider/native-tls", "mcp/native-tls", "reqwest/native-tls"]
+rustls = ["crabllm-provider/rustls", "mcp/rustls", "reqwest/rustls"]
 
 [dev-dependencies]
 tempfile.workspace = true

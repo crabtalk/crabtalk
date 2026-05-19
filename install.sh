@@ -11,8 +11,8 @@
 set -eu
 
 REPO="crabtalk/crabtalk"
-BINARY_NAME="crabtalk"
-CARGO_CRATE="crabtalk"
+BINARY_NAME="crabup"
+CARGO_CRATE="crabup"
 AUTO_YES=0
 TMPDIR_PATH=""
 
@@ -173,18 +173,7 @@ determine_install_dir() {
         INSTALL_DIR="$CRABTALK_INSTALL_DIR"
         return
     fi
-    case "$OS" in
-        windows)
-            INSTALL_DIR="${LOCALAPPDATA:-$HOME/AppData/Local}/crabtalk/bin"
-            ;;
-        *)
-            if [ -w "/usr/local/bin" ]; then
-                INSTALL_DIR="/usr/local/bin"
-            else
-                INSTALL_DIR="${HOME}/.local/bin"
-            fi
-            ;;
-    esac
+    INSTALL_DIR="${HOME}/.crabtalk/bin"
 }
 
 has_prebuilt() {
@@ -279,7 +268,7 @@ ensure_rust() {
         return
     fi
 
-    if ! confirm "cargo is required to build crabtalk on this platform. install rust via rustup?"; then
+    if ! confirm "cargo is required to build crabup on this platform. install rust via rustup?"; then
         err "cannot proceed without cargo"
     fi
 
@@ -508,8 +497,10 @@ post_install() {
     write_crabtalk_env
     setup_shell_profile
 
+    # Install core components via crabup.
     echo ""
-    "$BIN_PATH" --help
+    info "installing crabtalk components..."
+    "$BIN_PATH" install daemon cli
 
     # Offer to start the daemon (includes auth setup on first run).
     echo ""
