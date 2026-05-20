@@ -2,7 +2,7 @@
 //!
 //! Provides skill loading/discovery and slash-skill preprocessing.
 
-use crate::system::hook::AgentScope;
+use crate::AgentScope;
 use parking_lot::RwLock;
 use runtime::Hook;
 use serde::Deserialize;

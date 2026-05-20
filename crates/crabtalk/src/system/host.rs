@@ -1,6 +1,7 @@
 //! SystemEnv — the runtime environment implementation.
 
-use crate::{bridge::ClientBridge, system::hook::Hooks};
+use crate::bridge::ClientBridge;
+use hooks::Hooks;
 use runtime::{Env, Hook};
 use std::sync::Arc;
 use tokio::sync::broadcast;

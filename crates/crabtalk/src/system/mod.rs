@@ -21,12 +21,14 @@ pub use transport::setup_socket;
 
 pub mod builder;
 pub mod event;
-pub mod hook;
 pub mod host;
 mod transport;
 
-/// Shared runtime handle.
-pub type SharedRuntime<P> = Arc<RwLock<Arc<Runtime<SystemCfg<P>>>>>;
+/// Live-reloadable handle to the runtime. The outer `RwLock` lets
+/// `CrabTalk::reload()` swap the inner `Arc<Runtime>` without
+/// invalidating handles held by hooks; the inner `Arc` is so callers
+/// can snapshot and release the lock in one shot.
+pub type RuntimeHandle<P> = Arc<RwLock<Arc<Runtime<SystemCfg<P>>>>>;
 
 /// Config binding for the runtime.
 pub struct SystemCfg<P: Provider + 'static = DefaultProvider> {
@@ -41,9 +43,9 @@ impl<P: Provider + 'static> runtime::Config for SystemCfg<P> {
 
 /// Core crabtalk instance — runtime, hooks, and protocol.
 pub struct CrabTalk<P: Provider + 'static = DefaultProvider> {
-    pub runtime: SharedRuntime<P>,
+    pub runtime: RuntimeHandle<P>,
     /// Root hook owning all sub-hooks and shared state.
-    pub hook: Arc<hook::Hooks>,
+    pub hook: Arc<hooks::Hooks>,
     pub(crate) config_dir: PathBuf,
     pub(crate) started_at: std::time::Instant,
     pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,

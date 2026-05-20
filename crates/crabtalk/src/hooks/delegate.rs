@@ -1,7 +1,7 @@
 //! Delegate tool — as a Hook implementation.
 
 use crate::llm::Provider;
-use crate::system::SharedRuntime;
+use crate::system::RuntimeHandle;
 use runtime::Hook;
 use serde::Deserialize;
 use std::sync::{
@@ -37,11 +37,11 @@ pub struct DelegateTask {
 
 /// Delegate subsystem: dispatch tasks to other agents.
 pub struct DelegateHook<P: Provider + 'static> {
-    runtime: Arc<OnceLock<SharedRuntime<P>>>,
+    runtime: Arc<OnceLock<RuntimeHandle<P>>>,
 }
 
 impl<P: Provider + 'static> DelegateHook<P> {
-    pub fn new(runtime: Arc<OnceLock<SharedRuntime<P>>>) -> Self {
+    pub fn new(runtime: Arc<OnceLock<RuntimeHandle<P>>>) -> Self {
         Self { runtime }
     }
 }
@@ -72,7 +72,7 @@ impl<P: Provider + 'static> Hook for DelegateHook<P> {
 
 async fn dispatch_delegate<P: Provider + 'static>(
     input: Delegate,
-    shared: &SharedRuntime<P>,
+    shared: &RuntimeHandle<P>,
 ) -> Result<String, String> {
     let mut ephemeral_names = Vec::new();
     let mut tasks = Vec::with_capacity(input.tasks.len());
@@ -162,7 +162,7 @@ fn ephemeral_agent_name() -> String {
 }
 
 fn spawn_agent_task<P: Provider + 'static>(
-    shared: SharedRuntime<P>,
+    shared: RuntimeHandle<P>,
     agent: String,
     message: String,
     delegate_sender: String,

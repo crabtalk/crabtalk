@@ -1,0 +1,33 @@
+[package]
+name = "crabtalk-hooks"
+description = "Reusable hook implementations and composition for the Crabtalk runtime"
+documentation = "https://docs.rs/crabtalk-hooks"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+crabllm-core.workspace = true
+mcp = { workspace = true, default-features = false, features = ["hyper"] }
+memory.workspace = true
+runtime.workspace = true
+wcore.workspace = true
+
+anyhow.workspace = true
+parking_lot.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yml.workspace = true
+tokio.workspace = true
+
+[features]
+default = ["native-tls"]
+native-tls = ["mcp/native-tls"]
+rustls = ["mcp/rustls"]
+
+[dev-dependencies]
+tempfile.workspace = true

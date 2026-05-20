@@ -573,8 +573,8 @@ dependencies = [
  "crabllm-core",
  "crabllm-provider",
  "crabtalk-core",
+ "crabtalk-hooks",
  "crabtalk-mcp",
- "crabtalk-memory",
  "crabtalk-runtime",
  "crabtalk-sdk",
  "crabtalk-transport",
@@ -711,6 +711,25 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "crabtalk-hooks"
+version = "0.0.22"
+dependencies = [
+ "anyhow",
+ "crabllm-core",
+ "crabtalk-core",
+ "crabtalk-mcp",
+ "crabtalk-memory",
+ "crabtalk-runtime",
+ "parking_lot",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "serde_yml",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

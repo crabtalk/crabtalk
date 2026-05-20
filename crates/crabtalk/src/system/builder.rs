@@ -5,12 +5,13 @@ use crate::llmp::{ProviderRegistry, RemoteProvider};
 use crate::{
     CrabTalk,
     bridge::ClientBridge,
-    hooks::{Memory, delegate},
+    hooks::delegate,
     storage::FsStorage,
-    system::{SharedRuntime, hook::Hooks},
+    system::RuntimeHandle,
     system::{event, host::SystemEnv},
 };
 use anyhow::Result;
+use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook, SkillHook};
 use mcp::McpHandler;
 use runtime::{Hook, Runtime};
 use std::{
@@ -41,7 +42,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         config_dir: &Path,
         build_provider: BuildProvider<P>,
     ) -> Result<Self> {
-        let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
+        let runtime_once: Arc<OnceLock<RuntimeHandle<P>>> = Arc::new(OnceLock::new());
 
         let hooks = Hooks::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
@@ -53,7 +54,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
             hooks,
         )
         .await?;
-        let shared_runtime: SharedRuntime<P> = Arc::new(RwLock::new(Arc::new(runtime)));
+        let shared_runtime: RuntimeHandle<P> = Arc::new(RwLock::new(Arc::new(runtime)));
         runtime_once
             .set(shared_runtime.clone())
             .unwrap_or_else(|_| panic!("runtime already initialized"));
@@ -108,10 +109,9 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         {
             let events_for_sink = events.clone();
-            let sink: crate::system::hook::EventSink =
-                Arc::new(move |source: &str, payload: &str| {
-                    events_for_sink.lock().publish(source, payload);
-                });
+            let sink: EventSink = Arc::new(move |source: &str, payload: &str| {
+                events_for_sink.lock().publish(source, payload);
+            });
             hooks.set_event_sink(sink);
         }
 
@@ -129,7 +129,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
     pub async fn reload(&self) -> Result<()> {
         let config = wcore::Config::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
-        let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
+        let runtime_once: Arc<OnceLock<RuntimeHandle<P>>> = Arc::new(OnceLock::new());
         runtime_once
             .set(self.runtime.clone())
             .unwrap_or_else(|_| panic!("runtime_once already set"));
@@ -150,10 +150,9 @@ impl<P: Provider + 'static> CrabTalk<P> {
         }
         {
             let events_for_sink = self.events.clone();
-            let sink: crate::system::hook::EventSink =
-                Arc::new(move |source: &str, payload: &str| {
-                    events_for_sink.lock().publish(source, payload);
-                });
+            let sink: EventSink = Arc::new(move |source: &str, payload: &str| {
+                events_for_sink.lock().publish(source, payload);
+            });
             new_hook.set_event_sink(sink);
         }
         *self.runtime.write().await = Arc::new(new_runtime);
@@ -166,7 +165,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         config: &wcore::Config,
         config_dir: &Path,
         build_provider: &BuildProvider<P>,
-        runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
+        runtime_once: Arc<OnceLock<RuntimeHandle<P>>>,
         mut hooks: Hooks,
     ) -> Result<(
         Runtime<crate::system::SystemCfg<P>>,
@@ -234,7 +233,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         env_overlay: BTreeMap<String, String>,
-        runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
+        runtime_once: Arc<OnceLock<RuntimeHandle<P>>>,
     ) -> Result<runtime::SharedMemory> {
         let memory_wrapper = Memory::open(config_dir.join("memory.db"))?;
         let shared_memory = memory_wrapper.shared();
@@ -242,10 +241,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         let scopes = hooks.scopes.clone();
         let skills = storage.list_skills().await.unwrap_or_default();
 
-        hooks.register_hook(
-            "memory",
-            Arc::new(crate::hooks::memory::MemoryHook::new(memory)),
-        );
+        hooks.register_hook("memory", Arc::new(MemoryHook::new(memory)));
 
         hooks.register_hook(
             "sessions",
@@ -254,22 +250,13 @@ impl<P: Provider + 'static> CrabTalk<P> {
             )),
         );
 
-        hooks.register_hook(
-            "skill",
-            Arc::new(crate::hooks::skill::handler::SkillHook::new(
-                skills,
-                scopes.clone(),
-            )),
-        );
+        hooks.register_hook("skill", Arc::new(SkillHook::new(skills, scopes.clone())));
         hooks.register_hook(
             "delegate",
             Arc::new(delegate::DelegateHook::<P>::new(runtime_once)),
         );
 
-        hooks.register_hook(
-            "mcp",
-            Arc::new(crate::hooks::mcp::McpHook::new(mcp_handler, env_overlay)),
-        );
+        hooks.register_hook("mcp", Arc::new(McpHook::new(mcp_handler, env_overlay)));
         Ok(shared_memory)
     }
 

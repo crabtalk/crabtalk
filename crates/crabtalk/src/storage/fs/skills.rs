@@ -40,7 +40,7 @@ pub(super) async fn list_skills(storage: &FsStorage) -> Result<Vec<Skill>> {
                     continue;
                 }
             };
-            match crate::hooks::skill::loader::parse_skill_md(&content) {
+            match hooks::skill::loader::parse_skill_md(&content) {
                 Ok(skill) => {
                     seen.insert(name);
                     skills.push(skill);
@@ -59,7 +59,7 @@ pub(super) async fn load_skill(storage: &FsStorage, name: &str) -> Result<Option
             continue;
         }
         let content = fs::read_to_string(&skill_path).await?;
-        let skill = crate::hooks::skill::loader::parse_skill_md(&content)?;
+        let skill = hooks::skill::loader::parse_skill_md(&content)?;
         return Ok(Some(skill));
     }
     Ok(None)

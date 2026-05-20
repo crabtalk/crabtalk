@@ -1,13 +1,22 @@
-//! Root hook aggregating all sub-hooks with shared state.
+//! Reusable hook implementations and composition for the Crabtalk runtime.
 //!
-//! This is the single Hook the runtime Env sees. It owns all sub-hooks
-//! (os, memory, skill, delegate, ask_user, mcp), the dispatch map, scope
-//! enforcement, agent descriptions, and the event sink.
+//! `Hooks` is the single `Hook` the runtime `Env` sees — it owns the
+//! sub-hooks registered into it, the dispatch map, per-agent scope
+//! enforcement, agent descriptions, and the late-bound event sink.
 
+use crabllm_core::Tool;
 use parking_lot::RwLock;
 use runtime::Hook;
 use std::{collections::BTreeMap, sync::Arc};
 use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
+
+pub mod mcp;
+pub mod memory;
+pub mod skill;
+
+pub use mcp::McpHook;
+pub use memory::{DEFAULT_SOUL, Memory, MemoryHook};
+pub use skill::handler::SkillHook;
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
 #[derive(Default)]
@@ -82,7 +91,7 @@ impl Hooks {
 }
 
 impl Hook for Hooks {
-    fn schema(&self) -> Vec<crate::llm::Tool> {
+    fn schema(&self) -> Vec<Tool> {
         self.hooks.values().flat_map(|h| h.schema()).collect()
     }
 

@@ -13,8 +13,8 @@ keywords.workspace = true
 [dependencies]
 crabllm-core.workspace = true
 crabllm-provider = { workspace = true, features = ["hyper"] }
+hooks = { workspace = true, default-features = false }
 mcp = { workspace = true, default-features = false, features = ["hyper"] }
-memory.workspace = true
 runtime.workspace = true
 sdk.workspace = true
 transport.workspace = true
@@ -43,8 +43,8 @@ ulid.workspace = true
 
 [features]
 default = ["native-tls"]
-native-tls = ["crabllm-provider/native-tls", "mcp/native-tls", "reqwest/native-tls"]
-rustls = ["crabllm-provider/rustls", "mcp/rustls", "reqwest/rustls"]
+native-tls = ["crabllm-provider/native-tls", "hooks/native-tls", "mcp/native-tls", "reqwest/native-tls"]
+rustls = ["crabllm-provider/rustls", "hooks/rustls", "mcp/rustls", "reqwest/rustls"]
 
 [dev-dependencies]
 tempfile.workspace = true

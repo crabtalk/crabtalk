@@ -22,6 +22,7 @@ runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.
 transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.22" }
 wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.22" }
 memory = { path = "crates/memory", package = "crabtalk-memory", version = "0.0.22" }
+hooks = { path = "crates/hooks", package = "crabtalk-hooks", version = "0.0.22", default-features = false }
 mcp = { path = "crates/mcp", package = "crabtalk-mcp", version = "0.0.22", default-features = false }
 command = { path = "crates/command", package = "crabtalk-command", version = "0.0.22" }
 command-codegen = { path = "crates/command-codegen", package = "crabtalk-command-codegen", version = "0.0.22" }
