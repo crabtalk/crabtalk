@@ -202,7 +202,7 @@ async fn send_to_returns_response() {
         .await
         .unwrap();
     let response = runtime
-        .send_to(conversation_id, "hi", "", None)
+        .send_to(conversation_id, "hi", "", None, vec![])
         .await
         .unwrap();
 
@@ -213,7 +213,10 @@ async fn send_to_returns_response() {
 #[tokio::test]
 async fn send_to_nonexistent_conversation_errors() {
     let runtime = runtime(TestProvider::with_chunks(vec![]));
-    let err = runtime.send_to(999, "hi", "", None).await.unwrap_err();
+    let err = runtime
+        .send_to(999, "hi", "", None, vec![])
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("not found"));
 }
 
@@ -231,11 +234,11 @@ async fn send_to_appends_to_history() {
         .await
         .unwrap();
     runtime
-        .send_to(conversation_id, "hello", "", None)
+        .send_to(conversation_id, "hello", "", None, vec![])
         .await
         .unwrap();
     runtime
-        .send_to(conversation_id, "again", "", None)
+        .send_to(conversation_id, "again", "", None, vec![])
         .await
         .unwrap();
 
@@ -257,7 +260,7 @@ async fn stream_to_yields_correct_content() {
         .unwrap();
 
     let mut events = Vec::new();
-    let mut stream = std::pin::pin!(runtime.stream_to(conversation_id, "hi", "", None));
+    let mut stream = std::pin::pin!(runtime.stream_to(conversation_id, "hi", "", None, vec![]));
     while let Some(event) = stream.next().await {
         events.push(event);
     }
@@ -291,7 +294,7 @@ async fn stream_to_nonexistent_conversation_yields_error() {
     let runtime = runtime(TestProvider::with_chunks(vec![]));
 
     let mut events = Vec::new();
-    let mut stream = std::pin::pin!(runtime.stream_to(999, "hi", "", None));
+    let mut stream = std::pin::pin!(runtime.stream_to(999, "hi", "", None, vec![]));
     while let Some(event) = stream.next().await {
         events.push(event);
     }
@@ -320,7 +323,7 @@ async fn send_to_indexes_messages_for_search() {
         .await
         .unwrap();
     runtime
-        .send_to(conversation_id, "why is the deploy stuck", "", None)
+        .send_to(conversation_id, "why is the deploy stuck", "", None, vec![])
         .await
         .unwrap();
 

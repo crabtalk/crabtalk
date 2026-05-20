@@ -110,6 +110,12 @@ impl<P: Provider + 'static> Clone for Agent<P> {
 }
 
 impl<P: Provider + 'static> Agent<P> {
+    /// Append additional tool schemas (e.g. client-provided tools for a
+    /// specific conversation). Call on a cloned agent before running.
+    pub fn extend_tools(&mut self, tools: Vec<Tool>) {
+        self.tools.extend(tools);
+    }
+
     /// Resolve the model name from agent config.
     fn model_name(&self) -> String {
         self.config.model.clone()

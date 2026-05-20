@@ -20,8 +20,15 @@ impl<P: Provider + 'static> CrabTalk<P> {
         let tool_choice = req
             .tool_choice
             .map(|s| wcore::model::ToolChoice::from(s.as_str()));
+        let client_tools = resolve_client_tools(&self.bridge, conversation_id, req.tools);
         let response = rt
-            .send_to(conversation_id, &req.content, sender, tool_choice)
+            .send_to(
+                conversation_id,
+                &req.content,
+                sender,
+                tool_choice,
+                client_tools,
+            )
             .await?;
         Ok(SendResponse {
             agent: req.agent,
@@ -44,6 +51,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         let tool_choice = req
             .tool_choice
             .map(|s| wcore::model::ToolChoice::from(s.as_str()));
+        let req_tools = req.tools;
         async_stream::try_stream! {
             let rt: Arc<_> = runtime.read().await.clone();
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
@@ -55,12 +63,13 @@ impl<P: Provider + 'static> CrabTalk<P> {
             // pending forwarded calls so they don't sit until timeout.
             bridge.register_listener(conversation_id);
             let _listener_guard = ListenerGuard::new(bridge.clone(), conversation_id);
+            let client_tools = resolve_client_tools(&bridge, conversation_id, req_tools);
 
             let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
             yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.clone() })) };
 
             let stream: std::pin::Pin<Box<dyn futures_core::Stream<Item = wcore::AgentEvent> + Send + '_>> = if guest.is_empty() {
-                Box::pin(rt.stream_to(conversation_id, &content, &sender, tool_choice))
+                Box::pin(rt.stream_to(conversation_id, &content, &sender, tool_choice, client_tools))
             } else {
                 Box::pin(rt.guest_stream_to(conversation_id, &content, &sender, &guest))
             };
@@ -96,7 +105,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
                     AgentEvent::ToolCallsStart(calls) => {
                         let forwards: Vec<ToolCallForwardEvent> = calls
                             .iter()
-                            .filter(|c| bridge.is_client_tool(&c.function.name))
+                            .filter(|c| bridge.is_client_tool(conversation_id, &c.function.name))
                             .map(|c| ToolCallForwardEvent {
                                 call_id: c.id.to_string(),
                                 name: c.function.name.to_string(),
@@ -257,5 +266,42 @@ fn usage_to_proto(u: &crabllm_core::Usage) -> TokenUsage {
             .completion_tokens_details
             .as_ref()
             .and_then(|d| d.reasoning_tokens),
+    }
+}
+
+/// Convert proto `ToolDef`s into `crabllm_core::Tool`s and register them
+/// on the bridge for dispatch routing. Returns the effective tool schemas
+/// for this conversation (client-provided if non-empty, else defaults).
+fn resolve_client_tools(
+    bridge: &crate::bridge::ClientBridge,
+    conversation_id: u64,
+    proto_tools: Vec<ToolDef>,
+) -> Vec<crabllm_core::Tool> {
+    if proto_tools.is_empty() {
+        return bridge.effective_tools(conversation_id);
+    }
+    let tools: Vec<crabllm_core::Tool> = proto_tools.into_iter().map(tool_from_proto).collect();
+    bridge.register_tools(conversation_id, tools.clone());
+    tools
+}
+
+fn tool_from_proto(def: ToolDef) -> crabllm_core::Tool {
+    let parameters = if def.parameters_schema.is_empty() {
+        None
+    } else {
+        serde_json::from_str(&def.parameters_schema).ok()
+    };
+    crabllm_core::Tool {
+        kind: crabllm_core::ToolType::Function,
+        function: crabllm_core::FunctionDef {
+            name: def.name,
+            description: if def.description.is_empty() {
+                None
+            } else {
+                Some(def.description)
+            },
+            parameters,
+        },
+        strict: None,
     }
 }

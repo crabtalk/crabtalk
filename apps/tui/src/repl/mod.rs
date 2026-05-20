@@ -457,6 +457,7 @@ fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<
         sender: Some(app.os_user.clone()),
         guest: None,
         tool_choice: None,
+        tools: vec![],
     };
     app.streaming = true;
     app.renderer.start_waiting();

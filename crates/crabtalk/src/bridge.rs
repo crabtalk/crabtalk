@@ -3,13 +3,15 @@
 //!
 //! This is the client-side dispatch layer. System capabilities (memory,
 //! delegate, sessions, skill, mcp) dispatch through daemon-side hooks.
-//! Client tools (bash, read, edit, ask_user) dispatch through this bridge:
-//! the protocol layer emits a `ToolCallForward` event, the client executes
-//! locally, and posts a reply which resolves via [`ClientBridge::try_resolve`].
+//! Client tools dispatch through this bridge: the protocol layer emits a
+//! `ToolCallForward` event, the client executes locally, and posts a reply
+//! which resolves via [`ClientBridge::try_resolve`].
 //!
-//! Pending calls are keyed by `(conversation_id, call_id)`. The map handles
-//! the dispatch/reply race symmetrically: if the reply arrives before the
-//! dispatch parks, it's stashed as `EarlyReply`.
+//! Clients declare their tools at stream/send time via the `tools` field
+//! on `StreamMsg`/`SendMsg`. When the field is empty, built-in defaults
+//! (bash, read, edit, ask_user) are used for backwards compatibility.
+//! Per-conversation tool sets are stored so `dispatch` and `is_client_tool`
+//! route correctly when different clients bring different tools.
 
 use parking_lot::Mutex;
 use std::{
@@ -31,34 +33,69 @@ type PendingKey = (u64, String);
 
 /// Bridge that forwards client-tool dispatches over the active stream.
 pub struct ClientBridge {
-    schemas: Vec<Tool>,
-    names: Vec<String>,
+    defaults: ClientToolSet,
+    conversations: Mutex<HashMap<u64, ClientToolSet>>,
     listeners: Mutex<HashSet<u64>>,
     pending: Mutex<HashMap<PendingKey, PendingState>>,
+}
+
+struct ClientToolSet {
+    schemas: Vec<Tool>,
+    names: HashSet<String>,
+}
+
+impl ClientToolSet {
+    fn new(schemas: Vec<Tool>) -> Self {
+        let names = schemas.iter().map(|t| t.function.name.clone()).collect();
+        Self { schemas, names }
+    }
 }
 
 impl ClientBridge {
     pub fn new() -> Self {
         let mut schemas = sdk::tools::os::schemas();
         schemas.push(sdk::tools::ask_user::schema());
-        let mut names = sdk::tools::os::names();
-        names.push(sdk::tools::ask_user::name());
         Self {
-            schemas,
-            names,
+            defaults: ClientToolSet::new(schemas),
+            conversations: Mutex::new(HashMap::new()),
             listeners: Mutex::new(HashSet::new()),
             pending: Mutex::new(HashMap::new()),
         }
     }
 
-    /// Tool schemas this bridge provides (for merging into ToolRegistry).
-    pub fn schemas(&self) -> Vec<Tool> {
-        self.schemas.clone()
+    /// Default tool schemas used when clients don't declare their own.
+    pub fn default_schemas(&self) -> Vec<Tool> {
+        self.defaults.schemas.clone()
     }
 
-    /// Whether `name` is a client tool this bridge handles.
-    pub fn is_client_tool(&self, name: &str) -> bool {
-        self.names.iter().any(|n| n == name)
+    /// Register client-provided tools for a conversation. These override
+    /// the built-in defaults for dispatch and forwarding within this
+    /// conversation.
+    pub fn register_tools(&self, conversation_id: u64, tools: Vec<Tool>) {
+        self.conversations
+            .lock()
+            .insert(conversation_id, ClientToolSet::new(tools));
+    }
+
+    /// Return the effective tool schemas for a conversation — per-
+    /// conversation if registered, otherwise the built-in defaults.
+    pub fn effective_tools(&self, conversation_id: u64) -> Vec<Tool> {
+        let conversations = self.conversations.lock();
+        conversations
+            .get(&conversation_id)
+            .unwrap_or(&self.defaults)
+            .schemas
+            .clone()
+    }
+
+    /// Whether `name` is a client tool for the given conversation.
+    pub fn is_client_tool(&self, conversation_id: u64, name: &str) -> bool {
+        let conversations = self.conversations.lock();
+        conversations
+            .get(&conversation_id)
+            .unwrap_or(&self.defaults)
+            .names
+            .contains(name)
     }
 
     /// Mark `conversation_id` as having an active stream listener.
@@ -66,10 +103,10 @@ impl ClientBridge {
         self.listeners.lock().insert(conversation_id);
     }
 
-    /// Drop the listener and fail-fast any pending calls for this
-    /// conversation.
+    /// Drop the listener and clean up per-conversation state.
     pub fn unregister_listener(&self, conversation_id: u64) {
         self.listeners.lock().remove(&conversation_id);
+        self.conversations.lock().remove(&conversation_id);
         let mut pending = self.pending.lock();
         let keys: Vec<PendingKey> = pending
             .keys()
@@ -108,15 +145,13 @@ impl ClientBridge {
     }
 
     /// Dispatch a client tool call. Returns `None` if this bridge doesn't
-    /// own the tool.
+    /// own the tool for the given conversation.
     pub fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
-        if !self.is_client_tool(name) {
+        let conv_id = call.conversation_id?;
+        if !self.is_client_tool(conv_id, name) {
             return None;
         }
         Some(Box::pin(async move {
-            let Some(conv_id) = call.conversation_id else {
-                return Err(format!("'{name}' requires a conversation context"));
-            };
             if !self.listeners.lock().contains(&conv_id) {
                 return Err(format!(
                     "no client connected to handle '{name}' for this conversation"

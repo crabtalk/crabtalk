@@ -97,6 +97,12 @@ message SendMsg {
   reserved "cwd";
   optional string guest = 6;
   optional string tool_choice = 7;
+  // Client-provided tool schemas. When non-empty, these are the tools
+  // the client can execute locally. The daemon merges them with system
+  // tool schemas for the LLM request and forwards calls back to the
+  // client. When empty, the daemon uses built-in defaults (bash, read,
+  // edit, ask_user).
+  repeated ToolDef tools = 8;
 }
 
 message StreamMsg {
@@ -107,6 +113,17 @@ message StreamMsg {
   reserved "cwd";
   optional string guest = 6;
   optional string tool_choice = 7;
+  // Client-provided tool schemas — see SendMsg.tools.
+  repeated ToolDef tools = 8;
+}
+
+// A tool the client can execute. The daemon advertises these schemas
+// to the LLM and forwards invocations back to the client.
+message ToolDef {
+  string name = 1;
+  string description = 2;
+  // JSON Schema object describing the tool's parameters.
+  string parameters_schema = 3;
 }
 
 message Ping {}

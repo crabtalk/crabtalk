@@ -95,7 +95,10 @@ impl<P: Provider + 'static> CrabTalk<P> {
                         return;
                     }
                 };
-                if let Err(e) = rt.send_to(conversation_id, &payload, &sender, None).await {
+                if let Err(e) = rt
+                    .send_to(conversation_id, &payload, &sender, None, vec![])
+                    .await
+                {
                     tracing::warn!("event fire: send_to(agent='{target_agent}'): {e}");
                 }
             });
@@ -201,9 +204,6 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         let mut tools = wcore::ToolRegistry::new();
         for schema in Hook::schema(node_hook.as_ref()) {
-            tools.insert(schema);
-        }
-        for schema in bridge.schemas() {
             tools.insert(schema);
         }
         let runtime = Runtime::new(model, env, storage, shared_memory, tools);

@@ -178,7 +178,7 @@ fn spawn_agent_task<P: Provider + 'static>(
         };
 
         let (result_content, error_msg) = match rt
-            .send_to(conversation_id, &message, &delegate_sender, None)
+            .send_to(conversation_id, &message, &delegate_sender, None, vec![])
             .await
         {
             Ok(response) => (response.final_response, None),

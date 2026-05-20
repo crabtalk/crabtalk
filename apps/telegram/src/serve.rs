@@ -214,6 +214,7 @@ async fn tg_stream(
         sender: Some(sender.to_string()),
         guest: None,
         tool_choice: None,
+        tools: vec![],
     };
     let mut event_rx = conn_info.stream(req);
     let mut acc = StreamAccumulator::new();

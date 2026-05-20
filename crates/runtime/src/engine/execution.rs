@@ -55,6 +55,7 @@ impl<C: Config> Runtime<C> {
         content: &str,
         sender: &str,
         tool_choice: Option<ToolChoice>,
+        extra_tools: Vec<crabllm_core::Tool>,
     ) -> Result<AgentResponse> {
         let (agent_name, created_by, conversation_mutex) = self
             .acquire_slot(conversation_id)
@@ -64,10 +65,11 @@ impl<C: Config> Runtime<C> {
         let mut conversation = conversation_mutex.lock().await;
         let pre_run_len = conversation.history.len();
         self.prepare_history(&mut conversation, &agent_name, content, sender);
-        let agent = self
+        let mut agent = self
             .resolve_agent(&agent_name)
             .await
             .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", agent_name))?;
+        agent.extend_tools(extra_tools);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let response = agent
@@ -103,6 +105,7 @@ impl<C: Config> Runtime<C> {
         content: &str,
         sender: &str,
         tool_choice: Option<ToolChoice>,
+        extra_tools: Vec<crabllm_core::Tool>,
     ) -> impl Stream<Item = AgentEvent> + '_ {
         let content = content.to_owned();
         let sender = sender.to_owned();
@@ -119,12 +122,13 @@ impl<C: Config> Runtime<C> {
             let mut conversation = conversation_mutex.lock().await;
             let pre_run_len = conversation.history.len();
             self.prepare_history(&mut conversation, &agent_name, &content, &sender);
-            let Some(agent) = self.resolve_agent(&agent_name).await else {
+            let Some(mut agent) = self.resolve_agent(&agent_name).await else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("agent '{}' not registered", agent_name),
                 ));
                 return;
             };
+            agent.extend_tools(extra_tools);
 
             let (steer_tx, steer_rx) = watch::channel(None::<String>);
             self.steering.write().await.insert(conversation_id, steer_tx);
