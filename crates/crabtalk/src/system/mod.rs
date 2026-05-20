@@ -42,8 +42,8 @@ impl<P: Provider + 'static> runtime::Config for SystemCfg<P> {
 /// Core crabtalk instance — runtime, hooks, and protocol.
 pub struct CrabTalk<P: Provider + 'static = DefaultProvider> {
     pub runtime: SharedRuntime<P>,
-    /// Composite hook owning all sub-hooks and shared state.
-    pub hook: Arc<hook::CompositeHook>,
+    /// Root hook owning all sub-hooks and shared state.
+    pub hook: Arc<hook::Hooks>,
     pub(crate) config_dir: PathBuf,
     pub(crate) started_at: std::time::Instant,
     pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,

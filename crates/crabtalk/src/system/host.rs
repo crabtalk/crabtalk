@@ -1,6 +1,6 @@
 //! SystemEnv — the runtime environment implementation.
 
-use crate::{bridge::ClientBridge, system::hook::CompositeHook};
+use crate::{bridge::ClientBridge, system::hook::Hooks};
 use runtime::{Env, Hook};
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -17,16 +17,16 @@ const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
 pub struct SystemEnv {
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
-    /// Composite hook owning all sub-hooks and shared state.
-    pub(crate) hook: Arc<CompositeHook>,
+    /// Root hook owning all sub-hooks and shared state.
+    pub(crate) hook: Arc<Hooks>,
     /// Client-tool bridge — forwards dispatches to the connected client.
     pub(crate) bridge: Arc<ClientBridge>,
 }
 
 impl Env for SystemEnv {
-    type Hook = CompositeHook;
+    type Hook = Hooks;
 
-    fn hook(&self) -> &CompositeHook {
+    fn hook(&self) -> &Hooks {
         &self.hook
     }
 
