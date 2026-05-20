@@ -13,7 +13,9 @@ use async_stream::stream;
 pub use builder::AgentBuilder;
 pub use config::AgentConfig;
 use crabllm_core::{
-    ChatCompletionRequest, ContentBlock, Provider, Role, Tool, ToolCall, ToolChoice, Usage,
+    AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicSystem, AnthropicTool,
+    ContentBlock, DEFAULT_MAX_TOKENS, Provider, Role, ThinkingConfig, Tool, ToolCall, ToolChoice,
+    Usage,
 };
 use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
 use futures_core::Stream;
@@ -29,16 +31,6 @@ pub mod config;
 pub mod event;
 mod id;
 pub mod tool;
-
-/// A neutral placeholder assistant message returned by `step()` when the
-/// provider yields zero choices. Used only as a step record so callers see
-/// an empty AgentStep instead of a panic; nothing is appended to history.
-fn empty_assistant_message() -> crabllm_core::Message {
-    crabllm_core::Message {
-        role: Role::Assistant,
-        content: Vec::new(),
-    }
-}
 
 fn extract_tool_calls(blocks: &[ContentBlock]) -> Vec<ToolCall> {
     blocks
@@ -123,7 +115,7 @@ impl<P: Provider + 'static> Agent<P> {
         self.config.model.clone()
     }
 
-    /// Build a `ChatCompletionRequest` from config state (system prompt +
+    /// Build an `AnthropicRequest` from config state (system prompt +
     /// history + tool schemas).
     ///
     /// If `tool_choice_override` is provided, it takes precedence over the
@@ -134,47 +126,68 @@ impl<P: Provider + 'static> Agent<P> {
         &self,
         history: &[HistoryEntry],
         tool_choice_override: Option<&ToolChoice>,
-    ) -> ChatCompletionRequest {
+    ) -> AnthropicRequest {
         let model_name = self.model_name();
 
-        let mut messages = Vec::with_capacity(1 + history.len());
-        if !self.config.system_prompt.is_empty() {
-            messages.push(crabllm_core::Message::system(&self.config.system_prompt));
-        }
-        messages.extend(history.iter().map(|e| e.to_wire_message()));
+        let messages: Vec<AnthropicMessage> = history
+            .iter()
+            .map(|e| {
+                let msg = e.to_wire_message();
+                AnthropicMessage {
+                    role: msg.role.as_str().to_string(),
+                    content: AnthropicContent::Blocks(msg.content),
+                }
+            })
+            .collect();
+
+        let system = if self.config.system_prompt.is_empty() {
+            None
+        } else {
+            Some(AnthropicSystem::Text(self.config.system_prompt.clone()))
+        };
 
         let tool_choice = tool_choice_override
             .cloned()
             .unwrap_or_else(|| self.config.tool_choice.clone());
 
-        ChatCompletionRequest {
+        let is_disabled = tool_choice == ToolChoice::Disabled;
+
+        let tools = if is_disabled || self.tools.is_empty() {
+            None
+        } else {
+            Some(tools_to_anthropic(&self.tools))
+        };
+
+        let tool_choice = if is_disabled || self.tools.is_empty() {
+            None
+        } else {
+            Some(tool_choice_to_anthropic(&tool_choice))
+        };
+
+        let max_tokens = DEFAULT_MAX_TOKENS;
+        let thinking = self.config.thinking.then(|| ThinkingConfig {
+            kind: "enabled".to_string(),
+            budget_tokens: Some(max_tokens.saturating_sub(1)),
+        });
+
+        AnthropicRequest {
             model: model_name,
             messages,
+            max_tokens,
+            system,
             temperature: None,
             top_p: None,
-            max_tokens: None,
             stream: None,
-            stop: None,
-            tools: if self.tools.is_empty() {
-                None
-            } else {
-                Some(self.tools.clone())
-            },
-            tool_choice: Some(tool_choice),
-            frequency_penalty: None,
-            presence_penalty: None,
-            seed: None,
-            user: None,
-            reasoning_effort: self.config.thinking.then(|| "high".to_string()),
-            thinking: None,
-            anthropic_max_tokens: None,
-            extra: Default::default(),
+            tools,
+            tool_choice,
+            stop_sequences: None,
+            thinking,
         }
     }
 
     /// Perform a single LLM round: send request, dispatch tools, return step.
     ///
-    /// Composes a [`ChatCompletionRequest`] from config state (system prompt +
+    /// Composes an [`AnthropicRequest`] from config state (system prompt +
     /// history + tool schemas), calls the stored model, dispatches any tool
     /// calls via the [`ToolDispatcher`], and appends results to history.
     pub async fn step(
@@ -182,27 +195,17 @@ impl<P: Provider + 'static> Agent<P> {
         history: &mut Vec<HistoryEntry>,
         conversation_id: Option<u64>,
     ) -> Result<AgentStep> {
-        let request = self.build_request(history, None);
-        let response = self.model.send_ct(request).await?;
-        let tool_calls: Vec<ToolCall> = response
-            .message()
-            .map(|m| extract_tool_calls(&m.content))
-            .unwrap_or_default();
-        let finish_reason = response.finish_reason().cloned();
-        let usage = response.usage.clone().unwrap_or_default();
+        use crate::model::{map_anthropic_usage, map_stop_reason};
 
-        // If the provider returned zero choices, there is no message to record
-        // — match the old `step()` behavior of not appending anything in that
-        // case, instead of bloating history with a synthetic empty assistant
-        // entry on flaky providers.
-        let Some(message) = response.message().cloned() else {
-            return Ok(AgentStep {
-                message: empty_assistant_message(),
-                usage,
-                finish_reason,
-                tool_calls,
-                tool_results: Vec::new(),
-            });
+        let request = self.build_request(history, None);
+        let response = self.model.send(request).await?;
+        let tool_calls: Vec<ToolCall> = extract_tool_calls(&response.content);
+        let finish_reason = map_stop_reason(&response.stop_reason);
+        let usage = map_anthropic_usage(&response.usage);
+
+        let message = crabllm_core::Message {
+            role: Role::Assistant,
+            content: response.content,
         };
 
         history.push(HistoryEntry::from_message(message.clone()));
@@ -338,7 +341,6 @@ impl<P: Provider + 'static> Agent<P> {
 
                 let request = self.build_request(history, tool_choice.as_ref());
 
-                // Stream from the model, yielding text deltas as they arrive.
                 let mut builder = MessageBuilder::new(Role::Assistant);
                 let mut finish_reason = None;
                 let mut last_usage: Option<Usage> = None;
@@ -354,7 +356,7 @@ impl<P: Provider + 'static> Agent<P> {
                 let mut open = OpenSegment::None;
 
                 {
-                    let mut chunk_stream = std::pin::pin!(self.model.stream_ct(request));
+                    let mut chunk_stream = std::pin::pin!(self.model.stream(request));
                     while let Some(result) = chunk_stream.next().await {
                         match result {
                             Ok(chunk) => {
@@ -563,5 +565,29 @@ impl<P: Provider + 'static> Agent<P> {
                 model: model_name,
             });
         }
+    }
+}
+
+fn tools_to_anthropic(tools: &[Tool]) -> Vec<AnthropicTool> {
+    tools
+        .iter()
+        .map(|t| AnthropicTool {
+            name: t.function.name.clone(),
+            description: t.function.description.clone(),
+            input_schema: t
+                .function
+                .parameters
+                .clone()
+                .unwrap_or(serde_json::json!({"type": "object"})),
+        })
+        .collect()
+}
+
+fn tool_choice_to_anthropic(tc: &ToolChoice) -> serde_json::Value {
+    match tc {
+        ToolChoice::Auto => serde_json::json!({"type": "auto"}),
+        ToolChoice::Required => serde_json::json!({"type": "any"}),
+        ToolChoice::Function { name } => serde_json::json!({"type": "tool", "name": name}),
+        ToolChoice::Disabled => serde_json::json!({"type": "none"}),
     }
 }

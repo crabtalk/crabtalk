@@ -6,9 +6,10 @@
 //! single seam between crabtalk and any `crabllm_core::Provider`.
 
 pub use crabllm_core::{
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, CompletionTokensDetails,
-    FinishReason, FunctionCall, FunctionDef, Message, Role, Tool, ToolCall, ToolCallDelta,
-    ToolChoice, ToolType, Usage,
+    AnthropicRequest, AnthropicResponse, AnthropicUsage, ChatCompletionChunk,
+    ChatCompletionRequest, ChatCompletionResponse, CompletionTokensDetails, FinishReason,
+    FunctionCall, FunctionDef, Message, Role, Tool, ToolCall, ToolCallDelta, ToolChoice, ToolType,
+    Usage,
 };
 
 use anyhow::Result;
@@ -366,21 +367,19 @@ impl<P: Provider + 'static> Model<P> {
         Self { inner: provider }
     }
 
-    /// Send a non-streaming chat completion request.
-    pub async fn send_ct(&self, request: ChatCompletionRequest) -> Result<ChatCompletionResponse> {
-        let mut req = request;
-        req.stream = Some(false);
-        let model_label = req.model.clone();
+    /// Send a non-streaming Anthropic messages request.
+    pub async fn send(&self, request: AnthropicRequest) -> Result<AnthropicResponse> {
+        let model_label = request.model.clone();
         self.inner
-            .chat_completion(&req)
+            .anthropic_messages(&request)
             .await
             .map_err(|e| format_provider_error(&model_label, "send", e))
     }
 
-    /// Stream a chat completion response.
-    pub fn stream_ct(
+    /// Stream an Anthropic messages response.
+    pub fn stream(
         &self,
-        request: ChatCompletionRequest,
+        request: AnthropicRequest,
     ) -> impl Stream<Item = Result<ChatCompletionChunk>> + Send + 'static {
         let inner = Arc::clone(&self.inner);
         let mut req = request;
@@ -388,7 +387,7 @@ impl<P: Provider + 'static> Model<P> {
         let model_label = req.model.clone();
         try_stream! {
             let mut stream = inner
-                .chat_completion_stream(&req)
+                .anthropic_messages_stream(&req)
                 .await
                 .map_err(|e| format_provider_error(&model_label, "stream open", e))?;
             while let Some(chunk) = stream.next().await {
@@ -423,6 +422,26 @@ fn format_provider_error(model: &str, op: &str, e: crabllm_core::Error) -> anyho
         }
         other => anyhow::anyhow!("model {op} failed for '{model}': {other}"),
     }
+}
+
+pub fn map_anthropic_usage(u: &AnthropicUsage) -> Usage {
+    Usage {
+        prompt_tokens: u.input_tokens,
+        completion_tokens: u.output_tokens,
+        total_tokens: u.input_tokens + u.output_tokens,
+        completion_tokens_details: None,
+        prompt_cache_hit_tokens: u.cache_read_input_tokens,
+        prompt_cache_miss_tokens: u.cache_creation_input_tokens,
+    }
+}
+
+pub fn map_stop_reason(stop_reason: &Option<String>) -> Option<FinishReason> {
+    stop_reason.as_ref().map(|r| match r.as_str() {
+        "end_turn" => FinishReason::Stop,
+        "max_tokens" => FinishReason::Length,
+        "tool_use" => FinishReason::ToolCalls,
+        other => FinishReason::Custom(other.to_string()),
+    })
 }
 
 fn truncate(s: &str, max: usize) -> String {

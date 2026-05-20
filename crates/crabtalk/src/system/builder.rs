@@ -1,5 +1,7 @@
 //! CrabTalk construction and lifecycle methods.
 
+use crate::llm::Provider;
+use crate::llmp::{ProviderRegistry, RemoteProvider};
 use crate::{
     CrabTalk,
     bridge::ClientBridge,
@@ -9,8 +11,6 @@ use crate::{
     system::{event, host::SystemEnv},
 };
 use anyhow::Result;
-use crate::llm::Provider;
-use crate::llmp::{ProviderRegistry, RemoteProvider};
 use mcp::McpHandler;
 use runtime::{Hook, Runtime};
 use std::{

@@ -531,7 +531,7 @@ dependencies = [
 [[package]]
 name = "crabllm-core"
 version = "0.0.19"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#00c08c338296054ceb0aaedafe8a48f08d0411d7"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#612f3f1f08ac71d126ecbab4926bcc48e5e598ef"
 dependencies = [
  "bytes",
  "futures-core",
@@ -542,7 +542,7 @@ dependencies = [
 [[package]]
 name = "crabllm-provider"
 version = "0.0.19"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#00c08c338296054ceb0aaedafe8a48f08d0411d7"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#612f3f1f08ac71d126ecbab4926bcc48e5e598ef"
 dependencies = [
  "bytes",
  "crabllm-core",

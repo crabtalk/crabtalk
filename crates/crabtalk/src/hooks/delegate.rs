@@ -1,7 +1,7 @@
 //! Delegate tool — as a Hook implementation.
 
-use crate::system::SharedRuntime;
 use crate::llm::Provider;
+use crate::system::SharedRuntime;
 use runtime::Hook;
 use serde::Deserialize;
 use std::sync::{

@@ -11,5 +11,5 @@ pub use crabllm_core as llm;
 pub use crabllm_provider as llmp;
 #[cfg(unix)]
 pub use system::setup_socket;
-pub use system::{bridge_shutdown, setup_tcp, CrabTalk, CrabTalkHandle};
+pub use system::{CrabTalk, CrabTalkHandle, bridge_shutdown, setup_tcp};
 pub use wcore::Config;

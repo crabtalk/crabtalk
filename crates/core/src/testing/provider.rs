@@ -16,9 +16,9 @@
 //! .. }` struct literals across three files.
 
 use crabllm_core::{
-    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice,
-    ChunkChoice, Delta, Error, FinishReason, FunctionCallDelta, Message, Provider, Role, ToolCall,
-    ToolCallDelta, ToolType,
+    AnthropicRequest, AnthropicResponse, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
+    ChatCompletionResponse, Choice, ChunkChoice, Delta, Error, FinishReason, FunctionCallDelta,
+    Message, Provider, Role, ToolCall, ToolCallDelta, ToolType,
 };
 use parking_lot::Mutex;
 use std::{collections::VecDeque, sync::Arc};
@@ -98,6 +98,23 @@ impl Provider for TestProvider {
             )),
         }
     }
+
+    async fn anthropic_messages(
+        &self,
+        request: &AnthropicRequest,
+    ) -> Result<AnthropicResponse, Error> {
+        let chat_req = ChatCompletionRequest::from(request.clone());
+        let resp = self.chat_completion(&chat_req).await?;
+        AnthropicResponse::try_from(resp)
+    }
+
+    async fn anthropic_messages_stream(
+        &self,
+        request: &AnthropicRequest,
+    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+        let chat_req = ChatCompletionRequest::from(request.clone());
+        self.chat_completion_stream(&chat_req).await
+    }
 }
 
 // ── Fixture constructors ──
@@ -115,6 +132,7 @@ pub fn text_response(content: &str) -> ChatCompletionResponse {
             finish_reason: Some(FinishReason::Stop),
             logprobs: None,
         }],
+        usage: Some(Default::default()),
         ..Default::default()
     }
 }
@@ -147,6 +165,7 @@ pub fn tool_response(calls: Vec<ToolCall>) -> ChatCompletionResponse {
             finish_reason: Some(FinishReason::ToolCalls),
             logprobs: None,
         }],
+        usage: Some(Default::default()),
         ..Default::default()
     }
 }

@@ -1,8 +1,8 @@
 //! Transport wiring — UDS/TCP accept loops, protocol dispatch callback, shutdown bridging.
 
 use super::CrabTalk;
-use anyhow::Result;
 use crate::llm::Provider;
+use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
 #[cfg(unix)]
 use std::path::Path;

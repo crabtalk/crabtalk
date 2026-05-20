@@ -1,8 +1,8 @@
 //! Server trait implementation — thin delegates to domain modules.
 
+use crate::llm::Provider;
 use crate::system::CrabTalk;
 use anyhow::Result;
-use crate::llm::Provider;
 use wcore::protocol::api::Server;
 use wcore::protocol::message::*;
 

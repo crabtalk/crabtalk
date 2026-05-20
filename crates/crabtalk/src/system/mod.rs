@@ -1,8 +1,8 @@
 //! CrabTalk — the core struct composing runtime, hooks, and protocol.
 
+use crate::llm::Provider;
 use crate::{bridge::ClientBridge, storage::FsStorage};
 use anyhow::Result;
-use crate::llm::Provider;
 use runtime::Runtime;
 use std::{
     path::{Path, PathBuf},

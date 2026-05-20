@@ -13,9 +13,9 @@
 //! config is a follow-up — see TODO below.
 
 use crate::llm::{
-    AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, ImageRequest,
-    MultipartField, Provider,
+    AnthropicRequest, AnthropicResponse, AudioSpeechRequest, BoxStream, ChatCompletionChunk,
+    ChatCompletionRequest, ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error,
+    ImageRequest, MultipartField, Provider,
 };
 use rand::Rng;
 use std::time::Duration;
@@ -103,6 +103,52 @@ impl<P: Provider> Provider for Retrying<P> {
             self.inner.chat_completion_stream(request).await
         } else {
             match tokio::time::timeout(self.timeout, self.inner.chat_completion_stream(request))
+                .await
+            {
+                Ok(r) => r,
+                Err(_) => Err(Error::Timeout),
+            }
+        }
+    }
+
+    async fn anthropic_messages(
+        &self,
+        request: &AnthropicRequest,
+    ) -> Result<AnthropicResponse, Error> {
+        let mut backoff = INITIAL_BACKOFF;
+        let mut last_err = None;
+        for _ in 0..=self.max_retries {
+            let result = if self.timeout.is_zero() {
+                self.inner.anthropic_messages(request).await
+            } else {
+                match tokio::time::timeout(self.timeout, self.inner.anthropic_messages(request))
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(_) => Err(Error::Timeout),
+                }
+            };
+            match result {
+                Ok(resp) => return Ok(resp),
+                Err(e) if e.is_transient() => {
+                    last_err = Some(e);
+                    tokio::time::sleep(jittered(backoff)).await;
+                    backoff *= 2;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Err(last_err.expect("retry loop exited without producing an error"))
+    }
+
+    async fn anthropic_messages_stream(
+        &self,
+        request: &AnthropicRequest,
+    ) -> Result<BoxStream<'static, Result<ChatCompletionChunk, Error>>, Error> {
+        if self.timeout.is_zero() {
+            self.inner.anthropic_messages_stream(request).await
+        } else {
+            match tokio::time::timeout(self.timeout, self.inner.anthropic_messages_stream(request))
                 .await
             {
                 Ok(r) => r,

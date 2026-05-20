@@ -1,8 +1,8 @@
 //! Sessions hook — `search_sessions`. BM25 over conversation messages
 //! with windowed excerpts. See RFC 0185.
 
-use crate::system::SharedRuntime;
 use crate::llm::Provider;
+use crate::system::SharedRuntime;
 use runtime::Hook;
 use search::SearchSessions;
 use std::sync::{Arc, OnceLock};

@@ -1,7 +1,10 @@
 //! Context compaction — summarize conversation history and replace it.
 
 use crate::model::HistoryEntry;
-use crabllm_core::{ChatCompletionRequest, ContentBlock, Message, Provider, ToolResultContent};
+use crabllm_core::{
+    AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicSystem, ContentBlock,
+    DEFAULT_MAX_TOKENS, Provider, ToolResultContent,
+};
 
 pub(crate) const COMPACT_PROMPT: &str = include_str!("../../prompts/compact.md");
 
@@ -15,15 +18,15 @@ impl<P: Provider + 'static> super::Agent<P> {
         let model_name = self.config.model.clone();
         let prompt = COMPACT_PROMPT.to_owned();
 
-        let mut messages = Vec::with_capacity(2 + history.len());
-        messages.push(Message::system(&prompt));
-        // Include the agent's system prompt as identity context so the
-        // compaction LLM preserves <self>, <identity>, and <profile> info.
+        let mut messages = Vec::with_capacity(1 + history.len());
         if !self.config.system_prompt.is_empty() {
-            messages.push(Message::user(format!(
-                "Agent system prompt (preserve identity/profile info):\n{}",
-                self.config.system_prompt
-            )));
+            messages.push(AnthropicMessage {
+                role: "user".to_string(),
+                content: AnthropicContent::Text(format!(
+                    "Agent system prompt (preserve identity/profile info):\n{}",
+                    self.config.system_prompt
+                )),
+            });
         }
         let max_len = self.config.compact_tool_max_len;
         for entry in history {
@@ -39,30 +42,30 @@ impl<P: Provider + 'static> super::Agent<P> {
                     text.push_str("... [truncated]");
                 }
             }
-            messages.push(msg);
+            messages.push(AnthropicMessage {
+                role: msg.role.as_str().to_string(),
+                content: AnthropicContent::Blocks(msg.content),
+            });
         }
 
-        let request = ChatCompletionRequest {
+        let request = AnthropicRequest {
             model: model_name,
             messages,
+            max_tokens: DEFAULT_MAX_TOKENS,
+            system: Some(AnthropicSystem::Text(prompt)),
             temperature: None,
             top_p: None,
-            max_tokens: None,
             stream: None,
-            stop: None,
             tools: None,
             tool_choice: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            seed: None,
-            user: None,
-            reasoning_effort: None,
+            stop_sequences: None,
             thinking: None,
-            anthropic_max_tokens: None,
-            extra: Default::default(),
         };
-        match self.model.send_ct(request).await {
-            Ok(response) => response.content().map(|s| s.to_owned()),
+        match self.model.send(request).await {
+            Ok(response) => response.content.iter().find_map(|b| match b {
+                ContentBlock::Text { text, .. } if !text.is_empty() => Some(text.to_owned()),
+                _ => None,
+            }),
             Err(e) => {
                 tracing::warn!("compaction LLM call failed: {e}");
                 None
