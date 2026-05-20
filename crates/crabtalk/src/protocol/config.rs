@@ -2,7 +2,7 @@
 
 use crate::system::CrabTalk;
 use anyhow::{Context, Result};
-use crabllm_core::Provider;
+use crate::llm::Provider;
 use mcp::{McpServerState, ServerStatus};
 use std::collections::BTreeMap;
 use wcore::protocol::message::*;

@@ -44,7 +44,9 @@ fn extract_tool_calls(blocks: &[ContentBlock]) -> Vec<ToolCall> {
     blocks
         .iter()
         .filter_map(|b| match b {
-            ContentBlock::ToolUse { id, name, input } => Some(ToolCall {
+            ContentBlock::ToolUse {
+                id, name, input, ..
+            } => Some(ToolCall {
                 index: None,
                 id: id.clone(),
                 kind: crabllm_core::ToolType::Function,

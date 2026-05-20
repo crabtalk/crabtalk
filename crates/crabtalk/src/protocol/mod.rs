@@ -2,7 +2,7 @@
 
 use crate::system::CrabTalk;
 use anyhow::Result;
-use crabllm_core::Provider;
+use crate::llm::Provider;
 use wcore::protocol::api::Server;
 use wcore::protocol::message::*;
 

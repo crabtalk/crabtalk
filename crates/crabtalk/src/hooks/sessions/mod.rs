@@ -2,7 +2,7 @@
 //! with windowed excerpts. See RFC 0185.
 
 use crate::system::SharedRuntime;
-use crabllm_core::Provider;
+use crate::llm::Provider;
 use runtime::Hook;
 use search::SearchSessions;
 use std::sync::{Arc, OnceLock};

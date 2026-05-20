@@ -12,7 +12,7 @@
 //! a single set of defaults to every dispatch. Restoring per-provider
 //! config is a follow-up — see TODO below.
 
-use crabllm_core::{
+use crate::llm::{
     AudioSpeechRequest, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
     ChatCompletionResponse, EmbeddingRequest, EmbeddingResponse, Error, ImageRequest,
     MultipartField, Provider,

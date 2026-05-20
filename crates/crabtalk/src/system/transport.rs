@@ -2,7 +2,7 @@
 
 use super::CrabTalk;
 use anyhow::Result;
-use crabllm_core::Provider;
+use crate::llm::Provider;
 use futures_util::{StreamExt, pin_mut};
 #[cfg(unix)]
 use std::path::Path;

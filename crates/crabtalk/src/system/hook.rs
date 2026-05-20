@@ -82,7 +82,7 @@ impl CompositeHook {
 }
 
 impl Hook for CompositeHook {
-    fn schema(&self) -> Vec<crabllm_core::Tool> {
+    fn schema(&self) -> Vec<crate::llm::Tool> {
         self.hooks.values().flat_map(|h| h.schema()).collect()
     }
 

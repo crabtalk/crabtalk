@@ -2,7 +2,7 @@
 
 use crate::{bridge::ClientBridge, storage::FsStorage};
 use anyhow::Result;
-use crabllm_core::Provider;
+use crate::llm::Provider;
 use runtime::Runtime;
 use std::{
     path::{Path, PathBuf},

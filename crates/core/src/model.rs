@@ -83,7 +83,10 @@ impl HistoryEntry {
         }
         let text: String = content.into();
         if !text.is_empty() || tool_calls.is_none_or(|tcs| tcs.is_empty()) {
-            blocks.push(ContentBlock::Text { text });
+            blocks.push(ContentBlock::Text {
+                text,
+                cache_control: None,
+            });
         }
         if let Some(tcs) = tool_calls {
             for tc in tcs {
@@ -93,6 +96,7 @@ impl HistoryEntry {
                     id: tc.id.clone(),
                     name: tc.function.name.clone(),
                     input,
+                    cache_control: None,
                 });
             }
         }
@@ -148,7 +152,10 @@ impl HistoryEntry {
             .content
             .iter()
             .filter_map(|b| {
-                if let crabllm_core::ContentBlock::ToolUse { id, name, input } = b {
+                if let crabllm_core::ContentBlock::ToolUse {
+                    id, name, input, ..
+                } = b
+                {
                     Some(ToolCall {
                         index: None,
                         id: id.clone(),
@@ -186,7 +193,7 @@ impl HistoryEntry {
         }
         let mut blocks = self.message.content.clone();
         for block in &mut blocks {
-            if let crabllm_core::ContentBlock::Text { text } = block {
+            if let crabllm_core::ContentBlock::Text { text, .. } = block {
                 *text = format!("<from agent=\"{}\">\n{}\n</from>", self.agent, text);
             }
         }
@@ -312,7 +319,10 @@ impl MessageBuilder {
         let has_tool_calls = !tool_calls.is_empty();
 
         if !self.content.is_empty() || !has_tool_calls {
-            blocks.push(ContentBlock::Text { text: self.content });
+            blocks.push(ContentBlock::Text {
+                text: self.content,
+                cache_control: None,
+            });
         }
 
         for tc in tool_calls {
@@ -322,6 +332,7 @@ impl MessageBuilder {
                 id: tc.id,
                 name: tc.function.name,
                 input,
+                cache_control: None,
             });
         }
 

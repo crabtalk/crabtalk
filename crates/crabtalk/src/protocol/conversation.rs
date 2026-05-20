@@ -3,7 +3,7 @@
 
 use crate::system::CrabTalk;
 use anyhow::Result;
-use crabllm_core::Provider;
+use crate::llm::Provider;
 use futures_util::{StreamExt, pin_mut};
 use std::sync::Arc;
 use wcore::AgentEvent;
@@ -255,7 +255,7 @@ pub(super) fn sum_usage(steps: &[wcore::AgentStep]) -> TokenUsage {
     }
 }
 
-fn usage_to_proto(u: &crabllm_core::Usage) -> TokenUsage {
+fn usage_to_proto(u: &crate::llm::Usage) -> TokenUsage {
     TokenUsage {
         prompt_tokens: u.prompt_tokens,
         completion_tokens: u.completion_tokens,
@@ -269,31 +269,28 @@ fn usage_to_proto(u: &crabllm_core::Usage) -> TokenUsage {
     }
 }
 
-/// Convert proto `ToolDef`s into `crabllm_core::Tool`s and register them
-/// on the bridge for dispatch routing. Returns the effective tool schemas
-/// for this conversation (client-provided if non-empty, else defaults).
 fn resolve_client_tools(
     bridge: &crate::bridge::ClientBridge,
     conversation_id: u64,
     proto_tools: Vec<ToolDef>,
-) -> Vec<crabllm_core::Tool> {
+) -> Vec<crate::llm::Tool> {
     if proto_tools.is_empty() {
         return bridge.effective_tools(conversation_id);
     }
-    let tools: Vec<crabllm_core::Tool> = proto_tools.into_iter().map(tool_from_proto).collect();
+    let tools: Vec<crate::llm::Tool> = proto_tools.into_iter().map(tool_from_proto).collect();
     bridge.register_tools(conversation_id, tools.clone());
     tools
 }
 
-fn tool_from_proto(def: ToolDef) -> crabllm_core::Tool {
+fn tool_from_proto(def: ToolDef) -> crate::llm::Tool {
     let parameters = if def.parameters_schema.is_empty() {
         None
     } else {
         serde_json::from_str(&def.parameters_schema).ok()
     };
-    crabllm_core::Tool {
-        kind: crabllm_core::ToolType::Function,
-        function: crabllm_core::FunctionDef {
+    crate::llm::Tool {
+        kind: crate::llm::ToolType::Function,
+        function: crate::llm::FunctionDef {
             name: def.name,
             description: if def.description.is_empty() {
                 None

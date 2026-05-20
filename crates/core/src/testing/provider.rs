@@ -133,6 +133,7 @@ pub fn tool_response(calls: Vec<ToolCall>) -> ChatCompletionResponse {
                 id: tc.id,
                 name: tc.function.name,
                 input,
+                cache_control: None,
             }
         })
         .collect();
