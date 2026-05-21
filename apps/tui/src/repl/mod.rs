@@ -84,7 +84,7 @@ impl ChatRepl {
             .map(|s| s.name)
             .collect();
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let os_tools = Arc::new(sdk::tools::os::OsHook::new(cwd));
+        let os_tools = Arc::new(hooks::OsHook::new(cwd));
         let history = std::mem::take(&mut self.history);
         let mut app = App {
             renderer: MarkdownRenderer::new(),
@@ -190,7 +190,7 @@ struct App {
     /// Local OS tools dispatcher — answers forwarded tool calls from the
     /// daemon (bash, read, edit). Shared across stream turns so the
     /// "must read before edit" invariant persists.
-    os_tools: Arc<sdk::tools::os::OsHook>,
+    os_tools: Arc<hooks::OsHook>,
 }
 
 // ── Event loop ───────────────────────────────────────────────────
@@ -446,7 +446,7 @@ fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<
     ));
     if let Some(instr) = std::env::current_dir()
         .ok()
-        .and_then(|cwd| sdk::tools::os::discover_instructions(&cwd))
+        .and_then(|cwd| hooks::os::discover_instructions(&cwd))
     {
         prefix.push_str(&format!("<instructions>\n{instr}\n</instructions>\n\n"));
     }

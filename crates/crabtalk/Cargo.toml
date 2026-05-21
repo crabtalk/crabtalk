@@ -13,7 +13,7 @@ keywords.workspace = true
 [dependencies]
 crabllm-core.workspace = true
 crabllm-provider = { workspace = true, features = ["hyper"] }
-hooks = { workspace = true, default-features = false }
+hooks = { workspace = true, default-features = false, features = ["memory", "mcp", "os", "skill"] }
 mcp = { workspace = true, default-features = false, features = ["hyper"] }
 runtime.workspace = true
 sdk.workspace = true

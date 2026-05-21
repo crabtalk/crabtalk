@@ -1,7 +1,8 @@
 //! Tests for read, edit, and bash tool handlers via OsHook.
+#![cfg(feature = "os")]
 
+use crabtalk_hooks::OsHook;
 use runtime::Hook;
-use sdk::tools::os::OsHook;
 use std::path::PathBuf;
 use wcore::ToolDispatch;
 

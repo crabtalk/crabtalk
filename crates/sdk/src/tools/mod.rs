@@ -1,8 +1,8 @@
-//! Built-in tool implementations reusable across crabtalk hosts.
+//! Schema and types for the `ask_user` client tool.
 //!
-//! OS tools (bash, read, edit) and ask_user are client-side tools:
-//! the daemon forwards calls via `ToolCallForward`, the client
-//! dispatches locally and replies via `ReplyToTool`.
+//! The daemon advertises this tool and forwards calls via
+//! `ToolCallForward`; the client renders the question and replies
+//! via `ReplyToTool`. OS tools (bash, read, edit) live in
+//! `crabtalk-hooks::os`.
 
 pub mod ask_user;
-pub mod os;

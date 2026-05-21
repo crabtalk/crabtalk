@@ -53,7 +53,7 @@ impl ClientToolSet {
 
 impl ClientBridge {
     pub fn new() -> Self {
-        let mut schemas = sdk::tools::os::schemas();
+        let mut schemas = hooks::os::schemas();
         schemas.push(sdk::tools::ask_user::schema());
         Self {
             defaults: ClientToolSet::new(schemas),

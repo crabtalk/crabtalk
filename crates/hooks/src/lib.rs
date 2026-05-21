@@ -10,12 +10,22 @@ use runtime::Hook;
 use std::{collections::BTreeMap, sync::Arc};
 use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 
+#[cfg(feature = "mcp")]
 pub mod mcp;
+#[cfg(feature = "memory")]
 pub mod memory;
+#[cfg(feature = "os")]
+pub mod os;
+#[cfg(feature = "skill")]
 pub mod skill;
 
+#[cfg(feature = "mcp")]
 pub use mcp::McpHook;
+#[cfg(feature = "memory")]
 pub use memory::{DEFAULT_SOUL, Memory, MemoryHook};
+#[cfg(feature = "os")]
+pub use os::OsHook;
+#[cfg(feature = "skill")]
 pub use skill::handler::SkillHook;
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.

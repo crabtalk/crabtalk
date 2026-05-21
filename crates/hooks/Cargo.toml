@@ -11,23 +11,29 @@ keywords.workspace = true
 
 [dependencies]
 crabllm-core.workspace = true
-mcp = { workspace = true, default-features = false, features = ["hyper"] }
-memory.workspace = true
 runtime.workspace = true
 wcore.workspace = true
 
-anyhow.workspace = true
 parking_lot.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yml.workspace = true
-tokio.workspace = true
+
+# Feature-gated
+anyhow = { workspace = true, optional = true }
+mcp = { workspace = true, default-features = false, features = ["hyper"], optional = true }
+memory = { workspace = true, optional = true }
+serde_yml = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 
 [features]
-default = ["native-tls"]
-native-tls = ["mcp/native-tls"]
-rustls = ["mcp/rustls"]
+default = ["memory", "mcp", "os", "skill", "native-tls"]
+memory = ["dep:memory", "dep:anyhow"]
+mcp = ["dep:mcp", "dep:tokio"]
+os = ["dep:tokio"]
+skill = ["dep:anyhow", "dep:serde_yml"]
+native-tls = ["mcp?/native-tls"]
+rustls = ["mcp?/rustls"]
 
 [dev-dependencies]
 tempfile.workspace = true
