@@ -530,19 +530,20 @@ dependencies = [
 
 [[package]]
 name = "crabllm-core"
-version = "0.0.19"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#612f3f1f08ac71d126ecbab4926bcc48e5e598ef"
+version = "0.0.20"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#be91e2c8e47b88fb27541d7d1af6375e87d6ce9a"
 dependencies = [
  "bytes",
  "futures-core",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
 name = "crabllm-provider"
-version = "0.0.19"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#612f3f1f08ac71d126ecbab4926bcc48e5e598ef"
+version = "0.0.20"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#be91e2c8e47b88fb27541d7d1af6375e87d6ce9a"
 dependencies = [
  "bytes",
  "crabllm-core",

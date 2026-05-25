@@ -13,9 +13,9 @@ use async_stream::stream;
 pub use builder::AgentBuilder;
 pub use config::AgentConfig;
 use crabllm_core::{
-    AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicSystem, AnthropicTool,
-    ContentBlock, DEFAULT_MAX_TOKENS, Provider, Role, ThinkingConfig, Tool, ToolCall, ToolChoice,
-    Usage,
+    AnthropicContent, AnthropicMessage, AnthropicMessages, AnthropicRequest, AnthropicSystem,
+    AnthropicTool, ContentBlock, DEFAULT_MAX_TOKENS, Provider, Role, ThinkingConfig, Tool,
+    ToolCall, ToolChoice, Usage,
 };
 use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
 use futures_core::Stream;
@@ -129,7 +129,7 @@ impl<P: Provider + 'static> Agent<P> {
     ) -> AnthropicRequest {
         let model_name = self.model_name();
 
-        let messages: Vec<AnthropicMessage> = history
+        let mut messages: Vec<AnthropicMessage> = history
             .iter()
             .map(|e| {
                 let msg = e.to_wire_message();
@@ -139,6 +139,8 @@ impl<P: Provider + 'static> Agent<P> {
                 }
             })
             .collect();
+        messages.coalesce_tool_results();
+        messages.ensure_tool_pairing();
 
         let system = if self.config.system_prompt.is_empty() {
             None
@@ -208,7 +210,7 @@ impl<P: Provider + 'static> Agent<P> {
             content: response.content,
         };
 
-        history.push(HistoryEntry::from_message(message.clone()));
+        let assistant_entry = HistoryEntry::from_message(message.clone());
 
         let mut tool_results = Vec::new();
         if !tool_calls.is_empty() {
@@ -223,12 +225,19 @@ impl<P: Provider + 'static> Agent<P> {
                 )
             }))
             .await;
+            // Commit assistant + tool_results atomically (no `await` between
+            // pushes). If this future is cancelled before reaching this block,
+            // neither lands in history — the tool_use/tool_result invariant
+            // Anthropic requires can never be broken by a partial step.
+            history.push(assistant_entry);
             for (tc, result) in tool_calls.iter().zip(outputs) {
                 let entry =
                     HistoryEntry::tool(tool_output_text(&result), tc.id.clone(), &tc.function.name);
                 history.push(entry.clone());
                 tool_results.push(entry);
             }
+        } else {
+            history.push(assistant_entry);
         }
 
         Ok(AgentStep {
@@ -454,7 +463,7 @@ impl<P: Provider + 'static> Agent<P> {
                     return;
                 }
 
-                history.push(HistoryEntry::from_message(message.clone()));
+                let assistant_entry = HistoryEntry::from_message(message.clone());
 
                 // Dispatch tool calls concurrently.
                 //
@@ -465,6 +474,10 @@ impl<P: Provider + 'static> Agent<P> {
                 // entries append in call order — providers pair results to
                 // calls by position in some encodings, so this ordering is
                 // load-bearing.
+                //
+                // The assistant message is only committed AFTER the dispatch
+                // loop drains, so a cancellation during dispatch leaves
+                // history untouched — no orphan tool_use without tool_result.
                 let mut tool_results = Vec::new();
                 if has_tool_calls {
                     let sender = last_sender(history);
@@ -507,6 +520,9 @@ impl<P: Provider + 'static> Agent<P> {
                         buffered[idx] = Some(output);
                     }
 
+                    // Atomic commit: push assistant + tool_results with no
+                    // `await` between. See comment above the dispatch block.
+                    history.push(assistant_entry);
                     for (tc, out) in tool_calls.iter().zip(buffered.into_iter()) {
                         let out = out.expect("FuturesUnordered drained every slot");
                         let entry = HistoryEntry::tool(
@@ -519,6 +535,8 @@ impl<P: Provider + 'static> Agent<P> {
                     }
 
                     yield AgentEvent::ToolCallsComplete;
+                } else {
+                    history.push(assistant_entry);
                 }
 
                 // Surface real token counts after each LLM call so
