@@ -22,7 +22,7 @@ use std::{
 use tokio::sync::{RwLock, broadcast};
 use wcore::{LlmConfig, ResolvedDirs, model::Model, resolve_dirs, storage::Storage};
 
-pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
+pub type DefaultProvider = crate::llm::Retrying<ProviderRegistry<RemoteProvider>>;
 
 /// Build the LLM `Model<P>` given the config and the list of models
 /// advertised by the endpoint (fetched from `/v1/models` at startup).
@@ -318,7 +318,7 @@ fn build_providers(config: &wcore::Config, models: &[String]) -> Result<Model<De
         &std::collections::HashMap::new(),
         |r| r,
     )?;
-    let retrying = crate::provider::Retrying::new(registry);
+    let retrying = crate::llm::Retrying::new(registry);
 
     tracing::info!(
         "llm endpoint registered — {} models from {}",

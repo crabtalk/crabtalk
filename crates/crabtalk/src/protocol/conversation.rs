@@ -220,52 +220,35 @@ pub(super) fn sum_usage(steps: &[wcore::AgentStep]) -> TokenUsage {
     let mut cache_hit = 0u32;
     let mut cache_miss = 0u32;
     let mut reasoning = 0u32;
-    let mut has_cache_hit = false;
-    let mut has_cache_miss = false;
-    let mut has_reasoning = false;
 
     for step in steps {
         let u = &step.usage;
-        prompt += u.prompt_tokens;
-        completion += u.completion_tokens;
-        total += u.total_tokens;
-        if let Some(v) = u.prompt_cache_hit_tokens {
-            cache_hit += v;
-            has_cache_hit = true;
-        }
-        if let Some(v) = u.prompt_cache_miss_tokens {
-            cache_miss += v;
-            has_cache_miss = true;
-        }
-        if let Some(ref d) = u.completion_tokens_details
-            && let Some(v) = d.reasoning_tokens
-        {
-            reasoning += v;
-            has_reasoning = true;
-        }
+        prompt += u.prompt_tokens();
+        completion += u.completion_tokens();
+        total += u.total_tokens();
+        cache_hit += u.cache_read_tokens;
+        cache_miss += u.cache_write_tokens;
+        reasoning += u.reasoning_tokens;
     }
 
     TokenUsage {
         prompt_tokens: prompt,
         completion_tokens: completion,
         total_tokens: total,
-        cache_hit_tokens: has_cache_hit.then_some(cache_hit),
-        cache_miss_tokens: has_cache_miss.then_some(cache_miss),
-        reasoning_tokens: has_reasoning.then_some(reasoning),
+        cache_hit_tokens: (cache_hit > 0).then_some(cache_hit),
+        cache_miss_tokens: (cache_miss > 0).then_some(cache_miss),
+        reasoning_tokens: (reasoning > 0).then_some(reasoning),
     }
 }
 
 fn usage_to_proto(u: &crate::llm::Usage) -> TokenUsage {
     TokenUsage {
-        prompt_tokens: u.prompt_tokens,
-        completion_tokens: u.completion_tokens,
-        total_tokens: u.total_tokens,
-        cache_hit_tokens: u.prompt_cache_hit_tokens,
-        cache_miss_tokens: u.prompt_cache_miss_tokens,
-        reasoning_tokens: u
-            .completion_tokens_details
-            .as_ref()
-            .and_then(|d| d.reasoning_tokens),
+        prompt_tokens: u.prompt_tokens(),
+        completion_tokens: u.completion_tokens(),
+        total_tokens: u.total_tokens(),
+        cache_hit_tokens: (u.cache_read_tokens > 0).then_some(u.cache_read_tokens),
+        cache_miss_tokens: (u.cache_write_tokens > 0).then_some(u.cache_write_tokens),
+        reasoning_tokens: (u.reasoning_tokens > 0).then_some(u.reasoning_tokens),
     }
 }
 

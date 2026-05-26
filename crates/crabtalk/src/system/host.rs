@@ -186,11 +186,9 @@ fn format_usage(response: &wcore::AgentResponse) -> String {
     let mut cache_hit = 0u32;
     for step in &response.steps {
         let u = &step.usage;
-        prompt += u.prompt_tokens;
-        completion += u.completion_tokens;
-        if let Some(v) = u.prompt_cache_hit_tokens {
-            cache_hit += v;
-        }
+        prompt += u.prompt_tokens();
+        completion += u.completion_tokens();
+        cache_hit += u.cache_read_tokens;
     }
     let model = &response.model;
     if cache_hit > 0 {

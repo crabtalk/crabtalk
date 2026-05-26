@@ -197,13 +197,13 @@ impl<P: Provider + 'static> Agent<P> {
         history: &mut Vec<HistoryEntry>,
         conversation_id: Option<u64>,
     ) -> Result<AgentStep> {
-        use crate::model::{map_anthropic_usage, map_stop_reason};
+        use crate::model::map_stop_reason;
 
         let request = self.build_request(history, None);
         let response = self.model.send(request).await?;
         let tool_calls: Vec<ToolCall> = extract_tool_calls(&response.content);
         let finish_reason = map_stop_reason(&response.stop_reason);
-        let usage = map_anthropic_usage(&response.usage);
+        let usage = Usage::from(&response.usage);
 
         let message = crabllm_core::Message {
             role: Role::Assistant,
@@ -356,53 +356,53 @@ impl<P: Provider + 'static> Agent<P> {
                 let mut stream_error = None;
                 let mut tool_begin_emitted = false;
 
-                // Tracks the currently open text/thinking segment so we can
-                // bracket deltas with explicit Start/End events. Only one
-                // segment is open at a time — type transitions emit the
-                // closing event for the previous segment first.
                 #[derive(PartialEq)]
                 enum OpenSegment { None, Text, Thinking }
                 let mut open = OpenSegment::None;
 
                 {
-                    let mut chunk_stream = std::pin::pin!(self.model.stream(request));
-                    while let Some(result) = chunk_stream.next().await {
+                    use crate::model::map_stop_reason_str;
+                    use crabllm_core::{AnthropicStreamEvent, BlockDelta};
+
+                    let mut event_stream = std::pin::pin!(self.model.stream(request));
+                    while let Some(result) = event_stream.next().await {
                         match result {
-                            Ok(chunk) => {
-                                // Process text portion. Match existing behavior:
-                                // emit TextDelta even when the slice is empty.
-                                if let Some(text) = chunk.content() {
-                                    if open != OpenSegment::Text {
-                                        if open == OpenSegment::Thinking {
-                                            yield AgentEvent::ThinkingEnd;
+                            Ok(ref event) => {
+                                match event {
+                                    AnthropicStreamEvent::ContentBlockDelta { delta, .. } => {
+                                        match delta {
+                                            BlockDelta::Text { text } => {
+                                                if open != OpenSegment::Text {
+                                                    if open == OpenSegment::Thinking {
+                                                        yield AgentEvent::ThinkingEnd;
+                                                    }
+                                                    yield AgentEvent::TextStart;
+                                                    open = OpenSegment::Text;
+                                                }
+                                                yield AgentEvent::TextDelta(text.clone());
+                                            }
+                                            BlockDelta::Thinking { thinking } => {
+                                                if !thinking.is_empty() {
+                                                    if open != OpenSegment::Thinking {
+                                                        if open == OpenSegment::Text {
+                                                            yield AgentEvent::TextEnd;
+                                                        }
+                                                        yield AgentEvent::ThinkingStart;
+                                                        open = OpenSegment::Thinking;
+                                                    }
+                                                    yield AgentEvent::ThinkingDelta(thinking.clone());
+                                                }
+                                            }
+                                            BlockDelta::InputJson { .. } => {}
                                         }
-                                        yield AgentEvent::TextStart;
-                                        open = OpenSegment::Text;
                                     }
-                                    yield AgentEvent::TextDelta(text.to_owned());
-                                }
-                                // Process reasoning portion. Same atomic-flip logic.
-                                if let Some(reason) = chunk.reasoning_content() {
-                                    if open != OpenSegment::Thinking {
-                                        if open == OpenSegment::Text {
-                                            yield AgentEvent::TextEnd;
-                                        }
-                                        yield AgentEvent::ThinkingStart;
-                                        open = OpenSegment::Thinking;
+                                    AnthropicStreamEvent::MessageDelta { delta, usage } => {
+                                        finish_reason = delta.stop_reason.as_deref().map(map_stop_reason_str);
+                                        last_usage = Some(Usage::from(usage));
                                     }
-                                    yield AgentEvent::ThinkingDelta(reason.to_owned());
+                                    _ => {}
                                 }
-                                if let Some(r) = chunk.finish_reason() {
-                                    finish_reason = Some(r.clone());
-                                }
-                                if chunk.usage.is_some() {
-                                    last_usage = chunk.usage.clone();
-                                }
-                                builder.accept(&chunk);
-                                // Emit ToolCallsBegin as soon as tool names appear
-                                // in the builder, so the CLI can show markers while
-                                // args are still streaming. Uses current builder
-                                // state, which may already have partial/full args.
+                                builder.accept(event);
                                 if !tool_begin_emitted {
                                     let calls = builder.peek_tool_calls();
                                     if !calls.is_empty() {
@@ -417,7 +417,6 @@ impl<P: Provider + 'static> Agent<P> {
                             }
                         }
                     }
-                    // Close whatever segment is still open at end of stream.
                     match open {
                         OpenSegment::Text => yield AgentEvent::TextEnd,
                         OpenSegment::Thinking => yield AgentEvent::ThinkingEnd,
@@ -543,7 +542,7 @@ impl<P: Provider + 'static> Agent<P> {
                 // clients can detect context pressure and decide when to
                 // call `compact_conversation`. The daemon does not act on
                 // this — policy is the client's.
-                if usage.total_tokens > 0 {
+                if usage.total_tokens() > 0 {
                     yield AgentEvent::ContextUsage { usage: usage.clone() };
                 }
 

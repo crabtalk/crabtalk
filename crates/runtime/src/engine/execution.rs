@@ -265,19 +265,25 @@ impl<C: Config> Runtime<C> {
             let mut response_text = String::new();
             let mut reasoning = String::new();
             {
+                use crabllm_core::{AnthropicStreamEvent, BlockDelta};
+
                 let mut stream = std::pin::pin!(self.model.stream(request));
                 while let Some(result) = stream.next().await {
                     match result {
-                        Ok(chunk) => {
-                            if let Some(text) = chunk.content() {
-                                response_text.push_str(text);
-                                yield AgentEvent::TextDelta(text.to_string());
-                            }
-                            if let Some(text) = chunk.reasoning_content() {
-                                reasoning.push_str(text);
-                                yield AgentEvent::ThinkingDelta(text.to_string());
+                        Ok(AnthropicStreamEvent::ContentBlockDelta { delta, .. }) => {
+                            match delta {
+                                BlockDelta::Text { text } => {
+                                    response_text.push_str(&text);
+                                    yield AgentEvent::TextDelta(text);
+                                }
+                                BlockDelta::Thinking { thinking } => {
+                                    reasoning.push_str(&thinking);
+                                    yield AgentEvent::ThinkingDelta(thinking);
+                                }
+                                BlockDelta::InputJson { .. } => {}
                             }
                         }
+                        Ok(_) => {}
                         Err(e) => {
                             yield AgentEvent::Done(AgentResponse {
                                 final_response: None,

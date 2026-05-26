@@ -6,10 +6,8 @@
 //! single seam between crabtalk and any `crabllm_core::Provider`.
 
 pub use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicUsage, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, CompletionTokensDetails, FinishReason,
-    FunctionCall, FunctionDef, Message, Role, Tool, ToolCall, ToolCallDelta, ToolChoice, ToolType,
-    Usage,
+    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, FinishReason, FunctionCall,
+    FunctionDef, Message, Role, Tool, ToolCall, ToolChoice, ToolType, Usage,
 };
 
 use anyhow::Result;
@@ -207,99 +205,66 @@ impl HistoryEntry {
 
 // ── MessageBuilder ──────────────────────────────────────────────────
 
-fn empty_tool_call() -> ToolCall {
-    ToolCall {
-        index: None,
-        id: String::new(),
-        kind: ToolType::Function,
-        function: FunctionCall::default(),
-    }
-}
-
 /// Accumulating builder for streaming assistant messages.
 pub struct MessageBuilder {
     role: Role,
     content: String,
     reasoning: String,
-    calls: BTreeMap<u32, ToolCall>,
+    tool_blocks: BTreeMap<u32, (String, String, String)>,
 }
 
 impl MessageBuilder {
-    /// Create a new builder for the given role (typically `Role::Assistant`).
     pub fn new(role: Role) -> Self {
         Self {
             role,
             content: String::new(),
             reasoning: String::new(),
-            calls: BTreeMap::new(),
+            tool_blocks: BTreeMap::new(),
         }
     }
 
-    /// Accept one streaming chunk.
-    ///
-    /// Returns `true` if this chunk contributed visible text content.
-    pub fn accept(&mut self, chunk: &ChatCompletionChunk) -> bool {
-        let Some(choice) = chunk.choices.first() else {
-            return false;
-        };
-        let delta = &choice.delta;
-
-        let mut has_content = false;
-        if let Some(text) = delta.content.as_deref()
-            && !text.is_empty()
-        {
-            self.content.push_str(text);
-            has_content = true;
-        }
-        if let Some(reason) = delta.reasoning_content.as_deref()
-            && !reason.is_empty()
-        {
-            self.reasoning.push_str(reason);
-        }
-        if let Some(calls) = delta.tool_calls.as_deref() {
-            for call in calls {
-                self.merge_tool_call(call);
+    pub fn accept(&mut self, event: &AnthropicStreamEvent) {
+        use crabllm_core::BlockDelta;
+        match event {
+            AnthropicStreamEvent::ContentBlockStart {
+                index,
+                content_block,
+            } => {
+                if let crabllm_core::AnthropicContentBlock::ToolUse { id, name, .. } = content_block
+                {
+                    self.tool_blocks
+                        .insert(*index, (id.clone(), name.clone(), String::new()));
+                }
             }
-        }
-        has_content
-    }
-
-    fn merge_tool_call(&mut self, delta: &ToolCallDelta) {
-        let entry = self
-            .calls
-            .entry(delta.index)
-            .or_insert_with(empty_tool_call);
-        entry.index = Some(delta.index);
-        if let Some(id) = &delta.id
-            && !id.is_empty()
-        {
-            entry.id = id.clone();
-        }
-        if let Some(kind) = delta.kind {
-            entry.kind = kind;
-        }
-        if let Some(function) = &delta.function {
-            if let Some(name) = &function.name
-                && !name.is_empty()
-            {
-                entry.function.name = name.clone();
-            }
-            if let Some(args) = &function.arguments {
-                entry.function.arguments.push_str(args);
-            }
+            AnthropicStreamEvent::ContentBlockDelta { index, delta } => match delta {
+                BlockDelta::Text { text } => self.content.push_str(text),
+                BlockDelta::Thinking { thinking } => self.reasoning.push_str(thinking),
+                BlockDelta::InputJson { partial_json } => {
+                    if let Some((_, _, args)) = self.tool_blocks.get_mut(index) {
+                        args.push_str(partial_json);
+                    }
+                }
+            },
+            _ => {}
         }
     }
 
-    /// Snapshot of tool calls accumulated so far.
     pub fn peek_tool_calls(&self) -> Vec<ToolCall> {
-        self.calls
-            .values()
-            .filter(|c| !c.function.name.is_empty())
-            .cloned()
+        self.tool_blocks
+            .iter()
+            .filter(|(_, (_, name, _))| !name.is_empty())
+            .map(|(idx, (id, name, args))| ToolCall {
+                index: Some(*idx),
+                id: id.clone(),
+                kind: ToolType::Function,
+                function: FunctionCall {
+                    name: name.clone(),
+                    arguments: args.clone(),
+                },
+            })
             .collect()
     }
 
-    /// Finalize the builder into a `crabllm_core::Message`.
     pub fn build(self) -> Message {
         use crabllm_core::ContentBlock;
 
@@ -312,10 +277,10 @@ impl MessageBuilder {
             });
         }
 
-        let tool_calls: Vec<ToolCall> = self
-            .calls
+        let tool_calls: Vec<_> = self
+            .tool_blocks
             .into_values()
-            .filter(|c| !c.id.is_empty() && !c.function.name.is_empty())
+            .filter(|(id, name, _)| !id.is_empty() && !name.is_empty())
             .collect();
         let has_tool_calls = !tool_calls.is_empty();
 
@@ -326,12 +291,12 @@ impl MessageBuilder {
             });
         }
 
-        for tc in tool_calls {
-            let input = crabllm_core::json::from_str(&tc.function.arguments)
+        for (id, name, args) in tool_calls {
+            let input = crabllm_core::json::from_str(&args)
                 .unwrap_or(serde_json::Value::Object(Default::default()));
             blocks.push(ContentBlock::ToolUse {
-                id: tc.id,
-                name: tc.function.name,
+                id,
+                name,
                 input,
                 cache_control: None,
             });
@@ -380,7 +345,7 @@ impl<P: Provider + 'static> Model<P> {
     pub fn stream(
         &self,
         request: AnthropicRequest,
-    ) -> impl Stream<Item = Result<ChatCompletionChunk>> + Send + 'static {
+    ) -> impl Stream<Item = Result<AnthropicStreamEvent>> + Send + 'static {
         let inner = Arc::clone(&self.inner);
         let mut req = request;
         req.stream = Some(true);
@@ -414,7 +379,7 @@ impl<P: Provider + 'static> std::fmt::Debug for Model<P> {
 
 fn format_provider_error(model: &str, op: &str, e: crabllm_core::Error) -> anyhow::Error {
     match e {
-        crabllm_core::Error::Provider { status, body } => {
+        crabllm_core::Error::Provider { status, body, .. } => {
             let msg = serde_json::from_str::<ApiError>(&body)
                 .map(|api_err| api_err.error.message)
                 .unwrap_or_else(|_| truncate(&body, 200));
@@ -424,24 +389,17 @@ fn format_provider_error(model: &str, op: &str, e: crabllm_core::Error) -> anyho
     }
 }
 
-pub fn map_anthropic_usage(u: &AnthropicUsage) -> Usage {
-    Usage {
-        prompt_tokens: u.input_tokens,
-        completion_tokens: u.output_tokens,
-        total_tokens: u.input_tokens + u.output_tokens,
-        completion_tokens_details: None,
-        prompt_cache_hit_tokens: u.cache_read_input_tokens,
-        prompt_cache_miss_tokens: u.cache_creation_input_tokens,
-    }
+pub fn map_stop_reason(stop_reason: &Option<String>) -> Option<FinishReason> {
+    stop_reason.as_deref().map(map_stop_reason_str)
 }
 
-pub fn map_stop_reason(stop_reason: &Option<String>) -> Option<FinishReason> {
-    stop_reason.as_ref().map(|r| match r.as_str() {
+pub fn map_stop_reason_str(r: &str) -> FinishReason {
+    match r {
         "end_turn" => FinishReason::Stop,
         "max_tokens" => FinishReason::Length,
         "tool_use" => FinishReason::ToolCalls,
         other => FinishReason::Custom(other.to_string()),
-    })
+    }
 }
 
 fn truncate(s: &str, max: usize) -> String {
