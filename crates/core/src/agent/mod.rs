@@ -145,7 +145,10 @@ impl<P: Provider + 'static> Agent<P> {
         let system = if self.config.system_prompt.is_empty() {
             None
         } else {
-            Some(AnthropicSystem::Text(self.config.system_prompt.clone()))
+            Some(AnthropicSystem::Blocks(vec![ContentBlock::Text {
+                text: self.config.system_prompt.clone(),
+                cache_control: Some(serde_json::json!({"type": "ephemeral"})),
+            }]))
         };
 
         let tool_choice = tool_choice_override
@@ -586,9 +589,11 @@ impl<P: Provider + 'static> Agent<P> {
 }
 
 fn tools_to_anthropic(tools: &[Tool]) -> Vec<AnthropicTool> {
+    let len = tools.len();
     tools
         .iter()
-        .map(|t| AnthropicTool {
+        .enumerate()
+        .map(|(i, t)| AnthropicTool {
             name: t.function.name.clone(),
             description: t.function.description.clone(),
             input_schema: t
@@ -596,6 +601,11 @@ fn tools_to_anthropic(tools: &[Tool]) -> Vec<AnthropicTool> {
                 .parameters
                 .clone()
                 .unwrap_or(serde_json::json!({"type": "object"})),
+            cache_control: if i == len - 1 {
+                Some(serde_json::json!({"type": "ephemeral"}))
+            } else {
+                None
+            },
         })
         .collect()
 }
