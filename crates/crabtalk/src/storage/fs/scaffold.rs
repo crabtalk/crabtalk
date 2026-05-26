@@ -8,7 +8,7 @@ use tokio::fs;
 use wcore::AgentConfig;
 
 /// Built-in crab agent prompt (from `prompts/crab.md`).
-const CRAB_PROMPT: &str = crate::hooks::memory::DEFAULT_SOUL;
+const CRAB_PROMPT: &str = hooks::DEFAULT_SOUL;
 
 /// Construct the default `crab` system agent with the given model.
 ///

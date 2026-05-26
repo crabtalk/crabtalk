@@ -2,7 +2,7 @@
 //! returns ranked excerpts with bounded context windows.
 
 use super::SessionsHook;
-use crabllm_core::Provider;
+use crate::llm::Provider;
 use runtime::sessions::{SearchOptions, SessionHit, WindowItem};
 use schemars::JsonSchema;
 use serde::Deserialize;

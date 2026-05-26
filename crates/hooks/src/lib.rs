@@ -1,13 +1,32 @@
-//! Composite hook aggregating all sub-hooks with shared state.
+//! Reusable hook implementations and composition for the Crabtalk runtime.
 //!
-//! This is the single Hook the runtime Env sees. It owns all sub-hooks
-//! (os, memory, skill, delegate, ask_user, mcp), the dispatch map, scope
-//! enforcement, agent descriptions, and the event sink.
+//! `Hooks` is the single `Hook` the runtime `Env` sees — it owns the
+//! sub-hooks registered into it, the dispatch map, per-agent scope
+//! enforcement, agent descriptions, and the late-bound event sink.
 
+use crabllm_core::Tool;
 use parking_lot::RwLock;
 use runtime::Hook;
 use std::{collections::BTreeMap, sync::Arc};
 use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
+
+#[cfg(feature = "mcp")]
+pub mod mcp;
+#[cfg(feature = "memory")]
+pub mod memory;
+#[cfg(feature = "os")]
+pub mod os;
+#[cfg(feature = "skill")]
+pub mod skill;
+
+#[cfg(feature = "mcp")]
+pub use mcp::McpHook;
+#[cfg(feature = "memory")]
+pub use memory::{DEFAULT_SOUL, Memory, MemoryHook};
+#[cfg(feature = "os")]
+pub use os::OsHook;
+#[cfg(feature = "skill")]
+pub use skill::handler::SkillHook;
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
 #[derive(Default)]
@@ -19,8 +38,8 @@ pub struct AgentScope {
 /// Late-bindable sink for `agent:{name}:done` event publishes.
 pub type EventSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
-/// Composite hook aggregating all sub-hooks.
-pub struct CompositeHook {
+/// Aggregates all sub-hooks behind a single `Hook` impl.
+pub struct Hooks {
     pub scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
     agent_descriptions: RwLock<BTreeMap<String, String>>,
     hooks: BTreeMap<String, Arc<dyn Hook>>,
@@ -28,7 +47,7 @@ pub struct CompositeHook {
     event_sink: RwLock<Option<EventSink>>,
 }
 
-impl CompositeHook {
+impl Hooks {
     pub fn new(scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>) -> Self {
         Self {
             scopes,
@@ -81,8 +100,8 @@ impl CompositeHook {
     }
 }
 
-impl Hook for CompositeHook {
-    fn schema(&self) -> Vec<crabllm_core::Tool> {
+impl Hook for Hooks {
+    fn schema(&self) -> Vec<Tool> {
         self.hooks.values().flat_map(|h| h.schema()).collect()
     }
 

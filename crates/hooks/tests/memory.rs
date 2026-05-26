@@ -1,6 +1,7 @@
 //! Integration tests for the hook-level memory facade.
+#![cfg(feature = "memory")]
 
-use crabtalk::hooks::Memory;
+use crabtalk_hooks::Memory;
 use tempfile::tempdir;
 
 fn test_memory() -> Memory {

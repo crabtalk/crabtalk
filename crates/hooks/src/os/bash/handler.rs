@@ -1,10 +1,10 @@
 //! Bash tool handler.
 
 use super::Bash;
-use crate::tools::os::OsHook;
+use crate::os::OsHook;
 
 impl OsHook {
-    pub(in crate::tools::os) async fn handle_bash(&self, args: &str) -> Result<String, String> {
+    pub(in crate::os) async fn handle_bash(&self, args: &str) -> Result<String, String> {
         let input: Bash =
             serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 

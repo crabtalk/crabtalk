@@ -1,9 +1,9 @@
 //! Conversation operations: send/stream, kill, and ask/tool reply
 //! routing. Pure-runtime ops live on `Runtime<C>` directly.
 
+use crate::llm::Provider;
 use crate::system::CrabTalk;
 use anyhow::Result;
-use crabllm_core::Provider;
 use futures_util::{StreamExt, pin_mut};
 use std::sync::Arc;
 use wcore::AgentEvent;
@@ -20,8 +20,15 @@ impl<P: Provider + 'static> CrabTalk<P> {
         let tool_choice = req
             .tool_choice
             .map(|s| wcore::model::ToolChoice::from(s.as_str()));
+        let client_tools = resolve_client_tools(&self.bridge, conversation_id, req.tools);
         let response = rt
-            .send_to(conversation_id, &req.content, sender, tool_choice)
+            .send_to(
+                conversation_id,
+                &req.content,
+                sender,
+                tool_choice,
+                client_tools,
+            )
             .await?;
         Ok(SendResponse {
             agent: req.agent,
@@ -36,7 +43,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         req: StreamMsg,
     ) -> impl futures_core::Stream<Item = Result<StreamEvent>> + Send + 'a {
         let runtime = self.runtime.clone();
-        let tool_hook = self.tool_hook.clone();
+        let bridge = self.bridge.clone();
         let agent = req.agent;
         let content = req.content;
         let sender = req.sender.unwrap_or_default();
@@ -44,23 +51,25 @@ impl<P: Provider + 'static> CrabTalk<P> {
         let tool_choice = req
             .tool_choice
             .map(|s| wcore::model::ToolChoice::from(s.as_str()));
+        let req_tools = req.tools;
         async_stream::try_stream! {
             let rt: Arc<_> = runtime.read().await.clone();
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
             let conversation_id = rt.get_or_create_conversation(&agent, created_by.as_str()).await?;
             // Register this conversation as having a stream listener so the
-            // client-tools hook will forward dispatches here. The guard
+            // bridge will forward dispatches here. The guard
             // unregisters on any exit path — stream end, early return on
             // Done, or consumer dropping the stream — and fails any
             // pending forwarded calls so they don't sit until timeout.
-            tool_hook.register_listener(conversation_id);
-            let _listener_guard = ListenerGuard::new(tool_hook.clone(), conversation_id);
+            bridge.register_listener(conversation_id);
+            let _listener_guard = ListenerGuard::new(bridge.clone(), conversation_id);
+            let client_tools = resolve_client_tools(&bridge, conversation_id, req_tools);
 
             let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
             yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.clone() })) };
 
             let stream: std::pin::Pin<Box<dyn futures_core::Stream<Item = wcore::AgentEvent> + Send + '_>> = if guest.is_empty() {
-                Box::pin(rt.stream_to(conversation_id, &content, &sender, tool_choice))
+                Box::pin(rt.stream_to(conversation_id, &content, &sender, tool_choice, client_tools))
             } else {
                 Box::pin(rt.guest_stream_to(conversation_id, &content, &sender, &guest))
             };
@@ -96,7 +105,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
                     AgentEvent::ToolCallsStart(calls) => {
                         let forwards: Vec<ToolCallForwardEvent> = calls
                             .iter()
-                            .filter(|c| tool_hook.is_client_tool(&c.function.name))
+                            .filter(|c| bridge.is_client_tool(conversation_id, &c.function.name))
                             .map(|c| ToolCallForwardEvent {
                                 call_id: c.id.to_string(),
                                 name: c.function.name.to_string(),
@@ -173,9 +182,9 @@ impl<P: Provider + 'static> CrabTalk<P> {
         // No retry needed: `try_resolve` accepts replies that arrive
         // before the agent's dispatch parks (stashed as `EarlyReply`),
         // so the dispatch/reply race is handled symmetrically inside
-        // the hook rather than via sleep-and-pray here.
+        // the bridge rather than via sleep-and-pray here.
         if self
-            .tool_hook
+            .bridge
             .try_resolve(conversation_id, call_id, output, is_error)
         {
             Ok(())
@@ -188,19 +197,19 @@ impl<P: Provider + 'static> CrabTalk<P> {
 /// RAII guard that synchronously unregisters a stream's client-tool
 /// listener and drains pending forwarded calls on drop.
 struct ListenerGuard {
-    hook: Arc<crate::hooks::tool::ToolHook>,
+    bridge: Arc<crate::bridge::ClientBridge>,
     conv_id: u64,
 }
 
 impl ListenerGuard {
-    fn new(hook: Arc<crate::hooks::tool::ToolHook>, conv_id: u64) -> Self {
-        Self { hook, conv_id }
+    fn new(bridge: Arc<crate::bridge::ClientBridge>, conv_id: u64) -> Self {
+        Self { bridge, conv_id }
     }
 }
 
 impl Drop for ListenerGuard {
     fn drop(&mut self) {
-        self.hook.unregister_listener(self.conv_id);
+        self.bridge.unregister_listener(self.conv_id);
     }
 }
 
@@ -211,51 +220,68 @@ pub(super) fn sum_usage(steps: &[wcore::AgentStep]) -> TokenUsage {
     let mut cache_hit = 0u32;
     let mut cache_miss = 0u32;
     let mut reasoning = 0u32;
-    let mut has_cache_hit = false;
-    let mut has_cache_miss = false;
-    let mut has_reasoning = false;
 
     for step in steps {
         let u = &step.usage;
-        prompt += u.prompt_tokens;
-        completion += u.completion_tokens;
-        total += u.total_tokens;
-        if let Some(v) = u.prompt_cache_hit_tokens {
-            cache_hit += v;
-            has_cache_hit = true;
-        }
-        if let Some(v) = u.prompt_cache_miss_tokens {
-            cache_miss += v;
-            has_cache_miss = true;
-        }
-        if let Some(ref d) = u.completion_tokens_details
-            && let Some(v) = d.reasoning_tokens
-        {
-            reasoning += v;
-            has_reasoning = true;
-        }
+        prompt += u.prompt_tokens();
+        completion += u.completion_tokens();
+        total += u.total_tokens();
+        cache_hit += u.cache_read_tokens;
+        cache_miss += u.cache_write_tokens;
+        reasoning += u.reasoning_tokens;
     }
 
     TokenUsage {
         prompt_tokens: prompt,
         completion_tokens: completion,
         total_tokens: total,
-        cache_hit_tokens: has_cache_hit.then_some(cache_hit),
-        cache_miss_tokens: has_cache_miss.then_some(cache_miss),
-        reasoning_tokens: has_reasoning.then_some(reasoning),
+        cache_hit_tokens: (cache_hit > 0).then_some(cache_hit),
+        cache_miss_tokens: (cache_miss > 0).then_some(cache_miss),
+        reasoning_tokens: (reasoning > 0).then_some(reasoning),
     }
 }
 
-fn usage_to_proto(u: &crabllm_core::Usage) -> TokenUsage {
+fn usage_to_proto(u: &crate::llm::Usage) -> TokenUsage {
     TokenUsage {
-        prompt_tokens: u.prompt_tokens,
-        completion_tokens: u.completion_tokens,
-        total_tokens: u.total_tokens,
-        cache_hit_tokens: u.prompt_cache_hit_tokens,
-        cache_miss_tokens: u.prompt_cache_miss_tokens,
-        reasoning_tokens: u
-            .completion_tokens_details
-            .as_ref()
-            .and_then(|d| d.reasoning_tokens),
+        prompt_tokens: u.prompt_tokens(),
+        completion_tokens: u.completion_tokens(),
+        total_tokens: u.total_tokens(),
+        cache_hit_tokens: (u.cache_read_tokens > 0).then_some(u.cache_read_tokens),
+        cache_miss_tokens: (u.cache_write_tokens > 0).then_some(u.cache_write_tokens),
+        reasoning_tokens: (u.reasoning_tokens > 0).then_some(u.reasoning_tokens),
+    }
+}
+
+fn resolve_client_tools(
+    bridge: &crate::bridge::ClientBridge,
+    conversation_id: u64,
+    proto_tools: Vec<ToolDef>,
+) -> Vec<crate::llm::Tool> {
+    if proto_tools.is_empty() {
+        return bridge.effective_tools(conversation_id);
+    }
+    let tools: Vec<crate::llm::Tool> = proto_tools.into_iter().map(tool_from_proto).collect();
+    bridge.register_tools(conversation_id, tools.clone());
+    tools
+}
+
+fn tool_from_proto(def: ToolDef) -> crate::llm::Tool {
+    let parameters = if def.parameters_schema.is_empty() {
+        None
+    } else {
+        serde_json::from_str(&def.parameters_schema).ok()
+    };
+    crate::llm::Tool {
+        kind: crate::llm::ToolType::Function,
+        function: crate::llm::FunctionDef {
+            name: def.name,
+            description: if def.description.is_empty() {
+                None
+            } else {
+                Some(def.description)
+            },
+            parameters,
+        },
+        strict: None,
     }
 }

@@ -1,15 +1,17 @@
 //! CrabTalk construction and lifecycle methods.
 
+use crate::llm::Provider;
+use crate::llmp::{ProviderRegistry, RemoteProvider};
 use crate::{
     CrabTalk,
-    hooks::{Memory, delegate},
+    bridge::ClientBridge,
+    hooks::delegate,
     storage::FsStorage,
-    system::{SharedRuntime, hook::CompositeHook},
+    system::RuntimeHandle,
     system::{event, host::SystemEnv},
 };
 use anyhow::Result;
-use crabllm_core::Provider;
-use crabllm_provider::{ProviderRegistry, RemoteProvider};
+use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook, SkillHook};
 use mcp::McpHandler;
 use runtime::{Hook, Runtime};
 use std::{
@@ -20,7 +22,7 @@ use std::{
 use tokio::sync::{RwLock, broadcast};
 use wcore::{LlmConfig, ResolvedDirs, model::Model, resolve_dirs, storage::Storage};
 
-pub type DefaultProvider = crate::provider::Retrying<ProviderRegistry<RemoteProvider>>;
+pub type DefaultProvider = crate::llm::Retrying<ProviderRegistry<RemoteProvider>>;
 
 /// Build the LLM `Model<P>` given the config and the list of models
 /// advertised by the endpoint (fetched from `/v1/models` at startup).
@@ -40,19 +42,19 @@ impl<P: Provider + 'static> CrabTalk<P> {
         config_dir: &Path,
         build_provider: BuildProvider<P>,
     ) -> Result<Self> {
-        let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
+        let runtime_once: Arc<OnceLock<RuntimeHandle<P>>> = Arc::new(OnceLock::new());
 
-        let node_hook = CompositeHook::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
+        let hooks = Hooks::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
-        let (runtime, mcp, node_hook, tool_hook) = Self::build_all(
+        let (runtime, mcp, hooks, bridge) = Self::build_all(
             config,
             config_dir,
             &build_provider,
             runtime_once.clone(),
-            node_hook,
+            hooks,
         )
         .await?;
-        let shared_runtime: SharedRuntime<P> = Arc::new(RwLock::new(Arc::new(runtime)));
+        let shared_runtime: RuntimeHandle<P> = Arc::new(RwLock::new(Arc::new(runtime)));
         runtime_once
             .set(shared_runtime.clone())
             .unwrap_or_else(|_| panic!("runtime already initialized"));
@@ -94,7 +96,10 @@ impl<P: Provider + 'static> CrabTalk<P> {
                         return;
                     }
                 };
-                if let Err(e) = rt.send_to(conversation_id, &payload, &sender, None).await {
+                if let Err(e) = rt
+                    .send_to(conversation_id, &payload, &sender, None, vec![])
+                    .await
+                {
                     tracing::warn!("event fire: send_to(agent='{target_agent}'): {e}");
                 }
             });
@@ -104,40 +109,39 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         {
             let events_for_sink = events.clone();
-            let sink: crate::system::hook::EventSink =
-                Arc::new(move |source: &str, payload: &str| {
-                    events_for_sink.lock().publish(source, payload);
-                });
-            node_hook.set_event_sink(sink);
+            let sink: EventSink = Arc::new(move |source: &str, payload: &str| {
+                events_for_sink.lock().publish(source, payload);
+            });
+            hooks.set_event_sink(sink);
         }
 
         Ok(Self {
             runtime: shared_runtime,
-            hook: node_hook,
+            hook: hooks,
             config_dir: config_dir.to_path_buf(),
             started_at: std::time::Instant::now(),
             events,
             build_provider,
             mcp,
-            tool_hook,
+            bridge,
         })
     }
 
     pub async fn reload(&self) -> Result<()> {
         let config = wcore::Config::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
-        let runtime_once: Arc<OnceLock<SharedRuntime<P>>> = Arc::new(OnceLock::new());
+        let runtime_once: Arc<OnceLock<RuntimeHandle<P>>> = Arc::new(OnceLock::new());
         runtime_once
             .set(self.runtime.clone())
             .unwrap_or_else(|_| panic!("runtime_once already set"));
 
-        let node_hook = CompositeHook::new(self.hook.scopes.clone());
+        let hooks = Hooks::new(self.hook.scopes.clone());
 
-        let (mut new_runtime, _mcp, new_hook, _) = Self::build_all(
+        let (mut new_runtime, _mcp, new_hook, _bridge) = Self::build_all(
             &config,
             &self.config_dir,
             &self.build_provider,
             runtime_once,
-            node_hook,
+            hooks,
         )
         .await?;
         {
@@ -146,10 +150,9 @@ impl<P: Provider + 'static> CrabTalk<P> {
         }
         {
             let events_for_sink = self.events.clone();
-            let sink: crate::system::hook::EventSink =
-                Arc::new(move |source: &str, payload: &str| {
-                    events_for_sink.lock().publish(source, payload);
-                });
+            let sink: EventSink = Arc::new(move |source: &str, payload: &str| {
+                events_for_sink.lock().publish(source, payload);
+            });
             new_hook.set_event_sink(sink);
         }
         *self.runtime.write().await = Arc::new(new_runtime);
@@ -157,18 +160,18 @@ impl<P: Provider + 'static> CrabTalk<P> {
         Ok(())
     }
 
-    /// Build CompositeHook, SystemEnv, and Runtime in one shot.
+    /// Build Hooks, SystemEnv, and Runtime in one shot.
     async fn build_all(
         config: &wcore::Config,
         config_dir: &Path,
         build_provider: &BuildProvider<P>,
-        runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
-        mut node_hook: CompositeHook,
+        runtime_once: Arc<OnceLock<RuntimeHandle<P>>>,
+        mut hooks: Hooks,
     ) -> Result<(
         Runtime<crate::system::SystemCfg<P>>,
         Arc<McpHandler>,
-        Arc<CompositeHook>,
-        Arc<crate::hooks::tool::ToolHook>,
+        Arc<Hooks>,
+        Arc<ClientBridge>,
     )> {
         let dirs = resolve_dirs(config_dir);
         let storage = Self::build_storage(config_dir, &dirs);
@@ -179,8 +182,9 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         let model = build_provider(config, &models)?;
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::empty());
-        let (tool_hook, shared_memory) = Self::register_tools(
-            &mut node_hook,
+        let bridge = Arc::new(ClientBridge::new());
+        let shared_memory = Self::register_hooks(
+            &mut hooks,
             storage.clone(),
             config_dir,
             mcp_handler.clone(),
@@ -188,23 +192,24 @@ impl<P: Provider + 'static> CrabTalk<P> {
             runtime_once,
         )
         .await?;
-        let node_hook = Arc::new(node_hook);
+        let hooks = Arc::new(hooks);
 
         let (events_tx, _) = broadcast::channel(256);
         let env = Arc::new(SystemEnv {
             events_tx,
-            hook: node_hook.clone(),
+            hook: hooks.clone(),
+            bridge: bridge.clone(),
         });
 
         let mut tools = wcore::ToolRegistry::new();
-        for schema in Hook::schema(node_hook.as_ref()) {
+        for schema in Hook::schema(hooks.as_ref()) {
             tools.insert(schema);
         }
         let runtime = Runtime::new(model, env, storage, shared_memory, tools);
         runtime.set_models(models);
         let mut runtime = runtime;
         Self::register_agents(&mut runtime, &dirs).await?;
-        Ok((runtime, mcp_handler, node_hook, tool_hook))
+        Ok((runtime, mcp_handler, hooks, bridge))
     }
 
     fn build_storage(config_dir: &Path, dirs: &ResolvedDirs) -> Arc<FsStorage> {
@@ -222,52 +227,37 @@ impl<P: Provider + 'static> CrabTalk<P> {
         ))
     }
 
-    async fn register_tools(
-        node_hook: &mut CompositeHook,
+    async fn register_hooks(
+        hooks: &mut Hooks,
         storage: Arc<FsStorage>,
         config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         env_overlay: BTreeMap<String, String>,
-        runtime_once: Arc<OnceLock<SharedRuntime<P>>>,
-    ) -> Result<(Arc<crate::hooks::tool::ToolHook>, runtime::SharedMemory)> {
+        runtime_once: Arc<OnceLock<RuntimeHandle<P>>>,
+    ) -> Result<runtime::SharedMemory> {
         let memory_wrapper = Memory::open(config_dir.join("memory.db"))?;
         let shared_memory = memory_wrapper.shared();
         let memory = Arc::new(memory_wrapper);
-        let scopes = node_hook.scopes.clone();
+        let scopes = hooks.scopes.clone();
         let skills = storage.list_skills().await.unwrap_or_default();
 
-        let tool_hook = Arc::new(crate::hooks::tool::ToolHook::new());
-        node_hook.register_hook("tool", tool_hook.clone());
+        hooks.register_hook("memory", Arc::new(MemoryHook::new(memory)));
 
-        node_hook.register_hook(
-            "memory",
-            Arc::new(crate::hooks::memory::MemoryHook::new(memory)),
-        );
-
-        node_hook.register_hook(
+        hooks.register_hook(
             "sessions",
             Arc::new(crate::hooks::sessions::SessionsHook::<P>::new(
                 runtime_once.clone(),
             )),
         );
 
-        node_hook.register_hook(
-            "skill",
-            Arc::new(crate::hooks::skill::handler::SkillHook::new(
-                skills,
-                scopes.clone(),
-            )),
-        );
-        node_hook.register_hook(
+        hooks.register_hook("skill", Arc::new(SkillHook::new(skills, scopes.clone())));
+        hooks.register_hook(
             "delegate",
             Arc::new(delegate::DelegateHook::<P>::new(runtime_once)),
         );
 
-        node_hook.register_hook(
-            "mcp",
-            Arc::new(crate::hooks::mcp::McpHook::new(mcp_handler, env_overlay)),
-        );
-        Ok((tool_hook, shared_memory))
+        hooks.register_hook("mcp", Arc::new(McpHook::new(mcp_handler, env_overlay)));
+        Ok(shared_memory)
     }
 
     async fn register_agents(
@@ -312,8 +302,8 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
 fn build_providers(config: &wcore::Config, models: &[String]) -> Result<Model<DefaultProvider>> {
     let llm = &config.llm;
-    let provider_cfg = crabllm_core::ProviderConfig {
-        kind: crabllm_core::ProviderKind::Anthropic,
+    let provider_cfg = crate::llm::ProviderConfig {
+        kind: crate::llm::ProviderKind::Anthropic,
         base_url: (!llm.base_url.is_empty()).then(|| llm.base_url.clone()),
         api_key: (!llm.api_key.is_empty()).then(|| llm.api_key.clone()),
         models: models.to_vec(),
@@ -328,7 +318,7 @@ fn build_providers(config: &wcore::Config, models: &[String]) -> Result<Model<De
         &std::collections::HashMap::new(),
         |r| r,
     )?;
-    let retrying = crate::provider::Retrying::new(registry);
+    let retrying = crate::llm::Retrying::new(registry);
 
     tracing::info!(
         "llm endpoint registered — {} models from {}",

@@ -1,8 +1,8 @@
 //! Sessions hook — `search_sessions`. BM25 over conversation messages
 //! with windowed excerpts. See RFC 0185.
 
-use crate::system::SharedRuntime;
-use crabllm_core::Provider;
+use crate::llm::Provider;
+use crate::system::RuntimeHandle;
 use runtime::Hook;
 use search::SearchSessions;
 use std::sync::{Arc, OnceLock};
@@ -13,11 +13,11 @@ mod search;
 const SESSIONS_PROMPT: &str = include_str!("../../../prompts/sessions.md");
 
 pub struct SessionsHook<P: Provider + 'static> {
-    pub(super) runtime: Arc<OnceLock<SharedRuntime<P>>>,
+    pub(super) runtime: Arc<OnceLock<RuntimeHandle<P>>>,
 }
 
 impl<P: Provider + 'static> SessionsHook<P> {
-    pub fn new(runtime: Arc<OnceLock<SharedRuntime<P>>>) -> Self {
+    pub fn new(runtime: Arc<OnceLock<RuntimeHandle<P>>>) -> Self {
         Self { runtime }
     }
 }

@@ -4,7 +4,10 @@ use super::Runtime;
 use crate::{Config, Conversation, Env, Hook};
 use anyhow::Result;
 use async_stream::stream;
-use crabllm_core::{ChatCompletionRequest, Message, ToolChoice};
+use crabllm_core::{
+    AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicSystem, DEFAULT_MAX_TOKENS,
+    ThinkingConfig, ToolChoice,
+};
 use futures_core::Stream;
 use futures_util::StreamExt;
 use tokio::sync::{mpsc, watch};
@@ -55,6 +58,7 @@ impl<C: Config> Runtime<C> {
         content: &str,
         sender: &str,
         tool_choice: Option<ToolChoice>,
+        extra_tools: Vec<crabllm_core::Tool>,
     ) -> Result<AgentResponse> {
         let (agent_name, created_by, conversation_mutex) = self
             .acquire_slot(conversation_id)
@@ -64,10 +68,11 @@ impl<C: Config> Runtime<C> {
         let mut conversation = conversation_mutex.lock().await;
         let pre_run_len = conversation.history.len();
         self.prepare_history(&mut conversation, &agent_name, content, sender);
-        let agent = self
+        let mut agent = self
             .resolve_agent(&agent_name)
             .await
             .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", agent_name))?;
+        agent.extend_tools(extra_tools);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let response = agent
@@ -103,6 +108,7 @@ impl<C: Config> Runtime<C> {
         content: &str,
         sender: &str,
         tool_choice: Option<ToolChoice>,
+        extra_tools: Vec<crabllm_core::Tool>,
     ) -> impl Stream<Item = AgentEvent> + '_ {
         let content = content.to_owned();
         let sender = sender.to_owned();
@@ -119,12 +125,13 @@ impl<C: Config> Runtime<C> {
             let mut conversation = conversation_mutex.lock().await;
             let pre_run_len = conversation.history.len();
             self.prepare_history(&mut conversation, &agent_name, &content, &sender);
-            let Some(agent) = self.resolve_agent(&agent_name).await else {
+            let Some(mut agent) = self.resolve_agent(&agent_name).await else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("agent '{}' not registered", agent_name),
                 ));
                 return;
             };
+            agent.extend_tools(extra_tools);
 
             let (steer_tx, steer_rx) = watch::channel(None::<String>);
             self.steering.write().await.insert(conversation_id, steer_tx);
@@ -217,52 +224,66 @@ impl<C: Config> Runtime<C> {
 
             let model_name = guest_agent.config.model.clone();
 
-            let mut messages = Vec::with_capacity(1 + conversation.history.len());
-            if !guest_agent.config.system_prompt.is_empty() {
-                messages.push(Message::system(&guest_agent.config.system_prompt));
-            }
-            messages.extend(conversation.history.iter().map(|e| e.to_wire_message()));
+            let system = if guest_agent.config.system_prompt.is_empty() {
+                None
+            } else {
+                Some(AnthropicSystem::Text(guest_agent.config.system_prompt.clone()))
+            };
 
-            let request = ChatCompletionRequest {
+            let messages: Vec<AnthropicMessage> = conversation
+                .history
+                .iter()
+                .map(|e| {
+                    let msg = e.to_wire_message();
+                    AnthropicMessage {
+                        role: msg.role.as_str().to_string(),
+                        content: AnthropicContent::Blocks(msg.content),
+                    }
+                })
+                .collect();
+
+            let max_tokens = DEFAULT_MAX_TOKENS;
+            let thinking = guest_agent.config.thinking.then(|| ThinkingConfig {
+                kind: "enabled".to_string(),
+                budget_tokens: Some(max_tokens.saturating_sub(1)),
+            });
+
+            let request = AnthropicRequest {
                 model: model_name.clone(),
                 messages,
+                max_tokens,
+                system,
                 temperature: None,
                 top_p: None,
-                max_tokens: None,
                 stream: None,
-                stop: None,
                 tools: None,
                 tool_choice: None,
-                frequency_penalty: None,
-                presence_penalty: None,
-                seed: None,
-                user: None,
-                reasoning_effort: if guest_agent.config.thinking {
-                    Some("high".to_string())
-                } else {
-                    None
-                },
-                thinking: None,
-                anthropic_max_tokens: None,
-                extra: Default::default(),
+                stop_sequences: None,
+                thinking,
             };
 
             let mut response_text = String::new();
             let mut reasoning = String::new();
             {
-                let mut stream = std::pin::pin!(self.model.stream_ct(request));
+                use crabllm_core::{AnthropicStreamEvent, BlockDelta};
+
+                let mut stream = std::pin::pin!(self.model.stream(request));
                 while let Some(result) = stream.next().await {
                     match result {
-                        Ok(chunk) => {
-                            if let Some(text) = chunk.content() {
-                                response_text.push_str(text);
-                                yield AgentEvent::TextDelta(text.to_string());
-                            }
-                            if let Some(text) = chunk.reasoning_content() {
-                                reasoning.push_str(text);
-                                yield AgentEvent::ThinkingDelta(text.to_string());
+                        Ok(AnthropicStreamEvent::ContentBlockDelta { delta, .. }) => {
+                            match delta {
+                                BlockDelta::Text { text } => {
+                                    response_text.push_str(&text);
+                                    yield AgentEvent::TextDelta(text);
+                                }
+                                BlockDelta::Thinking { thinking } => {
+                                    reasoning.push_str(&thinking);
+                                    yield AgentEvent::ThinkingDelta(thinking);
+                                }
+                                BlockDelta::InputJson { .. } => {}
                             }
                         }
+                        Ok(_) => {}
                         Err(e) => {
                             yield AgentEvent::Done(AgentResponse {
                                 final_response: None,

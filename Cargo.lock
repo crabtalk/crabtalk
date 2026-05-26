@@ -530,24 +530,30 @@ dependencies = [
 
 [[package]]
 name = "crabllm-core"
-version = "0.0.19"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#d14447f5f19401ce97071bbf7656daa083d7bad1"
+version = "0.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4075f810aee9e09c9d475600efd75715086a95349815736cb1bf985801894e6a"
 dependencies = [
  "bytes",
  "futures-core",
+ "rand 0.9.2",
  "serde",
  "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
 name = "crabllm-provider"
-version = "0.0.19"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#d14447f5f19401ce97071bbf7656daa083d7bad1"
+version = "0.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e866a21415194b3a82f38c7a1d5cc04f933f4c0e6de282c0d810273d9948d623"
 dependencies = [
  "bytes",
  "crabllm-core",
  "futures",
  "http",
+ "http-body",
  "http-body-util",
  "hyper",
  "hyper-rustls",
@@ -573,8 +579,8 @@ dependencies = [
  "crabllm-core",
  "crabllm-provider",
  "crabtalk-core",
+ "crabtalk-hooks",
  "crabtalk-mcp",
- "crabtalk-memory",
  "crabtalk-runtime",
  "crabtalk-sdk",
  "crabtalk-transport",
@@ -582,7 +588,6 @@ dependencies = [
  "futures-core",
  "futures-util",
  "parking_lot",
- "rand 0.9.2",
  "reqwest 0.13.2",
  "schemars 1.2.1",
  "serde",
@@ -624,6 +629,7 @@ dependencies = [
  "clap",
  "console 0.15.11",
  "crabtalk-core",
+ "crabtalk-hooks",
  "crabtalk-sdk",
  "crabtalk-transport",
  "crossterm 0.28.1",
@@ -714,6 +720,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabtalk-hooks"
+version = "0.0.22"
+dependencies = [
+ "anyhow",
+ "crabllm-core",
+ "crabtalk-core",
+ "crabtalk-mcp",
+ "crabtalk-memory",
+ "crabtalk-runtime",
+ "parking_lot",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "serde_yml",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "crabtalk-mcp"
 version = "0.0.22"
 dependencies = [
@@ -768,12 +793,10 @@ version = "0.0.22"
 dependencies = [
  "anyhow",
  "crabtalk-core",
- "crabtalk-runtime",
  "crabtalk-transport",
  "dirs",
  "futures-core",
  "futures-util",
- "parking_lot",
  "schemars 1.2.1",
  "serde",
  "serde_json",

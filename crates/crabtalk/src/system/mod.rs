@@ -1,8 +1,8 @@
 //! CrabTalk — the core struct composing runtime, hooks, and protocol.
 
-use crate::{hooks, storage::FsStorage};
+use crate::llm::Provider;
+use crate::{bridge::ClientBridge, storage::FsStorage};
 use anyhow::Result;
-use crabllm_core::Provider;
 use runtime::Runtime;
 use std::{
     path::{Path, PathBuf},
@@ -21,12 +21,14 @@ pub use transport::setup_socket;
 
 pub mod builder;
 pub mod event;
-pub mod hook;
 pub mod host;
 mod transport;
 
-/// Shared runtime handle.
-pub type SharedRuntime<P> = Arc<RwLock<Arc<Runtime<SystemCfg<P>>>>>;
+/// Live-reloadable handle to the runtime. The outer `RwLock` lets
+/// `CrabTalk::reload()` swap the inner `Arc<Runtime>` without
+/// invalidating handles held by hooks; the inner `Arc` is so callers
+/// can snapshot and release the lock in one shot.
+pub type RuntimeHandle<P> = Arc<RwLock<Arc<Runtime<SystemCfg<P>>>>>;
 
 /// Config binding for the runtime.
 pub struct SystemCfg<P: Provider + 'static = DefaultProvider> {
@@ -41,16 +43,16 @@ impl<P: Provider + 'static> runtime::Config for SystemCfg<P> {
 
 /// Core crabtalk instance — runtime, hooks, and protocol.
 pub struct CrabTalk<P: Provider + 'static = DefaultProvider> {
-    pub runtime: SharedRuntime<P>,
-    /// Composite hook owning all sub-hooks and shared state.
-    pub hook: Arc<hook::CompositeHook>,
+    pub runtime: RuntimeHandle<P>,
+    /// Root hook owning all sub-hooks and shared state.
+    pub hook: Arc<hooks::Hooks>,
     pub(crate) config_dir: PathBuf,
     pub(crate) started_at: std::time::Instant,
     pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<mcp::McpHandler>,
-    /// Forwards tool dispatches (OS tools, ask_user) to the connected client.
-    pub(crate) tool_hook: Arc<hooks::tool::ToolHook>,
+    /// Forwards client-tool dispatches to the connected client.
+    pub(crate) bridge: Arc<ClientBridge>,
 }
 
 impl<P: Provider + 'static> Clone for CrabTalk<P> {
@@ -63,7 +65,7 @@ impl<P: Provider + 'static> Clone for CrabTalk<P> {
             events: self.events.clone(),
             build_provider: Arc::clone(&self.build_provider),
             mcp: self.mcp.clone(),
-            tool_hook: self.tool_hook.clone(),
+            bridge: self.bridge.clone(),
         }
     }
 }

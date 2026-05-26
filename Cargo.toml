@@ -22,6 +22,7 @@ runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.
 transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.22" }
 wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.22" }
 memory = { path = "crates/memory", package = "crabtalk-memory", version = "0.0.22" }
+hooks = { path = "crates/hooks", package = "crabtalk-hooks", version = "0.0.22", default-features = false }
 mcp = { path = "crates/mcp", package = "crabtalk-mcp", version = "0.0.22", default-features = false }
 command = { path = "crates/command", package = "crabtalk-command", version = "0.0.22" }
 command-codegen = { path = "crates/command-codegen", package = "crabtalk-command-codegen", version = "0.0.22" }
@@ -29,8 +30,8 @@ search = { path = "apps/search", package = "crabtalk-search", version = "0.0.22"
 crabtalk-cron = { path = "apps/cron", version = "0.0.22" }
 
 # crabllm
-crabllm-core = { git = "https://github.com/crabtalk/crabllm", branch = "dev" }
-crabllm-provider = { git = "https://github.com/crabtalk/crabllm", branch = "dev", default-features = false }
+crabllm-core = "0.0.21"
+crabllm-provider = { version = "0.0.21", default-features = false }
 
 # bench
 criterion = { version = "0.5", features = ["html_reports"] }

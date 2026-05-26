@@ -317,14 +317,13 @@ impl EventLine {
 fn sum_step_usage(steps: &[AgentStep]) -> Usage {
     steps.iter().fold(Usage::default(), |mut acc, step| {
         let u = &step.usage;
-        acc.prompt_tokens += u.prompt_tokens;
-        acc.completion_tokens += u.completion_tokens;
-        acc.total_tokens += u.total_tokens;
-        if let Some(v) = u.prompt_cache_hit_tokens {
-            *acc.prompt_cache_hit_tokens.get_or_insert(0) += v;
-        }
-        if let Some(v) = u.prompt_cache_miss_tokens {
-            *acc.prompt_cache_miss_tokens.get_or_insert(0) += v;
+        acc.input_tokens += u.input_tokens;
+        acc.cache_read_tokens += u.cache_read_tokens;
+        acc.cache_write_tokens += u.cache_write_tokens;
+        acc.output_tokens += u.output_tokens;
+        acc.reasoning_tokens += u.reasoning_tokens;
+        for (k, v) in &u.server_tool_calls {
+            *acc.server_tool_calls.entry(k.clone()).or_insert(0) += v;
         }
         acc
     })

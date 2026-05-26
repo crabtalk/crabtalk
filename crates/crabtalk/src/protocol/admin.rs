@@ -1,9 +1,9 @@
 //! Administrative operations: stats, events.
 
+use crate::llm::Provider;
 use crate::system::CrabTalk;
 use crate::system::event::EventSubscription;
 use anyhow::Result;
-use crabllm_core::Provider;
 use mcp::McpEvent;
 use runtime::Env;
 use wcore::protocol::message::*;

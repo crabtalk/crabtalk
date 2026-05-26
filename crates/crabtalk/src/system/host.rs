@@ -1,11 +1,12 @@
 //! SystemEnv — the runtime environment implementation.
 
-use crate::system::hook::CompositeHook;
-use runtime::Env;
+use crate::bridge::ClientBridge;
+use hooks::Hooks;
+use runtime::{Env, Hook};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use wcore::{
-    AgentEvent,
+    AgentEvent, ToolDispatch,
     protocol::message::{AgentEventKind, AgentEventMsg, ToolCallInfo},
 };
 
@@ -17,14 +18,16 @@ const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
 pub struct SystemEnv {
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
-    /// Composite hook owning all sub-hooks and shared state.
-    pub(crate) hook: Arc<CompositeHook>,
+    /// Root hook owning all sub-hooks and shared state.
+    pub(crate) hook: Arc<Hooks>,
+    /// Client-tool bridge — forwards dispatches to the connected client.
+    pub(crate) bridge: Arc<ClientBridge>,
 }
 
 impl Env for SystemEnv {
-    type Hook = CompositeHook;
+    type Hook = Hooks;
 
-    fn hook(&self) -> &CompositeHook {
+    fn hook(&self) -> &Hooks {
         &self.hook
     }
 
@@ -152,7 +155,25 @@ impl wcore::ToolDispatcher for SystemEnv {
         conversation_id: Option<u64>,
         call_id: &'a str,
     ) -> wcore::ToolFuture<'a> {
-        runtime::env::dispatch_tool(self, name, args, agent, sender, conversation_id, call_id)
+        let call = ToolDispatch {
+            args: args.to_owned(),
+            agent: agent.to_owned(),
+            sender: sender.to_owned(),
+            conversation_id,
+            call_id: call_id.to_owned(),
+        };
+
+        // System tools — daemon-side hooks (memory, delegate, sessions, etc.)
+        if let Some(fut) = self.hook.dispatch(name, call.clone()) {
+            return fut;
+        }
+
+        // Client tools — forwarded to the connected client via the bridge.
+        if let Some(fut) = self.bridge.dispatch(name, call) {
+            return fut;
+        }
+
+        Box::pin(async move { Err(format!("tool not registered: {name}")) })
     }
 }
 
@@ -165,11 +186,9 @@ fn format_usage(response: &wcore::AgentResponse) -> String {
     let mut cache_hit = 0u32;
     for step in &response.steps {
         let u = &step.usage;
-        prompt += u.prompt_tokens;
-        completion += u.completion_tokens;
-        if let Some(v) = u.prompt_cache_hit_tokens {
-            cache_hit += v;
-        }
+        prompt += u.prompt_tokens();
+        completion += u.completion_tokens();
+        cache_hit += u.cache_read_tokens;
     }
     let model = &response.model;
     if cache_hit > 0 {
