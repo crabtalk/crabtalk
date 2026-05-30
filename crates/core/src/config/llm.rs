@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LlmConfig {
-    /// Base URL of the OpenAI-compatible endpoint, e.g.
-    /// `http://localhost:4000/v1` or `https://api.openai.com/v1`.
+    /// Gateway origin, e.g. `http://localhost:5632` or
+    /// `https://api.anthropic.com`. The SDK appends route paths
+    /// (`/v1/messages`); a trailing `/v1` is tolerated and stripped.
     #[serde(default)]
     pub base_url: String,
     /// Bearer token for the endpoint. Supports `${ENV_VAR}` interpolation

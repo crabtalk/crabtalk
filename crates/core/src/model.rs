@@ -334,11 +334,11 @@ impl<P: Provider + 'static> Model<P> {
 
     /// Send a non-streaming Anthropic messages request.
     pub async fn send(&self, request: AnthropicRequest) -> Result<AnthropicResponse> {
-        let model_label = request.model.clone();
-        self.inner
-            .anthropic_messages(&request)
-            .await
-            .map_err(|e| format_provider_error(&model_label, "send", e))
+        let model = request.model.clone();
+        self.inner.anthropic_messages(&request).await.map_err(|e| {
+            tracing::warn!(model = %model, op = "send", error = %e, "provider request failed");
+            provider_error(e)
+        })
     }
 
     /// Stream an Anthropic messages response.
@@ -349,15 +349,20 @@ impl<P: Provider + 'static> Model<P> {
         let inner = Arc::clone(&self.inner);
         let mut req = request;
         req.stream = Some(true);
-        let model_label = req.model.clone();
+        let model = req.model.clone();
         try_stream! {
             let mut stream = inner
                 .anthropic_messages_stream(&req)
                 .await
-                .map_err(|e| format_provider_error(&model_label, "stream open", e))?;
+                .map_err(|e| {
+                    tracing::warn!(model = %model, op = "stream open", error = %e, "provider request failed");
+                    provider_error(e)
+                })?;
             while let Some(chunk) = stream.next().await {
-                yield chunk
-                    .map_err(|e| format_provider_error(&model_label, "stream chunk", e))?;
+                yield chunk.map_err(|e| {
+                    tracing::warn!(model = %model, op = "stream chunk", error = %e, "provider stream failed");
+                    provider_error(e)
+                })?;
             }
         }
     }
@@ -377,15 +382,17 @@ impl<P: Provider + 'static> std::fmt::Debug for Model<P> {
     }
 }
 
-fn format_provider_error(model: &str, op: &str, e: crabllm_core::Error) -> anyhow::Error {
+/// Reduce a provider error to the clean leaf message for the client: unwrap a
+/// `Provider` body to its bare message, propagate every other variant as-is.
+fn provider_error(e: crabllm_core::Error) -> anyhow::Error {
     match e {
-        crabllm_core::Error::Provider { status, body, .. } => {
+        crabllm_core::Error::Provider { body, .. } => {
             let msg = serde_json::from_str::<ApiError>(&body)
                 .map(|api_err| api_err.error.message)
-                .unwrap_or_else(|_| truncate(&body, 200));
-            anyhow::anyhow!("model {op} failed for '{model}' (HTTP {status}): {msg}")
+                .unwrap_or(body);
+            anyhow::anyhow!(msg)
         }
-        other => anyhow::anyhow!("model {op} failed for '{model}': {other}"),
+        other => anyhow::Error::new(other),
     }
 }
 
@@ -399,13 +406,6 @@ pub fn map_stop_reason_str(r: &str) -> FinishReason {
         "max_tokens" => FinishReason::Length,
         "tool_use" => FinishReason::ToolCalls,
         other => FinishReason::Custom(other.to_string()),
-    }
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    match s.char_indices().nth(max) {
-        Some((i, _)) => format!("{}...", &s[..i]),
-        None => s.to_string(),
     }
 }
 
