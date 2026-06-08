@@ -268,6 +268,7 @@ impl<C: Config> Runtime<C> {
                 use crabllm_core::{AnthropicStreamEvent, BlockDelta};
 
                 let mut stream = std::pin::pin!(self.model.stream(request));
+                let mut saw_stop = false;
                 while let Some(result) = stream.next().await {
                     match result {
                         Ok(AnthropicStreamEvent::ContentBlockDelta { delta, .. }) => {
@@ -283,8 +284,18 @@ impl<C: Config> Runtime<C> {
                                 BlockDelta::InputJson { .. } => {}
                             }
                         }
+                        Ok(AnthropicStreamEvent::MessageDelta { delta, .. }) => {
+                            saw_stop |= delta.stop_reason.is_some();
+                        }
+                        Ok(AnthropicStreamEvent::MessageStop) => {
+                            saw_stop = true;
+                        }
                         Ok(_) => {}
                         Err(e) => {
+                            // A connection close after the turn completed isn't a failure.
+                            if saw_stop {
+                                break;
+                            }
                             yield AgentEvent::Done(AgentResponse {
                                 final_response: None,
                                 iterations: 1,
