@@ -212,9 +212,7 @@ async fn tg_stream(
         agent: agent.to_string(),
         content: content.to_string(),
         sender: Some(sender.to_string()),
-        guest: None,
-        tool_choice: None,
-        tools: vec![],
+        ..Default::default()
     };
     let mut event_rx = conn_info.stream(req);
     let mut acc = StreamAccumulator::new();

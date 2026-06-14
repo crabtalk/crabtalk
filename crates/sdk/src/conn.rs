@@ -98,6 +98,29 @@ impl ConnectionInfo {
         rx
     }
 
+    /// Run an anonymous, unpersisted agent turn and return a receiver of
+    /// stream events. No conversation is created and nothing reaches
+    /// session storage; events are also broadcast (tagged `ephemeral`)
+    /// under `correlation_id` so observers can group them. Client
+    /// round-trip tools are unsupported on this path — only the agent's
+    /// own daemon-side tools run.
+    pub fn ephemeral_stream(
+        &self,
+        agent: String,
+        content: String,
+        correlation_id: u64,
+        tool_choice: Option<String>,
+    ) -> mpsc::UnboundedReceiver<Result<stream_event::Event>> {
+        self.stream(StreamMsg {
+            agent,
+            content,
+            ephemeral: true,
+            correlation_id: Some(correlation_id),
+            tool_choice,
+            ..Default::default()
+        })
+    }
+
     /// Open a fresh connection, deliver a client-side tool result for the
     /// pending forwarded call keyed by `(conversation_id, call_id)`, and
     /// close.

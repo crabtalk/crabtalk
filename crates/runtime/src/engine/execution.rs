@@ -85,7 +85,7 @@ impl<C: Config> Runtime<C> {
                 .hook()
                 .on_event(&agent_name, conversation_id, &event);
             self.env
-                .on_agent_event(&agent_name, conversation_id, &event);
+                .on_agent_event(&agent_name, conversation_id, false, &event);
             if let Some(line) = wcore::EventLine::from_agent_event(&event) {
                 event_trace.push(line);
             }
@@ -141,7 +141,7 @@ impl<C: Config> Runtime<C> {
                 let mut event_stream = std::pin::pin!(agent.run_stream(&mut conversation.history, Some(conversation_id), Some(steer_rx), tool_choice));
                 while let Some(event) = event_stream.next().await {
                     self.env.hook().on_event(&agent_name, conversation_id, &event);
-                    self.env.on_agent_event(&agent_name, conversation_id, &event);
+                    self.env.on_agent_event(&agent_name, conversation_id, false, &event);
                     if let Some(line) = wcore::EventLine::from_agent_event(&event) {
                         event_trace.push(line);
                     }
@@ -162,6 +162,48 @@ impl<C: Config> Runtime<C> {
             )
             .await;
             if let Some(event) = done_event {
+                yield event;
+            }
+        }
+    }
+
+    /// Run a single agent turn with no conversation and no persistence.
+    ///
+    /// Unlike [`Self::stream_to`], this acquires no slot, writes nothing
+    /// to storage or the search index, and never fires the subscription
+    /// hook — so there is nothing to clean up afterward. The full agent
+    /// loop still runs (multi-step tool calls included), and each event is
+    /// broadcast via [`Env::on_agent_event`] tagged `ephemeral` with the
+    /// caller-supplied `correlation_id`, so observers can show live
+    /// progress without mistaking it for a chat session.
+    ///
+    /// The loop's tool dispatch runs with no conversation id, so
+    /// `extra_tools` must be self-contained daemon-side tools — client
+    /// round-trip tools have no listener to reply through.
+    pub fn ephemeral_stream<'a>(
+        &'a self,
+        agent_name: &'a str,
+        content: &'a str,
+        correlation_id: u64,
+        tool_choice: Option<ToolChoice>,
+        extra_tools: Vec<crabllm_core::Tool>,
+    ) -> impl Stream<Item = AgentEvent> + 'a {
+        let content = content.to_owned();
+        stream! {
+            let Some(mut agent) = self.resolve_agent(agent_name).await else {
+                yield AgentEvent::Done(AgentResponse::error(
+                    format!("agent '{agent_name}' not registered"),
+                ));
+                return;
+            };
+            agent.extend_tools(extra_tools);
+
+            let mut history = vec![HistoryEntry::user(&content)];
+            let mut event_stream =
+                std::pin::pin!(agent.run_stream(&mut history, None, None, tool_choice));
+            while let Some(event) = event_stream.next().await {
+                self.env
+                    .on_agent_event(agent_name, correlation_id, true, &event);
                 yield event;
             }
         }

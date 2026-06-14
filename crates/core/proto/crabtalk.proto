@@ -115,6 +115,14 @@ message StreamMsg {
   optional string tool_choice = 7;
   // Client-provided tool schemas — see SendMsg.tools.
   repeated ToolDef tools = 8;
+  // Run an anonymous, unpersisted turn: no conversation is created and
+  // nothing reaches session storage. Events stream back normally and are
+  // broadcast tagged `ephemeral` under `correlation_id`. Client round-trip
+  // tools are unsupported on this path.
+  bool ephemeral = 9;
+  // Caller-chosen id used to tag the ephemeral broadcast so observers can
+  // group its events. Ignored unless `ephemeral` is set.
+  optional uint64 correlation_id = 10;
 }
 
 // A tool the client can execute. The daemon advertises these schemas
@@ -535,6 +543,10 @@ message AgentEventMsg {
   string tool_output = 7;
   // - TOOL_RESULT: true when the dispatcher reported the tool as errored.
   bool tool_is_error = 8;
+  // True when this event belongs to an ephemeral (anonymous, unpersisted)
+  // turn. Consumers should surface progress but must not treat `sender`
+  // as a conversation id — there is no session behind it.
+  bool ephemeral = 9;
 }
 
 message ActiveConversationList {
