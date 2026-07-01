@@ -530,8 +530,9 @@ dependencies = [
 
 [[package]]
 name = "crabllm-core"
-version = "0.0.21"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#f4599d8b560b1364d9971bd2ec68f1fbd6456cc1"
+version = "0.0.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "486596f356e0db4d565bbc2c6ada0096e00dd29ad6c45d7bdfbc1e090f933be8"
 dependencies = [
  "bytes",
  "futures",
@@ -546,8 +547,9 @@ dependencies = [
 
 [[package]]
 name = "crabllm-http"
-version = "0.0.21"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#f4599d8b560b1364d9971bd2ec68f1fbd6456cc1"
+version = "0.0.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a83b983fc2e087818128c654ea0ecb888d6ff322532bd9e73650c636e957af9"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -566,8 +568,9 @@ dependencies = [
 
 [[package]]
 name = "crabllm-sdk"
-version = "0.0.21"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#f4599d8b560b1364d9971bd2ec68f1fbd6456cc1"
+version = "0.0.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "516d14ce0d585e6c6fcb2c6b8bac59ec417ad8ec85057d803997a521c2790c69"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -577,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -609,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-bench"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "crabllm-core",
  "crabtalk",
@@ -627,7 +630,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-cli"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -657,7 +660,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-command"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "axum",
@@ -674,7 +677,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-command-codegen"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -684,7 +687,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-core"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -710,7 +713,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-cron"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "chrono",
@@ -727,7 +730,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-hooks"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "crabllm-core",
@@ -746,7 +749,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-mcp"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "bytes",
@@ -767,7 +770,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-memory"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "chrono",
@@ -777,7 +780,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-runtime"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -795,7 +798,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-sdk"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "crabtalk-core",
@@ -813,7 +816,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-search"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "axum",
@@ -839,7 +842,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-telegram"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "clap",
@@ -859,7 +862,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-transport"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -872,7 +875,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-wechat"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "base64",
@@ -894,7 +897,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalkd"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "clap",
@@ -907,7 +910,7 @@ dependencies = [
 
 [[package]]
 name = "crabup"
-version = "0.0.22"
+version = "0.0.23"
 dependencies = [
  "anyhow",
  "clap",

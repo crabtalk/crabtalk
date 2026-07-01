@@ -228,13 +228,10 @@ impl MessageBuilder {
         match event {
             AnthropicStreamEvent::ContentBlockStart {
                 index,
-                content_block,
+                content_block: crabllm_core::AnthropicContentBlock::ToolUse { id, name, .. },
             } => {
-                if let crabllm_core::AnthropicContentBlock::ToolUse { id, name, .. } = content_block
-                {
-                    self.tool_blocks
-                        .insert(*index, (id.clone(), name.clone(), String::new()));
-                }
+                self.tool_blocks
+                    .insert(*index, (id.clone(), name.clone(), String::new()));
             }
             AnthropicStreamEvent::ContentBlockDelta { index, delta } => match delta {
                 BlockDelta::Text { text } => self.content.push_str(text),

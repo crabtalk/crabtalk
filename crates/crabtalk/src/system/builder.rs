@@ -181,7 +181,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         let model = build_provider(config, &models)?;
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::empty());
-        let bridge = Arc::new(ClientBridge::new());
+        let bridge = Arc::new(ClientBridge::default());
         let shared_memory = Self::register_hooks(
             &mut hooks,
             storage.clone(),
