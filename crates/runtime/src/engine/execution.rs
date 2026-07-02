@@ -284,11 +284,16 @@ impl<C: Config> Runtime<C> {
                 })
                 .collect();
 
-            let max_tokens = DEFAULT_MAX_TOKENS;
+            // For extended thinking `max_tokens` is the TOTAL budget (reasoning +
+            // visible output), so the reasoning budget sits ON TOP of the response
+            // allowance. Budgeting thinking at `max_tokens - 1` left ~1 token for
+            // the answer and truncated it mid-word.
+            const THINKING_BUDGET: u32 = 4096;
             let thinking = guest_agent.config.thinking.then(|| ThinkingConfig {
                 kind: "enabled".to_string(),
-                budget_tokens: Some(max_tokens.saturating_sub(1)),
+                budget_tokens: Some(THINKING_BUDGET),
             });
+            let max_tokens = DEFAULT_MAX_TOKENS + thinking.as_ref().map_or(0, |_| THINKING_BUDGET);
 
             let request = AnthropicRequest {
                 model: model_name.clone(),
@@ -306,6 +311,7 @@ impl<C: Config> Runtime<C> {
 
             let mut response_text = String::new();
             let mut reasoning = String::new();
+            let mut truncated = false;
             {
                 use crabllm_core::{AnthropicStreamEvent, BlockDelta};
 
@@ -328,6 +334,7 @@ impl<C: Config> Runtime<C> {
                         }
                         Ok(AnthropicStreamEvent::MessageDelta { delta, .. }) => {
                             saw_stop |= delta.stop_reason.is_some();
+                            truncated |= delta.stop_reason.as_deref() == Some("max_tokens");
                         }
                         Ok(AnthropicStreamEvent::MessageStop) => {
                             saw_stop = true;
@@ -372,7 +379,11 @@ impl<C: Config> Runtime<C> {
             yield AgentEvent::Done(AgentResponse {
                 final_response: Some(response_text),
                 iterations: 1,
-                stop_reason: AgentStopReason::TextResponse,
+                stop_reason: if truncated {
+                    AgentStopReason::MaxTokens
+                } else {
+                    AgentStopReason::TextResponse
+                },
                 steps: vec![],
                 model: model_name,
             });

@@ -125,6 +125,8 @@ pub enum AgentStopReason {
     MaxIterations,
     /// No tool calls and no text response.
     NoAction,
+    /// The model hit its output token limit — the response is truncated.
+    MaxTokens,
     /// Error during execution.
     Error(String),
 }
@@ -135,6 +137,7 @@ impl std::fmt::Display for AgentStopReason {
             Self::TextResponse => write!(f, "text_response"),
             Self::MaxIterations => write!(f, "max_iterations"),
             Self::NoAction => write!(f, "no_action"),
+            Self::MaxTokens => write!(f, "max_tokens"),
             Self::Error(msg) => write!(f, "error: {msg}"),
         }
     }
