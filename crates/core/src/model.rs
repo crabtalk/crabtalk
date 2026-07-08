@@ -16,7 +16,10 @@ use crabllm_core::{ApiError, Provider};
 use futures_core::Stream;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
+
+/// Backstop idle-between-chunks bound for providers whose transport lacks a read timeout.
+const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
 // ── HistoryEntry ────────────────────────────────────────────────────
 
@@ -355,7 +358,15 @@ impl<P: Provider + 'static> Model<P> {
                     tracing::warn!(model = %model, op = "stream open", error = %e, "provider request failed");
                     provider_error(e)
                 })?;
-            while let Some(chunk) = stream.next().await {
+            loop {
+                let chunk = match tokio::time::timeout(STREAM_IDLE_TIMEOUT, stream.next()).await {
+                    Ok(Some(chunk)) => chunk,
+                    Ok(None) => break,
+                    Err(_) => {
+                        tracing::warn!(model = %model, op = "stream idle", "provider stream stalled");
+                        Err(anyhow::anyhow!("provider stream idle timeout"))?
+                    }
+                };
                 yield chunk.map_err(|e| {
                     tracing::warn!(model = %model, op = "stream chunk", error = %e, "provider stream failed");
                     provider_error(e)
