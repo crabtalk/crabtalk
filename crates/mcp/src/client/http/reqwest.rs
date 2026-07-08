@@ -2,6 +2,10 @@
 
 use crate::client::sse;
 use anyhow::{Context, Result, bail};
+use std::time::Duration;
+
+/// Total round-trip bound per call; without it a hung server stalls the tool call forever.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct HttpTransport {
     client: reqwest::Client,
@@ -13,7 +17,10 @@ pub struct HttpTransport {
 impl HttpTransport {
     pub fn new(url: &str, auth: Option<String>) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(REQUEST_TIMEOUT)
+                .build()
+                .expect("crabtalk-mcp: failed to build reqwest client"),
             url: url.to_string(),
             auth,
             session_id: None,

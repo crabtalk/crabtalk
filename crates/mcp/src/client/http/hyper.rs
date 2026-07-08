@@ -7,10 +7,13 @@ use http::Request;
 use http_body_util::{BodyExt, Full, Limited};
 use hyper_util::client::legacy::{Client, connect::HttpConnector};
 use hyper_util::rt::TokioExecutor;
+use std::time::Duration;
 
 /// Cap on MCP response bodies — protects against runaway servers. MCP
 /// tool results are short; 16 MiB is generous.
 const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
+/// Total round-trip bound per call; without it a hung server stalls the tool call forever.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[cfg(feature = "native-tls")]
 type Connector = hyper_tls::HttpsConnector<HttpConnector>;
@@ -66,29 +69,31 @@ impl HttpTransport {
         }
         let req = builder.body(Full::new(Bytes::from(body)))?;
 
-        let resp = self
-            .client
-            .request(req)
+        let client = &self.client;
+        let (status, session_id, content_type, bytes) =
+            tokio::time::timeout(REQUEST_TIMEOUT, async move {
+                let resp = client.request(req).await.context("HTTP request failed")?;
+                let status = resp.status();
+                let session_id = resp
+                    .headers()
+                    .get("mcp-session-id")
+                    .and_then(|v| v.to_str().ok())
+                    .map(String::from);
+                let content_type = resp
+                    .headers()
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                let bytes = Limited::new(resp.into_body(), MAX_BODY_BYTES)
+                    .collect()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("failed to read response body: {e}"))?
+                    .to_bytes();
+                Ok::<_, anyhow::Error>((status, session_id, content_type, bytes))
+            })
             .await
-            .context("HTTP request failed")?;
-        let status = resp.status();
-        let session_id = resp
-            .headers()
-            .get("mcp-session-id")
-            .and_then(|v| v.to_str().ok())
-            .map(String::from);
-        let content_type = resp
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-
-        let bytes = Limited::new(resp.into_body(), MAX_BODY_BYTES)
-            .collect()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to read response body: {e}"))?
-            .to_bytes();
+            .context("HTTP request timed out")??;
         let body = std::str::from_utf8(&bytes).context("response body not UTF-8")?;
 
         if !status.is_success() {
@@ -119,9 +124,9 @@ impl HttpTransport {
             builder = builder.header("mcp-session-id", sid);
         }
         let req = builder.body(Full::new(Bytes::from(body)))?;
-        self.client
-            .request(req)
+        tokio::time::timeout(REQUEST_TIMEOUT, self.client.request(req))
             .await
+            .context("HTTP notify timed out")?
             .context("HTTP notify failed")?;
         Ok(())
     }
