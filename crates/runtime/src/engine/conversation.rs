@@ -265,7 +265,11 @@ impl<C: Config> Runtime<C> {
         sender: &str,
         turns: usize,
     ) -> Result<usize> {
-        let id = self.require_conversation_id(agent, sender).await?;
+        // Lazy-load from storage (like the send path) rather than requiring a
+        // live conversation: after a reload the transcript is restored but the
+        // runtime hasn't materialized this conversation yet, and edit-rewind
+        // must still find the persisted turn to drop.
+        let id = self.get_or_create_conversation(agent, sender).await?;
         self.truncate(id, turns).await
     }
 
