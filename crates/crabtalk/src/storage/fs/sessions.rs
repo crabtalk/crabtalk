@@ -276,6 +276,49 @@ pub(super) async fn append_session_compact(
     write_step(storage, handle.as_str(), line).await
 }
 
+pub(super) async fn truncate_session_messages(
+    storage: &FsStorage,
+    handle: &SessionHandle,
+    keep: usize,
+) -> Result<()> {
+    let Some(snapshot) = load_session(storage, handle).await? else {
+        return Ok(());
+    };
+    let kept: Vec<HistoryEntry> = snapshot.history.into_iter().take(keep).collect();
+    // Wipe the step log, then re-lay the compacted boundary (if any) followed
+    // by the kept entries. Trace events for the dropped turns go with them.
+    // `next_step`'s counter keeps climbing, so new steps sort after the void.
+    let dir = session_dir(storage, handle.as_str());
+    let mut rd = fs::read_dir(&dir).await?;
+    while let Some(entry) = rd.next_entry().await? {
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|n| n.starts_with("step-"))
+        {
+            fs::remove_file(entry.path()).await?;
+        }
+    }
+    if let Some(archive_name) = snapshot.archive {
+        write_step(
+            storage,
+            handle.as_str(),
+            StepLine::Compact {
+                archive_name,
+                archived_at: chrono::Utc::now().to_rfc3339(),
+            },
+        )
+        .await?;
+    }
+    for entry in &kept {
+        write_step(storage, handle.as_str(), StepLine::Entry(entry.clone())).await?;
+    }
+    let mut meta = snapshot.meta;
+    meta.message_count = kept.len() as u64;
+    update_session_meta(storage, handle, &meta).await?;
+    Ok(())
+}
+
 pub(super) async fn update_session_meta(
     storage: &FsStorage,
     handle: &SessionHandle,
