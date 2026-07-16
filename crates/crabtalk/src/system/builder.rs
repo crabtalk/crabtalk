@@ -1,7 +1,6 @@
 //! CrabTalk construction and lifecycle methods.
 
 use crate::llm::Provider;
-use crate::llmp::{ProviderRegistry, RemoteProvider};
 use crate::{
     CrabTalk,
     bridge::ClientBridge,
@@ -22,7 +21,7 @@ use std::{
 use tokio::sync::{RwLock, broadcast};
 use wcore::{LlmConfig, ResolvedDirs, model::Model, resolve_dirs, storage::Storage};
 
-pub type DefaultProvider = crate::llm::Retrying<ProviderRegistry<RemoteProvider>>;
+pub type DefaultProvider = crabllm_sdk::Client;
 
 /// Build the LLM `Model<P>` given the config and the list of models
 /// advertised by the endpoint (fetched from `/v1/models` at startup).
@@ -182,7 +181,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         let model = build_provider(config, &models)?;
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::empty());
-        let bridge = Arc::new(ClientBridge::new());
+        let bridge = Arc::new(ClientBridge::default());
         let shared_memory = Self::register_hooks(
             &mut hooks,
             storage.clone(),
@@ -302,30 +301,13 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
 fn build_providers(config: &wcore::Config, models: &[String]) -> Result<Model<DefaultProvider>> {
     let llm = &config.llm;
-    let provider_cfg = crate::llm::ProviderConfig {
-        kind: crate::llm::ProviderKind::Anthropic,
-        base_url: (!llm.base_url.is_empty()).then(|| llm.base_url.clone()),
-        api_key: (!llm.api_key.is_empty()).then(|| llm.api_key.clone()),
-        models: models.to_vec(),
-        ..Default::default()
-    };
-
-    let mut providers = std::collections::HashMap::new();
-    providers.insert("llm".to_owned(), provider_cfg);
-
-    let registry = ProviderRegistry::from_provider_configs(
-        &providers,
-        &std::collections::HashMap::new(),
-        |r| r,
-    )?;
-    let retrying = crate::llm::Retrying::new(registry);
-
+    let client = crabllm_sdk::Client::new(llm.base_url.clone(), llm.api_key.clone());
     tracing::info!(
         "llm endpoint registered — {} models from {}",
         models.len(),
         llm.base_url
     );
-    Ok(Model::new(retrying))
+    Ok(Model::new(client))
 }
 
 /// Fetch `/v1/models` from the configured LLM endpoint. Returns an empty
@@ -336,29 +318,12 @@ async fn fetch_models(llm: &LlmConfig) -> Vec<String> {
         tracing::warn!("no llm.base_url configured in config.toml — model list is empty");
         return Vec::new();
     }
-    let url = format!("{}/models", llm.base_url.trim_end_matches('/'));
-    let mut req = reqwest::Client::new().get(&url);
-    if !llm.api_key.is_empty() {
-        req = req.bearer_auth(&llm.api_key);
-    }
-    match fetch_models_inner(req).await {
-        Ok(models) => models,
+    let client = crabllm_sdk::Client::new(llm.base_url.clone(), llm.api_key.clone());
+    match client.models().await {
+        Ok(list) => list.data.into_iter().map(|m| m.id).collect(),
         Err(e) => {
-            tracing::warn!("failed to fetch {url}: {e}");
+            tracing::warn!("failed to list models from {}: {e}", llm.base_url);
             Vec::new()
         }
     }
-}
-
-async fn fetch_models_inner(req: reqwest::RequestBuilder) -> Result<Vec<String>> {
-    let body: serde_json::Value = req.send().await?.error_for_status()?.json().await?;
-    Ok(body
-        .get("data")
-        .and_then(|d| d.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.get("id").and_then(|i| i.as_str()).map(String::from))
-                .collect()
-        })
-        .unwrap_or_default())
 }

@@ -157,13 +157,13 @@ impl Provider for TestProvider {
                                 },
                             });
                         }
-                        if let Some(func) = &tc.function {
-                            if let Some(args) = &func.arguments {
-                                yield Ok(AnthropicStreamEvent::ContentBlockDelta {
-                                    index: block_index,
-                                    delta: BlockDelta::InputJson { partial_json: args.clone() },
-                                });
-                            }
+                        if let Some(func) = &tc.function
+                            && let Some(args) = &func.arguments
+                        {
+                            yield Ok(AnthropicStreamEvent::ContentBlockDelta {
+                                index: block_index,
+                                delta: BlockDelta::InputJson { partial_json: args.clone() },
+                            });
                         }
                     }
                 }

@@ -169,6 +169,15 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
+    async fn truncate_session_messages(&self, handle: &SessionHandle, keep: usize) -> Result<()> {
+        let mut sessions = self.sessions.lock();
+        if let Some(state) = sessions.get_mut(handle.as_str()) {
+            state.messages.truncate(keep);
+            state.meta.message_count = state.messages.len() as u64;
+        }
+        Ok(())
+    }
+
     async fn update_session_meta(
         &self,
         handle: &SessionHandle,

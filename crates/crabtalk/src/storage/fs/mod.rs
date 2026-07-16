@@ -168,6 +168,10 @@ impl Storage for FsStorage {
         sessions::append_session_compact(self, handle, archive_name).await
     }
 
+    async fn truncate_session_messages(&self, handle: &SessionHandle, keep: usize) -> Result<()> {
+        sessions::truncate_session_messages(self, handle, keep).await
+    }
+
     async fn update_session_meta(
         &self,
         handle: &SessionHandle,

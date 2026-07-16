@@ -21,7 +21,18 @@ pub trait Env: Send + Sync + 'static {
     fn hook(&self) -> &Self::Hook;
 
     /// Called when an agent event occurs. Default: no-op.
-    fn on_agent_event(&self, _agent: &str, _conversation_id: u64, _event: &AgentEvent) {}
+    ///
+    /// `ephemeral` marks events from an anonymous, unpersisted turn —
+    /// `conversation_id` is then a caller-supplied correlation id, not a
+    /// real session.
+    fn on_agent_event(
+        &self,
+        _agent: &str,
+        _conversation_id: u64,
+        _ephemeral: bool,
+        _event: &AgentEvent,
+    ) {
+    }
 
     /// Subscribe to agent events. Returns `None` if event broadcasting
     /// is not supported.

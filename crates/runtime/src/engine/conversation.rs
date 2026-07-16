@@ -6,7 +6,10 @@ use anyhow::{Result, bail};
 use memory::{EntryKind, Op};
 use std::sync::{Arc, atomic::Ordering};
 use tokio::sync::Mutex;
-use wcore::{model::HistoryEntry, storage::Storage};
+use wcore::{
+    model::{HistoryEntry, Role},
+    storage::Storage,
+};
 
 impl<C: Config> Runtime<C> {
     pub(super) fn new_slot(id: u64, agent: &str, created_by: &str) -> ConvSlot {
@@ -253,6 +256,64 @@ impl<C: Config> Runtime<C> {
             .update_session_meta(&handle, &conversation.meta(&agent_name, &created_by))
             .await;
         Some(summary)
+    }
+
+    /// Rewind `agent`/`sender`'s conversation by `turns` user turns.
+    pub async fn truncate_conversation(
+        &self,
+        agent: &str,
+        sender: &str,
+        turns: usize,
+    ) -> Result<usize> {
+        // Lazy-load from storage (like the send path) rather than requiring a
+        // live conversation: after a reload the transcript is restored but the
+        // runtime hasn't materialized this conversation yet, and edit-rewind
+        // must still find the persisted turn to drop.
+        let id = self.get_or_create_conversation(agent, sender).await?;
+        self.truncate(id, turns).await
+    }
+
+    /// Rewind a conversation by dropping its last `turns` user turns — the
+    /// user message that opens each turn and everything after it — from both
+    /// the live history and storage. Used to re-run an edited message: drop
+    /// the turn, then re-send the new text. Never rewinds past a compacted
+    /// prefix. Returns the new history length.
+    pub async fn truncate(&self, conversation_id: u64, turns: usize) -> Result<usize> {
+        let conversation_mutex = self
+            .conversation(conversation_id)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("conversation {conversation_id} not found"))?;
+        let mut conversation = conversation_mutex.lock().await;
+        // Boundary = the index of the `turns`-th user entry counting from the
+        // end; everything before it survives.
+        let mut seen = 0;
+        let mut boundary = None;
+        for (i, entry) in conversation.history.iter().enumerate().rev() {
+            if matches!(entry.role(), Role::User) && !entry.auto_injected {
+                seen += 1;
+                if seen == turns {
+                    boundary = Some(i);
+                    break;
+                }
+            }
+        }
+        let Some(boundary) = boundary else {
+            return Ok(conversation.history.len());
+        };
+        conversation.history.truncate(boundary);
+        if let Some(handle) = conversation.handle.clone() {
+            // The storage layer's history excludes the archive prefix, so
+            // `keep` counts the post-compact, non-injected survivors.
+            let archive_offset = usize::from(conversation.summary.is_some());
+            let keep = conversation.history[archive_offset..]
+                .iter()
+                .filter(|e| !e.auto_injected)
+                .count();
+            self.storage()
+                .truncate_session_messages(&handle, keep)
+                .await?;
+        }
+        Ok(conversation.history.len())
     }
 
     pub async fn transfer_to<C2: Config>(&self, dest: &mut Runtime<C2>) {

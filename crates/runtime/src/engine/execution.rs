@@ -85,7 +85,7 @@ impl<C: Config> Runtime<C> {
                 .hook()
                 .on_event(&agent_name, conversation_id, &event);
             self.env
-                .on_agent_event(&agent_name, conversation_id, &event);
+                .on_agent_event(&agent_name, conversation_id, false, &event);
             if let Some(line) = wcore::EventLine::from_agent_event(&event) {
                 event_trace.push(line);
             }
@@ -141,7 +141,7 @@ impl<C: Config> Runtime<C> {
                 let mut event_stream = std::pin::pin!(agent.run_stream(&mut conversation.history, Some(conversation_id), Some(steer_rx), tool_choice));
                 while let Some(event) = event_stream.next().await {
                     self.env.hook().on_event(&agent_name, conversation_id, &event);
-                    self.env.on_agent_event(&agent_name, conversation_id, &event);
+                    self.env.on_agent_event(&agent_name, conversation_id, false, &event);
                     if let Some(line) = wcore::EventLine::from_agent_event(&event) {
                         event_trace.push(line);
                     }
@@ -162,6 +162,48 @@ impl<C: Config> Runtime<C> {
             )
             .await;
             if let Some(event) = done_event {
+                yield event;
+            }
+        }
+    }
+
+    /// Run a single agent turn with no conversation and no persistence.
+    ///
+    /// Unlike [`Self::stream_to`], this acquires no slot, writes nothing
+    /// to storage or the search index, and never fires the subscription
+    /// hook — so there is nothing to clean up afterward. The full agent
+    /// loop still runs (multi-step tool calls included), and each event is
+    /// broadcast via [`Env::on_agent_event`] tagged `ephemeral` with the
+    /// caller-supplied `correlation_id`, so observers can show live
+    /// progress without mistaking it for a chat session.
+    ///
+    /// The loop's tool dispatch runs with no conversation id, so
+    /// `extra_tools` must be self-contained daemon-side tools — client
+    /// round-trip tools have no listener to reply through.
+    pub fn ephemeral_stream<'a>(
+        &'a self,
+        agent_name: &'a str,
+        content: &'a str,
+        correlation_id: u64,
+        tool_choice: Option<ToolChoice>,
+        extra_tools: Vec<crabllm_core::Tool>,
+    ) -> impl Stream<Item = AgentEvent> + 'a {
+        let content = content.to_owned();
+        stream! {
+            let Some(mut agent) = self.resolve_agent(agent_name).await else {
+                yield AgentEvent::Done(AgentResponse::error(
+                    format!("agent '{agent_name}' not registered"),
+                ));
+                return;
+            };
+            agent.extend_tools(extra_tools);
+
+            let mut history = vec![HistoryEntry::user(&content)];
+            let mut event_stream =
+                std::pin::pin!(agent.run_stream(&mut history, None, None, tool_choice));
+            while let Some(event) = event_stream.next().await {
+                self.env
+                    .on_agent_event(agent_name, correlation_id, true, &event);
                 yield event;
             }
         }
@@ -242,11 +284,16 @@ impl<C: Config> Runtime<C> {
                 })
                 .collect();
 
-            let max_tokens = DEFAULT_MAX_TOKENS;
+            // For extended thinking `max_tokens` is the TOTAL budget (reasoning +
+            // visible output), so the reasoning budget sits ON TOP of the response
+            // allowance. Budgeting thinking at `max_tokens - 1` left ~1 token for
+            // the answer and truncated it mid-word.
+            const THINKING_BUDGET: u32 = 4096;
             let thinking = guest_agent.config.thinking.then(|| ThinkingConfig {
                 kind: "enabled".to_string(),
-                budget_tokens: Some(max_tokens.saturating_sub(1)),
+                budget_tokens: Some(THINKING_BUDGET),
             });
+            let max_tokens = DEFAULT_MAX_TOKENS + thinking.as_ref().map_or(0, |_| THINKING_BUDGET);
 
             let request = AnthropicRequest {
                 model: model_name.clone(),
@@ -264,10 +311,12 @@ impl<C: Config> Runtime<C> {
 
             let mut response_text = String::new();
             let mut reasoning = String::new();
+            let mut truncated = false;
             {
                 use crabllm_core::{AnthropicStreamEvent, BlockDelta};
 
                 let mut stream = std::pin::pin!(self.model.stream(request));
+                let mut saw_stop = false;
                 while let Some(result) = stream.next().await {
                     match result {
                         Ok(AnthropicStreamEvent::ContentBlockDelta { delta, .. }) => {
@@ -283,8 +332,19 @@ impl<C: Config> Runtime<C> {
                                 BlockDelta::InputJson { .. } => {}
                             }
                         }
+                        Ok(AnthropicStreamEvent::MessageDelta { delta, .. }) => {
+                            saw_stop |= delta.stop_reason.is_some();
+                            truncated |= delta.stop_reason.as_deref() == Some("max_tokens");
+                        }
+                        Ok(AnthropicStreamEvent::MessageStop) => {
+                            saw_stop = true;
+                        }
                         Ok(_) => {}
                         Err(e) => {
+                            // A connection close after the turn completed isn't a failure.
+                            if saw_stop {
+                                break;
+                            }
                             yield AgentEvent::Done(AgentResponse {
                                 final_response: None,
                                 iterations: 1,
@@ -319,7 +379,11 @@ impl<C: Config> Runtime<C> {
             yield AgentEvent::Done(AgentResponse {
                 final_response: Some(response_text),
                 iterations: 1,
-                stop_reason: AgentStopReason::TextResponse,
+                stop_reason: if truncated {
+                    AgentStopReason::MaxTokens
+                } else {
+                    AgentStopReason::TextResponse
+                },
                 steps: vec![],
                 model: model_name,
             });

@@ -51,8 +51,8 @@ impl ClientToolSet {
     }
 }
 
-impl ClientBridge {
-    pub fn new() -> Self {
+impl Default for ClientBridge {
+    fn default() -> Self {
         let mut schemas = hooks::os::schemas();
         schemas.push(sdk::tools::ask_user::schema());
         Self {
@@ -62,7 +62,9 @@ impl ClientBridge {
             pending: Mutex::new(HashMap::new()),
         }
     }
+}
 
+impl ClientBridge {
     /// Default tool schemas used when clients don't declare their own.
     pub fn default_schemas(&self) -> Vec<Tool> {
         self.defaults.schemas.clone()

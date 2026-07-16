@@ -31,7 +31,13 @@ impl Env for SystemEnv {
         &self.hook
     }
 
-    fn on_agent_event(&self, agent: &str, conversation_id: u64, event: &AgentEvent) {
+    fn on_agent_event(
+        &self,
+        agent: &str,
+        conversation_id: u64,
+        ephemeral: bool,
+        event: &AgentEvent,
+    ) {
         struct Payload {
             kind: AgentEventKind,
             content: String,
@@ -137,6 +143,7 @@ impl Env for SystemEnv {
             tool_calls: p.tool_calls,
             tool_output: p.tool_output,
             tool_is_error: p.tool_is_error,
+            ephemeral,
         });
     }
 

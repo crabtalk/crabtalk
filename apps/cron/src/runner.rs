@@ -187,9 +187,7 @@ async fn fire(conn_info: &ConnectionInfo, entry: &CronEntry) {
         agent: entry.agent.clone(),
         content: format!("/{}", entry.skill),
         sender: Some(entry.sender.clone()),
-        guest: None,
-        tool_choice: None,
-        tools: vec![],
+        ..Default::default()
     };
     let mut rx = conn_info.stream(req);
     while rx.recv().await.is_some() {}

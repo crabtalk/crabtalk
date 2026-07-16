@@ -82,6 +82,17 @@ pub trait Storage: Send + Sync + 'static {
         archive_name: &str,
     ) -> impl Future<Output = Result<()>> + Send;
 
+    /// Rewind a session's post-compact history to its first `keep`
+    /// entries, dropping the rest — a conversation edit. The compacted
+    /// prefix (stored as the `archive` pointer, never a message row) is
+    /// preserved; only the live tail is trimmed. `keep` counts entries
+    /// after the last compaction, matching `SessionSnapshot::history`.
+    fn truncate_session_messages(
+        &self,
+        handle: &SessionHandle,
+        keep: usize,
+    ) -> impl Future<Output = Result<()>> + Send;
+
     /// Overwrite session metadata.
     fn update_session_meta(
         &self,

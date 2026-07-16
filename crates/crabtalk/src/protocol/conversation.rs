@@ -52,8 +52,30 @@ impl<P: Provider + 'static> CrabTalk<P> {
             .tool_choice
             .map(|s| wcore::model::ToolChoice::from(s.as_str()));
         let req_tools = req.tools;
+        let ephemeral = req.ephemeral;
+        let correlation_id = req.correlation_id.unwrap_or(0);
         async_stream::try_stream! {
             let rt: Arc<_> = runtime.read().await.clone();
+
+            // Anonymous, unpersisted turn: no conversation, no bridge
+            // listener, no storage. Client round-trip tools are
+            // unsupported here, so only the agent's own (daemon-side)
+            // tools run.
+            if ephemeral {
+                yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: agent.clone() })) };
+                let stream = rt.ephemeral_stream(&agent, &content, correlation_id, tool_choice, vec![]);
+                pin_mut!(stream);
+                while let Some(event) = stream.next().await {
+                    let is_done = matches!(event, AgentEvent::Done(_));
+                    yield agent_event_to_stream(event, &agent);
+                    if is_done { return; }
+                }
+                yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd {
+                    agent: agent.clone(), error: String::new(), model: String::new(), usage: None,
+                })) };
+                return;
+            }
+
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
             let conversation_id = rt.get_or_create_conversation(&agent, created_by.as_str()).await?;
             // Register this conversation as having a stream listener so the
@@ -75,88 +97,31 @@ impl<P: Provider + 'static> CrabTalk<P> {
             };
             pin_mut!(stream);
             while let Some(event) = stream.next().await {
-                match event {
-                    AgentEvent::TextStart => {
-                        yield StreamEvent { event: Some(stream_event::Event::TextStart(TextStartEvent { agent: responding_agent.clone() })) };
-                    }
-                    AgentEvent::TextDelta(text) => {
-                        yield StreamEvent { event: Some(stream_event::Event::Chunk(StreamChunk { content: text })) };
-                    }
-                    AgentEvent::TextEnd => {
-                        yield StreamEvent { event: Some(stream_event::Event::TextEnd(TextEndEvent { agent: responding_agent.clone() })) };
-                    }
-                    AgentEvent::ThinkingStart => {
-                        yield StreamEvent { event: Some(stream_event::Event::ThinkingStart(ThinkingStartEvent { agent: responding_agent.clone() })) };
-                    }
-                    AgentEvent::ThinkingDelta(text) => {
-                        yield StreamEvent { event: Some(stream_event::Event::Thinking(StreamThinking { content: text })) };
-                    }
-                    AgentEvent::ThinkingEnd => {
-                        yield StreamEvent { event: Some(stream_event::Event::ThinkingEnd(ThinkingEndEvent { agent: responding_agent.clone() })) };
-                    }
-                    AgentEvent::ToolCallsBegin(calls) => {
-                        yield StreamEvent { event: Some(stream_event::Event::ToolStart(ToolStartEvent {
-                            calls: calls.into_iter().map(|c| ToolCallInfo {
-                                name: c.function.name.to_string(),
-                                arguments: String::new(),
-                            }).collect(),
-                        })) };
-                    }
-                    AgentEvent::ToolCallsStart(calls) => {
-                        let forwards: Vec<ToolCallForwardEvent> = calls
-                            .iter()
-                            .filter(|c| bridge.is_client_tool(conversation_id, &c.function.name))
-                            .map(|c| ToolCallForwardEvent {
-                                call_id: c.id.to_string(),
-                                name: c.function.name.to_string(),
-                                arguments: c.function.arguments.clone(),
-                                conversation_id,
-                            })
-                            .collect();
-
-                        yield StreamEvent { event: Some(stream_event::Event::ToolStart(ToolStartEvent {
-                            calls: calls.into_iter().map(|c| ToolCallInfo {
-                                name: c.function.name.to_string(),
-                                arguments: c.function.arguments,
-                            }).collect(),
-                        })) };
-
-                        for fwd in forwards {
-                            yield StreamEvent { event: Some(stream_event::Event::ToolCallForward(fwd)) };
-                        }
-                    }
-                    AgentEvent::ToolResult { call_id, output, duration_ms } => {
-                        let is_error = output.is_err();
-                        let output = match output { Ok(s) | Err(s) => s };
-                        yield StreamEvent { event: Some(stream_event::Event::ToolResult(ToolResultEvent { call_id: call_id.to_string(), output, duration_ms, is_error })) };
-                    }
-                    AgentEvent::ToolCallsComplete => {
-                        yield StreamEvent { event: Some(stream_event::Event::ToolsComplete(ToolsCompleteEvent {})) };
-                    }
-                    AgentEvent::ContextUsage { ref usage } => {
-                        yield StreamEvent { event: Some(stream_event::Event::ContextUsage(ContextUsageEvent { usage: Some(usage_to_proto(usage)) })) };
-                    }
-                    AgentEvent::UserSteered { ref content } => {
-                        yield StreamEvent { event: Some(stream_event::Event::UserSteered(UserSteeredEvent { content: content.clone() })) };
-                    }
-                    AgentEvent::Done(resp) => {
-                        let error = if let wcore::AgentStopReason::Error(ref e) = resp.stop_reason {
-                            e.clone()
-                        } else {
-                            String::new()
-                        };
-                        yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd {
-                            agent: responding_agent.clone(),
-                            error,
-                            model: resp.model,
-                            usage: Some(sum_usage(&resp.steps)),
-                        })) };
-                        return;
-                    }
+                // Client-tool forwards only exist on the persisted path,
+                // where a bridge listener can carry the reply back.
+                let forwards: Vec<ToolCallForwardEvent> = if let AgentEvent::ToolCallsStart(ref calls) = event {
+                    calls
+                        .iter()
+                        .filter(|c| bridge.is_client_tool(conversation_id, &c.function.name))
+                        .map(|c| ToolCallForwardEvent {
+                            call_id: c.id.to_string(),
+                            name: c.function.name.to_string(),
+                            arguments: c.function.arguments.clone(),
+                            conversation_id,
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let is_done = matches!(event, AgentEvent::Done(_));
+                yield agent_event_to_stream(event, &responding_agent);
+                for fwd in forwards {
+                    yield StreamEvent { event: Some(stream_event::Event::ToolCallForward(fwd)) };
                 }
+                if is_done { return; }
             }
             yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd {
-                agent: responding_agent.clone(),
+                agent: responding_agent,
                 error: String::new(),
                 model: String::new(),
                 usage: None,
@@ -211,6 +176,82 @@ impl Drop for ListenerGuard {
     fn drop(&mut self) {
         self.bridge.unregister_listener(self.conv_id);
     }
+}
+
+/// Map one agent loop event to its wire `StreamEvent`. Shared by the
+/// persisted and ephemeral stream paths; client-tool forwarding (which
+/// only the persisted path can route) is handled by the caller.
+fn agent_event_to_stream(event: AgentEvent, responding_agent: &str) -> StreamEvent {
+    use stream_event::Event;
+    let event = match event {
+        AgentEvent::TextStart => Event::TextStart(TextStartEvent {
+            agent: responding_agent.to_string(),
+        }),
+        AgentEvent::TextDelta(text) => Event::Chunk(StreamChunk { content: text }),
+        AgentEvent::TextEnd => Event::TextEnd(TextEndEvent {
+            agent: responding_agent.to_string(),
+        }),
+        AgentEvent::ThinkingStart => Event::ThinkingStart(ThinkingStartEvent {
+            agent: responding_agent.to_string(),
+        }),
+        AgentEvent::ThinkingDelta(text) => Event::Thinking(StreamThinking { content: text }),
+        AgentEvent::ThinkingEnd => Event::ThinkingEnd(ThinkingEndEvent {
+            agent: responding_agent.to_string(),
+        }),
+        AgentEvent::ToolCallsBegin(calls) => Event::ToolStart(ToolStartEvent {
+            calls: calls
+                .into_iter()
+                .map(|c| ToolCallInfo {
+                    name: c.function.name.to_string(),
+                    arguments: String::new(),
+                })
+                .collect(),
+        }),
+        AgentEvent::ToolCallsStart(calls) => Event::ToolStart(ToolStartEvent {
+            calls: calls
+                .into_iter()
+                .map(|c| ToolCallInfo {
+                    name: c.function.name.to_string(),
+                    arguments: c.function.arguments,
+                })
+                .collect(),
+        }),
+        AgentEvent::ToolResult {
+            call_id,
+            output,
+            duration_ms,
+        } => {
+            let is_error = output.is_err();
+            let output = match output {
+                Ok(s) | Err(s) => s,
+            };
+            Event::ToolResult(ToolResultEvent {
+                call_id: call_id.to_string(),
+                output,
+                duration_ms,
+                is_error,
+            })
+        }
+        AgentEvent::ToolCallsComplete => Event::ToolsComplete(ToolsCompleteEvent {}),
+        AgentEvent::ContextUsage { usage } => Event::ContextUsage(ContextUsageEvent {
+            usage: Some(usage_to_proto(&usage)),
+        }),
+        AgentEvent::UserSteered { content } => Event::UserSteered(UserSteeredEvent { content }),
+        AgentEvent::Done(resp) => {
+            let error = if let wcore::AgentStopReason::Error(ref e) = resp.stop_reason {
+                e.clone()
+            } else {
+                String::new()
+            };
+            Event::End(StreamEnd {
+                agent: responding_agent.to_string(),
+                error,
+                model: resp.model,
+                usage: Some(sum_usage(&resp.steps)),
+            })
+        }
+    };
+    StreamEvent { event: Some(event) }
 }
 
 pub(super) fn sum_usage(steps: &[wcore::AgentStep]) -> TokenUsage {
