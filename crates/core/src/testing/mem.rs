@@ -169,11 +169,7 @@ impl Storage for InMemoryStorage {
         Ok(())
     }
 
-    async fn truncate_session_messages(
-        &self,
-        handle: &SessionHandle,
-        keep: usize,
-    ) -> Result<()> {
+    async fn truncate_session_messages(&self, handle: &SessionHandle, keep: usize) -> Result<()> {
         let mut sessions = self.sessions.lock();
         if let Some(state) = sessions.get_mut(handle.as_str()) {
             state.messages.truncate(keep);
