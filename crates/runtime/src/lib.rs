@@ -5,7 +5,7 @@ pub mod hook;
 pub mod sessions;
 
 pub use conversation::Conversation;
-pub use engine::{Runtime, SharedMemory};
+pub use engine::{Program, ProgramStep, Runtime, SharedMemory};
 pub use env::Env;
 pub use hook::Hook;
 pub use wcore::{MemoryConfig, TasksConfig};

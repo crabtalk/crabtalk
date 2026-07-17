@@ -7,7 +7,10 @@
 use crabllm_core::Tool;
 use parking_lot::RwLock;
 use runtime::Hook;
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 
 #[cfg(feature = "mcp")]
@@ -43,6 +46,17 @@ pub struct Hooks {
     pub scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
     agent_descriptions: RwLock<BTreeMap<String, String>>,
     hooks: BTreeMap<String, Arc<dyn Hook>>,
+    /// Declared-only hooks: dispatchable, but NOT advertised ambiently. Their
+    /// tools reach the model only when a stream opts them in by hook name via
+    /// [`Hooks::scoped_schema`] (passed as `extra_tools`). Used for
+    /// capabilities that belong to a specific surface — e.g. a setup UI's
+    /// ask/draft tools — which must not leak into ordinary chat or unattended
+    /// heartbeats.
+    scoped: BTreeMap<String, Arc<dyn Hook>>,
+    /// Tool names owned by `scoped` — dispatch skips the per-agent tool
+    /// whitelist for these, since a declared-only tool is already gated by the
+    /// stream having declared it (and is never in the persistent whitelist).
+    scoped_names: BTreeSet<String>,
     dispatch_map: BTreeMap<String, Arc<dyn Hook>>,
     event_sink: RwLock<Option<EventSink>>,
 }
@@ -53,6 +67,8 @@ impl Hooks {
             scopes,
             agent_descriptions: RwLock::new(BTreeMap::new()),
             hooks: BTreeMap::new(),
+            scoped: BTreeMap::new(),
+            scoped_names: BTreeSet::new(),
             dispatch_map: BTreeMap::new(),
             event_sink: RwLock::new(None),
         }
@@ -65,6 +81,18 @@ impl Hooks {
                 .insert(tool.function.name.clone(), hook.clone());
         }
         self.hooks.insert(name.into(), hook);
+    }
+
+    /// Register a declared-only sub-hook by name: its tools are dispatchable but
+    /// stay out of the ambient schema. A stream opts them in with
+    /// [`Hooks::scoped_schema`]; see the `scoped` field.
+    pub fn register_scoped(&mut self, name: impl Into<String>, hook: Arc<dyn Hook>) {
+        for tool in hook.schema() {
+            self.scoped_names.insert(tool.function.name.clone());
+            self.dispatch_map
+                .insert(tool.function.name.clone(), hook.clone());
+        }
+        self.scoped.insert(name.into(), hook);
     }
 
     /// Install the late-bound event sink for `agent:{name}:done` events.
@@ -103,6 +131,17 @@ impl Hooks {
 impl Hook for Hooks {
     fn schema(&self) -> Vec<Tool> {
         self.hooks.values().flat_map(|h| h.schema()).collect()
+    }
+
+    /// The tool schemas of the named declared-only hooks, to advertise for one
+    /// stream as `extra_tools`. Unknown names are skipped. Empty `names` → no
+    /// tools, so the default (nothing declared) exposes none of them.
+    fn scoped_schema(&self, names: &[String]) -> Vec<Tool> {
+        names
+            .iter()
+            .filter_map(|name| self.scoped.get(name))
+            .flat_map(|hook| hook.schema())
+            .collect()
     }
 
     fn system_prompt(&self) -> Option<String> {
@@ -196,8 +235,10 @@ impl Hook for Hooks {
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
-        // Scope enforcement.
-        {
+        // Scope enforcement. Declared-only tools bypass the per-agent whitelist:
+        // they're gated by the stream having declared them, and are never in the
+        // persistent whitelist to begin with.
+        if !self.scoped_names.contains(name) {
             let scopes = self.scopes.read();
             if let Some(scope) = scopes.get(&call.agent)
                 && !scope.tools.is_empty()
