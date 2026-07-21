@@ -10,10 +10,9 @@
 //! Weights load from a directory the consumer populated with the three [`FILES`],
 //! each verified against a pinned sha256 on load. This crate bundles no weights
 //! and carries no HTTP client — fetching them is a deployment concern, not the
-//! embedder's. With the `metal` feature it runs on the macOS GPU in fp16;
-//! otherwise on CPU in fp32.
+//! embedder's. Inference runs on CPU in fp32.
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 mod model;
 
 /// Identifier stored next to each vector; bump it on a model swap so consumers
@@ -84,14 +83,33 @@ impl Embedder {
         self.model()?.embed(prefixed)
     }
 
+    /// The cache guard, recovering the inner value if a prior holder panicked —
+    /// a poisoned embedder cache is never a reason to bring the process down.
+    fn cache(&self) -> MutexGuard<'_, Option<Arc<model::Model>>> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     fn model(&self) -> Result<Arc<model::Model>, EmbedError> {
-        let mut guard = self.inner.lock().unwrap();
+        let mut guard = self.cache();
         if let Some(model) = guard.as_ref() {
             return Ok(model.clone());
         }
         let loaded = Arc::new(model::load(&self.dir)?);
         *guard = Some(loaded.clone());
         Ok(loaded)
+    }
+
+    /// Whether the model is currently resident. The consumer decides when to load
+    /// (first embed) and free it — this crate never keeps it loaded on its own.
+    pub fn is_loaded(&self) -> bool {
+        self.cache().is_some()
+    }
+
+    /// Drop the cached model, releasing its weights. The next embed reloads and
+    /// re-verifies from `dir`, so callers can free memory between bursts and pay
+    /// the load cost only when they actually embed.
+    pub fn unload(&self) {
+        *self.cache() = None;
     }
 }
 

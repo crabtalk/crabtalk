@@ -29,6 +29,5 @@ l2_normalize(&mut q);
 ```
 
 The model loads and verifies lazily on the first `embed()`, then caches for the
-embedder's lifetime. A wrong or corrupt file fails with `EmbedError::Hash`. Build
-with the `metal` feature to run on the macOS GPU (fp16); otherwise it runs on CPU
-(fp32).
+embedder's lifetime. A wrong or corrupt file fails with `EmbedError::Hash`.
+Inference runs on CPU in fp32.

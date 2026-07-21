@@ -1,7 +1,6 @@
 //! The BERT model behind the embedder: load the three files from a directory
 //! into a Candle `BertModel` + tokenizer, then mean-pool (attention-masked) the
-//! token states into one vector per input. Runs on the macOS GPU in fp16 under
-//! the `metal` feature, otherwise on CPU in fp32.
+//! token states into one vector per input. Runs on CPU in fp32.
 use crate::EmbedError;
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -51,16 +50,10 @@ impl Model {
     }
 }
 
-/// The macOS GPU when built with `metal` and a device is present, else CPU —
-/// both in fp32. Reduced precision is not an option: candle's f16 **and** bf16
-/// kernels yield NaN for this BERT model on both CPU and Metal, so fp16's memory
-/// win is unreachable. fp32-on-GPU is still worth it — ~2.4× the CPU on a single
-/// recall query, ~1.5× on batch backfill.
+/// CPU in fp32 — the only path. Reduced precision is not an option (candle's f16
+/// **and** bf16 kernels yield NaN for this BERT model), and the Metal fp32 path,
+/// though faster, mispredicts on this model even on mac, so we don't offer it.
 fn device_dtype() -> (Device, DType) {
-    #[cfg(feature = "metal")]
-    if let Ok(device) = Device::new_metal(0) {
-        return (device, DType::F32);
-    }
     (Device::Cpu, DType::F32)
 }
 
