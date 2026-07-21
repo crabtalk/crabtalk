@@ -1,7 +1,7 @@
-//! The BERT model behind the embedder: load the three files into a Candle
-//! `BertModel` + tokenizer, then mean-pool (attention-masked) the token states
-//! into one vector per input.
-use crate::{EmbedError, ModelSource};
+//! The BERT model behind the embedder: load the three files from a directory
+//! into a Candle `BertModel` + tokenizer, then mean-pool (attention-masked) the
+//! token states into one vector per input.
+use crate::EmbedError;
 use candle_core::{Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config, DTYPE};
@@ -46,26 +46,13 @@ impl Model {
     }
 }
 
-pub(crate) fn load(source: &ModelSource) -> Result<Model, EmbedError> {
-    let (config, tokenizer_json, weights) = source_bytes(source)?;
+/// Load the model from `dir` (`config.json`, `tokenizer.json`,
+/// `model.safetensors`), verifying each file against its pinned hash.
+pub(crate) fn load(dir: &Path) -> Result<Model, EmbedError> {
+    let config = read_verified(&dir.join("config.json"), crate::CONFIG_SHA256)?;
+    let tokenizer_json = read_verified(&dir.join("tokenizer.json"), crate::TOKENIZER_SHA256)?;
+    let weights = read_verified(&dir.join("model.safetensors"), crate::MODEL_SHA256)?;
     build(&config, &tokenizer_json, weights)
-}
-
-fn source_bytes(source: &ModelSource) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), EmbedError> {
-    match source {
-        #[cfg(feature = "bundled")]
-        ModelSource::Bundled => Ok((
-            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/model_cache/config.json")).to_vec(),
-            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/model_cache/tokenizer.json"))
-                .to_vec(),
-            include_bytes!(concat!(env!("OUT_DIR"), "/model.safetensors")).to_vec(),
-        )),
-        ModelSource::Dir(dir) => Ok((
-            read_verified(&dir.join("config.json"), crate::CONFIG_SHA256)?,
-            read_verified(&dir.join("tokenizer.json"), crate::TOKENIZER_SHA256)?,
-            read_verified(&dir.join("model.safetensors"), crate::MODEL_SHA256)?,
-        )),
-    }
 }
 
 fn read_verified(path: &Path, expected: &str) -> Result<Vec<u8>, EmbedError> {

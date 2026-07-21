@@ -878,10 +878,8 @@ dependencies = [
  "candle-core",
  "candle-nn",
  "candle-transformers",
- "reqwest 0.13.1",
  "serde_json",
  "sha2",
- "tempfile",
  "thiserror 2.0.18",
  "tokenizers",
 ]
@@ -3756,7 +3754,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
- "webpki-roots",
 ]
 
 [[package]]

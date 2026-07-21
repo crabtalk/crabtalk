@@ -3,27 +3,21 @@
 //! crate, so a vector produced on either side is comparable *by construction*,
 //! not merely by "using the same model".
 //!
-//! The weights arrive one of two ways ([`ModelSource`]): compiled into the binary
-//! (`bundled` feature) or loaded from a directory the caller populated — e.g. via
-//! the `download` feature's [`ensure`]. Both paths pin the same sha256s, so the
-//! bytes — and therefore the vectors — are identical either way.
+//! Weights load from a directory the consumer populated with `config.json`,
+//! `tokenizer.json`, and `model.safetensors`, each verified against a pinned
+//! sha256 on load. This crate bundles no weights and carries no HTTP client —
+//! fetching them is a deployment concern, not the embedder's.
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 mod model;
-#[cfg(feature = "download")]
-mod download;
-#[cfg(feature = "download")]
-pub use download::ensure;
 
 /// Identifier stored next to each vector; bump it on a model swap so consumers
-/// re-embed. Held equal to cloud's original value so existing cloud vectors stay
-/// valid across this extraction.
+/// re-embed. Held equal to cloud's original value so existing vectors stay valid.
 pub const MODEL_ID: &str = "minilm-l6-v2-st";
 /// Output dimensions — any `VECTOR(384)` column or stored BLOB must agree.
 pub const DIM: u32 = 384;
 
-/// sha256 (hex) of the three pinned model files. `build.rs` repeats the weights
-/// hash (it can't import this crate); keep the two in sync.
+/// sha256 (hex) of the three model files, verified on load.
 pub(crate) const CONFIG_SHA256: &str =
     "953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41";
 pub(crate) const TOKENIZER_SHA256: &str =
@@ -31,27 +25,19 @@ pub(crate) const TOKENIZER_SHA256: &str =
 pub(crate) const MODEL_SHA256: &str =
     "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db";
 
-/// Where the model weights come from.
-pub enum ModelSource {
-    /// Compiled into the binary. Requires the `bundled` feature.
-    #[cfg(feature = "bundled")]
-    Bundled,
-    /// A directory holding `config.json`, `tokenizer.json`, `model.safetensors`,
-    /// each verified against its pinned hash on load.
-    Dir(PathBuf),
-}
-
-/// A lazily-loaded embedder. Cheap to construct; the model loads on first embed
-/// and is cached behind an `Arc` for the embedder's lifetime.
+/// A lazily-loaded embedder over a model directory. Cheap to construct; the model
+/// loads (and verifies) on first embed and is cached for the embedder's lifetime.
 pub struct Embedder {
-    source: ModelSource,
+    dir: PathBuf,
     inner: Mutex<Option<Arc<model::Model>>>,
 }
 
 impl Embedder {
-    pub fn new(source: ModelSource) -> Self {
+    /// Embed against the model in `dir` — a directory holding `config.json`,
+    /// `tokenizer.json`, and `model.safetensors`.
+    pub fn new(dir: impl Into<PathBuf>) -> Self {
         Self {
-            source,
+            dir: dir.into(),
             inner: Mutex::new(None),
         }
     }
@@ -68,16 +54,9 @@ impl Embedder {
         if let Some(model) = guard.as_ref() {
             return Ok(model.clone());
         }
-        let loaded = Arc::new(model::load(&self.source)?);
+        let loaded = Arc::new(model::load(&self.dir)?);
         *guard = Some(loaded.clone());
         Ok(loaded)
-    }
-}
-
-#[cfg(feature = "bundled")]
-impl Default for Embedder {
-    fn default() -> Self {
-        Self::new(ModelSource::Bundled)
     }
 }
 
@@ -92,7 +71,7 @@ pub fn l2_normalize(v: &mut [f32]) {
     }
 }
 
-/// Lowercase-hex sha256, shared by the `Dir` load-verify and the downloader.
+/// Lowercase-hex sha256, used to verify each model file against its pin.
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     use std::fmt::Write;
@@ -119,7 +98,4 @@ pub enum EmbedError {
         expected: String,
         got: String,
     },
-    #[cfg(feature = "download")]
-    #[error("download {url}: {source}")]
-    Download { url: String, source: reqwest::Error },
 }

@@ -10,15 +10,6 @@ license.workspace = true
 repository.workspace = true
 keywords.workspace = true
 
-[features]
-default = []
-# Embed the weights into the binary. `build.rs` stages the pinned
-# model.safetensors (from CRABTALK_EMBED_MODEL_PATH) into OUT_DIR, so the 90 MB
-# blob never lives in git.
-bundled = []
-# Runtime downloader: `ensure()` fetches the pinned model files into a cache dir.
-download = ["dep:reqwest"]
-
 [dependencies]
 candle-core.workspace = true
 candle-nn.workspace = true
@@ -27,10 +18,3 @@ tokenizers.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 sha2.workspace = true
-reqwest = { workspace = true, optional = true, features = ["rustls", "webpki-roots"] }
-
-[build-dependencies]
-sha2.workspace = true
-
-[dev-dependencies]
-tempfile.workspace = true

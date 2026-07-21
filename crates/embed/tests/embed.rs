@@ -1,8 +1,7 @@
-//! Behavioural guard on the embedder. Runs only with the `bundled` feature (it
-//! needs real weights). A drift in the model or the pooling trips these:
-//! run with `--features bundled` and `CRABTALK_EMBED_MODEL_PATH` set.
-#![cfg(feature = "bundled")]
-
+//! Behavioural guard on the embedder. Needs a real model directory — set
+//! `CRABTALK_EMBED_MODEL_DIR` to one holding config.json / tokenizer.json /
+//! model.safetensors. Skipped (with a note) when unset. A drift in the model or
+//! the pooling trips these.
 use crabtalk_embed::{DIM, Embedder, l2_normalize};
 
 fn cosine(a: &[f32], b: &[f32]) -> f32 {
@@ -15,9 +14,19 @@ fn embed_normalized(e: &Embedder, text: &str) -> Vec<f32> {
     v
 }
 
+fn embedder() -> Option<Embedder> {
+    match std::env::var("CRABTALK_EMBED_MODEL_DIR") {
+        Ok(dir) => Some(Embedder::new(dir)),
+        Err(_) => {
+            eprintln!("skip: set CRABTALK_EMBED_MODEL_DIR to a model directory to run this test");
+            None
+        }
+    }
+}
+
 #[test]
 fn dims_and_normalization() {
-    let e = Embedder::default();
+    let Some(e) = embedder() else { return };
     let v = embed_normalized(&e, "hello world");
     assert_eq!(v.len(), DIM as usize);
     let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -26,7 +35,7 @@ fn dims_and_normalization() {
 
 #[test]
 fn semantic_ordering_holds() {
-    let e = Embedder::default();
+    let Some(e) = embedder() else { return };
     let cat = embed_normalized(&e, "cat");
     let dog = embed_normalized(&e, "dog");
     let qcd = embed_normalized(&e, "quantum chromodynamics");
