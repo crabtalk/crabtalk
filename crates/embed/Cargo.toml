@@ -1,0 +1,36 @@
+[package]
+name = "crabtalk-embed"
+description = "Shared 384-dim MiniLM (all-MiniLM-L6-v2) text embedder for Crabtalk — cloud and desktop embed with identical code so vectors are comparable."
+documentation = "https://docs.rs/crabtalk-embed"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[features]
+default = []
+# Embed the weights into the binary. `build.rs` stages the pinned
+# model.safetensors (from CRABTALK_EMBED_MODEL_PATH) into OUT_DIR, so the 90 MB
+# blob never lives in git.
+bundled = []
+# Runtime downloader: `ensure()` fetches the pinned model files into a cache dir.
+download = ["dep:reqwest"]
+
+[dependencies]
+candle-core.workspace = true
+candle-nn.workspace = true
+candle-transformers.workspace = true
+tokenizers.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+reqwest = { workspace = true, optional = true, features = ["rustls", "webpki-roots"] }
+
+[build-dependencies]
+sha2.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

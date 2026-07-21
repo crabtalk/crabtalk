@@ -1,0 +1,3 @@
+# The ~90 MB weights never live in git — `build.rs` stages them from
+# CRABTALK_EMBED_MODEL_PATH (bundled) or `ensure()` downloads them (download).
+model.safetensors
