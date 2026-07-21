@@ -2,14 +2,18 @@
 //! `CRABTALK_EMBED_MODEL_DIR` to one holding config.json / tokenizer.json /
 //! model.safetensors. Skipped (with a note) when unset. A drift in the model or
 //! the pooling trips these.
-use crabtalk_embed::{DIM, Embedder, l2_normalize};
+use crabtalk_embed::{DIM, EmbedRole, Embedder, l2_normalize};
 
 fn cosine(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
 
 fn embed_normalized(e: &Embedder, text: &str) -> Vec<f32> {
-    let mut v = e.embed(vec![text.to_string()]).unwrap().pop().unwrap();
+    let mut v = e
+        .embed(vec![text.to_string()], EmbedRole::Document)
+        .unwrap()
+        .pop()
+        .unwrap();
     l2_normalize(&mut v);
     v
 }

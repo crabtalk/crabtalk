@@ -1,29 +1,61 @@
-//! Shared text embedder for Crabtalk: all-MiniLM-L6-v2 (384-dim) on Candle (pure
-//! Rust, CPU — no ONNX runtime). Cloud and desktop both embed through this one
-//! crate, so a vector produced on either side is comparable *by construction*,
-//! not merely by "using the same model".
+//! Shared text embedder for Crabtalk: multilingual-e5-small (384-dim) on Candle
+//! (pure Rust). Cloud and desktop both embed through this one crate, so a vector
+//! produced on either side is comparable *by construction*, not merely by "using
+//! the same model".
 //!
-//! Weights load from a directory the consumer populated with `config.json`,
-//! `tokenizer.json`, and `model.safetensors`, each verified against a pinned
-//! sha256 on load. This crate bundles no weights and carries no HTTP client —
-//! fetching them is a deployment concern, not the embedder's.
+//! The model is multilingual (cross-lingual retrieval) and **asymmetric**: a
+//! query and the documents it retrieves take different prefixes ([`EmbedRole`]),
+//! so a native-language prompt matches source text in any language.
+//!
+//! Weights load from a directory the consumer populated with the three [`FILES`],
+//! each verified against a pinned sha256 on load. This crate bundles no weights
+//! and carries no HTTP client — fetching them is a deployment concern, not the
+//! embedder's. With the `metal` feature it runs on the macOS GPU in fp16;
+//! otherwise on CPU in fp32.
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 mod model;
 
 /// Identifier stored next to each vector; bump it on a model swap so consumers
-/// re-embed. Held equal to cloud's original value so existing vectors stay valid.
-pub const MODEL_ID: &str = "minilm-l6-v2-st";
+/// re-embed. It names the model, so a swap is detected and stale vectors rebuilt.
+pub const MODEL_ID: &str = "multilingual-e5-small";
 /// Output dimensions — any `VECTOR(384)` column or stored BLOB must agree.
 pub const DIM: u32 = 384;
 
-/// sha256 (hex) of the three model files, verified on load.
+/// The three files a model directory must hold, each with its pinned sha256
+/// (hex). The canonical source is the `intfloat/multilingual-e5-small` repo; a
+/// consumer fetches these by name and the crate verifies them on load.
+pub const FILES: [(&str, &str); 3] = [
+    ("config.json", CONFIG_SHA256),
+    ("tokenizer.json", TOKENIZER_SHA256),
+    ("model.safetensors", MODEL_SHA256),
+];
+
 pub(crate) const CONFIG_SHA256: &str =
-    "953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41";
+    "69137736cab8b8903a07fe8afaafdda25aac55415a12a55d1bffa9f581abf959";
 pub(crate) const TOKENIZER_SHA256: &str =
-    "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037";
+    "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39";
 pub(crate) const MODEL_SHA256: &str =
-    "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db";
+    "1a55775f53449dac10a2bcbc312469fac40b96d53198c407081a831f81c98477";
+
+/// Which side of an asymmetric retrieval a text is. e5 prefixes queries and
+/// documents differently, and the two must match across the pair for cosine to
+/// mean anything: embed prompts / recall queries as [`Query`], and the documents
+/// they retrieve (brain notes, cloud source items) as [`Document`].
+#[derive(Debug, Clone, Copy)]
+pub enum EmbedRole {
+    Query,
+    Document,
+}
+
+impl EmbedRole {
+    fn prefix(self) -> &'static str {
+        match self {
+            EmbedRole::Query => "query: ",
+            EmbedRole::Document => "passage: ",
+        }
+    }
+}
 
 /// A lazily-loaded embedder over a model directory. Cheap to construct; the model
 /// loads (and verifies) on first embed and is cached for the embedder's lifetime.
@@ -33,8 +65,7 @@ pub struct Embedder {
 }
 
 impl Embedder {
-    /// Embed against the model in `dir` — a directory holding `config.json`,
-    /// `tokenizer.json`, and `model.safetensors`.
+    /// Embed against the model in `dir` — a directory holding the three [`FILES`].
     pub fn new(dir: impl Into<PathBuf>) -> Self {
         Self {
             dir: dir.into(),
@@ -42,11 +73,15 @@ impl Embedder {
         }
     }
 
-    /// Mean-pooled embeddings, one row per input. Rows are **unnormalized** —
-    /// call [`l2_normalize`] before storing or comparing so cosine is a plain dot
-    /// product on both sides.
-    pub fn embed(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, EmbedError> {
-        self.model()?.embed(texts)
+    /// Mean-pooled embeddings, one row per input, prefixed for `role`. Rows are
+    /// **unnormalized** — call [`l2_normalize`] before storing or comparing so
+    /// cosine is a plain dot product on both sides.
+    pub fn embed(&self, texts: Vec<String>, role: EmbedRole) -> Result<Vec<Vec<f32>>, EmbedError> {
+        let prefixed = texts
+            .into_iter()
+            .map(|t| format!("{}{t}", role.prefix()))
+            .collect();
+        self.model()?.embed(prefixed)
     }
 
     fn model(&self) -> Result<Arc<model::Model>, EmbedError> {

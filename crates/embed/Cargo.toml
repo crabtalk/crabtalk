@@ -10,6 +10,11 @@ license.workspace = true
 repository.workspace = true
 keywords.workspace = true
 
+[features]
+# Run inference on the macOS GPU (fp16). Off by default → CPU (fp32), the path
+# the cloud and non-mac builds take.
+metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
+
 [dependencies]
 candle-core.workspace = true
 candle-nn.workspace = true

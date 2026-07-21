@@ -1,17 +1,19 @@
 //! The BERT model behind the embedder: load the three files from a directory
 //! into a Candle `BertModel` + tokenizer, then mean-pool (attention-masked) the
-//! token states into one vector per input.
+//! token states into one vector per input. Runs on the macOS GPU in fp16 under
+//! the `metal` feature, otherwise on CPU in fp32.
 use crate::EmbedError;
-use candle_core::{Device, Tensor};
+use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
-use candle_transformers::models::bert::{BertModel, Config, DTYPE};
+use candle_transformers::models::bert::{BertModel, Config};
 use std::path::Path;
-use tokenizers::{PaddingParams, PaddingStrategy, Tokenizer};
+use tokenizers::{PaddingParams, PaddingStrategy, Tokenizer, TruncationParams};
 
 pub(crate) struct Model {
     bert: BertModel,
     tokenizer: Tokenizer,
     device: Device,
+    dtype: DType,
 }
 
 impl Model {
@@ -38,16 +40,32 @@ impl Model {
         let type_ids = ids.zeros_like()?;
         let hidden = self.bert.forward(&ids, &type_ids, Some(&mask))?;
         // Mean-pool over tokens, weighted by the attention mask so padding
-        // doesn't dilute the vector.
-        let mask = mask.to_dtype(DTYPE)?.unsqueeze(2)?;
+        // doesn't dilute the vector. Pool in the model's dtype, return f32.
+        let mask = mask.to_dtype(self.dtype)?.unsqueeze(2)?;
         let summed = hidden.broadcast_mul(&mask)?.sum(1)?;
         let counts = mask.sum(1)?;
-        summed.broadcast_div(&counts)?.to_vec2::<f32>()
+        summed
+            .broadcast_div(&counts)?
+            .to_dtype(DType::F32)?
+            .to_vec2::<f32>()
     }
 }
 
-/// Load the model from `dir` (`config.json`, `tokenizer.json`,
-/// `model.safetensors`), verifying each file against its pinned hash.
+/// The macOS GPU when built with `metal` and a device is present, else CPU —
+/// both in fp32. Reduced precision is not an option: candle's f16 **and** bf16
+/// kernels yield NaN for this BERT model on both CPU and Metal, so fp16's memory
+/// win is unreachable. fp32-on-GPU is still worth it — ~2.4× the CPU on a single
+/// recall query, ~1.5× on batch backfill.
+fn device_dtype() -> (Device, DType) {
+    #[cfg(feature = "metal")]
+    if let Ok(device) = Device::new_metal(0) {
+        return (device, DType::F32);
+    }
+    (Device::Cpu, DType::F32)
+}
+
+/// Load the model from `dir` (the three [`crate::FILES`]), verifying each file
+/// against its pinned hash.
 pub(crate) fn load(dir: &Path) -> Result<Model, EmbedError> {
     let config = read_verified(&dir.join("config.json"), crate::CONFIG_SHA256)?;
     let tokenizer_json = read_verified(&dir.join("tokenizer.json"), crate::TOKENIZER_SHA256)?;
@@ -69,7 +87,7 @@ fn read_verified(path: &Path, expected: &str) -> Result<Vec<u8>, EmbedError> {
 }
 
 fn build(config: &[u8], tokenizer_json: &[u8], weights: Vec<u8>) -> Result<Model, EmbedError> {
-    let device = Device::Cpu;
+    let (device, dtype) = device_dtype();
     let config: Config = serde_json::from_slice(config)
         .map_err(|e| EmbedError::Load(format!("parse config.json: {e}")))?;
     let mut tokenizer =
@@ -78,7 +96,13 @@ fn build(config: &[u8], tokenizer_json: &[u8], weights: Vec<u8>) -> Result<Model
         strategy: PaddingStrategy::BatchLongest,
         ..Default::default()
     }));
-    let vb = VarBuilder::from_buffered_safetensors(weights, DTYPE, &device)
+    tokenizer
+        .with_truncation(Some(TruncationParams {
+            max_length: 512,
+            ..Default::default()
+        }))
+        .map_err(|e| EmbedError::Load(e.to_string()))?;
+    let vb = VarBuilder::from_buffered_safetensors(weights, dtype, &device)
         .map_err(|e| EmbedError::Load(format!("load safetensors: {e}")))?;
     let bert =
         BertModel::load(vb, &config).map_err(|e| EmbedError::Load(format!("build bert: {e}")))?;
@@ -86,5 +110,6 @@ fn build(config: &[u8], tokenizer_json: &[u8], weights: Vec<u8>) -> Result<Model
         bert,
         tokenizer,
         device,
+        dtype,
     })
 }
