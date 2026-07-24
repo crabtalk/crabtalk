@@ -57,4 +57,4 @@ MIT
 <!-- docs -->
 
 [book]: https://crabtalk.github.io/crabtalk
-[install]: https://www.crabtalk.ai/docs/getting-started/installation
+[install]: https://crabtalk.ai/docs/crabtalk/installation
