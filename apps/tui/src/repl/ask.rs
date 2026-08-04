@@ -138,6 +138,30 @@ impl AskState {
         map
     }
 
+    /// Insert pasted text into an active free-text answer.
+    pub fn insert_text(&mut self, text: &str) {
+        if self.mode != InputMode::TextInput {
+            return;
+        }
+        for ch in text.chars() {
+            match ch {
+                '\r' => {}
+                // The modal's free-text answer is single-line. Preserve word
+                // separation without letting pasted newlines distort layout.
+                '\n' => tui::handle_text_input(
+                    KeyCode::Char(' '),
+                    &mut self.input_buf,
+                    &mut self.input_cursor,
+                ),
+                _ => tui::handle_text_input(
+                    KeyCode::Char(ch),
+                    &mut self.input_buf,
+                    &mut self.input_cursor,
+                ),
+            }
+        }
+    }
+
     /// Process a key event. Returns an action for the REPL to handle.
     pub fn handle_key(&mut self, key: KeyEvent) -> AskAction {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
@@ -485,4 +509,37 @@ fn draw_status(frame: &mut ratatui::Frame, state: &AskState, area: Rect) {
     };
 
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use client::tools::ask_user::QuestionOption;
+
+    fn question() -> Question {
+        Question {
+            question: "Where?".into(),
+            header: "Location".into(),
+            options: vec![QuestionOption {
+                label: "Home".into(),
+                description: String::new(),
+            }],
+            multi_select: false,
+        }
+    }
+
+    #[test]
+    fn paste_populates_an_active_other_answer() {
+        let mut state = AskState::new(&[question()]);
+        state.focused_q_mut().cursor = 1;
+        state.auto_select();
+
+        state.insert_text("新西兰\r\nAuckland");
+        state.commit_input();
+
+        assert_eq!(
+            state.answers().get("Where?"),
+            Some(&"新西兰 Auckland".into())
+        );
+    }
 }

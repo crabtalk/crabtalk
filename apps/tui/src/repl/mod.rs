@@ -441,6 +441,15 @@ async fn run_event_loop(
                             }
                         }
                     }
+                    Some(Ok(Event::Paste(text))) => {
+                        if let Some(ask) = app.ask_state.as_mut() {
+                            ask.insert_text(&text);
+                            app.dirty = true;
+                        } else {
+                            app.input.insert_text(&text);
+                            app.dirty = true;
+                        }
+                    }
                     Some(Ok(Event::Resize(_, _))) => {
                         app.dirty = true;
                     }

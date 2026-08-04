@@ -75,6 +75,7 @@ chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 console = "0.15"
 crossterm = { version = "0.28", features = ["event-stream"] }
+unicode-width = "0.2"
 dialoguer = "0.11"
 dirs = "6"
 flate2 = "1"

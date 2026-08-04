@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -53,12 +53,16 @@ pub fn run_app_with_state<S>(
 pub fn setup() -> Result<Terminal<CrosstermBackend<Stdout>>> {
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
 
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
-        let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(
+            std::io::stdout(),
+            DisableBracketedPaste,
+            LeaveAlternateScreen
+        );
         original_hook(info);
     }));
 
@@ -68,7 +72,11 @@ pub fn setup() -> Result<Terminal<CrosstermBackend<Stdout>>> {
 /// Restore terminal after TUI.
 pub fn teardown(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        DisableBracketedPaste,
+        LeaveAlternateScreen
+    )?;
     terminal.show_cursor()?;
     Ok(())
 }

@@ -9,6 +9,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
 };
+use unicode_width::UnicodeWidthStr;
 
 const MAX_DROPDOWN_VISIBLE: usize = 5;
 
@@ -309,6 +310,22 @@ impl InputState {
         self.dropdown = None;
     }
 
+    /// Insert pasted text at the cursor. Newlines split into buffer lines.
+    pub fn insert_text(&mut self, text: &str) {
+        // A paste may complete a slash command in one event. Do not leave a
+        // dropdown populated for the old prefix: the next Enter would accept
+        // the stale selection and replace the pasted command.
+        self.close_dropdown();
+        for ch in text.chars() {
+            match ch {
+                '\n' => self.buf.insert_newline(),
+                '\r' => {}
+                _ => self.buf.handle_key(event::KeyCode::Char(ch)),
+            }
+        }
+        self.history.reset_cursor();
+    }
+
     /// Process a key event.
     pub fn handle_key(&mut self, key: event::KeyEvent) -> InputAction {
         // Ctrl+C
@@ -507,10 +524,14 @@ impl InputState {
         let paragraph = Paragraph::new(lines).block(block);
         frame.render_widget(paragraph, area);
 
-        // Position cursor inside the input box.
+        // Position cursor inside the input box. The x offset is the display
+        // width of the text before the cursor, not its char count — CJK and
+        // other wide characters occupy two columns, and the IME anchors its
+        // composition window at the terminal cursor.
         let (cur_line, cur_col) = self.buf.cursor;
         let prefix_w: u16 = if cur_line == 0 { 2 } else { 3 };
-        let x = area.x + 1 + prefix_w + cur_col as u16;
+        let line = &self.buf.lines[cur_line];
+        let x = area.x + 1 + prefix_w + cursor_display_width(line, cur_col) as u16;
         let y = area.y + 1 + cur_line as u16;
         frame.set_cursor_position((x, y));
 
@@ -556,5 +577,53 @@ impl InputState {
                 frame.render_widget(Paragraph::new(dd_lines), dd_area);
             }
         }
+    }
+}
+
+fn cursor_display_width(line: &str, char_col: usize) -> usize {
+    let byte_pos = tui::char_to_byte(line, char_col);
+    UnicodeWidthStr::width(&line[..byte_pos])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn paste_inserts_multiline_unicode_at_the_cursor() {
+        let mut input = InputState::new(History::new(), vec![]);
+        input.handle_key(key(KeyCode::Char('a')));
+        input.handle_key(key(KeyCode::Char('b')));
+        input.handle_key(key(KeyCode::Left));
+
+        input.insert_text("中文\r\nnext");
+
+        assert_eq!(input.buf.content(), "a中文\nnextb");
+        assert_eq!(input.buf.cursor, (1, 4));
+    }
+
+    #[test]
+    fn paste_closes_a_stale_slash_command_dropdown() {
+        let mut input = InputState::new(History::new(), vec![]);
+        input.handle_key(key(KeyCode::Char('/')));
+        assert!(input.dropdown.is_some());
+
+        input.insert_text("help");
+
+        assert!(input.dropdown.is_none());
+        match input.handle_key(key(KeyCode::Enter)) {
+            InputAction::Submit(content) => assert_eq!(content, "/help"),
+            _ => panic!("pasted slash command was not submitted"),
+        }
+    }
+
+    #[test]
+    fn cursor_width_uses_terminal_columns_not_character_count() {
+        assert_eq!(cursor_display_width("a中文b", 3), 5);
     }
 }
