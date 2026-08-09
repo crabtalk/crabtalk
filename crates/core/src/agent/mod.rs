@@ -14,8 +14,7 @@ pub use builder::AgentBuilder;
 pub use config::AgentConfig;
 use crabllm_core::{
     AnthropicContent, AnthropicMessage, AnthropicMessages, AnthropicRequest, AnthropicSystem,
-    AnthropicTool, ContentBlock, DEFAULT_MAX_TOKENS, Provider, Role, ThinkingConfig, Tool,
-    ToolCall, ToolChoice, Usage,
+    AnthropicTool, ContentBlock, FinishReason, Provider, Role, Tool, ToolCall, ToolChoice, Usage,
 };
 use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
 use futures_core::Stream;
@@ -169,11 +168,7 @@ impl<P: Provider + 'static> Agent<P> {
             Some(tool_choice_to_anthropic(&tool_choice))
         };
 
-        let max_tokens = DEFAULT_MAX_TOKENS;
-        let thinking = self.config.thinking.then(|| ThinkingConfig {
-            kind: "enabled".to_string(),
-            budget_tokens: Some(max_tokens.saturating_sub(1)),
-        });
+        let (max_tokens, thinking) = self.config.token_budget();
 
         AnthropicRequest {
             model: model_name,
@@ -437,11 +432,42 @@ impl<P: Provider + 'static> Agent<P> {
                     return;
                 }
 
-                // Build the accumulated message. `MessageBuilder::build`
-                // already drops degenerate (id-less or name-less) tool call
-                // fragments, so any tool_calls present here are well-formed.
+                // A turn cut off at `max_tokens` stops mid-`input_json_delta`,
+                // leaving arguments that are valid-looking JSON with the tail
+                // missing. Dispatching one hands the handler `{}` — the parsed
+                // `Value` a half-written object collapses to — and the agent is
+                // told it omitted a required field, so it retries the identical
+                // call into the identical ceiling. Refuse the turn instead, and
+                // keep it out of history for the reason the no-op path below
+                // gives: a committed tool_use with no tool_result contaminates
+                // the next request.
+                // Truncation is the model's own overrun, so let the call go and
+                // let the handler's parse error tell it to retry smaller.
+                // Anything else arrived mangled, which no retry fixes.
+                let malformed = builder.malformed_tool_calls();
+                if !malformed.is_empty() {
+                    let names = malformed.join(", ");
+                    if finish_reason == Some(FinishReason::Length) {
+                        tracing::warn!("output budget exhausted mid-arguments for {names}");
+                    } else {
+                        tracing::warn!("unparseable arguments for {names}");
+                        yield AgentEvent::Done(AgentResponse {
+                            final_response: None,
+                            iterations: steps.len(),
+                            stop_reason: AgentStopReason::Error(format!(
+                                "unparseable arguments for {names}"
+                            )),
+                            steps,
+                            model: model_name.clone(),
+                        });
+                        return;
+                    }
+                }
+
+                // Raw arguments, not `build()`'s round trip through a parsed
+                // `Value` — see `peek_tool_calls`.
+                let tool_calls: Vec<ToolCall> = builder.peek_tool_calls();
                 let message = builder.build();
-                let tool_calls: Vec<ToolCall> = extract_tool_calls(&message.content);
                 let content = message.content_str().map(|s| s.to_owned());
                 let usage = last_usage.unwrap_or_default();
                 let has_tool_calls = !tool_calls.is_empty();
