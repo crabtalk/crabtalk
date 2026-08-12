@@ -49,10 +49,8 @@ pub trait Hook: Send + Sync {
         None
     }
 
-    /// Tool schemas to advertise for one stream that opted into the named
-    /// declared-only hooks — merged into the request as `extra_tools`. Default:
-    /// none. The composite `Hooks` overrides this to resolve the names against
-    /// its declared-only hooks; leaf hooks have no named sub-hooks.
+    /// Tool schemas for one stream that opted into the named sub-hooks, merged
+    /// into the request as `extra_tools`. Only the composite `Hooks` has any.
     fn scoped_schema(&self, _names: &[String]) -> Vec<Tool> {
         vec![]
     }

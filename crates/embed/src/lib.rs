@@ -1,29 +1,21 @@
-//! Shared text embedder for Crabtalk: multilingual-e5-small (384-dim) on Candle
-//! (pure Rust). Cloud and desktop both embed through this one crate, so a vector
-//! produced on either side is comparable *by construction*, not merely by "using
-//! the same model".
+//! Shared text embedder for Crabtalk: multilingual-e5-small (384-dim) on Candle.
+//! Cloud and desktop embed through this one crate, so a vector produced on either
+//! side is comparable *by construction*, not merely by "using the same model".
 //!
-//! The model is multilingual (cross-lingual retrieval) and **asymmetric**: a
-//! query and the documents it retrieves take different prefixes ([`EmbedRole`]),
-//! so a native-language prompt matches source text in any language.
-//!
-//! Weights load from a directory the consumer populated with the three [`FILES`],
-//! each verified against a pinned sha256 on load. This crate bundles no weights
-//! and carries no HTTP client — fetching them is a deployment concern, not the
-//! embedder's. Inference runs on CPU in fp32.
+//! No bundled weights and no HTTP client — fetching them is a deployment concern.
+//! The consumer supplies a directory holding the three [`FILES`].
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 mod model;
 
-/// Identifier stored next to each vector; bump it on a model swap so consumers
-/// re-embed. It names the model, so a swap is detected and stale vectors rebuilt.
+/// Stored next to each vector, so a model swap is detectable and stale vectors
+/// get rebuilt.
 pub const MODEL_ID: &str = "multilingual-e5-small";
 /// Output dimensions — any `VECTOR(384)` column or stored BLOB must agree.
 pub const DIM: u32 = 384;
 
-/// The three files a model directory must hold, each with its pinned sha256
-/// (hex). The canonical source is the `intfloat/multilingual-e5-small` repo; a
-/// consumer fetches these by name and the crate verifies them on load.
+/// The three files a model directory must hold, each pinned by sha256 and
+/// verified on load. Canonical source: the `intfloat/multilingual-e5-small` repo.
 pub const FILES: [(&str, &str); 3] = [
     ("config.json", CONFIG_SHA256),
     ("tokenizer.json", TOKENIZER_SHA256),
@@ -37,10 +29,8 @@ pub(crate) const TOKENIZER_SHA256: &str =
 pub(crate) const MODEL_SHA256: &str =
     "1a55775f53449dac10a2bcbc312469fac40b96d53198c407081a831f81c98477";
 
-/// Which side of an asymmetric retrieval a text is. e5 prefixes queries and
-/// documents differently, and the two must match across the pair for cosine to
-/// mean anything: embed prompts / recall queries as [`Query`], and the documents
-/// they retrieve (brain notes, cloud source items) as [`Document`].
+/// Which side of an asymmetric retrieval a text is. e5 prefixes the two
+/// differently, and a pair must agree for cosine between them to mean anything.
 #[derive(Debug, Clone, Copy)]
 pub enum EmbedRole {
     Query,
@@ -56,8 +46,7 @@ impl EmbedRole {
     }
 }
 
-/// A lazily-loaded embedder over a model directory. Cheap to construct; the model
-/// loads (and verifies) on first embed and is cached for the embedder's lifetime.
+/// Cheap to construct; the model loads and verifies on first embed, then caches.
 pub struct Embedder {
     dir: PathBuf,
     inner: Mutex<Option<Arc<model::Model>>>,
@@ -73,8 +62,7 @@ impl Embedder {
     }
 
     /// Mean-pooled embeddings, one row per input, prefixed for `role`. Rows are
-    /// **unnormalized** — call [`l2_normalize`] before storing or comparing so
-    /// cosine is a plain dot product on both sides.
+    /// **unnormalized** — call [`l2_normalize`] before storing or comparing.
     pub fn embed(&self, texts: Vec<String>, role: EmbedRole) -> Result<Vec<Vec<f32>>, EmbedError> {
         let prefixed = texts
             .into_iter()
@@ -83,8 +71,8 @@ impl Embedder {
         self.model()?.embed(prefixed)
     }
 
-    /// The cache guard, recovering the inner value if a prior holder panicked —
-    /// a poisoned embedder cache is never a reason to bring the process down.
+    /// Recovers from poisoning — a panicked cache holder is no reason to bring
+    /// the process down.
     fn cache(&self) -> MutexGuard<'_, Option<Arc<model::Model>>> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -99,15 +87,13 @@ impl Embedder {
         Ok(loaded)
     }
 
-    /// Whether the model is currently resident. The consumer decides when to load
-    /// (first embed) and free it — this crate never keeps it loaded on its own.
+    /// Whether the model is currently resident.
     pub fn is_loaded(&self) -> bool {
         self.cache().is_some()
     }
 
-    /// Drop the cached model, releasing its weights. The next embed reloads and
-    /// re-verifies from `dir`, so callers can free memory between bursts and pay
-    /// the load cost only when they actually embed.
+    /// Release the weights; the next embed reloads and re-verifies from `dir`.
+    /// Lets a consumer hold the memory only between bursts.
     pub fn unload(&self) {
         *self.cache() = None;
     }

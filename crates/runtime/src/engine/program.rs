@@ -1,9 +1,8 @@
 //! Programs — running an agent through an ordered sequence of bounded turns.
 //!
-//! A [`Program`] is orchestration, not a chat: its steps share one unpersisted
-//! in-memory history, so a later step sees what earlier ones produced (and can
-//! build on or avoid repeating them). Reach for it when a task is a fixed plan
-//! of deliverables — one per step — rather than one open-ended turn.
+//! Orchestration, not a chat: steps share one unpersisted history, so a later
+//! step sees what earlier ones produced. For a fixed plan of deliverables — one
+//! per step — rather than one open-ended turn.
 
 use super::Runtime;
 use crate::{Config, Env};
@@ -12,9 +11,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use wcore::{AgentEvent, AgentResponse, model::HistoryEntry};
 
-/// One step of a [`Program`] — a single bounded turn's prompt. A struct rather
-/// than a bare string so a step can grow its own scope or forced output later
-/// without churning call sites.
+/// One step of a [`Program`] — a single bounded turn's prompt.
 pub struct ProgramStep {
     pub prompt: String,
 }
@@ -25,8 +22,7 @@ impl From<String> for ProgramStep {
     }
 }
 
-/// An ordered plan run by [`Runtime::run_program`]. Each step is a bounded turn;
-/// all steps share one history.
+/// An ordered plan run by [`Runtime::run_program`].
 pub struct Program {
     pub steps: Vec<ProgramStep>,
 }
@@ -40,12 +36,9 @@ impl From<Vec<String>> for Program {
 }
 
 impl<C: Config> Runtime<C> {
-    /// Run a [`Program`]: each step is a bounded turn, all sharing one in-memory
-    /// history. Yields a flat `AgentEvent` stream across every step; each step
-    /// ends in one `AgentEvent::Done`, so an observer counts `Done`s to track
-    /// progress (`step k of steps.len()`). Like `ephemeral_stream`, dispatch runs
-    /// with no conversation id, so a program only reaches self-contained
-    /// daemon-side tools.
+    /// A flat `AgentEvent` stream across every step, each ending in one
+    /// `AgentEvent::Done` — so an observer counts `Done`s for progress. Like
+    /// `ephemeral_stream`, dispatch runs with no conversation id.
     pub fn run_program<'a>(
         &'a self,
         agent_name: &'a str,

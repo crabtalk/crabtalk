@@ -100,10 +100,8 @@ impl<C: Config> Runtime<C> {
         &self.memory
     }
 
-    /// Resolve the tool schemas of the named declared-only hooks, to pass as a
-    /// stream's `extra_tools`. This is how a surface opts into capabilities that
-    /// are dispatchable but deliberately kept out of the ambient tool set (so
-    /// they never leak into ordinary chat or heartbeats).
+    /// How a surface opts into capabilities held out of the ambient tool set,
+    /// passed as a stream's `extra_tools`.
     pub fn scoped_tools(&self, names: &[String]) -> Vec<crabllm_core::Tool> {
         self.env.hook().scoped_schema(names)
     }

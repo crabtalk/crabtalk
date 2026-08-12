@@ -1,6 +1,5 @@
-//! The BERT model behind the embedder: load the three files from a directory
-//! into a Candle `BertModel` + tokenizer, then mean-pool (attention-masked) the
-//! token states into one vector per input. Runs on CPU in fp32.
+//! The BERT model behind the embedder: a Candle `BertModel` + tokenizer,
+//! mean-pooled into one vector per input.
 use crate::EmbedError;
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
@@ -38,8 +37,7 @@ impl Model {
         let mask = Tensor::stack(&mask, 0)?;
         let type_ids = ids.zeros_like()?;
         let hidden = self.bert.forward(&ids, &type_ids, Some(&mask))?;
-        // Mean-pool over tokens, weighted by the attention mask so padding
-        // doesn't dilute the vector. Pool in the model's dtype, return f32.
+        // Weighted by the attention mask so padding doesn't dilute the vector.
         let mask = mask.to_dtype(self.dtype)?.unsqueeze(2)?;
         let summed = hidden.broadcast_mul(&mask)?.sum(1)?;
         let counts = mask.sum(1)?;
@@ -50,9 +48,8 @@ impl Model {
     }
 }
 
-/// CPU in fp32 — the only path. Reduced precision is not an option (candle's f16
-/// **and** bf16 kernels yield NaN for this BERT model), and the Metal fp32 path,
-/// though faster, mispredicts on this model even on mac, so we don't offer it.
+/// The only path: candle's f16 and bf16 kernels yield NaN for this BERT model,
+/// and Metal fp32, though faster, mispredicts on it.
 fn device_dtype() -> (Device, DType) {
     (Device::Cpu, DType::F32)
 }

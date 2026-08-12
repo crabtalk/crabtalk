@@ -46,16 +46,11 @@ pub struct Hooks {
     pub scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
     agent_descriptions: RwLock<BTreeMap<String, String>>,
     hooks: BTreeMap<String, Arc<dyn Hook>>,
-    /// Declared-only hooks: dispatchable, but NOT advertised ambiently. Their
-    /// tools reach the model only when a stream opts them in by hook name via
-    /// [`Hooks::scoped_schema`] (passed as `extra_tools`). Used for
-    /// capabilities that belong to a specific surface — e.g. a setup UI's
-    /// ask/draft tools — which must not leak into ordinary chat or unattended
-    /// heartbeats.
+    /// Dispatchable but never advertised ambiently, so a surface's own tools
+    /// can't leak into ordinary chat or unattended heartbeats.
     scoped: BTreeMap<String, Arc<dyn Hook>>,
-    /// Tool names owned by `scoped` — dispatch skips the per-agent tool
-    /// whitelist for these, since a declared-only tool is already gated by the
-    /// stream having declared it (and is never in the persistent whitelist).
+    /// Tool names owned by `scoped`, which dispatch lets past the per-agent
+    /// whitelist — declaring one is already the gate.
     scoped_names: BTreeSet<String>,
     dispatch_map: BTreeMap<String, Arc<dyn Hook>>,
     event_sink: RwLock<Option<EventSink>>,
@@ -83,8 +78,7 @@ impl Hooks {
         self.hooks.insert(name.into(), hook);
     }
 
-    /// Register a declared-only sub-hook by name: its tools are dispatchable but
-    /// stay out of the ambient schema. A stream opts them in with
+    /// Register a sub-hook whose tools a stream must opt into by name with
     /// [`Hooks::scoped_schema`]; see the `scoped` field.
     pub fn register_scoped(&mut self, name: impl Into<String>, hook: Arc<dyn Hook>) {
         for tool in hook.schema() {
@@ -133,9 +127,8 @@ impl Hook for Hooks {
         self.hooks.values().flat_map(|h| h.schema()).collect()
     }
 
-    /// The tool schemas of the named declared-only hooks, to advertise for one
-    /// stream as `extra_tools`. Unknown names are skipped. Empty `names` → no
-    /// tools, so the default (nothing declared) exposes none of them.
+    /// Unknown names are skipped, so the default — nothing declared — exposes
+    /// no scoped tools at all.
     fn scoped_schema(&self, names: &[String]) -> Vec<Tool> {
         names
             .iter()
@@ -235,9 +228,8 @@ impl Hook for Hooks {
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
-        // Scope enforcement. Declared-only tools bypass the per-agent whitelist:
-        // they're gated by the stream having declared them, and are never in the
-        // persistent whitelist to begin with.
+        // Scoped tools skip the whitelist — declaring one is already the gate,
+        // and they are never in the persistent whitelist to begin with.
         if !self.scoped_names.contains(name) {
             let scopes = self.scopes.read();
             if let Some(scope) = scopes.get(&call.agent)

@@ -53,8 +53,8 @@ pub struct AgentConfig {
     /// HTML document written as a tool argument does not fit the default.
     #[serde(default = "default_max_tokens")]
     pub max_tokens: u32,
-    /// Reasoning allowance when `thinking` is on. Added to `max_tokens`, never
-    /// taken out of it — see [`AgentConfig::token_budget`].
+    /// Reasoning allowance when `thinking` is on — see
+    /// [`AgentConfig::token_budget`].
     #[serde(default = "default_thinking_budget")]
     pub thinking_budget: u32,
     /// Skill names this agent can access. Empty = all skills (crabtalk default).
@@ -151,10 +151,8 @@ impl AgentConfig {
         self
     }
 
-    /// The request's total `max_tokens` and matching `ThinkingConfig`. For
-    /// extended thinking `max_tokens` is the TOTAL budget, so the reasoning
+    /// For extended thinking `max_tokens` is the TOTAL budget, so the reasoning
     /// allowance is added to the output allowance rather than carved out of it.
-    /// One home for the arithmetic — both request builders call it.
     pub fn token_budget(&self) -> (u32, Option<ThinkingConfig>) {
         let thinking = self.thinking.then(|| ThinkingConfig {
             kind: "enabled".to_string(),

@@ -249,9 +249,8 @@ impl MessageBuilder {
         }
     }
 
-    /// The tool calls so far, carrying the argument text exactly as it arrived —
-    /// `build()`'s parsed `Value` turns a half-streamed one into `{}`. Filtered
-    /// like `build()`, so both see the same calls.
+    /// Argument text exactly as it arrived — `build()`'s parsed `Value` turns a
+    /// half-streamed one into `{}`. Filtered like `build()`, so both agree.
     pub fn peek_tool_calls(&self) -> Vec<ToolCall> {
         self.tool_blocks
             .iter()

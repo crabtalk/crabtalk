@@ -432,30 +432,21 @@ impl<P: Provider + 'static> Agent<P> {
                     return;
                 }
 
-                // A turn cut off at `max_tokens` stops mid-`input_json_delta`,
-                // leaving arguments that are valid-looking JSON with the tail
-                // missing. Dispatching one hands the handler `{}` — the parsed
-                // `Value` a half-written object collapses to — and the agent is
-                // told it omitted a required field, so it retries the identical
-                // call into the identical ceiling. Refuse the turn instead, and
-                // keep it out of history for the reason the no-op path below
-                // gives: a committed tool_use with no tool_result contaminates
-                // the next request.
-                // Truncation is the model's own overrun, so let the call go and
-                // let the handler's parse error tell it to retry smaller.
-                // Anything else arrived mangled, which no retry fixes.
+                // Truncation is the model's own overrun — dispatch anyway so the
+                // handler's parse error tells it to retry smaller; anything else
+                // arrived mangled, which no retry fixes.
                 let malformed = builder.malformed_tool_calls();
                 if !malformed.is_empty() {
                     let names = malformed.join(", ");
                     if finish_reason == Some(FinishReason::Length) {
                         tracing::warn!("output budget exhausted mid-arguments for {names}");
                     } else {
-                        tracing::warn!("unparseable arguments for {names}");
+                        tracing::warn!("unparsable arguments for {names}");
                         yield AgentEvent::Done(AgentResponse {
                             final_response: None,
                             iterations: steps.len(),
                             stop_reason: AgentStopReason::Error(format!(
-                                "unparseable arguments for {names}"
+                                "unparsable arguments for {names}"
                             )),
                             steps,
                             model: model_name.clone(),
@@ -464,8 +455,6 @@ impl<P: Provider + 'static> Agent<P> {
                     }
                 }
 
-                // Raw arguments, not `build()`'s round trip through a parsed
-                // `Value` — see `peek_tool_calls`.
                 let tool_calls: Vec<ToolCall> = builder.peek_tool_calls();
                 let message = builder.build();
                 let content = message.content_str().map(|s| s.to_owned());
