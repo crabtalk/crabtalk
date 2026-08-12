@@ -53,7 +53,7 @@ pub async fn install(
         let effective_branch = manifest.package.branch.as_deref();
         git_sync(&manifest.package.repository, &dir, effective_branch)
             .await
-            .with_context(|| format!("failed to sync repo {}", &manifest.package.repository))?;
+            .with_context(|| format!("failed to sync repo {}", manifest.package.repository))?;
         Some(dir)
     } else {
         None
