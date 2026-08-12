@@ -674,8 +674,6 @@ dependencies = [
 [[package]]
 name = "crabllm-core"
 version = "0.0.22"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "486596f356e0db4d565bbc2c6ada0096e00dd29ad6c45d7bdfbc1e090f933be8"
 dependencies = [
  "bytes",
  "futures",
@@ -685,14 +683,11 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
- "tracing",
 ]
 
 [[package]]
 name = "crabllm-http"
 version = "0.0.22"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a83b983fc2e087818128c654ea0ecb888d6ff322532bd9e73650c636e957af9"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -706,19 +701,32 @@ dependencies = [
  "hyper-util",
  "native-tls",
  "reqwest 0.13.1",
+ "tokio",
  "tracing",
 ]
 
 [[package]]
-name = "crabllm-sdk"
+name = "crabllm-provider"
 version = "0.0.22"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "516d14ce0d585e6c6fcb2c6b8bac59ec417ad8ec85057d803997a521c2790c69"
 dependencies = [
  "bytes",
  "crabllm-core",
  "crabllm-http",
  "futures",
+ "rand 0.9.2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "crabllm-sdk"
+version = "0.0.22"
+dependencies = [
+ "bytes",
+ "crabllm-core",
+ "crabllm-http",
+ "futures",
+ "tracing",
 ]
 
 [[package]]
@@ -730,6 +738,7 @@ dependencies = [
  "bytes",
  "chrono",
  "crabllm-core",
+ "crabllm-provider",
  "crabllm-sdk",
  "crabtalk-core",
  "crabtalk-hooks",

@@ -33,6 +33,7 @@ crabtalk-cron = { path = "apps/cron", version = "0.0.23" }
 # crabllm
 crabllm-core = "0.0.22"
 crabllm-sdk = { version = "0.0.22", default-features = false }
+crabllm-provider = { version = "0.0.22", default-features = false }
 
 # bench
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -141,3 +142,13 @@ strip = true
 
 [workspace.metadata.conta]
 ignore = []
+
+# `Provider::models` is not on a published crabllm yet. Local builds need a
+# sibling checkout until the pins above move to the release that has it; this
+# block goes away then. Consumers of crabtalk are unaffected — a workspace
+# patch applies only to builds of this workspace.
+[patch.crates-io]
+crabllm-core = { path = "../crabllm/crates/core" }
+crabllm-http = { path = "../crabllm/crates/http" }
+crabllm-provider = { path = "../crabllm/crates/provider" }
+crabllm-sdk = { path = "../crabllm/crates/sdk" }

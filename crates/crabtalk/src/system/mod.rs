@@ -11,9 +11,10 @@ use std::{
 use tokio::sync::{RwLock, broadcast};
 pub use transport::{bridge_shutdown, setup_tcp};
 use {
-    builder::{BuildProvider, DefaultProvider, build_default_provider},
+    builder::{BuildProvider, build_default_provider},
     event::EventBus,
     host::SystemEnv,
+    provider::DefaultProvider,
 };
 
 #[cfg(unix)]
@@ -22,6 +23,7 @@ pub use transport::setup_socket;
 pub mod builder;
 pub mod event;
 pub mod host;
+pub mod provider;
 mod transport;
 
 /// Live-reloadable handle to the runtime. The outer `RwLock` lets
@@ -70,25 +72,36 @@ impl<P: Provider + 'static> Clone for CrabTalk<P> {
     }
 }
 
-impl CrabTalk<DefaultProvider> {
-    pub async fn start(config_dir: &Path) -> Result<CrabTalkHandle<DefaultProvider>> {
+impl<P: Provider + 'static> CrabTalk<P> {
+    /// Start against a caller-supplied provider. This is the seam an embedder
+    /// uses to bring its own keys rather than the single configured endpoint.
+    pub async fn start_with(
+        config_dir: &Path,
+        build_provider: BuildProvider<P>,
+    ) -> Result<CrabTalkHandle<P>> {
         let config_path = config_dir.join(wcore::paths::CONFIG_FILE);
         let config = wcore::Config::load(&config_path)?;
         tracing::info!("loaded configuration from {}", config_path.display());
 
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
+        let inner = CrabTalk::build(&config, config_dir, build_provider).await?;
+
+        Ok(CrabTalkHandle {
+            config,
+            shutdown_tx,
+            inner,
+        })
+    }
+}
+
+impl CrabTalk<DefaultProvider> {
+    pub async fn start(config_dir: &Path) -> Result<CrabTalkHandle<DefaultProvider>> {
         let build_provider: BuildProvider<DefaultProvider> =
             Arc::new(|config: &wcore::Config, models: &[String]| {
                 build_default_provider(config, models)
             });
 
-        let ct = CrabTalk::build(&config, config_dir, build_provider).await?;
-
-        Ok(CrabTalkHandle {
-            config,
-            shutdown_tx,
-            inner: ct,
-        })
+        Self::start_with(config_dir, build_provider).await
     }
 }
 

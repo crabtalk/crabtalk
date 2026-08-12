@@ -7,7 +7,7 @@ use crate::{
     hooks::delegate,
     storage::FsStorage,
     system::RuntimeHandle,
-    system::{event, host::SystemEnv},
+    system::{event, host::SystemEnv, provider::DefaultProvider},
 };
 use anyhow::Result;
 use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook, SkillHook};
@@ -19,9 +19,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 use tokio::sync::{RwLock, broadcast};
-use wcore::{LlmConfig, ResolvedDirs, model::Model, resolve_dirs, storage::Storage};
-
-pub type DefaultProvider = crabllm_sdk::Client;
+use wcore::{ResolvedDirs, model::Model, resolve_dirs, storage::Storage};
 
 /// Build the LLM `Model<P>` given the config and the list of models
 /// advertised by the endpoint (fetched from `/v1/models` at startup).
@@ -175,7 +173,15 @@ impl<P: Provider + 'static> CrabTalk<P> {
         let dirs = resolve_dirs(config_dir);
         let storage = Self::build_storage(config_dir, &dirs);
         crate::storage::fs::migrate::migrate_settings(storage.as_ref()).await?;
-        let models = fetch_models(&config.llm).await;
+        // Ask the endpoint what it serves; an empty list is survivable, so a
+        // failure only warns and the next reload retries.
+        let models = match config.llm.kind.is_none() && config.llm.base_url.is_empty() {
+            true => {
+                tracing::warn!("no llm.base_url configured in config.toml — model list is empty");
+                Vec::new()
+            }
+            false => DefaultProvider::from(&config.llm).model_ids().await,
+        };
         let default_model = models.first().cloned().unwrap_or_default();
         storage.scaffold(&default_model).await?;
 
@@ -301,29 +307,10 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
 fn build_providers(config: &wcore::Config, models: &[String]) -> Result<Model<DefaultProvider>> {
     let llm = &config.llm;
-    let client = crabllm_sdk::Client::new(llm.base_url.clone(), llm.api_key.clone());
     tracing::info!(
         "llm endpoint registered — {} models from {}",
         models.len(),
         llm.base_url
     );
-    Ok(Model::new(client))
-}
-
-/// Fetch `/v1/models` from the configured LLM endpoint. Returns an empty
-/// list on failure (logged as a warning) so startup proceeds — the next
-/// reload will retry.
-async fn fetch_models(llm: &LlmConfig) -> Vec<String> {
-    if llm.base_url.is_empty() {
-        tracing::warn!("no llm.base_url configured in config.toml — model list is empty");
-        return Vec::new();
-    }
-    let client = crabllm_sdk::Client::new(llm.base_url.clone(), llm.api_key.clone());
-    match client.models().await {
-        Ok(list) => list.data.into_iter().map(|m| m.id).collect(),
-        Err(e) => {
-            tracing::warn!("failed to list models from {}: {e}", llm.base_url);
-            Vec::new()
-        }
-    }
+    Ok(Model::new(DefaultProvider::from(llm)))
 }
