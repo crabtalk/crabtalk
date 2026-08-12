@@ -249,10 +249,12 @@ impl MessageBuilder {
         }
     }
 
+    /// Argument text exactly as it arrived — `build()`'s parsed `Value` turns a
+    /// half-streamed one into `{}`. Filtered like `build()`, so both agree.
     pub fn peek_tool_calls(&self) -> Vec<ToolCall> {
         self.tool_blocks
             .iter()
-            .filter(|(_, (_, name, _))| !name.is_empty())
+            .filter(|(_, (id, name, _))| !id.is_empty() && !name.is_empty())
             .map(|(idx, (id, name, args))| ToolCall {
                 index: Some(*idx),
                 id: id.clone(),
@@ -262,6 +264,16 @@ impl MessageBuilder {
                     arguments: args.clone(),
                 },
             })
+            .collect()
+    }
+
+    /// Names of the tool calls whose accumulated arguments aren't valid JSON.
+    pub fn malformed_tool_calls(&self) -> Vec<&str> {
+        self.tool_blocks
+            .values()
+            .filter(|(id, name, _)| !id.is_empty() && !name.is_empty())
+            .filter(|(_, _, args)| crabllm_core::json::from_str::<serde_json::Value>(args).is_err())
+            .map(|(_, name, _)| name.as_str())
             .collect()
     }
 

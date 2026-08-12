@@ -14,8 +14,7 @@ pub use builder::AgentBuilder;
 pub use config::AgentConfig;
 use crabllm_core::{
     AnthropicContent, AnthropicMessage, AnthropicMessages, AnthropicRequest, AnthropicSystem,
-    AnthropicTool, ContentBlock, DEFAULT_MAX_TOKENS, Provider, Role, ThinkingConfig, Tool,
-    ToolCall, ToolChoice, Usage,
+    AnthropicTool, ContentBlock, FinishReason, Provider, Role, Tool, ToolCall, ToolChoice, Usage,
 };
 use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
 use futures_core::Stream;
@@ -169,11 +168,7 @@ impl<P: Provider + 'static> Agent<P> {
             Some(tool_choice_to_anthropic(&tool_choice))
         };
 
-        let max_tokens = DEFAULT_MAX_TOKENS;
-        let thinking = self.config.thinking.then(|| ThinkingConfig {
-            kind: "enabled".to_string(),
-            budget_tokens: Some(max_tokens.saturating_sub(1)),
-        });
+        let (max_tokens, thinking) = self.config.token_budget();
 
         AnthropicRequest {
             model: model_name,
@@ -437,11 +432,31 @@ impl<P: Provider + 'static> Agent<P> {
                     return;
                 }
 
-                // Build the accumulated message. `MessageBuilder::build`
-                // already drops degenerate (id-less or name-less) tool call
-                // fragments, so any tool_calls present here are well-formed.
+                // Truncation is the model's own overrun — dispatch anyway so the
+                // handler's parse error tells it to retry smaller; anything else
+                // arrived mangled, which no retry fixes.
+                let malformed = builder.malformed_tool_calls();
+                if !malformed.is_empty() {
+                    let names = malformed.join(", ");
+                    if finish_reason == Some(FinishReason::Length) {
+                        tracing::warn!("output budget exhausted mid-arguments for {names}");
+                    } else {
+                        tracing::warn!("unparsable arguments for {names}");
+                        yield AgentEvent::Done(AgentResponse {
+                            final_response: None,
+                            iterations: steps.len(),
+                            stop_reason: AgentStopReason::Error(format!(
+                                "unparsable arguments for {names}"
+                            )),
+                            steps,
+                            model: model_name.clone(),
+                        });
+                        return;
+                    }
+                }
+
+                let tool_calls: Vec<ToolCall> = builder.peek_tool_calls();
                 let message = builder.build();
-                let tool_calls: Vec<ToolCall> = extract_tool_calls(&message.content);
                 let content = message.content_str().map(|s| s.to_owned());
                 let usage = last_usage.unwrap_or_default();
                 let has_tool_calls = !tool_calls.is_empty();

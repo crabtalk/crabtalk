@@ -5,8 +5,7 @@ use crate::{Config, Conversation, Env, Hook};
 use anyhow::Result;
 use async_stream::stream;
 use crabllm_core::{
-    AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicSystem, DEFAULT_MAX_TOKENS,
-    ThinkingConfig, ToolChoice,
+    AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicSystem, ToolChoice,
 };
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -284,16 +283,7 @@ impl<C: Config> Runtime<C> {
                 })
                 .collect();
 
-            // For extended thinking `max_tokens` is the TOTAL budget (reasoning +
-            // visible output), so the reasoning budget sits ON TOP of the response
-            // allowance. Budgeting thinking at `max_tokens - 1` left ~1 token for
-            // the answer and truncated it mid-word.
-            const THINKING_BUDGET: u32 = 4096;
-            let thinking = guest_agent.config.thinking.then(|| ThinkingConfig {
-                kind: "enabled".to_string(),
-                budget_tokens: Some(THINKING_BUDGET),
-            });
-            let max_tokens = DEFAULT_MAX_TOKENS + thinking.as_ref().map_or(0, |_| THINKING_BUDGET);
+            let (max_tokens, thinking) = guest_agent.config.token_budget();
 
             let request = AnthropicRequest {
                 model: model_name.clone(),

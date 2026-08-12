@@ -321,7 +321,7 @@ async fn run_event_loop(
                                 app.renderer.buffer.push(ChatEntry::Text(vec![
                                     Line::raw(""),
                                     Line::from(Span::styled(
-                                        format!(" {} ", &content),
+                                        format!(" {content} "),
                                         Style::new().bg(Color::Indexed(236)),
                                     )),
                                     Line::raw(""),
@@ -422,7 +422,7 @@ fn send_or_queue(
 ) {
     if app.streaming {
         // Show queued indicator.
-        let display = format!("  [queued] {}", &content);
+        let display = format!("  [queued] {content}");
         app.message_queue.push_back(content);
         app.renderer
             .buffer

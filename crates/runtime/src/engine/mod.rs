@@ -6,7 +6,7 @@
 //! (`send_to`, `stream_to`) take a conversation ID, lock the conversation,
 //! clone the agent, and run with the conversation's history.
 
-use crate::{Config, Conversation, sessions::SessionIndex};
+use crate::{Config, Conversation, Env, Hook, sessions::SessionIndex};
 use memory::Memory;
 use std::{
     collections::BTreeMap,
@@ -20,7 +20,10 @@ mod config;
 mod conversation;
 mod execution;
 mod history;
+mod program;
 mod session_search;
+
+pub use program::{Program, ProgramStep};
 
 /// Shared handle to the standalone memory store. Used by compaction to
 /// write Archive entries and by session resume to pull their content
@@ -95,5 +98,11 @@ impl<C: Config> Runtime<C> {
     /// Access the shared memory store.
     pub fn memory(&self) -> &SharedMemory {
         &self.memory
+    }
+
+    /// How a surface opts into capabilities held out of the ambient tool set,
+    /// passed as a stream's `extra_tools`.
+    pub fn scoped_tools(&self, names: &[String]) -> Vec<crabllm_core::Tool> {
+        self.env.hook().scoped_schema(names)
     }
 }

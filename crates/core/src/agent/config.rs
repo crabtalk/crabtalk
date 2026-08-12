@@ -4,6 +4,7 @@
 //! Used by [`super::AgentBuilder`] to construct an [`super::Agent`].
 
 use crate::{AgentId, config::hooks::HooksConfig, model::ToolChoice};
+use crabllm_core::ThinkingConfig;
 use serde::{Deserialize, Serialize};
 
 /// Default maximum iterations for agent execution.
@@ -11,6 +12,9 @@ const DEFAULT_MAX_ITERATIONS: usize = 16;
 
 /// Default max byte length for tool results during compaction.
 const DEFAULT_COMPACT_TOOL_MAX_LEN: usize = 1024;
+
+/// Default reasoning allowance when thinking is on.
+const DEFAULT_THINKING_BUDGET: u32 = 4096;
 
 /// Serializable agent configuration.
 ///
@@ -45,6 +49,14 @@ pub struct AgentConfig {
     /// Whether to enable thinking/reasoning mode.
     #[serde(default)]
     pub thinking: bool,
+    /// Output allowance for one response, before any reasoning budget. A whole
+    /// HTML document written as a tool argument does not fit the default.
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
+    /// Reasoning allowance when `thinking` is on — see
+    /// [`AgentConfig::token_budget`].
+    #[serde(default = "default_thinking_budget")]
+    pub thinking_budget: u32,
     /// Skill names this agent can access. Empty = all skills (crabtalk default).
     #[serde(default)]
     pub skills: Vec<String>,
@@ -70,6 +82,14 @@ fn default_max_iterations() -> usize {
     DEFAULT_MAX_ITERATIONS
 }
 
+fn default_max_tokens() -> u32 {
+    crabllm_core::DEFAULT_MAX_TOKENS
+}
+
+fn default_thinking_budget() -> u32 {
+    DEFAULT_THINKING_BUDGET
+}
+
 fn default_compact_tool_max_len() -> usize {
     DEFAULT_COMPACT_TOOL_MAX_LEN
 }
@@ -85,6 +105,8 @@ impl Default for AgentConfig {
             max_iterations: DEFAULT_MAX_ITERATIONS,
             tool_choice: ToolChoice::Auto,
             thinking: false,
+            max_tokens: crabllm_core::DEFAULT_MAX_TOKENS,
+            thinking_budget: DEFAULT_THINKING_BUDGET,
             skills: Vec::new(),
             mcps: Vec::new(),
             tools: Vec::new(),
@@ -127,5 +149,16 @@ impl AgentConfig {
     pub fn thinking(mut self, enabled: bool) -> Self {
         self.thinking = enabled;
         self
+    }
+
+    /// For extended thinking `max_tokens` is the TOTAL budget, so the reasoning
+    /// allowance is added to the output allowance rather than carved out of it.
+    pub fn token_budget(&self) -> (u32, Option<ThinkingConfig>) {
+        let thinking = self.thinking.then(|| ThinkingConfig {
+            kind: "enabled".to_string(),
+            budget_tokens: Some(self.thinking_budget),
+        });
+        let max_tokens = self.max_tokens + thinking.as_ref().map_or(0, |_| self.thinking_budget);
+        (max_tokens, thinking)
     }
 }

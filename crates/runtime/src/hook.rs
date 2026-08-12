@@ -49,6 +49,12 @@ pub trait Hook: Send + Sync {
         None
     }
 
+    /// Tool schemas for one stream that opted into the named sub-hooks, merged
+    /// into the request as `extra_tools`. Only the composite `Hooks` has any.
+    fn scoped_schema(&self, _names: &[String]) -> Vec<Tool> {
+        vec![]
+    }
+
     /// Tools to include when building a scoped agent's whitelist, plus an
     /// optional scope prompt line (e.g. `"skills: foo, bar"`).
     ///
