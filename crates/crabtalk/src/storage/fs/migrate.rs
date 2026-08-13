@@ -1,9 +1,8 @@
-//! One-shot migrations applied to `local/settings.toml` before the daemon
-//! deserializes it.
+//! One-shot migrations applied to on-disk state before the daemon reads it —
+//! `local/settings.toml`, and the session directory layout.
 //!
-//! Each migration detects its own legacy shape and is a no-op once the file
-//! has been upgraded, so calling `migrate_settings` on every startup is safe
-//! and cheap.
+//! Each migration detects its own legacy shape and is a no-op once upgraded, so
+//! calling them on every startup is safe and cheap.
 
 use super::{FsStorage, SETTINGS_HEADER, atomic_write};
 use anyhow::Result;
@@ -38,6 +37,61 @@ pub(crate) async fn migrate_settings(storage: &FsStorage) -> Result<()> {
         tracing::info!("migrated settings.toml: inlined per-agent MCP configs");
     }
     Ok(())
+}
+
+/// Rename legacy `<agent>_<sender>_<seq>` session directories to opaque ULIDs.
+///
+/// The old name encoded the conversation's identity, which is why renaming an
+/// agent orphaned its transcripts. Everything the name carried is already in
+/// each session's `meta`, so this drops nothing: the association simply moves
+/// from the path to the data.
+///
+/// A directory that does not parse as the legacy triple is left alone, which is
+/// what makes this idempotent — a ULID has no `_`, so a second run sees nothing
+/// to do. A session with no readable `meta` is also left alone: its identity
+/// lives only in its name, and `list_sessions` already ignores it.
+pub(crate) async fn migrate_sessions(storage: &FsStorage) -> Result<()> {
+    let root = &storage.sessions_root;
+    if !root.exists() {
+        return Ok(());
+    }
+
+    let mut legacy = Vec::new();
+    let mut entries = fs::read_dir(root).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !is_legacy_slug(&name) || !entry.file_type().await?.is_dir() {
+            continue;
+        }
+        // No meta, no identity to carry over — moving it would strand it under
+        // a name nothing can resolve.
+        if fs::read(entry.path().join("meta")).await.is_err() {
+            tracing::warn!("leaving session '{name}' in place: no readable meta");
+            continue;
+        }
+        legacy.push(name);
+    }
+
+    if legacy.is_empty() {
+        return Ok(());
+    }
+    for name in &legacy {
+        let to = root.join(ulid::Ulid::new().to_string());
+        fs::rename(root.join(name), &to).await?;
+    }
+    tracing::info!(
+        "migrated {} session directories to opaque ids",
+        legacy.len()
+    );
+    Ok(())
+}
+
+/// `<agent>_<sender>_<seq>`, the pre-ULID session directory name.
+fn is_legacy_slug(name: &str) -> bool {
+    let Some((_, seq)) = name.rsplit_once('_') else {
+        return false;
+    };
+    !seq.is_empty() && seq.chars().all(|c| c.is_ascii_digit())
 }
 
 /// Replace the legacy `agents.<n>.mcps = ["name", …]` form with inline

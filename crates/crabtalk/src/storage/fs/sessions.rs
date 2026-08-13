@@ -94,11 +94,11 @@ pub(super) async fn create_session(
     agent: &str,
     created_by: &str,
 ) -> Result<SessionHandle> {
-    let agent_slug = wcore::sender_slug(agent);
-    let sender = wcore::sender_slug(created_by);
-    let prefix = format!("{agent_slug}_{sender}_");
-    let seq = next_session_seq(&storage.sessions_root, &prefix).await;
-    let slug = format!("{agent_slug}_{sender}_{seq}");
+    // Opaque identity. The directory name used to encode `(agent, sender)`,
+    // which made both immutable in practice: renaming an agent orphaned its
+    // transcripts, because the path could not follow. The association lives in
+    // `meta` instead, where it can be rewritten.
+    let slug = ulid::Ulid::new().to_string();
 
     let dir = session_dir(storage, &slug);
     fs::create_dir_all(&dir).await?;
@@ -118,32 +118,26 @@ pub(super) async fn create_session(
     Ok(SessionHandle::new(slug))
 }
 
+/// The most recent session for an `(agent, created_by)` pair.
+///
+/// Matches on `meta`, not on the directory name: an exact comparison, where the
+/// old prefix match conflated two agents whose names slugified alike. Ordered by
+/// `created_at` with the slug as tiebreak — a fresh slug is a ULID, so it sorts
+/// by creation time, but a migrated one was minted at migration and cannot be
+/// trusted for ordering on its own.
 pub(super) async fn find_latest_session(
     storage: &FsStorage,
     agent: &str,
     created_by: &str,
 ) -> Result<Option<SessionHandle>> {
-    let agent_slug = wcore::sender_slug(agent);
-    let sender = wcore::sender_slug(created_by);
-    let prefix = format!("{agent_slug}_{sender}_");
-
-    if !storage.sessions_root.exists() {
-        return Ok(None);
-    }
-
-    let mut best: Option<(u32, String)> = None;
-    let mut entries = fs::read_dir(&storage.sessions_root).await?;
-    while let Some(entry) = entries.next_entry().await? {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if !name.starts_with(&prefix) || !entry.file_type().await?.is_dir() {
+    let mut best: Option<(String, String)> = None;
+    for summary in list_sessions(storage).await? {
+        if summary.meta.agent != agent || summary.meta.created_by != created_by {
             continue;
         }
-        let seq_str = &name[prefix.len()..];
-        if let Ok(seq) = seq_str.parse::<u32>()
-            && best.as_ref().is_none_or(|(b, _)| seq > *b)
-        {
-            best = Some((seq, name.to_string()));
+        let key = (summary.meta.created_at, summary.handle.as_str().to_owned());
+        if best.as_ref().is_none_or(|b| key > *b) {
+            best = Some(key);
         }
     }
     Ok(best.map(|(_, slug)| SessionHandle::new(slug)))
@@ -351,22 +345,6 @@ async fn recover_step_counter(dir: &Path) -> u64 {
                 && let Ok(n) = suffix.parse::<u64>()
             {
                 max = max.max(n);
-            }
-        }
-    }
-    max + 1
-}
-
-async fn next_session_seq(root: &Path, prefix: &str) -> u32 {
-    let mut max = 0u32;
-    if let Ok(mut entries) = fs::read_dir(root).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if let Some(seq_str) = name.strip_prefix(prefix)
-                && let Ok(seq) = seq_str.parse::<u32>()
-            {
-                max = max.max(seq);
             }
         }
     }
