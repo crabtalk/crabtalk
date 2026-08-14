@@ -31,4 +31,5 @@
 - [0185 - Session Search and Storage Primitives](rfcs/0185-session-search.md)
 - [0189 - Policy at the Edge](rfcs/0189-policy-at-the-edge.md)
 - [0193 - Agent-Owned MCP](rfcs/0193-agent-owned-mcp.md)
+- [0203 - Client-Side Orchestration](rfcs/0203-client-side-orchestration.md)
 - [Superseded](rfcs/superseded.md)

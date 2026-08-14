@@ -7,6 +7,8 @@
 - Supersedes: [0000 (Compaction)](0000-compaction.md)
 - Updates: [0075 (Hook)](0075-hook.md), [0150 (Memory Store)](0150-memory-store.md), [0185 (Session Search)](0185-session-search.md)
 
+> **Updated by [0203 (Client-Side Orchestration)](0203-client-side-orchestration.md) (2026-08-15).** The peer-agents `<agents>` block this RFC moved into `on_build_agent` now leaves the daemon entirely — naming delegation targets is policy, and it belongs with the client that offers the tool.
+
 ## Summary
 
 Mechanism belongs in the daemon; policy belongs at the edge. The daemon stops making decisions on the user's behalf — it no longer auto-compacts on a token-count heuristic, no longer spawns title-generation calls in the background, no longer BM25-searches memory and injects synthetic `<recall>` user turns. Each of these is now an explicit RPC the client calls when (and if) it wants the behavior. A new `AgentEvent::ContextUsage { usage }` carries real per-step token counts so clients can pick their own pressure threshold. The `Hook::on_before_run` lifecycle method is removed.

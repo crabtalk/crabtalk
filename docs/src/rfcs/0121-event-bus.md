@@ -6,6 +6,8 @@
 - Crates: daemon, core, runtime
 - Updates: [0080 (Cron)](0080-cron.md)
 
+> **Updated by [0203 (Client-Side Orchestration)](0203-client-side-orchestration.md) (2026-08-15).** "Non-blocking delegation" is removed with the daemon-side `delegate` hook: the `background` field returned task IDs nothing consumed. Client-side fan-out is synchronous. Detached work that outlives the client is still unsolved and belongs to a daemon jobs API.
+
 ## Summary
 
 A daemon-level event bus that routes named events to target agents via

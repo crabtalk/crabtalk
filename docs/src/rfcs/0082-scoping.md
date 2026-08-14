@@ -7,6 +7,8 @@
 
 > **Updated by [0193 (Agent-Owned MCP)](0193-agent-owned-mcp.md) (2026-04-28).** `AgentScope.mcps` was removed: agents now embed their MCP server configurations by value, so MCP scoping is intrinsic to the agent's declaration and no separate allowlist is needed.
 
+> **Updated by [0203 (Client-Side Orchestration)](0203-client-side-orchestration.md) (2026-08-15).** The tool whitelist now applies to client-provided tools at advertisement as well as at dispatch. `delegate` moved to the client, so it is no longer unconditionally available; "Delegate CWD isolation" describes a `DelegateTask.cwd` field that was never implemented.
+
 ## Summary
 
 A whitelist-based scoping system that restricts what an agent can access: tools and skills. Enforced at dispatch time and advertised in the system prompt. This is a security boundary, not a hint. MCP scoping is no longer part of `AgentScope` — see [0193](0193-agent-owned-mcp.md) for the replacement model.
