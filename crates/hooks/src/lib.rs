@@ -152,6 +152,12 @@ impl Hook for Hooks {
     }
 
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
+        // A store that persists only a description composes the identity line
+        // here; one that persists a full prompt already filled this in, so
+        // seeding only when empty leaves it untouched.
+        if config.system_prompt.is_empty() && !config.description.is_empty() {
+            config.system_prompt = format!("You are {}.\n\n{}", config.name, config.description);
+        }
         if let Some(ref prompt) = self.system_prompt() {
             config.system_prompt.push_str(prompt);
         }
