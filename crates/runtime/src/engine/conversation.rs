@@ -35,7 +35,7 @@ impl<C: Config> Runtime<C> {
     /// the working context — agents would lose memory across restarts
     /// even though the bytes are still in storage.
     pub async fn get_or_create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
-        if !self.has_agent(agent).await {
+        if !self.has_agent(agent) {
             bail!("agent '{agent}' not registered");
         }
 
@@ -64,7 +64,7 @@ impl<C: Config> Runtime<C> {
             .load_session(&handle)
             .await?
             .ok_or_else(|| anyhow::anyhow!("conversation '{}' not found", handle.as_str()))?;
-        if !self.has_agent(&snapshot.meta.agent).await {
+        if !self.has_agent(&snapshot.meta.agent) {
             bail!("agent '{}' not registered", snapshot.meta.agent);
         }
         let id = self.next_conversation_id.fetch_add(1, Ordering::Relaxed);
@@ -233,11 +233,7 @@ impl<C: Config> Runtime<C> {
             }
             conversation.history.clone()
         };
-        let summary = self
-            .resolve_agent(&agent_name)
-            .await?
-            .compact(&history)
-            .await?;
+        let summary = self.resolve_agent(&agent_name)?.compact(&history).await?;
 
         let mut conversation = conversation_mutex.lock().await;
         self.ensure_handle(&mut conversation, &agent_name, &created_by)

@@ -2,8 +2,8 @@
 //! awaits replies.
 //!
 //! This is the client-side dispatch layer. System capabilities (memory,
-//! delegate, sessions, skill, mcp) dispatch through daemon-side hooks.
-//! Client tools dispatch through this bridge: the protocol layer emits a
+//! sessions, skill, mcp) dispatch through daemon-side hooks. Client tools
+//! dispatch through this bridge: the protocol layer emits a
 //! `ToolCallForward` event, the client executes locally, and posts a reply
 //! which resolves via [`ClientBridge::try_resolve`].
 //!

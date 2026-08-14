@@ -2,7 +2,7 @@
 
 use crate::repl::{
     ask::{AskAction, AskState},
-    chat::ChatEntry,
+    chat::{ChatEntry, TaskProgress, ToolStatus},
     command::{SlashResult, handle_slash},
     input::{History, InputAction, InputState},
     render::MarkdownRenderer,
@@ -17,7 +17,12 @@ use ratatui::{
     widgets::Paragraph,
 };
 use sdk::{ConnectionInfo, OutputChunk, Transport};
-use std::{collections::VecDeque, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::{HashSet, VecDeque},
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::mpsc;
 use wcore::protocol::api::Client as _;
 use wcore::protocol::message::StreamMsg;
@@ -25,8 +30,10 @@ use wcore::protocol::message::StreamMsg;
 mod ask;
 pub mod chat;
 pub mod command;
+pub mod delegate;
 pub mod input;
 pub mod render;
+pub mod tools;
 
 /// Interactive chat REPL.
 pub struct ChatRepl {
@@ -83,9 +90,14 @@ impl ChatRepl {
             .into_iter()
             .map(|s| s.name)
             .collect();
+        let peers = delegate::peers_block(
+            &self.runner.list_agents().await.unwrap_or_default(),
+            &self.agent,
+        );
         let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let os_tools = Arc::new(hooks::OsHook::new(cwd));
         let history = std::mem::take(&mut self.history);
+        let (progress_tx, progress_rx) = mpsc::unbounded_channel();
         let mut app = App {
             renderer: MarkdownRenderer::new(),
             input: InputState::new(history, skill_names),
@@ -95,7 +107,7 @@ impl ChatRepl {
             chat_title,
             dirty: true,
             frame_count: 0,
-            skip_tool_result: 0,
+            suppressed_results: HashSet::new(),
             streaming: false,
             conn_info,
             os_user,
@@ -104,6 +116,10 @@ impl ChatRepl {
             ask_conversation_id: None,
             ask_call_id: None,
             os_tools,
+            forwards: Vec::new(),
+            progress_tx,
+            peers_pending: !peers.is_empty(),
+            peers,
         };
 
         // Push welcome banner as first chat entry.
@@ -113,7 +129,7 @@ impl ChatRepl {
         )]));
 
         let mut terminal = crate::tui::setup()?;
-        let result = run_event_loop(&mut terminal, &mut app).await;
+        let result = run_event_loop(&mut terminal, &mut app, progress_rx).await;
 
         crate::tui::teardown(&mut terminal)?;
 
@@ -176,7 +192,11 @@ struct App {
     chat_title: String,
     dirty: bool,
     frame_count: u64,
-    skip_tool_result: u32,
+    /// Tool calls whose raw result the chat already showed in a better
+    /// form (an ask modal, a fan-out task list). Keyed by call id rather
+    /// than counted, so a step mixing these with an ordinary tool call
+    /// suppresses the right one.
+    suppressed_results: HashSet<String>,
     streaming: bool,
     conn_info: ConnectionInfo,
     os_user: String,
@@ -191,6 +211,32 @@ struct App {
     /// daemon (bash, read, edit). Shared across stream turns so the
     /// "must read before edit" invariant persists.
     os_tools: Arc<hooks::OsHook>,
+    /// In-flight forwarded tool calls. Held so Ctrl+C can abort them —
+    /// a `delegate` call outlives the keystroke otherwise, and its
+    /// sub-agents keep running commands against the user's machine.
+    forwards: Vec<tokio::task::JoinHandle<()>>,
+    /// Fan-out progress from `delegate` executors back into the chat buffer.
+    progress_tx: mpsc::UnboundedSender<delegate::Progress>,
+    /// `<agents>` block naming this client's delegate targets. Sent once per
+    /// conversation rather than every turn — it is a stable preamble, and
+    /// repeating it would both waste tokens and move the prompt prefix.
+    peers: String,
+    /// Whether `peers` still needs to go out on the next message.
+    peers_pending: bool,
+}
+
+impl App {
+    fn track_forward(&mut self, handle: tokio::task::JoinHandle<()>) {
+        self.forwards.retain(|h| !h.is_finished());
+        self.forwards.push(handle);
+    }
+
+    fn abort_forwards(&mut self) {
+        for handle in self.forwards.drain(..) {
+            handle.abort();
+        }
+        self.renderer.buffer.cancel_running_tasks();
+    }
 }
 
 // ── Event loop ───────────────────────────────────────────────────
@@ -198,6 +244,7 @@ struct App {
 async fn run_event_loop(
     terminal: &mut ratatui::Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>,
     app: &mut App,
+    mut progress_rx: mpsc::UnboundedReceiver<delegate::Progress>,
 ) -> Result<()> {
     let mut events = EventStream::new();
     let mut tick = tokio::time::interval(Duration::from_millis(33));
@@ -274,12 +321,12 @@ async fn run_event_loop(
                                     let reply = serde_json::to_string(&answers).unwrap_or_default();
                                     if let (Some(conv_id), Some(call_id)) = (app.ask_conversation_id.take(), app.ask_call_id.take()) {
                                         let conn_info = app.conn_info.clone();
+                                        app.suppressed_results.insert(call_id.clone());
                                         tokio::spawn(async move {
                                             let _ = conn_info.reply_to_tool(conv_id, call_id, reply, false).await;
                                         });
                                     }
                                     app.ask_state = None;
-                                    app.skip_tool_result += 1;
                                 }
                             }
                             app.dirty = true;
@@ -305,6 +352,7 @@ async fn run_event_loop(
                             && app.streaming
                         {
                             app.renderer.finish();
+                            app.abort_forwards();
                             chunk_rx = None;
                             app.streaming = false;
                             app.dirty = true;
@@ -363,6 +411,8 @@ async fn run_event_loop(
                                             app.renderer.buffer.clear();
                                             app.renderer = MarkdownRenderer::new();
                                             app.chat_title.clear();
+                                            // New conversation, so the preamble goes out again.
+                                            app.peers_pending = !app.peers.is_empty();
                                             // Kill the current conversation so a new one is created.
                                             let conn_info = app.conn_info.clone();
                                             let agent = app.agent.clone();
@@ -403,7 +453,13 @@ async fn run_event_loop(
                 }
             }
 
-            // Branch 3: render tick (animation).
+            // Branch 3: delegate fan-out progress.
+            Some(update) = progress_rx.recv() => {
+                handle_progress(update, app);
+                app.dirty = true;
+            }
+
+            // Branch 4: render tick (animation).
             _ = tick.tick() => {
                 app.frame_count += 1;
                 if app.renderer.waiting || app.streaming {
@@ -444,6 +500,10 @@ fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<
         "<environment>\nos: {}\n</environment>\n\n",
         std::env::consts::OS
     ));
+    if app.peers_pending {
+        prefix.push_str(&app.peers);
+        app.peers_pending = false;
+    }
     if let Some(instr) = std::env::current_dir()
         .ok()
         .and_then(|cwd| hooks::os::discover_instructions(&cwd))
@@ -455,11 +515,59 @@ fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<
         agent: app.agent.clone(),
         content,
         sender: Some(app.os_user.clone()),
+        tools: tools::client_tools(),
         ..Default::default()
     };
     app.streaming = true;
     app.renderer.start_waiting();
     sdk::spawn_stream(app.conn_info.clone(), req)
+}
+
+/// Fold a fan-out update into the chat buffer. `Started` seeds the task
+/// list; each `Finished` settles one row in place.
+fn handle_progress(update: delegate::Progress, app: &mut App) {
+    match update {
+        delegate::Progress::Started { call_id, agents } => {
+            let tasks = agents
+                .into_iter()
+                .map(|agent| TaskProgress {
+                    agent,
+                    status: ToolStatus::Running,
+                    detail: String::new(),
+                })
+                .collect();
+            // These rows say everything the raw result JSON would, in a
+            // form worth reading — don't print the blob underneath them.
+            app.suppressed_results.insert(call_id.clone());
+            app.renderer
+                .buffer
+                .push(ChatEntry::DelegateTasks { call_id, tasks });
+        }
+        delegate::Progress::Active {
+            call_id,
+            index,
+            calls,
+        } => {
+            let detail = calls
+                .iter()
+                .map(|(name, args)| app.renderer.tool_label(name, args))
+                .collect::<Vec<_>>()
+                .join(", ");
+            app.renderer
+                .buffer
+                .set_delegate_task_detail(&call_id, index, detail);
+        }
+        delegate::Progress::Finished {
+            call_id,
+            index,
+            ok,
+            detail,
+        } => {
+            app.renderer
+                .buffer
+                .finish_delegate_task(&call_id, index, ok, detail);
+        }
+    }
 }
 
 fn handle_chunk(chunk: OutputChunk, app: &mut App) {
@@ -478,10 +586,8 @@ fn handle_chunk(chunk: OutputChunk, app: &mut App) {
         OutputChunk::ToolStart(calls) => {
             app.renderer.push_tool_start(&calls);
         }
-        OutputChunk::ToolResult(_id, output) => {
-            if app.skip_tool_result > 0 {
-                app.skip_tool_result -= 1;
-            } else {
+        OutputChunk::ToolResult(id, output) => {
+            if !app.suppressed_results.remove(&id) {
                 app.renderer.push_tool_result(&output);
             }
         }
@@ -504,21 +610,28 @@ fn handle_chunk(chunk: OutputChunk, app: &mut App) {
             name,
             arguments,
         } => {
-            // The daemon forwarded an OS-tool call. Dispatch locally and
+            // The daemon forwarded a client-tool call. Dispatch locally and
             // send the result back on a fresh connection — same shape as
             // the ask-user reply path. `conversation_id` is an opaque
             // routing token; just echo it.
-            let tools = app.os_tools.clone();
+            let os_tools = app.os_tools.clone();
             let conn_info = app.conn_info.clone();
-            tokio::spawn(async move {
-                let (output, is_error) = match tools.execute(&name, &arguments).await {
-                    Ok(s) => (s, false),
+            let progress_tx = app.progress_tx.clone();
+            let handle = tokio::spawn(async move {
+                let result = if name == "delegate" {
+                    delegate::execute(&conn_info, os_tools, &arguments, &call_id, progress_tx).await
+                } else {
+                    os_tools.execute(&name, &arguments).await
+                };
+                let (output, is_error) = match result {
+                    Ok(output) => (output, false),
                     Err(e) => (e, true),
                 };
                 let _ = conn_info
                     .reply_to_tool(conversation_id, call_id, output, is_error)
                     .await;
             });
+            app.track_forward(handle);
         }
         // Boundary markers — the renderer infers transitions from delta
         // arrival, so Start markers are inert. ThinkingEnd above is the

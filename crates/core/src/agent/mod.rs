@@ -105,8 +105,22 @@ impl<P: Provider + 'static> Clone for Agent<P> {
 impl<P: Provider + 'static> Agent<P> {
     /// Append additional tool schemas (e.g. client-provided tools for a
     /// specific conversation). Call on a cloned agent before running.
+    ///
+    /// A client offers what it can execute; `config.tools` decides what this
+    /// agent may see. Without the filter a scoped agent is advertised tools
+    /// the dispatcher will reject — enforcement without advertisement just
+    /// buys a wasted turn. Empty whitelist = unrestricted, matching
+    /// [`ToolRegistry::filtered_snapshot`].
     pub fn extend_tools(&mut self, tools: Vec<Tool>) {
-        self.tools.extend(tools);
+        if self.config.tools.is_empty() {
+            self.tools.extend(tools);
+            return;
+        }
+        self.tools.extend(
+            tools
+                .into_iter()
+                .filter(|t| self.config.tools.contains(&t.function.name)),
+        );
     }
 
     /// Resolve the model name from agent config.

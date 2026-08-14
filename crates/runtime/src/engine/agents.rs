@@ -54,31 +54,12 @@ impl<C: Config> Runtime<C> {
             .collect()
     }
 
-    // --- Ephemeral agents ---
-
-    pub async fn add_ephemeral(&self, config: AgentConfig) {
-        let (name, agent) = self.build_agent(config);
-        self.ephemeral_agents.write().await.insert(name, agent);
+    pub(crate) fn resolve_agent(&self, name: &str) -> Option<Agent<C::Provider>> {
+        self.agents.read().get(name).cloned()
     }
 
-    pub async fn remove_ephemeral(&self, name: &str) {
-        self.ephemeral_agents.write().await.remove(name);
-    }
-
-    pub(crate) async fn resolve_agent(&self, name: &str) -> Option<Agent<C::Provider>> {
-        let persistent = self.agents.read().get(name).cloned();
-        if persistent.is_some() {
-            return persistent;
-        }
-        self.ephemeral_agents.read().await.get(name).cloned()
-    }
-
-    pub(crate) async fn has_agent(&self, name: &str) -> bool {
-        let has_persistent = self.agents.read().contains_key(name);
-        if has_persistent {
-            return true;
-        }
-        self.ephemeral_agents.read().await.contains_key(name)
+    pub(crate) fn has_agent(&self, name: &str) -> bool {
+        self.agents.read().contains_key(name)
     }
 
     // --- Storage-backed CRUD ---

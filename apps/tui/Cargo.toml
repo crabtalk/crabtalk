@@ -33,6 +33,7 @@ futures-core.workspace = true
 futures-util.workspace = true
 heck.workspace = true
 ratatui.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 termimad.workspace = true

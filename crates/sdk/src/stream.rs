@@ -105,6 +105,11 @@ impl StreamAccumulator {
         }
     }
 
+    /// The accumulated response text, without the tool status line.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
     /// Set a captured error message.
     pub fn set_error(&mut self, msg: String) {
         self.error = Some(msg);

@@ -69,7 +69,6 @@ impl<C: Config> Runtime<C> {
         self.prepare_history(&mut conversation, &agent_name, content, sender);
         let mut agent = self
             .resolve_agent(&agent_name)
-            .await
             .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", agent_name))?;
         agent.extend_tools(extra_tools);
 
@@ -124,7 +123,7 @@ impl<C: Config> Runtime<C> {
             let mut conversation = conversation_mutex.lock().await;
             let pre_run_len = conversation.history.len();
             self.prepare_history(&mut conversation, &agent_name, &content, &sender);
-            let Some(mut agent) = self.resolve_agent(&agent_name).await else {
+            let Some(mut agent) = self.resolve_agent(&agent_name) else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("agent '{}' not registered", agent_name),
                 ));
@@ -189,7 +188,7 @@ impl<C: Config> Runtime<C> {
     ) -> impl Stream<Item = AgentEvent> + 'a {
         let content = content.to_owned();
         stream! {
-            let Some(mut agent) = self.resolve_agent(agent_name).await else {
+            let Some(mut agent) = self.resolve_agent(agent_name) else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("agent '{agent_name}' not registered"),
                 ));
@@ -219,7 +218,7 @@ impl<C: Config> Runtime<C> {
         let sender = sender.to_owned();
         let guest = guest.to_owned();
         stream! {
-            let Some(guest_agent) = self.resolve_agent(&guest).await else {
+            let Some(guest_agent) = self.resolve_agent(&guest) else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("guest agent '{guest}' not registered"),
                 ));

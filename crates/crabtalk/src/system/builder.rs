@@ -4,7 +4,6 @@ use crate::llm::Provider;
 use crate::{
     CrabTalk,
     bridge::ClientBridge,
-    hooks::delegate,
     storage::FsStorage,
     system::RuntimeHandle,
     system::{event, host::SystemEnv, provider::DefaultProvider},
@@ -251,17 +250,10 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         hooks.register_hook(
             "sessions",
-            Arc::new(crate::hooks::sessions::SessionsHook::<P>::new(
-                runtime_once.clone(),
-            )),
+            Arc::new(crate::hooks::sessions::SessionsHook::<P>::new(runtime_once)),
         );
 
         hooks.register_hook("skill", Arc::new(SkillHook::new(skills, scopes.clone())));
-        hooks.register_hook(
-            "delegate",
-            Arc::new(delegate::DelegateHook::<P>::new(runtime_once)),
-        );
-
         hooks.register_hook("mcp", Arc::new(McpHook::new(mcp_handler, env_overlay)));
         Ok(shared_memory)
     }
