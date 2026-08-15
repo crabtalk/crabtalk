@@ -14,13 +14,13 @@
 use crate::sys;
 
 /// Write a UTF-8 message to the host log.
-const HOST_LOG: u64 = hash("crabtalk.log");
+pub(crate) const HOST_LOG: u64 = hash("crabtalk.log");
 /// Byte length of this invocation's argument blob.
-const HOST_ARG_LEN: u64 = hash("crabtalk.args.len");
+pub(crate) const HOST_ARG_LEN: u64 = hash("crabtalk.args.len");
 /// Copy the argument blob into guest memory.
-const HOST_ARG_READ: u64 = hash("crabtalk.args.read");
+pub(crate) const HOST_ARG_READ: u64 = hash("crabtalk.args.read");
 /// Fail this invocation with a message.
-const HOST_FAIL: u64 = hash("crabtalk.fail");
+pub(crate) const HOST_FAIL: u64 = hash("crabtalk.fail");
 
 /// FNV-1a over the capability's name, evaluated at compile time.
 pub const fn hash(name: &str) -> u64 {

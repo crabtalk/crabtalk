@@ -8,26 +8,66 @@ crate owns the ABI, so you never see a call number, a register, or a pointer
 pair.
 
 ```rust
-#![no_std]
-#![no_main]
+#![cfg_attr(target_arch = "riscv64", no_std, no_main)]
 
 #[crabtalk_harness_sdk::harness(capabilities = ["log"])]
 mod tools {
     use crabtalk_harness_sdk::{Failed, Out};
 
-    /// Echo the argument blob back.
+    /// Echo the query back.
+    #[args(Echo)]
     pub fn echo(args: &[u8], out: &mut Out) -> Result<(), Failed> {
         out.write(args);
         Ok(())
     }
+
+    /// Arguments for `echo`.
+    pub struct Echo {
+        /// The text to echo back.
+        pub query: String,
+        /// Page number, zero-indexed.
+        pub page: Option<u32>,
+    }
 }
 ```
 
-Every `pub fn` in the module becomes a tool. Its doc comment is the description
-the model reads when deciding whether to call it, and `#[params("…")]` carries a
-JSON Schema for its arguments. A handler that returns `Err(Failed)` reports
-whatever it wrote to `out` as the failure message, so an error can be specific
-without needing an allocator to say it.
+Every `pub fn` in the module becomes a tool, and its doc comment is the
+description the model reads when deciding whether to call it. `#[args(Echo)]`
+names a struct beside it, and the JSON Schema the model fills in is derived from
+that struct's fields: their types, their doc comments, and `Option` for the ones
+it may omit. Nothing is deserialized for you — the handler gets the blob and
+parses it however it likes, so a harness that wants no JSON parser links none.
+
+A handler that returns `Err(Failed)` reports whatever it wrote to `out` as the
+failure message, so an error can be specific without needing an allocator to say
+it.
+
+The manifest — ABI version, tools, schemas, capabilities wanted — is built at
+compile time and carried in a `.crabtalk.abi` section, so a host reads what a
+harness claims to be without running it.
+
+## Testing
+
+Off the guest's target a harness is an ordinary binary, so its tools run under
+`cargo test` — no RISC-V toolchain, no daemon, no rvtime. `test::call` invokes a
+tool the way the host does: same argument transfer, same buffer limits, same
+failure channel.
+
+```rust
+#[cfg(test)]
+mod tests {
+    use crabtalk_harness_sdk::test;
+
+    #[test]
+    fn echo_wraps_the_payload() {
+        let out = test::call(crate::crabtalk_tool_echo, br#"{"query":"hi"}"#).unwrap();
+        assert_eq!(out, br#"{"echo":{"query":"hi"}}"#);
+    }
+}
+```
+
+A capability with no stand-in — `http`, say — panics naming itself rather than
+returning a plausible zero, so a test that reached one says so.
 
 ## Building
 

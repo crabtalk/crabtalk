@@ -34,12 +34,22 @@
 
 #![no_std]
 
+// Off the guest's target this is an ordinary library in someone's test binary,
+// where std is both available and the point: it is what lets a stand-in host
+// hold the argument blob and collect what a harness logged.
+#[cfg(not(target_arch = "riscv64"))]
+extern crate std;
+
 mod abi;
 // Installing a global allocator is something only the whole program may do,
 // so like the panic handler it happens on the guest's target and nowhere else.
 #[cfg(all(feature = "alloc", target_arch = "riscv64"))]
 mod heap;
 mod out;
+/// Run a harness's tools natively. Present only off the guest's target, where
+/// there is a test to run them from.
+#[cfg(not(target_arch = "riscv64"))]
+pub mod test;
 
 // One boundary for the whole crate: `riscv.rs` makes real host calls, and
 // `stub.rs` is a host a test can stand in for. The split is about behaviour
