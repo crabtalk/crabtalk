@@ -16,11 +16,6 @@ pub fn call2(number: u64, _a0: u64, _a1: u64) -> u64 {
     no_host(number)
 }
 
-/// No allocator is installed off-target: std already has one.
-#[cfg(feature = "alloc")]
-#[inline]
-pub unsafe fn heap_init(_start: usize, _size: usize) {}
-
 #[cold]
 fn no_host(number: u64) -> ! {
     panic!("host call {number:#x} outside a guest");

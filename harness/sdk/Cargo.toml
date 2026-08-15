@@ -15,9 +15,9 @@ readme = "README.md"
 test = false
 
 [features]
-# Installs rvtime-guest's allocator and generates an `init` export for it.
+# Installs an allocator that takes its heap from the host on first use.
 default = ["alloc"]
-alloc = ["rvtime-guest/alloc"]
+alloc = ["dep:linked_list_allocator"]
 
 [dependencies]
 crabtalk-harness-codegen.workspace = true
@@ -26,4 +26,5 @@ crabtalk-harness-codegen.workspace = true
 # inline asm, which no other architecture can even parse. Off-target, the
 # stubs in `abi.rs` stand in so authors can build and test natively.
 [target.'cfg(target_arch = "riscv64")'.dependencies]
+linked_list_allocator = { workspace = true, optional = true }
 rvtime-guest.workspace = true

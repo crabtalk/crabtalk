@@ -5,6 +5,7 @@
 //! Capabilities beyond logging and argument transfer are not wired yet.
 
 use anyhow::{Context, Result, bail};
+use object::{Object, ObjectSection};
 use rvtime::{Caller, Engine, Linker, Module, Store, TypedFunc};
 use std::collections::BTreeMap;
 
@@ -28,7 +29,8 @@ pub struct Harness {
     engine: Engine,
     module: Module,
     linker: Linker<Invocation>,
-    describe: Export,
+    /// Read from the ELF at load, without running anything.
+    manifest: String,
     /// Resolved once at load. A [`TypedFunc`] belongs to the module rather
     /// than to a store, so these stay valid for every invocation.
     tools: BTreeMap<String, Export>,
@@ -65,6 +67,18 @@ impl Harness {
             },
         )?;
 
+        // Asked for on the guest's first allocation, from inside the entry it
+        // is already in. Pushing these in would mean entering the guest a
+        // second time, which costs ~13µs against ~30ns for a host call.
+        linker.func_wrap(abi::HOST_HEAP_START, |caller: Caller<'_, Invocation>| {
+            Ok(caller.heap().start)
+        })?;
+
+        linker.func_wrap(abi::HOST_HEAP_SIZE, |caller: Caller<'_, Invocation>| {
+            let heap = caller.heap();
+            Ok(heap.end - heap.start)
+        })?;
+
         linker.func_wrap(
             abi::HOST_FAIL,
             |mut caller: Caller<'_, Invocation>, ptr, len| {
@@ -96,7 +110,7 @@ impl Harness {
             engine: engine.clone(),
             module,
             linker,
-            describe: instance.get_typed_func(abi::EXPORT_DESCRIBE)?,
+            manifest: manifest(elf)?,
             tools,
         })
     }
@@ -106,12 +120,9 @@ impl Harness {
         self.tools.keys().map(String::as_str)
     }
 
-    /// The harness's self-description: ABI version, tools, capabilities wanted.
-    pub fn describe(&self) -> Result<String> {
-        let mut store = self.instantiate(Vec::new());
-        self.linker.instantiate(&mut store, &self.module)?;
-        let (ptr, len) = self.describe.call(&mut store, ())?;
-        read(&store, ptr, len)
+    /// What the harness says it is: ABI version, tools, capabilities wanted.
+    pub fn manifest(&self) -> &str {
+        &self.manifest
     }
 
     /// Run one tool by name.
@@ -124,8 +135,7 @@ impl Harness {
             bail!("harness exports no tool named {tool:?}");
         };
 
-        let mut store = self.instantiate(args.into());
-        self.linker.instantiate(&mut store, &self.module)?;
+        let mut store = self.instantiate(args.into())?;
         let (ptr, len) = func
             .call(&mut store, ())
             .with_context(|| format!("harness trapped in {tool}"))?;
@@ -136,14 +146,17 @@ impl Harness {
         Ok(Ok(read(&store, ptr, len)?))
     }
 
-    fn instantiate(&self, args: Vec<u8>) -> Store<Invocation> {
-        Store::new(
+    /// A store with the guest mapped into it and its heap handed over.
+    fn instantiate(&self, args: Vec<u8>) -> Result<Store<Invocation>> {
+        let mut store = Store::new(
             &self.engine,
             Invocation {
                 args,
                 failure: None,
             },
-        )
+        );
+        self.linker.instantiate(&mut store, &self.module)?;
+        Ok(store)
     }
 }
 
@@ -154,6 +167,18 @@ impl Invocation {
             failure: None,
         }
     }
+}
+
+/// Pull the manifest out of the ELF. This runs before anything is compiled,
+/// let alone executed — a harness gets to describe itself without being given
+/// a turn.
+fn manifest(elf: &[u8]) -> Result<String> {
+    let file = object::File::parse(elf).context("harness is not a readable ELF")?;
+    let section = file
+        .section_by_name(abi::ABI_SECTION)
+        .with_context(|| format!("harness has no {} section", abi::ABI_SECTION))?;
+    let bytes = section.data().context("harness manifest is unreadable")?;
+    String::from_utf8(bytes.to_vec()).context("harness manifest is not UTF-8")
 }
 
 fn read(store: &Store<Invocation>, ptr: u64, len: u64) -> Result<String> {

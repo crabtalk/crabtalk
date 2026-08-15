@@ -32,10 +32,14 @@ pub const fn hash(name: &str) -> u64 {
     result
 }
 
-/// Reports the harness ABI version, its tools, and the capabilities it wants.
-pub const EXPORT_DESCRIBE: &str = "describe";
-/// Hands the guest the heap the host committed for it.
-pub const EXPORT_INIT: &str = "init";
+/// ELF section carrying the harness's manifest: ABI version, tools, and the
+/// capabilities it wants. A section rather than an export, so reading what a
+/// harness claims to be never means running it.
+pub const ABI_SECTION: &str = ".crabtalk.abi";
+/// Where this guest's heap starts. `() -> address`
+pub const HOST_HEAP_START: u64 = hash("crabtalk.heap.start");
+/// How many bytes of it there are. `() -> length`
+pub const HOST_HEAP_SIZE: u64 = hash("crabtalk.heap.size");
 /// Prefix on every tool's exported symbol. A tool is resolved by name like any
 /// other symbol; the prefix keeps one called `init` from colliding with the
 /// exports the ABI reserves.

@@ -35,6 +35,10 @@
 #![no_std]
 
 mod abi;
+// Installing a global allocator is something only the whole program may do,
+// so like the panic handler it happens on the guest's target and nowhere else.
+#[cfg(all(feature = "alloc", target_arch = "riscv64"))]
+mod heap;
 mod out;
 
 // One boundary for the whole crate. Everything the guest's target has and the
@@ -67,23 +71,15 @@ pub struct Failed;
 /// linked into someone's tests, where std already supplies one.
 #[cfg(target_arch = "riscv64")]
 #[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    // Say where before dying. A harness author otherwise gets `guest executed
+    // ebreak` and nothing else, which is the difference between a minute and
+    // an afternoon.
+    if let Some(location) = info.location() {
+        abi::log(location.file());
+    }
     rvtime_guest::abort()
 }
-
-/// Installs the allocator over the heap the host committed, when this crate
-/// was built with `alloc`. The cfg lives here rather than in the macro because
-/// features belong to the crate that declares them, not to the crate the macro
-/// expands into.
-#[doc(hidden)]
-#[cfg(feature = "alloc")]
-pub fn init_heap(start: u64, size: u64) {
-    unsafe { sys::heap_init(start as usize, size as usize) };
-}
-
-#[doc(hidden)]
-#[cfg(not(feature = "alloc"))]
-pub fn init_heap(_start: u64, _size: u64) {}
 
 #[doc(hidden)]
 pub fn read_args(buffer: &mut [u8]) -> usize {
