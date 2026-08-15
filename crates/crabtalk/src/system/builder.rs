@@ -184,7 +184,10 @@ impl<P: Provider + 'static> CrabTalk<P> {
         storage.scaffold(&default_model).await?;
 
         let model = build_provider(config, &models)?;
-        let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::empty());
+        let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::new(
+            std::time::Duration::from_secs(config.mcp.idle_timeout),
+        ));
+        mcp_handler.spawn_reaper();
         let bridge = Arc::new(ClientBridge::default());
         let shared_memory = Self::register_hooks(
             &mut hooks,

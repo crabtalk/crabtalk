@@ -78,8 +78,12 @@ impl<P: Provider + 'static> CrabTalk<P> {
         }
         rt.update_agent(existing, &prompt).await?;
 
-        // Re-list this agent to surface runtime status set by the
-        // background register triggered through `on_register_agent`.
+        // Registration only records the declaration — peers connect on
+        // first use. Connect this one now anyway: a human just typed the
+        // config, and a bad command or a stale token should surface here
+        // rather than inside some later tool call.
+        self.mcp.ensure_connected(&agent, &[mcp_name.clone()]).await;
+
         let mcps = self.list_mcps(Some(agent)).await?;
         mcps.into_iter()
             .find(|m| m.name == mcp_name)

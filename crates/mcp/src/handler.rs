@@ -3,8 +3,13 @@
 //! Agents declare their MCP servers inline (RFC 0193). The handler tracks
 //! which agents have declared which configs and dedups identical configs
 //! by structural fingerprint — two agents declaring the exact same
-//! `(command, args, env, url, auth)` share one peer process. The peer
-//! survives until the last agent referencing it unregisters.
+//! `(command, args, env, url, auth)` share one peer process.
+//!
+//! Declaration and process have separate lifetimes. Registering records
+//! the config and nothing more; the process starts on the agent's first
+//! MCP tool call and the reaper stops it once it goes idle, leaving the
+//! declaration behind to start again from. Only the last owner
+//! unregistering removes the declaration itself.
 
 use crate::{McpBridge, bridge::CallError};
 use parking_lot::RwLock as SyncRwLock;
@@ -12,8 +17,9 @@ use std::{
     collections::{BTreeMap, BTreeSet, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     sync::Arc,
+    time::{Duration, Instant},
 };
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{Mutex, RwLock, broadcast};
 use wcore::McpServerConfig;
 
 /// Stable identifier for a peer process — hash of the structural config.
@@ -82,9 +88,24 @@ impl McpServerState {
             last_error: Some(error),
         }
     }
+
+    /// Declared but not running — either never started or reaped. Tools
+    /// are cleared because none are reachable until it comes back.
+    fn idle() -> Self {
+        Self {
+            status: ServerStatus::Disconnected,
+            tools: Vec::new(),
+            last_error: None,
+        }
+    }
 }
 
 /// One peer's tracked state plus the (agent, name) pairs that own it.
+///
+/// An entry is a *declaration*, not a process. It appears when an agent
+/// registers the config and survives idle eviction — only `refs` going
+/// empty removes it. Whether a process is currently running behind it is
+/// `state.status`.
 #[derive(Debug)]
 struct PeerEntry {
     state: McpServerState,
@@ -96,6 +117,11 @@ struct PeerEntry {
     /// derived from it, so any drift would strand the peer under an id
     /// that no longer describes it.
     cfg: McpServerConfig,
+    /// Last tool call routed here. `None` while no process is running.
+    last_used: Option<Instant>,
+    /// Held across a connect so concurrent dispatches for the same peer
+    /// wait for one spawn instead of racing to start several.
+    gate: Arc<Mutex<()>>,
 }
 
 /// Lifecycle event emitted on every state transition.
@@ -131,20 +157,53 @@ pub struct McpHandler {
     /// Reverse lookup — (agent, mcp name) → fingerprint of the owning peer.
     by_owner: SyncRwLock<BTreeMap<(String, String), Fingerprint>>,
     events_tx: broadcast::Sender<McpEvent>,
+    /// How long a peer may sit unused before the reaper stops it. Zero
+    /// disables eviction.
+    idle_timeout: Duration,
 }
 
 impl McpHandler {
     /// Timeout for connecting to a single MCP server.
-    const MCP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    const MCP_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
+    /// The reaper wakes this often relative to `idle_timeout`, so a peer
+    /// outlives its deadline by at most a quarter of it.
+    const REAP_DIVISOR: u32 = 4;
 
     pub fn empty() -> Self {
+        Self::new(Duration::ZERO)
+    }
+
+    pub fn new(idle_timeout: Duration) -> Self {
         let (events_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         Self {
             bridge: RwLock::new(Arc::new(McpBridge::new())),
             peers: SyncRwLock::new(BTreeMap::new()),
             by_owner: SyncRwLock::new(BTreeMap::new()),
             events_tx,
+            idle_timeout,
         }
+    }
+
+    /// Start the idle reaper. Holds a weak reference, so the task ends
+    /// when the last real owner drops the handler.
+    pub fn spawn_reaper(self: &Arc<Self>) {
+        if self.idle_timeout.is_zero() {
+            return;
+        }
+        let tick = self.idle_timeout / Self::REAP_DIVISOR;
+        let weak = Arc::downgrade(self);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tick);
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                let Some(handler) = weak.upgrade() else {
+                    return;
+                };
+                handler.reap_idle().await;
+            }
+        });
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<McpEvent> {
@@ -194,6 +253,9 @@ impl McpHandler {
         tool_name: &str,
         arguments: &str,
     ) -> Result<String, String> {
+        if let Some(entry) = self.peers.write().get_mut(&fp) {
+            entry.last_used = Some(Instant::now());
+        }
         let bridge = self.bridge().await;
         match bridge.call(&peer_id(fp), tool_name, arguments).await {
             Ok(output) => Ok(output),
@@ -241,16 +303,19 @@ impl McpHandler {
         self.bridge.try_read().ok().map(|g| Arc::clone(&*g))
     }
 
-    /// Register `cfg` as belonging to `agent`. If another agent has
-    /// already registered an identical config, this is a refcount bump
-    /// — no spawn. Otherwise the peer is spawned in the background and
-    /// the result reflected via lifecycle events.
+    /// Record `cfg` as belonging to `agent`. No process is started: a
+    /// declaration is not a connection, and a daemon holding thousands
+    /// of agents would otherwise spawn a child for every MCP any of them
+    /// ever mentioned. [`ensure_connected`](Self::ensure_connected)
+    /// spawns on first use; the reaper stops it again when it goes idle.
+    ///
+    /// Identical configs across agents still share one declaration, so
+    /// this stays a refcount bump for the second and later owners.
     pub async fn register_for_agent(&self, agent: &str, cfg: &McpServerConfig) {
         let fp = fingerprint(cfg);
         let key = (agent.to_owned(), cfg.name.clone());
 
-        // Fast path — fingerprint already tracked.
-        let (needs_spawn, stale) = {
+        let stale = {
             let mut peers = self.peers.write();
             let mut by_owner = self.by_owner.write();
             // Drop any prior claim by this owner — same key may have
@@ -266,7 +331,7 @@ impl McpHandler {
                     stale = Some(old_fp);
                 }
             }
-            let needs_spawn = match peers.get_mut(&fp) {
+            match peers.get_mut(&fp) {
                 Some(entry) => {
                     entry.refs.insert(key.clone());
                     // Replay the terminal status to the new owner so
@@ -287,7 +352,6 @@ impl McpHandler {
                     if let Some(e) = event {
                         let _ = self.events_tx.send(e);
                     }
-                    false
                 }
                 None => {
                     let mut refs = BTreeSet::new();
@@ -295,55 +359,169 @@ impl McpHandler {
                     peers.insert(
                         fp,
                         PeerEntry {
-                            state: McpServerState::connecting(),
+                            state: McpServerState::idle(),
                             refs,
                             cfg: cfg.clone(),
+                            last_used: None,
+                            gate: Arc::new(Mutex::new(())),
                         },
                     );
-                    true
                 }
-            };
-            (needs_spawn, stale)
+            }
+            stale
         };
 
         // The claim we just moved may have been the last one on its old
-        // peer — tear it down before standing up the replacement.
+        // peer — tear it down. Nothing replaces it until first use.
         if let Some(old_fp) = stale {
             self.bridge().await.remove_server(&peer_id(old_fp)).await;
         }
+    }
 
-        let _ = self.events_tx.send(McpEvent::Connecting {
-            agent: agent.to_owned(),
-            name: cfg.name.clone(),
-        });
-
-        if !needs_spawn {
+    /// Bring up every peer the agent declared that isn't already running.
+    /// Called before dispatch, so a tool call is what pays for the spawn.
+    ///
+    /// Connects are concurrent across MCPs but serialised per peer — two
+    /// agents reaching a shared peer at once wait on one spawn rather
+    /// than starting two processes under the same id.
+    pub async fn ensure_connected(&self, agent: &str, mcp_names: &[String]) {
+        let pending: Vec<Fingerprint> = {
+            let by_owner = self.by_owner.read();
+            let peers = self.peers.read();
+            mcp_names
+                .iter()
+                .filter_map(|name| by_owner.get(&(agent.to_owned(), name.clone())))
+                // `Failed` is deliberately not retried here: a peer whose
+                // command is wrong would burn a connect timeout on every
+                // turn. It becomes eligible again once the reaper ages it
+                // back to `Disconnected`, which bounds the retry rate to
+                // the idle timeout without any backoff machinery. To retry
+                // sooner, ask for it — that is what `ReconnectMcp` is.
+                // `Connecting` is included so a caller arriving mid-spawn
+                // waits on the gate rather than seeing an empty tool list.
+                .filter(|fp| {
+                    peers.get(fp).is_some_and(|e| {
+                        matches!(
+                            e.state.status,
+                            ServerStatus::Disconnected | ServerStatus::Connecting
+                        )
+                    })
+                })
+                .copied()
+                .collect()
+        };
+        if pending.is_empty() {
             return;
         }
+        futures_util::future::join_all(pending.into_iter().map(|fp| self.connect_peer(fp))).await;
+    }
 
-        // Cold path — actually spawn the peer.
+    /// Spawn the peer behind `fp` unless it is already up.
+    async fn connect_peer(&self, fp: Fingerprint) {
+        let Some((gate, cfg)) = ({
+            let peers = self.peers.read();
+            peers.get(&fp).map(|e| (e.gate.clone(), e.cfg.clone()))
+        }) else {
+            return;
+        };
+        let _held = gate.lock().await;
+
+        // Re-check under the gate: whoever held it before us may have
+        // already settled this peer, either way.
+        let owners: Vec<(String, String)> = {
+            let mut peers = self.peers.write();
+            let Some(entry) = peers.get_mut(&fp) else {
+                return;
+            };
+            if matches!(
+                entry.state.status,
+                ServerStatus::Connected | ServerStatus::Failed
+            ) {
+                return;
+            }
+            entry.state = McpServerState::connecting();
+            entry.refs.iter().cloned().collect()
+        };
+        self.broadcast(&owners, |agent, name| McpEvent::Connecting { agent, name });
+
         let bridge = self.bridge().await;
-        let state = connect_one(&bridge, cfg, fp).await;
+        let state = connect_one(&bridge, &cfg, fp).await;
         {
             let mut peers = self.peers.write();
             if let Some(entry) = peers.get_mut(&fp) {
                 entry.state = state.clone();
+                entry.last_used = Some(Instant::now());
             }
         }
-        let event = match &state.status {
-            ServerStatus::Connected => McpEvent::Connected {
-                agent: agent.to_owned(),
-                name: cfg.name.clone(),
-                tools: state.tools.clone(),
-            },
-            ServerStatus::Failed => McpEvent::Failed {
-                agent: agent.to_owned(),
-                name: cfg.name.clone(),
-                error: state.last_error.clone().unwrap_or_default(),
-            },
-            ServerStatus::Connecting | ServerStatus::Disconnected => return,
+        self.announce(&owners, &state);
+    }
+
+    /// Stop peers that have gone quiet. The declaration stays, so the
+    /// next call reconnects — this reclaims processes, not config.
+    async fn reap_idle(&self) {
+        let now = Instant::now();
+        let expired: Vec<(Fingerprint, Vec<(String, String)>)> = {
+            let mut peers = self.peers.write();
+            peers
+                .iter_mut()
+                // `Failed` peers count too: the transport broke, but the
+                // process is still running and still costs a slot.
+                .filter(|(_, e)| {
+                    matches!(
+                        e.state.status,
+                        ServerStatus::Connected | ServerStatus::Failed
+                    )
+                })
+                .filter(|(_, e)| {
+                    e.last_used
+                        .is_some_and(|t| now.duration_since(t) >= self.idle_timeout)
+                })
+                .map(|(fp, e)| {
+                    // Field-wise rather than `idle()` so a failure reason
+                    // survives into the listing after the peer is gone.
+                    e.state.status = ServerStatus::Disconnected;
+                    e.state.tools.clear();
+                    e.last_used = None;
+                    (*fp, e.refs.iter().cloned().collect())
+                })
+                .collect()
         };
-        let _ = self.events_tx.send(event);
+        if expired.is_empty() {
+            return;
+        }
+        let bridge = self.bridge().await;
+        for (fp, owners) in expired {
+            bridge.remove_server(&peer_id(fp)).await;
+            tracing::info!(fingerprint = %peer_id(fp), "stopped idle MCP peer");
+            self.broadcast(&owners, |agent, name| McpEvent::Disconnected {
+                agent,
+                name,
+            });
+        }
+    }
+
+    /// Emit one event per owner of a peer.
+    fn broadcast(&self, owners: &[(String, String)], make: impl Fn(String, String) -> McpEvent) {
+        for (agent, name) in owners {
+            let _ = self.events_tx.send(make(agent.clone(), name.clone()));
+        }
+    }
+
+    /// Tell every owner how a connect attempt ended.
+    fn announce(&self, owners: &[(String, String)], state: &McpServerState) {
+        match state.status {
+            ServerStatus::Connected => self.broadcast(owners, |agent, name| McpEvent::Connected {
+                agent,
+                name,
+                tools: state.tools.clone(),
+            }),
+            ServerStatus::Failed => self.broadcast(owners, |agent, name| McpEvent::Failed {
+                agent,
+                name,
+                error: state.last_error.clone().unwrap_or_default(),
+            }),
+            ServerStatus::Connecting | ServerStatus::Disconnected => {}
+        }
     }
 
     /// Tear down the peer backing `(agent, name)` and connect it again,
@@ -361,49 +539,18 @@ impl McpHandler {
                 "mcp '{name}' is not registered for agent '{agent}'"
             ));
         };
-
-        let (cfg, owners): (McpServerConfig, Vec<(String, String)>) = {
-            let mut peers = self.peers.write();
-            let Some(entry) = peers.get_mut(&fp) else {
-                return Err(format!("mcp '{name}' has no live peer"));
-            };
-            entry.state = McpServerState::connecting();
-            (entry.cfg.clone(), entry.refs.iter().cloned().collect())
-        };
-
-        for (agent, name) in &owners {
-            let _ = self.events_tx.send(McpEvent::Connecting {
-                agent: agent.clone(),
-                name: name.clone(),
-            });
-        }
-
-        let bridge = self.bridge().await;
-        bridge.remove_server(&peer_id(fp)).await;
-        let state = connect_one(&bridge, &cfg, fp).await;
+        // Drop the process first so `connect_peer` sees a peer that needs
+        // starting — otherwise it would take the already-connected path
+        // and reconnect would be a no-op.
         {
             let mut peers = self.peers.write();
-            if let Some(entry) = peers.get_mut(&fp) {
-                entry.state = state.clone();
-            }
-        }
-
-        for (agent, name) in owners {
-            let event = match &state.status {
-                ServerStatus::Connected => McpEvent::Connected {
-                    agent,
-                    name,
-                    tools: state.tools.clone(),
-                },
-                ServerStatus::Failed => McpEvent::Failed {
-                    agent,
-                    name,
-                    error: state.last_error.clone().unwrap_or_default(),
-                },
-                ServerStatus::Connecting | ServerStatus::Disconnected => continue,
+            let Some(entry) = peers.get_mut(&fp) else {
+                return Err(format!("mcp '{name}' is not tracked"));
             };
-            let _ = self.events_tx.send(event);
+            entry.state = McpServerState::idle();
         }
+        self.bridge().await.remove_server(&peer_id(fp)).await;
+        self.connect_peer(fp).await;
         Ok(())
     }
 

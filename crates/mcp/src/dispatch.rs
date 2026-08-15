@@ -29,6 +29,10 @@ pub async fn dispatch_mcp(
     let input: McpArgs =
         serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 
+    // Peers are spawned on first use, and `allowed` reads the tool list a
+    // peer only reports once connected — so this has to come first or the
+    // agent would be told it has no tools it could ever reach.
+    handler.ensure_connected(agent, allowed_mcp_names).await;
     let allowed = handler.allowed(agent, allowed_mcp_names);
 
     // Try exact call first. First declarer wins on name collisions.

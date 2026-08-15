@@ -918,6 +918,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "crabtalk-core",
+ "futures-util",
  "http",
  "http-body-util",
  "hyper",
