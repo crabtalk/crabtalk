@@ -10,7 +10,6 @@
 use crate::repl::tools::sub_agent_tools;
 use client::{ConnectionInfo, StreamAccumulator};
 use serde::Deserialize;
-use std::sync::Arc;
 use tokio::sync::mpsc;
 use wcore::protocol::message::{AgentInfo, StreamMsg, ToolCallForwardEvent, stream_event};
 
@@ -86,7 +85,6 @@ pub enum Progress {
 /// model as the tool result.
 pub async fn execute(
     conn: &ConnectionInfo,
-    os: Arc<hooks::OsHook>,
     args: &str,
     call_id: &str,
     progress: mpsc::UnboundedSender<Progress>,
@@ -105,7 +103,6 @@ pub async fn execute(
         futures_util::future::join_all(input.tasks.into_iter().enumerate().map(|(i, task)| {
             run_task(
                 conn.clone(),
-                os.clone(),
                 task,
                 format!("delegate:{call_id}:{i}"),
                 Reporter {
@@ -147,7 +144,6 @@ impl Reporter {
 
 async fn run_task(
     conn: ConnectionInfo,
-    os: Arc<hooks::OsHook>,
     task: DelegateTask,
     sender: String,
     reporter: Reporter,
@@ -168,7 +164,7 @@ async fn run_task(
             Ok(event) => {
                 match &event {
                     stream_event::Event::ToolCallForward(forward) => {
-                        dispatch_locally(conn.clone(), os.clone(), forward.clone());
+                        refuse(conn.clone(), forward.clone());
                     }
                     stream_event::Event::ToolStart(start) => reporter.active(
                         start
@@ -210,17 +206,20 @@ fn headline(text: &str) -> String {
         .to_owned()
 }
 
-/// Answer a sub-agent's forwarded tool call from this client's OS tools.
-/// Detached so a sub-agent running several calls in one step isn't
-/// serialised behind the stream reader.
-fn dispatch_locally(conn: ConnectionInfo, os: Arc<hooks::OsHook>, forward: ToolCallForwardEvent) {
+/// Answer a forward a sub-agent should never have received.
+///
+/// `sub_agent_tools` declares nothing, so the daemon has nothing to forward —
+/// but an unanswered forward is a hang until the timeout rather than a
+/// fallback, so this replies with an error instead of dropping it.
+fn refuse(conn: ConnectionInfo, forward: ToolCallForwardEvent) {
     tokio::spawn(async move {
-        let (output, is_error) = match os.execute(&forward.name, &forward.arguments).await {
-            Ok(output) => (output, false),
-            Err(e) => (e, true),
-        };
         let _ = conn
-            .reply_to_tool(forward.conversation_id, forward.call_id, output, is_error)
+            .reply_to_tool(
+                forward.conversation_id,
+                forward.call_id,
+                format!("{}: sub-agents have no client tools", forward.name),
+                true,
+            )
             .await;
     });
 }
