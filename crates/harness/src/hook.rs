@@ -12,13 +12,13 @@
 //! the length of a command, so dispatch hands the invocation to the blocking
 //! pool rather than running it on an async worker.
 
-use crate::{Grants, Harness};
+use crate::{Dispatch, Grants, Harness};
 use crabllm_core::Tool;
 use runtime::Hook;
 use rvtime::{Config, Engine};
 use std::{
     collections::BTreeMap,
-    sync::{Arc, RwLock},
+    sync::{Arc, OnceLock, RwLock},
 };
 use wcore::{
     AgentConfig, HarnessConfig, ToolDispatch, ToolFuture,
@@ -30,17 +30,24 @@ pub struct HarnessHook {
     engine: Engine,
     /// `(agent, harness name)` to the image that agent's declaration granted.
     loaded: RwLock<BTreeMap<(String, String), Arc<Harness>>>,
+    /// The runtime's own door, connected once the daemon that implements it
+    /// exists — which is after these images load, since it is built on them.
+    protocol: Arc<OnceLock<Dispatch>>,
 }
 
 impl HarnessHook {
     /// An engine whose generated code is cached under the config directory, so
     /// a restart pays ~3ms per image instead of ~15ms.
-    pub fn new() -> anyhow::Result<Self> {
+    /// `protocol` is filled by the daemon once it exists. Until then a granted
+    /// protocol capability is present but answers that it is not connected,
+    /// which is a clearer failure than a call that waits for one.
+    pub fn new(protocol: Arc<OnceLock<Dispatch>>) -> anyhow::Result<Self> {
         let mut config = Config::new();
         config.cache_dir(wcore::paths::CONFIG_DIR.join("cache/harness"));
         Ok(Self {
             engine: Engine::new(&config)?,
             loaded: RwLock::new(BTreeMap::new()),
+            protocol,
         })
     }
 
@@ -86,7 +93,9 @@ impl HarnessHook {
                 root: declaration.root.clone(),
                 fs: granted("fs"),
                 exec: granted("exec"),
+                protocol_read: granted("protocol:read"),
             },
+            self.protocol.clone(),
         )
     }
 

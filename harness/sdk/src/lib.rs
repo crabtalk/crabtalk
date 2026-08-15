@@ -54,6 +54,9 @@ pub mod exec;
 /// Files, bounded by the granted root. Granted as `fs`.
 #[cfg(feature = "alloc")]
 pub mod fs;
+/// The runtime, over `ClientMessage`. Granted as `protocol:<group>`.
+#[cfg(feature = "protocol")]
+pub mod protocol;
 // Installing a global allocator is something only the whole program may do,
 // so like the panic handler it happens on the guest's target and nowhere else.
 #[cfg(all(feature = "alloc", target_arch = "riscv64"))]

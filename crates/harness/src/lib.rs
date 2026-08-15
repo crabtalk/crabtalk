@@ -7,18 +7,24 @@
 use anyhow::{Context, Result, bail};
 use object::{Object, ObjectSection};
 use rvtime::{Caller, Engine, Linker, Module, Store, TypedFunc};
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::{Arc, OnceLock},
+};
 
 pub mod abi;
 mod exec;
 mod fs;
 mod hook;
 mod manifest;
+mod protocol;
 mod root;
 mod wire;
 
 pub use hook::HarnessHook;
 pub use manifest::{Manifest, ToolSpec};
+pub use protocol::Dispatch;
 
 /// A guest entry point: takes nothing, returns a pointer and a length.
 type Export = TypedFunc<(), (u64, u64)>;
@@ -38,6 +44,8 @@ pub struct Grants {
     pub fs: bool,
     /// Run commands.
     pub exec: bool,
+    /// Read the runtime's catalogue over the protocol.
+    pub protocol_read: bool,
 }
 
 /// Guest state for one invocation. Memory is per-invocation; anything a
@@ -70,7 +78,12 @@ impl Harness {
     /// Compile `elf` and resolve its exports, granting `grants`. The engine's
     /// code cache makes a second load of the same bytes cheap across processes
     /// as well as within one.
-    pub fn load(engine: &Engine, elf: &[u8], grants: &Grants) -> Result<Self> {
+    pub fn load(
+        engine: &Engine,
+        elf: &[u8],
+        grants: &Grants,
+        protocol: Arc<OnceLock<Dispatch>>,
+    ) -> Result<Self> {
         let module = Module::new(engine, elf).context("failed to compile harness")?;
         let mut linker = Linker::new(engine);
 
@@ -158,6 +171,18 @@ impl Harness {
                     },
                 )?;
             }
+        }
+
+        if grants.protocol_read {
+            linker.func_wrap(
+                abi::HOST_PROTOCOL_CALL,
+                move |caller: Caller<'_, Invocation>, ptr, len| {
+                    let protocol = protocol.clone();
+                    stage(caller, ptr, len, move |request| {
+                        protocol::call(&protocol, request, true)
+                    })
+                },
+            )?;
         }
 
         let mut store = Store::new(engine, Invocation::empty());

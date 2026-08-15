@@ -105,7 +105,7 @@ fn main() -> Result<()> {
         let mut config = Config::new();
         config.cache_dir(&cache).memory_size(mib * 1024 * 1024);
         let engine = Engine::new(&config)?;
-        let harness = Harness::load(&engine, &elf, &Grants::default())?;
+        let harness = Harness::load(&engine, &elf, &Grants::default(), Default::default())?;
 
         let mut samples = Vec::with_capacity(ROUNDS);
         for _ in 0..ROUNDS {
@@ -124,7 +124,7 @@ fn compile(cache: &std::path::Path, elf: &[u8]) -> Result<Harness> {
     let mut config = Config::new();
     config.cache_dir(cache);
     let engine = Engine::new(&config)?;
-    Harness::load(&engine, elf, &Grants::default())
+    Harness::load(&engine, elf, &Grants::default(), Default::default())
 }
 
 fn time<T>(f: impl FnOnce() -> Result<T>) -> Result<Duration> {

@@ -18,9 +18,14 @@ test = false
 # Installs an allocator that takes its heap from the host on first use.
 default = ["alloc"]
 alloc = ["dep:linked_list_allocator"]
+# The protocol types are generated a second time for the guest, so a harness
+# that never talks to the runtime does not link them.
+protocol = ["alloc", "dep:crabtalk-harness-proto", "dep:prost_guest"]
 
 [dependencies]
 crabtalk-harness-codegen.workspace = true
+crabtalk-harness-proto = { workspace = true, optional = true }
+prost_guest = { workspace = true, optional = true }
 rvtime-guest.workspace = true
 
 # The allocator is installed as *the* global allocator, which only the guest's

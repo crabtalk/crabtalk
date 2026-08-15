@@ -11,6 +11,7 @@ repository.workspace = true
 anyhow.workspace = true
 crabllm-core.workspace = true
 object.workspace = true
+prost.workspace = true
 runtime.workspace = true
 rvtime.workspace = true
 serde.workspace = true

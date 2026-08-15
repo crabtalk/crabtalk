@@ -27,6 +27,8 @@ pub const HOST_FS_READ: u64 = hash("crabtalk.fs.read");
 pub const HOST_FS_WRITE: u64 = hash("crabtalk.fs.write");
 /// Run a command. `(ptr, len) -> staged length`
 pub const HOST_EXEC_RUN: u64 = hash("crabtalk.exec.run");
+/// Send one `ClientMessage` and stage the reply. `(ptr, len) -> staged length`
+pub const HOST_PROTOCOL_CALL: u64 = hash("crabtalk.protocol.call");
 
 /// Set on a staged length when the bytes are an error message rather than a
 /// result. A length never reaches this bit on its own, so one return value
