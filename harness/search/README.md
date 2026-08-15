@@ -6,7 +6,7 @@ and Wikipedia with consensus-based ranking. No API keys required.
 ## Install
 
 ```bash
-crabup pull search           # fetch the binary from crates.io
+crabup add search            # fetch the binary from crates.io
 crabup search start          # install and load the service unit
 ```
 

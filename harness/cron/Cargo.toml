@@ -3,6 +3,7 @@ name = "crabtalk-cron"
 description = "Cron scheduler for Crabtalk — fires skills into agents on schedule"
 keywords = ["cron", "scheduler", "crabtalk"]
 categories = ["command-line-utilities"]
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
