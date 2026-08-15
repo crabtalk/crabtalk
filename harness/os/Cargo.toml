@@ -1,0 +1,18 @@
+[package]
+name = "crabtalk-harness-os"
+description = "OS tools — bash, read, edit — as a Crabtalk harness"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "os"
+path = "src/bin/main.rs"
+
+[dependencies]
+crabtalk-harness-sdk.workspace = true
+serde_guest.workspace = true
+serde_json_guest.workspace = true
