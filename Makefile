@@ -76,3 +76,28 @@ macos-arm64 macos-amd64 linux-arm64 linux-amd64 windows-amd64:
 # Assumes `make release` has been run and tarballs exist in target/bundle/.
 publish:
 	gh release create $(VERSION) --title "$(VERSION)" --generate-notes target/bundle/*-$(VERSION)-*.tar.gz
+
+# ── Harnesses ────────────────────────────────────────────────────
+#
+# A harness is one RV64 ELF rather than a binary per platform, so it has no
+# place in the platform matrix above. `make harness` builds the guests and
+# installs them where the daemon looks for them; the daemon loads what is
+# there and never fetches.
+#
+# CRABTALK_HOME follows the configuration directory rather than being written
+# out, so pointing crabtalk somewhere else points this there too.
+#
+# Needs the guest target: rustup target add riscv64imac-unknown-none-elf
+CRABTALK_HOME ?= $(HOME)/.crabtalk
+HARNESS_TARGET = riscv64imac-unknown-none-elf
+HARNESS_DIR = $(CRABTALK_HOME)/harnesses
+HARNESSES = os
+
+harness:
+	cargo build --release --target $(HARNESS_TARGET) \
+		$(foreach h,$(HARNESSES),-p crabtalk-harness-$(h))
+	mkdir -p $(HARNESS_DIR)
+	$(foreach h,$(HARNESSES),\
+		cp target/$(HARNESS_TARGET)/release/$(h) $(HARNESS_DIR)/$(h).elf;)
+
+.PHONY: harness

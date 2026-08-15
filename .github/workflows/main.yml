@@ -56,10 +56,19 @@ jobs:
       # manifest section is where the host looks for it.
       - name: Build Guest
         run: cargo build --release -p spike --target riscv64imac-unknown-none-elf
+      # The first real harness, and the one that proves capabilities: fs and
+      # exec, bounded by a root the guest cannot widen.
+      - name: Build OS Harness
+        run: cargo build --release -p crabtalk-harness-os --target riscv64imac-unknown-none-elf
       # And that the host can compile, instantiate, and call it — the one
       # place rvtime itself runs in this repo's CI.
       - name: Run Guest
         run: cargo run --release --example measure -p crabtalk-harness
+      # bash, read, and edit against a real directory, including the paths that
+      # must be refused. Also covers the guest constructs a model's own output
+      # reaches: an unknown argument and a wrong argument type.
+      - name: Run OS Harness
+        run: cargo run --release --example os -p crabtalk-harness
 
   typos:
     name: Typos

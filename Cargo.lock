@@ -782,6 +782,7 @@ dependencies = [
  "crabllm-provider",
  "crabllm-sdk",
  "crabtalk-core",
+ "crabtalk-harness",
  "crabtalk-hooks",
  "crabtalk-mcp",
  "crabtalk-runtime",
@@ -832,7 +833,6 @@ dependencies = [
  "console 0.15.11",
  "crabtalk-client",
  "crabtalk-core",
- "crabtalk-hooks",
  "crabtalk-transport",
  "crossterm 0.28.1",
  "dialoguer",
@@ -957,8 +957,14 @@ name = "crabtalk-harness"
 version = "0.0.23"
 dependencies = [
  "anyhow",
+ "crabllm-core",
+ "crabtalk-core",
+ "crabtalk-runtime",
  "object 0.40.0",
  "rvtime",
+ "serde",
+ "serde_json",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]
@@ -970,6 +976,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "crabtalk-harness-os"
+version = "0.0.23"
+dependencies = [
+ "crabtalk-harness-sdk",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4432,8 +4447,7 @@ dependencies = [
 [[package]]
 name = "rvtime"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8220daa921b833a26e27d1bcbf686951704f39628cb48653bc3b49cba6acbc06"
+source = "git+https://github.com/crabtalk/rvtime?branch=dev#0bd77ee8ace88f5b05a06bf97c0ff713aa330c1b"
 dependencies = [
  "anyhow",
  "libc",
@@ -4446,8 +4460,7 @@ dependencies = [
 [[package]]
 name = "rvtime-compiler"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c86353c26be91457fb48d6eb828386cf1a08d64dd52bcaaab885db9a3dab2bc1"
+source = "git+https://github.com/crabtalk/rvtime?branch=dev#0bd77ee8ace88f5b05a06bf97c0ff713aa330c1b"
 dependencies = [
  "anyhow",
  "cc",
@@ -4462,8 +4475,7 @@ dependencies = [
 [[package]]
 name = "rvtime-core"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37491a19f84f8a23e3eb369df6fd87651441f1590d3babbf5fdc065306ddb5cc"
+source = "git+https://github.com/crabtalk/rvtime?branch=dev#0bd77ee8ace88f5b05a06bf97c0ff713aa330c1b"
 dependencies = [
  "anyhow",
  "object 0.40.0",
@@ -4473,8 +4485,7 @@ dependencies = [
 [[package]]
 name = "rvtime-cranelift"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0774da8c33b6fbc3578861d20df1de54d62b799068dc671dcb5038c4b8a11b7"
+source = "git+https://github.com/crabtalk/rvtime?branch=dev#0bd77ee8ace88f5b05a06bf97c0ff713aa330c1b"
 dependencies = [
  "anyhow",
  "cranelift",

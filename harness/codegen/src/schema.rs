@@ -31,12 +31,16 @@ pub fn object(item: &ItemStruct) -> syn::Result<String> {
 
         let mut property = type_of(ty)?;
         if !description.is_empty() {
+            // Exactly one brace: a nested type like `Vec<T>` or a map ends in
+            // two, and trimming both puts the description inside the inner
+            // object and leaves the JSON one brace short.
+            let open = property
+                .strip_suffix('}')
+                .ok_or_else(|| unsupported(&field.ty))?;
             property = format!(
-                r#"{},"description":"{}"#,
-                property.trim_end_matches('}'),
+                r#"{open},"description":"{}"}}"#,
                 crate::escape(&description)
             );
-            property.push_str("\"}");
         }
 
         properties.push(format!(r#""{}":{}"#, crate::escape(&name), property));
@@ -87,6 +91,31 @@ fn type_of(ty: &Type) -> syn::Result<String> {
             return Err(unsupported(ty));
         };
         return Ok(format!(r#"{{"type":"array","items":{}}}"#, type_of(inner)?));
+    }
+
+    // A map is an open object: the keys are the caller's, so only the values
+    // have a schema. Keys are strings because that is what JSON objects have.
+    if name == "BTreeMap" || name == "HashMap" {
+        let PathArguments::AngleBracketed(args) = &segment.arguments else {
+            return Err(unsupported(ty));
+        };
+        let mut types = args.args.iter().filter_map(|arg| match arg {
+            GenericArgument::Type(ty) => Some(ty),
+            _ => None,
+        });
+        let (Some(key), Some(value)) = (types.next(), types.next()) else {
+            return Err(unsupported(ty));
+        };
+        if type_of(key)? != r#"{"type":"string"}"# {
+            return Err(syn::Error::new_spanned(
+                key,
+                "a map's keys become JSON object keys, so they have to be strings",
+            ));
+        }
+        return Ok(format!(
+            r#"{{"type":"object","additionalProperties":{}}}"#,
+            type_of(value)?
+        ));
     }
 
     let primitive = match name.as_str() {
