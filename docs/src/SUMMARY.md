@@ -22,7 +22,6 @@
 - [0036 - Skill Loading](rfcs/0036-skill.md)
 - [0043 - Component System](rfcs/0043-component.md)
 - [0075 - Hook](rfcs/0075-hook.md)
-- [0080 - Cron](rfcs/0080-cron.md)
 - [0082 - Scoping](rfcs/0082-scoping.md)
 - [0121 - Event Bus](rfcs/0121-event-bus.md)
 - [0135 - Agent-First Protocol](rfcs/0135-agent-first.md)

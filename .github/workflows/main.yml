@@ -59,11 +59,11 @@ jobs:
       # The first real harness, and the one that proves capabilities: fs and
       # exec, bounded by a root the guest cannot widen.
       - name: Build OS Harness
-        run: cargo build --release -p crabtalk-harness-os --target riscv64imac-unknown-none-elf
+        run: cargo build --release -p berm-os --target riscv64imac-unknown-none-elf
       # The protocol harness: proves the guest can carry the daemon's own
       # message types, which needs prost built without std.
       - name: Build Peers Harness
-        run: cargo build --release -p crabtalk-harness-peers --target riscv64imac-unknown-none-elf
+        run: cargo build --release -p berm-peers --target riscv64imac-unknown-none-elf
       # And that the host can compile, instantiate, and call it — the one
       # place rvtime itself runs in this repo's CI.
       - name: Run Guest

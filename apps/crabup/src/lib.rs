@@ -24,7 +24,7 @@ pub enum Command {
         #[command(flatten)]
         fetch: Fetch,
     },
-    /// Add a harness service — cron, search.
+    /// Add a harness service — search.
     Add {
         #[command(flatten)]
         fetch: Fetch,

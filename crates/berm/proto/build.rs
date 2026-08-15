@@ -8,11 +8,11 @@
 use std::io::Result;
 
 fn main() -> Result<()> {
-    let proto = "../../crates/core/proto/crabtalk.proto";
+    let proto = "../../core/proto/crabtalk.proto";
     println!("cargo:rerun-if-changed={proto}");
     prost_build::Config::new()
         // `map` fields default to `std::collections::HashMap`, which a guest
         // does not have. The ordered one lives in `alloc`.
         .btree_map(["."])
-        .compile_protos(&[proto], &["../../crates/core/proto/"])
+        .compile_protos(&[proto], &["../../core/proto/"])
 }

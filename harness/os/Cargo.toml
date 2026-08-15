@@ -1,5 +1,5 @@
 [package]
-name = "crabtalk-harness-os"
+name = "berm-os"
 description = "OS tools — bash, read, edit — as a Crabtalk harness"
 version.workspace = true
 edition.workspace = true

@@ -1,5 +1,5 @@
 [package]
-name = "crabtalk-harness-peers"
+name = "berm-peers"
 description = "Name the other agents in the runtime — the smallest protocol harness"
 version.workspace = true
 edition.workspace = true

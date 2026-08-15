@@ -160,17 +160,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-trait"
-version = "0.1.89"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "atoi"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -294,6 +283,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "berm-os"
+version = "0.0.23"
+dependencies = [
+ "berm-sdk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "berm-peers"
+version = "0.0.23"
+dependencies = [
+ "berm-sdk",
+ "crabtalk-berm-proto",
 ]
 
 [[package]]
@@ -497,17 +503,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
-name = "chacha20"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f8d983286843e49675a4b7a2d174efe136dc93a18d69130dd18198a6c167601"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.3.0",
- "rand_core 0.10.0",
-]
-
-[[package]]
 name = "chrono"
 version = "0.4.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -618,7 +613,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -729,15 +724,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cpufeatures"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "crabllm-core"
 version = "0.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -821,7 +807,6 @@ dependencies = [
  "crabtalk-runtime",
  "crabtalk-storage",
  "crabtalk-transport",
- "cron",
  "futures-core",
  "futures-util",
  "parking_lot",
@@ -978,23 +963,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabtalk-cron"
-version = "0.0.23"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "crabtalk-client",
- "crabtalk-command",
- "crabtalk-core",
- "cron",
- "serde",
- "tokio",
- "toml",
- "tracing",
-]
-
-[[package]]
 name = "crabtalk-embed"
 version = "0.0.23"
 dependencies = [
@@ -1005,23 +973,6 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "tokenizers",
-]
-
-[[package]]
-name = "crabtalk-harness-os"
-version = "0.0.23"
-dependencies = [
- "berm-sdk",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "crabtalk-harness-peers"
-version = "0.0.23"
-dependencies = [
- "berm-sdk",
- "crabtalk-berm-proto",
 ]
 
 [[package]]
@@ -1099,17 +1050,11 @@ dependencies = [
 name = "crabtalk-search"
 version = "0.0.23"
 dependencies = [
- "anyhow",
- "axum",
  "base64 0.22.1",
- "clap",
- "crabtalk-command",
  "lru 0.14.0",
  "percent-encoding",
  "rand 0.9.2",
  "reqwest 0.13.1",
- "rmcp",
- "schemars 1.2.1",
  "scraper",
  "serde",
  "serde_json",
@@ -1117,7 +1062,6 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
- "tracing-subscriber",
  "url",
 ]
 
@@ -1496,18 +1440,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cron"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "089df96cf6a25253b4b6b6744d86f91150a3d4df546f31a95def47976b8cba97"
-dependencies = [
- "chrono",
- "once_cell",
- "phf",
- "winnow",
-]
-
-[[package]]
 name = "crossbeam"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1860,7 +1792,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2010,7 +1942,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2441,7 +2373,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "r-efi 6.0.0",
- "rand_core 0.10.0",
  "wasip2",
  "wasip3",
 ]
@@ -2917,7 +2848,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3357,7 +3288,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3552,12 +3483,6 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "pastey"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b867cad97c0791bbd3aaa6472142568c6c9e8f71937e98379f584cfb0cf35bec"
 
 [[package]]
 name = "percent-encoding"
@@ -3963,17 +3888,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc266eb313df6c5c09c1c7b1fbe2510961e5bcd3add930c1e31f7ed9da0feff8"
-dependencies = [
- "chacha20",
- "getrandom 0.4.2",
- "rand_core 0.10.0",
-]
-
-[[package]]
 name = "rand_chacha"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3997,12 +3911,6 @@ checksum = "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c"
 dependencies = [
  "getrandom 0.3.4",
 ]
-
-[[package]]
-name = "rand_core"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c8d0fd677905edcbeedbf2edb6494d676f0e98d54d5cf9bda0b061cb8fb8aba"
 
 [[package]]
 name = "rand_distr"
@@ -4298,49 +4206,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rmcp"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2231b2c085b371c01bc90c0e6c1cab8834711b6394533375bdbf870b0166d419"
-dependencies = [
- "async-trait",
- "bytes",
- "chrono",
- "futures",
- "http",
- "http-body",
- "http-body-util",
- "pastey",
- "pin-project-lite",
- "rand 0.10.0",
- "rmcp-macros",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "sse-stream",
- "thiserror 2.0.18",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tower-service",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "rmcp-macros"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36ea0e100fadf81be85d7ff70f86cd805c7572601d4ab2946207f36540854b43"
-dependencies = [
- "darling 0.23.0",
- "proc-macro2",
- "quote",
- "serde_json",
- "syn",
-]
-
-[[package]]
 name = "rustc-hash"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4378,7 +4243,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4437,7 +4302,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4476,7 +4341,7 @@ dependencies = [
 [[package]]
 name = "rvtime"
 version = "0.0.1"
-source = "git+https://github.com/crabtalk/rvtime?branch=dev#0bd77ee8ace88f5b05a06bf97c0ff713aa330c1b"
+source = "git+https://github.com/crabtalk/rvtime?branch=dev#5fe5138a13bf363eb6ce0449a70e5ebcdb30c244"
 dependencies = [
  "anyhow",
  "libc",
@@ -4489,7 +4354,7 @@ dependencies = [
 [[package]]
 name = "rvtime-compiler"
 version = "0.0.1"
-source = "git+https://github.com/crabtalk/rvtime?branch=dev#0bd77ee8ace88f5b05a06bf97c0ff713aa330c1b"
+source = "git+https://github.com/crabtalk/rvtime?branch=dev#5fe5138a13bf363eb6ce0449a70e5ebcdb30c244"
 dependencies = [
  "anyhow",
  "cc",
@@ -4504,7 +4369,7 @@ dependencies = [
 [[package]]
 name = "rvtime-core"
 version = "0.0.1"
-source = "git+https://github.com/crabtalk/rvtime?branch=dev#0bd77ee8ace88f5b05a06bf97c0ff713aa330c1b"
+source = "git+https://github.com/crabtalk/rvtime?branch=dev#5fe5138a13bf363eb6ce0449a70e5ebcdb30c244"
 dependencies = [
  "anyhow",
  "object 0.40.0",
@@ -4514,7 +4379,7 @@ dependencies = [
 [[package]]
 name = "rvtime-cranelift"
 version = "0.0.1"
-source = "git+https://github.com/crabtalk/rvtime?branch=dev#0bd77ee8ace88f5b05a06bf97c0ff713aa330c1b"
+source = "git+https://github.com/crabtalk/rvtime?branch=dev#5fe5138a13bf363eb6ce0449a70e5ebcdb30c244"
 dependencies = [
  "anyhow",
  "cranelift",
@@ -4583,7 +4448,6 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
 dependencies = [
- "chrono",
  "dyn-clone",
  "ref-cast",
  "schemars_derive",
@@ -4835,7 +4699,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
- "cpufeatures 0.2.17",
+ "cpufeatures",
  "digest",
 ]
 
@@ -5070,19 +4934,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sse-stream"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb4dc4d33c68ec1f27d386b5610a351922656e1fdf5c05bbaad930cd1519479a"
-dependencies = [
- "bytes",
- "futures-util",
- "http-body",
- "http-body-util",
- "pin-project-lite",
-]
-
-[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5313,7 +5164,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6111,7 +5962,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

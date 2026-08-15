@@ -12,8 +12,8 @@ CARGO = cargo b --profile prod
 CORE_PACKAGES = -p crabup -p crabtalkd -p crabtalk-cli
 CORE_BINS = crabup crabtalkd crabtalk
 
-SERVICE_PACKAGES = -p crabtalk-search -p crabtalk-telegram
-SERVICE_BINS = crabtalk-search crabtalk-telegram
+SERVICE_PACKAGES = -p crabtalk-telegram
+SERVICE_BINS = crabtalk-telegram
 
 ALL_PACKAGES = $(CORE_PACKAGES) $(SERVICE_PACKAGES)
 ALL_BINS = $(CORE_BINS) $(SERVICE_BINS)
@@ -95,7 +95,7 @@ HARNESSES = os peers
 
 harness:
 	cargo build --release --target $(HARNESS_TARGET) \
-		$(foreach h,$(HARNESSES),-p crabtalk-harness-$(h))
+		$(foreach h,$(HARNESSES),-p berm-$(h))
 	mkdir -p $(HARNESS_DIR)
 	$(foreach h,$(HARNESSES),\
 		cp target/$(HARNESS_TARGET)/release/$(h) $(HARNESS_DIR)/$(h).elf;)
