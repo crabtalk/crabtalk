@@ -44,6 +44,23 @@ jobs:
       - name: Clippy
         run: cargo clippy --all -- -D warnings
 
+  guest:
+    name: Guest
+    runs-on: Linux
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install RISC-V target
+        run: rustup target add riscv64imac-unknown-none-elf
+      # Proves what only a real build can: that the macro's exports survive
+      # --gc-sections, that --emit-relocs reached the linker, and that the
+      # manifest section is where the host looks for it.
+      - name: Build Guest
+        run: cargo build --release -p spike --target riscv64imac-unknown-none-elf
+      # And that the host can compile, instantiate, and call it — the one
+      # place rvtime itself runs in this repo's CI.
+      - name: Run Guest
+        run: cargo run --release --example measure -p crabtalk-harness
+
   typos:
     name: Typos
     runs-on: Linux
