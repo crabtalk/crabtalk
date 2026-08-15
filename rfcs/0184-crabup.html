@@ -15,8 +15,8 @@
         <link rel="icon" href="../favicon-de23e50b.svg">
         <link rel="shortcut icon" href="../favicon-8114d1fc.png">
         <link rel="stylesheet" href="../css/variables-8adf115d.css">
-        <link rel="stylesheet" href="../css/general-2459343d.css">
-        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/general-e96d0476.css">
+        <link rel="stylesheet" href="../css/chrome-d279d366.css">
         <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-7303227d.js";
+            window.path_to_searchindex_js = "../searchindex-9f3a25a8.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-1cc83451.js"></script>
+        <script src="../toc-2deb9a6b.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -188,6 +188,9 @@
 <li>Crates: new <code>crabup</code> binary; consumes <code>command</code>; shrinks <code>crabtalkd</code></li>
 <li>Updates: <a href="0043-component.html">0043 (Component System)</a></li>
 </ul>
+<blockquote>
+<p><strong>Note (2026-08-15).</strong> The verbs below are superseded. <code>pull</code> / <code>rm</code> shipped as <code>install</code> / <code>uninstall</code>, and the <code>pkg add</code> / <code>pkg remove</code> surface never shipped at all — so <code>add</code> / <code>remove</code> were free, and now pair with <code>install</code> / <code>uninstall</code> to split binaries by role, following <code>rustup</code>. Apps (daemon, cli, telegram) and any crate by name are <code>install</code> / <code>uninstall</code>; harness services (cron, search), which live under <code>harness/</code> in the workspace, are <code>add</code> / <code>remove</code>. Naming one to the wrong verb is an error that names the right one. Pass-through is unchanged but belongs to the app verbs, since an unknown crate cannot be shown to be harness. This RFC’s rejection of “a <code>component add</code> vs <code>pull</code> split” stands on its own terms: that split was about install <em>mechanism</em>, and there is still only one — this one is about what a binary is to the user. The <code>wechat</code> row is gone from the resolution table along with the gateway.</p>
+</blockquote>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <p><code>crabup</code> is a thin wrapper over <code>cargo install</code> that also owns <code>launchd</code>/<code>systemd</code>/<code>schtasks</code> lifecycle for every crabtalk binary. <code>crabup install crabtalkd</code> spawns <code>cargo install crabtalkd</code>. The value add is service management — the one thing <code>cargo install</code> doesn’t do — not distribution, not version coordination, not a registry.</p>
 <h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
@@ -330,11 +333,11 @@ crabup &lt;name&gt; logs [-f]
 
         <script src="../elasticlunr-ef4e11c1.min.js"></script>
         <script src="../mark-09e88c2c.min.js"></script>
-        <script src="../searcher-c2a407aa.js"></script>
+        <script src="../searcher-09f2665d.js"></script>
 
         <script src="../clipboard-1626706a.min.js"></script>
         <script src="../highlight-defcc054.js"></script>
-        <script src="../book-a0b12cfe.js"></script>
+        <script src="../book-609e4cb8.js"></script>
 
         <!-- Custom JS scripts -->
 

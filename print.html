@@ -16,8 +16,8 @@
         <link rel="icon" href="favicon-de23e50b.svg">
         <link rel="shortcut icon" href="favicon-8114d1fc.png">
         <link rel="stylesheet" href="css/variables-8adf115d.css">
-        <link rel="stylesheet" href="css/general-2459343d.css">
-        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
         <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-7303227d.js";
+            window.path_to_searchindex_js = "searchindex-9f3a25a8.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-1cc83451.js"></script>
+        <script src="toc-2deb9a6b.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -187,6 +187,7 @@ the design decisions that govern its evolution.</p>
 <h2 id="how-this-book-is-organized"><a class="header" href="#how-this-book-is-organized">How this book is organized</a></h2>
 <ul>
 <li><strong><a href="#manifesto">Manifesto</a></strong> — What crabtalk is and what it stands for.</li>
+<li><strong><a href="arch.html">The workspace</a></strong> — Every crate and app drawn to scale, the dependency graph between them, and one message traced end to end.</li>
 <li><strong>RFCs</strong> — Design decisions and features.</li>
 </ul>
 <h2 id="rfcs"><a class="header" href="#rfcs">RFCs</a></h2>
@@ -1127,6 +1128,9 @@ invocation)?</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/80">#80</a>, <a href="https://github.com/crabtalk/crabtalk/issues/183">#183</a></li>
 <li>Crates: <code>apps/cron</code></li>
 </ul>
+<blockquote>
+<p><strong>Note (2026-08-15).</strong> The crate moved to <code>harness/cron</code> when standalone services were split out of <code>apps/</code>. Every <code>apps/cron</code> below means <code>harness/cron</code>; the design is unchanged.</p>
+</blockquote>
 <h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
 <p>Cron triggers skills into agents on a schedule. The scheduler runs as a standalone service outside the daemon and speaks the existing <code>StreamMsg</code> protocol — no cron-specific daemon knowledge, no cron-specific wire messages. The <code>apps/cron</code> crate is desktop-oriented; alternate consumers (e.g. multi-tenant cloud schedulers) model their own entry shape, storage, and time-zone semantics — the shared surface between them is just the daemon’s <code>StreamMsg</code> protocol.</p>
 <h2 id="motivation-6"><a class="header" href="#motivation-6">Motivation</a></h2>
@@ -1192,6 +1196,9 @@ once = false
 </ul>
 <blockquote>
 <p><strong>Updated by <a href="#0193---agent-owned-mcp">0193 (Agent-Owned MCP)</a> (2026-04-28).</strong> <code>AgentScope.mcps</code> was removed: agents now embed their MCP server configurations by value, so MCP scoping is intrinsic to the agent’s declaration and no separate allowlist is needed.</p>
+</blockquote>
+<blockquote>
+<p><strong>Updated by <a href="#0203---client-side-orchestration">0203 (Client-Side Orchestration)</a> (2026-08-15).</strong> The tool whitelist now applies to client-provided tools at advertisement as well as at dispatch. <code>delegate</code> moved to the client, so it is no longer unconditionally available; “Delegate CWD isolation” describes a <code>DelegateTask.cwd</code> field that was never implemented.</p>
 </blockquote>
 <h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
 <p>A whitelist-based scoping system that restricts what an agent can access: tools and skills. Enforced at dispatch time and advertised in the system prompt. This is a security boundary, not a hint. MCP scoping is no longer part of <code>AgentScope</code> — see <a href="#0193---agent-owned-mcp">0193</a> for the replacement model.</p>
@@ -1283,6 +1290,9 @@ to. Enforcement must be at the dispatch layer.</p>
 <li>Crates: daemon, core, runtime</li>
 <li>Updates: <a href="#0080---cron">0080 (Cron)</a></li>
 </ul>
+<blockquote>
+<p><strong>Updated by <a href="#0203---client-side-orchestration">0203 (Client-Side Orchestration)</a> (2026-08-15).</strong> “Non-blocking delegation” is removed with the daemon-side <code>delegate</code> hook: the <code>background</code> field returned task IDs nothing consumed. Client-side fan-out is synchronous. Detached work that outlives the client is still unsolved and belongs to a daemon jobs API.</p>
+</blockquote>
 <h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
 <p>A daemon-level event bus that routes named events to target agents via
 exact-match subscriptions. Agent completion is the first built-in event source.
@@ -1755,6 +1765,9 @@ prod rollout steps ...
 <li>Crates: new <code>crabup</code> binary; consumes <code>command</code>; shrinks <code>crabtalkd</code></li>
 <li>Updates: <a href="#0043---component-system">0043 (Component System)</a></li>
 </ul>
+<blockquote>
+<p><strong>Note (2026-08-15).</strong> The verbs below are superseded. <code>pull</code> / <code>rm</code> shipped as <code>install</code> / <code>uninstall</code>, and the <code>pkg add</code> / <code>pkg remove</code> surface never shipped at all — so <code>add</code> / <code>remove</code> were free, and now pair with <code>install</code> / <code>uninstall</code> to split binaries by role, following <code>rustup</code>. Apps (daemon, cli, telegram) and any crate by name are <code>install</code> / <code>uninstall</code>; harness services (cron, search), which live under <code>harness/</code> in the workspace, are <code>add</code> / <code>remove</code>. Naming one to the wrong verb is an error that names the right one. Pass-through is unchanged but belongs to the app verbs, since an unknown crate cannot be shown to be harness. This RFC’s rejection of “a <code>component add</code> vs <code>pull</code> split” stands on its own terms: that split was about install <em>mechanism</em>, and there is still only one — this one is about what a binary is to the user. The <code>wechat</code> row is gone from the resolution table along with the gateway.</p>
+</blockquote>
 <h2 id="summary-11"><a class="header" href="#summary-11">Summary</a></h2>
 <p><code>crabup</code> is a thin wrapper over <code>cargo install</code> that also owns <code>launchd</code>/<code>systemd</code>/<code>schtasks</code> lifecycle for every crabtalk binary. <code>crabup install crabtalkd</code> spawns <code>cargo install crabtalkd</code>. The value add is service management — the one thing <code>cargo install</code> doesn’t do — not distribution, not version coordination, not a registry.</p>
 <h2 id="motivation-11"><a class="header" href="#motivation-11">Motivation</a></h2>
@@ -2012,6 +2025,9 @@ pub struct WindowItem {
 <li>Supersedes: <a href="rfcs/0000-compaction.html">0000 (Compaction)</a></li>
 <li>Updates: <a href="#0075---hook">0075 (Hook)</a>, <a href="#0150---memory-store">0150 (Memory Store)</a>, <a href="#0185---session-search-and-storage-primitives">0185 (Session Search)</a></li>
 </ul>
+<blockquote>
+<p><strong>Updated by <a href="#0203---client-side-orchestration">0203 (Client-Side Orchestration)</a> (2026-08-15).</strong> The peer-agents <code>&lt;agents&gt;</code> block this RFC moved into <code>on_build_agent</code> now leaves the daemon entirely — naming delegation targets is policy, and it belongs with the client that offers the tool.</p>
+</blockquote>
 <h2 id="summary-13"><a class="header" href="#summary-13">Summary</a></h2>
 <p>Mechanism belongs in the daemon; policy belongs at the edge. The daemon stops making decisions on the user’s behalf — it no longer auto-compacts on a token-count heuristic, no longer spawns title-generation calls in the background, no longer BM25-searches memory and injects synthetic <code>&lt;recall&gt;</code> user turns. Each of these is now an explicit RPC the client calls when (and if) it wants the behavior. A new <code>AgentEvent::ContextUsage { usage }</code> carries real per-step token counts so clients can pick their own pressure threshold. The <code>Hook::on_before_run</code> lifecycle method is removed.</p>
 <h2 id="motivation-13"><a class="header" href="#motivation-13">Motivation</a></h2>
@@ -2078,6 +2094,9 @@ pub struct WindowItem {
 <li>Crates: core, mcp, crabtalk, runtime</li>
 <li>Updates: <a href="#0082---scoping">0082 (Scoping)</a>, <a href="#0135---agent-first-protocol">0135 (Agent-First)</a>, <a href="https://github.com/crabtalk/crabtalk/pull/192">0190 (MCP Lifecycle)</a></li>
 </ul>
+<blockquote>
+<p><strong>Updated by <a href="#0204---mcp-peer-lifetime">0204 (MCP Peer Lifetime)</a> (2026-08-15).</strong> The fingerprint gains <code>auth</code>, and registering an MCP no longer spawns a process — a declaration and a peer now have separate lifetimes.</p>
+</blockquote>
 <h2 id="summary-14"><a class="header" href="#summary-14">Summary</a></h2>
 <p>Agents own their MCP servers by value, not by name reference into a daemon-global registry. <code>AgentConfig.mcps</code> becomes <code>Vec&lt;McpServerConfig&gt;</code> — every agent carries the full configuration of every MCP it uses. The daemon’s job shrinks to “spawn what agents declare, dedup identical processes, route tool calls per agent.” <code>Storage::{list,upsert,delete}_mcp</code> and <code>crabtalkd mcp</code> go away. Forking an agent now means copying one config; the new owner gets a self-contained, runnable artifact.</p>
 <h2 id="motivation-14"><a class="header" href="#motivation-14">Motivation</a></h2>
@@ -2138,6 +2157,137 @@ pub struct WindowItem {
 <li>Package MCPs. Package install lives in crabup; no daemon-side migration needed.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="0203---client-side-orchestration"><a class="header" href="#0203---client-side-orchestration">0203 - Client-Side Orchestration</a></h1>
+<ul>
+<li>Feature Name: Client-Side Orchestration</li>
+<li>Start Date: 2026-08-15</li>
+<li>Discussion: TBD</li>
+<li>Crates: tui, core, crabtalk, runtime, hooks, sdk</li>
+<li>Updates: <a href="#0082---scoping">0082 (Scoping)</a>, <a href="#0121---event-bus">0121 (Event Bus)</a>, <a href="#0189---policy-at-the-edge">0189 (Policy at the Edge)</a></li>
+</ul>
+<h2 id="summary-15"><a class="header" href="#summary-15">Summary</a></h2>
+<p><code>delegate</code> stops being a daemon-side hook and becomes a client tool, declared in <code>StreamMsg.tools</code> like <code>bash</code>. Fan-out is then just more streams on the same socket: a conversation is keyed by <code>(agent, sender)</code>, so a distinct sender buys each sub-agent its own conversation, its own bridge listener, and its own tool set. The daemon no longer knows the tool exists — it forwards an opaque call and receives a reply. No protocol change.</p>
+<p>Two consequences follow. Sub-agents gain the client’s OS tools, which they never had. And client-provided tools now pass through the agent’s <code>config.tools</code> whitelist when they are advertised, not only when they are dispatched.</p>
+<h2 id="motivation-15"><a class="header" href="#motivation-15">Motivation</a></h2>
+<p>The seam between daemon and client was already drawn, and orchestration was on the wrong side of it. The daemon owns the model loop and sessions; the client owns the environment. <code>bash</code>, <code>read</code>, <code>edit</code>, and <code>ask_user</code> execute in the client, and <code>hooks::os::discover_instructions</code> states the rule outright: the daemon does not read the user’s filesystem.</p>
+<p>Against that, look at what a delegated sub-agent actually got. <code>DelegateHook</code> called <code>send_to(conversation_id, &amp;message, &amp;sender, None, vec![])</code> — an empty <code>extra_tools</code>, so no client tools at all. And had it passed them, <code>ClientBridge::dispatch</code> refuses any conversation with no registered listener, and the only thing that registers one is a client’s own stream. Sub-agents could think, reach memory, skills, and MCP, and nothing else. Daemon-side orchestration was orchestrating agents with no hands.</p>
+<p>Fixing that in the daemon is not a small change. It means multiplexing sub-conversation forwards onto the parent’s listener, namespacing <code>call_id</code>s across conversations, teaching the client to answer for conversations it never opened, propagating cancellation through the tree, and stopping listener teardown from killing in-flight sub-agent calls when the parent stream ends. That is a second dimension on the bridge protocol, bought to reach a capability the client already has.</p>
+<p>In the client it is arithmetic. The bridge is already keyed per conversation with its own tool set and listener — precisely the primitive parallel orchestration needs. This is also what the boundary contract already says: the runtime owns mechanics, clients own UX, and discretionary lifecycle is composed in the client from runtime primitives. Delegation is discretionary composition.</p>
+<h2 id="design-15"><a class="header" href="#design-15">Design</a></h2>
+<h3 id="delegate-as-a-client-tool"><a class="header" href="#delegate-as-a-client-tool">Delegate as a client tool</a></h3>
+<p>The client declares <code>delegate</code> alongside its OS tools at stream time. The daemon advertises the schema to the model, and when the model calls it, <code>ClientBridge</code> forwards it back like any other client tool. The schema and executor live entirely in the client; nothing about delegation appears in the protocol, in <code>crabtalk</code>, or in <code>runtime</code>.</p>
+<pre><code>TUI ──stream(sender="user", tools=[bash,read,edit,ask_user,delegate])──▶ daemon
+     ◀───────────── ToolCallForward{name:"delegate", call_id}
+     ├─ stream(agent="reviewer", sender="delegate:{call_id}:0", tools=[bash,read,edit]) ──▶
+     ├─ stream(agent="tester",   sender="delegate:{call_id}:1", tools=[bash,read,edit]) ──▶
+     └─ ReplyToTool(call_id, [{agent,result,error}, …]) ──────▶
+</code></pre>
+<p>Each sub-stream is an ordinary persisted conversation. Its own <code>ToolCallForward</code> events come back on its own stream and are answered from the same <code>OsHook</code> the parent uses, so the read-before-edit invariant holds across the whole tree. When a task finishes, the client kills its conversation, mirroring what the hook did with <code>rt.close</code>.</p>
+<h3 id="named-agents-only"><a class="header" href="#named-agents-only">Named agents only</a></h3>
+<p>A task targets a registered agent by name. There is no ad-hoc system prompt: <code>StreamMsg</code> carries none, and the runtime’s ephemeral-agent registry was reachable only from inside the daemon. An agent that does not exist yet is created first, through <code>CreateAgentMsg</code>, as a persisted agent with a real identity — consistent with RFC 0135, where agents are the artifact users see and share. Delegation minting and destroying throwaway agents behind the user’s back would pollute that namespace.</p>
+<p>Unregistered targets fail cleanly: <code>get_or_create_conversation</code> bails, and the model receives <code>{"agent": "x", "error": "agent 'x' not registered"}</code>, which is the right nudge.</p>
+<h3 id="peer-awareness-follows-the-tool"><a class="header" href="#peer-awareness-follows-the-tool">Peer awareness follows the tool</a></h3>
+<p>The model learns which agents it can target from an <code>&lt;agents&gt;</code> block naming them. That block used to be built daemon-side: <code>Hooks</code> kept an <code>agent_descriptions</code> map, populated from <code>on_register_agent</code>, and appended the block to every agent’s system prompt during <code>on_build_agent</code>.</p>
+<p>It moves to the client, for the same reason <code>delegate</code> did. Nothing daemon-side ever read <code>agent_descriptions</code> — its only consumer was the prompt injection, in service of a tool the daemon no longer implements. Leaving it behind would have kept exactly the inversion this RFC removes, one file over.</p>
+<p>The move also fixes a defect that the daemon-side version could not express. A delegated sub-agent is not offered <code>delegate</code>, but <code>on_build_agent</code> had no way to know that, so every sub-agent was told about siblings it had no way to reach. Composing the block in the client makes the two decisions one: the stream that declares the tool describes its targets, and the stream that withholds it says nothing. No rule to enforce, and no way to get it wrong.</p>
+<p>Clients send the block once per conversation rather than per turn. It is a stable preamble — repeating it would waste tokens and shift the prompt prefix under caching. The TUI arms it at REPL start and re-arms on <code>/clear</code>, which kills the conversation.</p>
+<p>One rule changed shape in the move. The daemon excluded the default agent from the peer list by name; the client filters on “has a description” alone. The scaffolded <code>crab</code> carries no description, so the outcome is unchanged today, but the rule is now a property of the agent rather than a hardcoded name — describe an agent and it becomes a target.</p>
+<h3 id="offer-and-gate"><a class="header" href="#offer-and-gate">Offer and gate</a></h3>
+<p>A sub-agent’s tool set has two independent authorities, and conflating them is the mistake this design avoids.</p>
+<p>The <strong>client offers</strong> what it can execute. That list is a property of the client, not of any agent, and the omissions are the interesting part: no <code>ask_user</code>, because the REPL’s ask modal is a single slot that two concurrent sub-agents would corrupt; no <code>delegate</code>, because withholding it caps recursion at one level with no depth counter to maintain. A client with a queued ask UI would make a different call, by writing a different list.</p>
+<p>The <strong>agent config gates</strong> what this particular agent may use. <code>AgentConfig.tools</code> is the whitelist RFC 0082 designed for exactly this case, and <code>Hooks::dispatch</code> enforces it ahead of the bridge, so it already covered client tools at dispatch. What it did not cover was advertisement: <code>Agent::extend_tools</code> appended client tools after <code>filtered_snapshot</code> had narrowed the daemon-side ones, so a scoped agent was shown <code>bash</code>, called it, and ate a rejection. <code>extend_tools</code> now applies the same whitelist, with empty-means-unrestricted semantics to match.</p>
+<p>So scoping a sub-agent is configuring the agent. It is deliberately not a client knob — a second policy layer would duplicate the first and, being advisory rather than enforced, would disagree with it.</p>
+<h3 id="what-was-removed-1"><a class="header" href="#what-was-removed-1">What was removed</a></h3>
+<ul>
+<li><code>DelegateHook</code>. It could not coexist with a client tool of the same name: <code>SystemEnv::dispatch</code> consults daemon hooks before the bridge, so a daemon-side <code>delegate</code> permanently shadows a client-declared one.</li>
+<li>The ephemeral-agent registry (<code>add_ephemeral</code>, <code>remove_ephemeral</code>, <code>Runtime::ephemeral_agents</code>). <code>DelegateHook</code> was its only consumer. With it gone, <code>resolve_agent</code> and <code>has_agent</code> no longer need to be async.</li>
+<li><code>DelegateTask.system_prompt</code> and <code>Delegate.background</code>. Background delegation returned task IDs that nothing in the tree consumed; see the note on 0121 below.</li>
+</ul>
+<p>Headless clients are not left behind. Telegram, WeChat, and cron declare no tools today, so their sub-agents were already handless; they can declare <code>delegate</code> and use the same executor for the same behavior, with the fan-out living in one place instead of two.</p>
+<h2 id="updates-2"><a class="header" href="#updates-2">Updates</a></h2>
+<h3 id="0082---scoping-1"><a class="header" href="#0082---scoping-1">0082 - Scoping</a></h3>
+<p>Scoping now applies to client tools at advertisement as well as at dispatch, via <code>Agent::extend_tools</code>. The whitelist vocabulary was always written for this — <code>BASE_TOOLS</code> lists <code>bash</code>, <code>ask_user</code>, <code>read</code>, and <code>edit</code>, none of which the daemon executes.</p>
+<p>The claim that “the <code>delegate</code> tool is always available — delegation is not gated by scope” no longer holds mechanically. <code>delegate</code> is a client tool now, so a client decides whether to offer it, and the agent whitelist filters it like any other. The intent survives: no client withholds it from a primary agent, and delegation remains ungated between registered agents.</p>
+<p>“Delegate CWD isolation” described a <code>cwd</code> field on <code>DelegateTask</code> that was never implemented; <code>StreamMsg</code> reserves tag 5 and the name <code>cwd</code> from its removal. Sub-agents share the client’s working directory. The <code>edit</code> tool’s unique-match requirement remains the concurrency guard, as that section already noted.</p>
+<h3 id="0189---policy-at-the-edge-1"><a class="header" href="#0189---policy-at-the-edge-1">0189 - Policy at the Edge</a></h3>
+<p>0189 removed <code>Hook::on_before_run</code> and relocated the peer-agents <code>&lt;agents&gt;</code> block into <code>on_build_agent</code>, so it landed in the system prompt at agent-build time instead of as a per-turn injection. That was the right move within the daemon; this RFC finishes it by taking the block out of the daemon entirely.</p>
+<p>The principle is 0189’s own: mechanism belongs in the daemon, policy belongs at the edge. Which agents a client will route to, and whether it offers routing at all, is policy. <code>Hooks::agent_descriptions</code> and the block it fed are removed.</p>
+<h3 id="0121---event-bus-1"><a class="header" href="#0121---event-bus-1">0121 - Event Bus</a></h3>
+<p><code>Delegate.background</code> is removed. The field returned <code>{"task_id": "delegate:N"}</code> to the model, and no consumer for those IDs was ever built — the model could not await them and no client surfaced them. Client-side fan-out is synchronous by construction: the executor holds the parent’s tool call open until every task settles.</p>
+<p>This does not remove the underlying need. Work that must outlive the client process is real, and it belongs to the daemon — but as a jobs API with addressable handles, not a boolean on a tool. The event bus remains the right substrate for delivering its results out-of-band.</p>
+<h2 id="alternatives-12"><a class="header" href="#alternatives-12">Alternatives</a></h2>
+<p><strong>Multiplex sub-conversation forwards onto the parent listener.</strong> Keep delegation in the daemon and extend the bridge so a sub-agent’s tool calls ride the parent’s stream. Rejected in the Motivation: it is a protocol expansion whose payoff is a capability the client already has, and it puts cancellation and permission prompts on the side of the wire that has neither the user nor the filesystem.</p>
+<p><strong>Make the sub-agent tool set client-configurable.</strong> Rejected because per-agent capability already has an enforced home in <code>AgentConfig.tools</code>. Two sources of truth for “what can this agent do” is how an agent ends up scoped in config and unscoped in practice.</p>
+<p><strong>Keep a daemon-side delegate for headless clients.</strong> Rejected: it cannot coexist with the client tool under one name, and headless clients are served by the same executor without it.</p>
+<h2 id="unresolved-questions-11"><a class="header" href="#unresolved-questions-11">Unresolved Questions</a></h2>
+<ul>
+<li><code>ClientBridge::FORWARD_TIMEOUT</code> is 300s and now bounds an entire fan-out rather than a single <code>bash</code>. It is only a backstop for a connected-but-silent client, since <code>unregister_listener</code> already fails pending calls when a stream drops — so raising it is low-risk, but the right ceiling has not been measured.</li>
+<li>Should a sub-agent be able to delegate? Depth is capped at one by withholding the tool, which costs nothing and is trivially reversible, but a real nested use case would want a depth counter rather than an omission.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="0204---mcp-peer-lifetime"><a class="header" href="#0204---mcp-peer-lifetime">0204 - MCP Peer Lifetime</a></h1>
+<ul>
+<li>Feature Name: MCP Peer Lifetime</li>
+<li>Start Date: 2026-08-15</li>
+<li>Discussion: TBD</li>
+<li>Crates: mcp, core, crabtalk, tui</li>
+<li>Updates: <a href="#0193---agent-owned-mcp">0193 (Agent-Owned MCP)</a></li>
+</ul>
+<h2 id="summary-16"><a class="header" href="#summary-16">Summary</a></h2>
+<p>An MCP peer is a process, and this RFC gives it a lifetime of its own rather than borrowing the declaration’s. Credentials join the dedup fingerprint, so a peer is never shared across a trust boundary. A peer that stops answering now says so instead of reporting <code>Connected</code> forever. <code>ReconnectMcp</code> brings one back on request. And a peer starts on an agent’s first MCP tool call and stops once it goes idle, instead of existing for as long as some agent has the config in its TOML.</p>
+<h2 id="motivation-16"><a class="header" href="#motivation-16">Motivation</a></h2>
+<p>RFC 0193 made MCPs agent-owned and deduped identical configs down to one process. Both decisions hold. What did not survive contact with a multi-tenant host is the assumption underneath them: that a declaration and a process are the same thing, and that structural identity is <code>(command, args, env, url)</code>.</p>
+<p><strong>Credentials were not part of identity.</strong> <code>fingerprint</code> hashed <code>env</code> precisely because it carries a stdio server’s secrets — but <code>auth</code>, the HTTP transport’s equivalent, was left out. Two agents naming the same URL with different bearer tokens hashed identically, so the second refcount-bumped onto the first one’s peer and its tool calls went out under the first agent’s header. On a single-user install that is invisible. On a shared host it is a credential leak, and it is the one config that dedup must never collapse.</p>
+<p><strong>Peers were tied to registration.</strong> <code>register_for_agent</code> spawned on first reference and only the last <code>unregister_for_agent</code> tore down. For a CLI with a handful of agents that is fine — everything is warm and nothing is wasted. Host ten thousand tenants and it means a child process for every MCP any of them ever mentioned, alive from boot, whether or not a model ever called one. Dedup does not rescue this: the interesting servers are per-tenant credentialed, and with credentials now correctly part of identity, those are exactly the configs that <em>cannot</em> share a peer. The process count scales with tenants, not with distinct tools.</p>
+<p><strong>Failure was invisible.</strong> Nothing wrote back to peer state after the initial connect. An expired token or a dead child surfaced as an error string handed to the model; <code>states()</code> kept reporting <code>Connected</code> and <code>McpEventKind::Failed</code> never fired again. A client watching the lifecycle stream was blind to the single condition it would want to act on, which also made “let the client decide whether to retry” — 0193’s stated position — unimplementable in practice.</p>
+<h2 id="design-16"><a class="header" href="#design-16">Design</a></h2>
+<h3 id="credentials-are-identity"><a class="header" href="#credentials-are-identity">Credentials are identity</a></h3>
+<p><code>fingerprint</code> hashes <code>(command, args, env, url, auth)</code>. One peer sends one <code>Authorization</code> header on behalf of every agent sharing it, so agents holding different tokens get different peers.</p>
+<p>This has a second effect worth naming: rotating a token is now a real reconnect through the existing surface. A new token is a new fingerprint, so <code>UpsertMcp</code> with fresh credentials tears the old peer down and stands a new one up. Before, the rotated config hashed to the same fingerprint, took the refcount fast path, and left the peer running with the expired header while the daemon reported success.</p>
+<p>It also exposed a latent leak. <code>register_for_agent</code> already handled a claim moving between fingerprints, but it only removed the ref — a peer whose ref set went empty stayed in the map, unreachable from <code>by_owner</code>, so <code>unregister_for_agent</code> could never find it and the process lived until daemon shutdown. That path was rare when only a command or env edit reached it. Putting <code>auth</code> in the fingerprint makes every token rotation take it, which would have turned a rare leak into a routine one. The claim move now mirrors <code>unregister_for_agent</code>: last ref out, peer torn down.</p>
+<h3 id="declaration-and-process-have-separate-lifetimes"><a class="header" href="#declaration-and-process-have-separate-lifetimes">Declaration and process have separate lifetimes</a></h3>
+<p>This is the data-model change the rest rests on. A <code>PeerEntry</code> is a <em>declaration</em>. It appears when an agent registers the config, survives eviction, and is removed only when the last owner unregisters. Whether a process is currently running behind it is <code>state.status</code>, and nothing else.</p>
+<ul>
+<li><strong>Registration records.</strong> <code>register_for_agent</code> inserts or refcounts the declaration and returns. It spawns nothing, which is what removes the boot-time process fleet.</li>
+<li><strong>Dispatch spawns.</strong> <code>dispatch_mcp</code> calls <code>ensure_connected</code> before anything else. The <code>mcp</code> meta-tool is the only door a model has — listing and calling both arrive here — so one call covers both. The ordering is load-bearing: <code>allowed()</code> reads the tool list a peer only reports once connected, so connecting second would tell an agent it has no tools it could ever reach.</li>
+<li><strong>The reaper stops.</strong> A background task ticks at <code>idle_timeout / 4</code>, so a peer outlives its deadline by at most a quarter of it. It holds a <code>Weak</code>, so it ends with the handler rather than keeping it alive. <code>Failed</code> peers are reaped too — the transport broke, but the process is still running and still costs a slot.</li>
+</ul>
+<p>Connects run concurrently across an agent’s MCPs and are serialised per peer by a gate on the entry, so two agents reaching a shared peer wait on one spawn instead of racing two processes under the same id.</p>
+<p><strong><code>Failed</code> peers are not retried by <code>ensure_connected</code>.</strong> A peer with a wrong command would otherwise burn a connect timeout on every turn, forever. It becomes eligible again once the reaper ages it back to <code>Disconnected</code>, which bounds the retry rate to the idle timeout with no backoff machinery, and <code>ReconnectMcp</code> exists to retry sooner on demand.</p>
+<p><strong><code>UpsertMcp</code> still connects eagerly.</strong> Registration is mechanical and lazy, but a human who just typed a config should learn about a bad command or a stale token there and then, not inside some later tool call. So the daemon-side handler calls <code>ensure_connected</code> explicitly after the write. Mechanism in the handler, policy at the edge — RFC 0189’s split, applied here.</p>
+<h3 id="health-is-state-not-a-return-value"><a class="header" href="#health-is-state-not-a-return-value">Health is state, not a return value</a></h3>
+<p><code>McpBridge::call</code> flattened five distinct failures into one <code>Err(String)</code>, and two of them mean opposite things: <code>mcp tool error</code> is the far side answering with a rejection, so the connection is fine, while <code>mcp call failed</code> is the call never landing. Marking a peer failed on the flattened error would have torn down a healthy peer every time a model passed a bad argument.</p>
+<p>So the return type is <code>Result&lt;String, CallError&gt;</code> with <code>Rejected</code> and <code>Transport</code>, rendering through <code>Display</code> to the exact strings the model already saw. Only <code>Transport</code> touches peer state.</p>
+<p>The call itself moved onto <code>McpHandler</code>. The one place that learns a peer is dead had no access to the state clients read; now the bridge owns connections and the handler owns observable state. <code>allowed()</code> returns <code>Fingerprint</code> rather than a hex string, so the typed id runs to the edge and stringifies once at the bridge boundary — the handler no longer has to parse its own encoding back to find a peer.</p>
+<p>Marking a peer failed preserves its tool list. The tools describe what the peer exports, not whether it is reachable; clearing them makes the next call fail with <code>tool not available</code>, which disguises a dead connection as a scoping error. Eviction clears them, because by then nothing is running.</p>
+<h3 id="reconnect"><a class="header" href="#reconnect">Reconnect</a></h3>
+<p><code>ReconnectMcpMsg { name, agent }</code> joins the <code>ClientMessage</code> oneof at tag 54, mirroring <code>DeleteMcpMsg</code> field for field. It answers with <code>McpInfo</code> rather than <code>Pong</code>, the way <code>UpsertMcp</code> does, so a caller gets post-reconnect status and any error in one round trip instead of following up with <code>ListMcps</code>.</p>
+<p>Reconnecting is per-peer, not per-claim: a process shared by several agents comes back once for all of them, and every owner sees the lifecycle events under its own name for that MCP.</p>
+<p>The config comes from the peer, not the caller. <code>PeerEntry</code> stores the <code>McpServerConfig</code> it was spawned from, env overlay already applied. This matters because <code>McpHook</code> applies a daemon-wide overlay at registration, so the tracked fingerprint is of the <em>effective</em> config — reconnecting from the agent’s stored config would compute a different fingerprint and strand the peer under an id that no longer describes it. Storing what was actually run removes the whole class of drift, and leaves the wire message carrying nothing but identity.</p>
+<p>Changing a config is explicitly not this operation. That is <code>UpsertMcp</code>, which mints a new fingerprint and therefore a new peer.</p>
+<h3 id="configuration-1"><a class="header" href="#configuration-1">Configuration</a></h3>
+<pre><code class="language-toml">[mcp]
+idle_timeout = 1800
+</code></pre>
+<p>Seconds a peer may sit unused before the reaper stops it. Zero disables eviction and restores 0193’s behaviour of peers living until their last agent unregisters. A deployment picks this because the right answer differs between a laptop, where warm peers cost nothing that matters, and a shared host, where process count is the binding constraint.</p>
+<h2 id="updates-3"><a class="header" href="#updates-3">Updates</a></h2>
+<h3 id="0193---agent-owned-mcp-1"><a class="header" href="#0193---agent-owned-mcp-1">0193 - Agent-Owned MCP</a></h3>
+<p>The fingerprint tuple gains <code>auth</code> — 0193 specifies <code>(command, args, env, url)</code>.</p>
+<p>“<code>register_for_agent(agent, cfg)</code> increments the refcount, spawning if first” no longer holds; it records only. The <strong>Lifecycle interactions</strong> section reads the same way throughout — agent create, update, daemon startup, and daemon reload all describe new fingerprints spawning. They now register declarations, and the first dispatch spawns. Agent delete and rename are unchanged.</p>
+<p><strong>Out of scope</strong> ruled that “whether a client retries is a client decision.” That intent survives and is finally actionable: the daemon still never auto-restarts, but a failed peer is now visible on the lifecycle stream and in <code>ListMcps</code>, and <code>ReconnectMcp</code> gives the client something to call. The reaper ages <code>Failed</code> back to <code>Disconnected</code>, which makes the following dispatch a natural retry — a bound on retry frequency, not an auto-restart policy.</p>
+<p>The <strong>Migration</strong> section’s one-shot inlining of the global <code>[mcps]</code> registry has been removed, as that section itself anticipated (“the migration code path is dead and gets removed in a follow-up cleanup commit”).</p>
+<h2 id="alternatives-13"><a class="header" href="#alternatives-13">Alternatives</a></h2>
+<p><strong>Sweep for idle peers during dispatch instead of running a reaper.</strong> No background task, no tick interval. Rejected because it inverts the case that matters: a host with thousands of idle tenants is precisely one where nothing dispatches, so nothing would ever sweep. Eviction has to be driven by time passing, not by traffic.</p>
+<p><strong>Retry failed peers automatically with backoff.</strong> Rejected as machinery for a bound the design already has. The idle timeout is a retry interval for free, and it is a number the operator already chose.</p>
+<p><strong>Per-agent idle timeout.</strong> Rejected because a peer is shared. Two agents with different timeouts on one process leaves no honest answer to whose wins, and the tie-break would be invisible to both.</p>
+<p><strong>Keep the config out of <code>PeerEntry</code> and pass it to reconnect.</strong> Rejected: the effective config is the handler’s own product, not the caller’s, and reproducing it at the call site means duplicating the env-overlay rule wherever a reconnect is triggered.</p>
+<h2 id="unresolved-questions-12"><a class="header" href="#unresolved-questions-12">Unresolved Questions</a></h2>
+<ul>
+<li>None of this has been exercised against a live daemon. The reaper’s timing, the per-peer gate under real concurrency, and the <code>Failed</code> → <code>Disconnected</code> → retry cycle are reasoned through rather than observed.</li>
+<li>The first call after an eviction pays a connect, bounded by the existing 30s <code>MCP_CONNECT_TIMEOUT</code>. What that actually costs a conversation has not been measured, and it is the number that would justify moving <code>idle_timeout</code>’s default.</li>
+<li><code>McpHook</code>’s <code>env_overlay</code> is daemon-wide and backfills any key a tenant’s MCP did not set. Harmless for one user; on a shared host it means a daemon-level secret can reach a tenant process. Untouched here.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="superseded-rfcs"><a class="header" href="#superseded-rfcs">Superseded RFCs</a></h1>
 <p>RFCs that have been replaced by newer designs. Kept for historical reference.</p>
 <div class="table-wrapper">
@@ -2187,11 +2337,11 @@ pub struct WindowItem {
 
         <script src="elasticlunr-ef4e11c1.min.js"></script>
         <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-c2a407aa.js"></script>
+        <script src="searcher-09f2665d.js"></script>
 
         <script src="clipboard-1626706a.min.js"></script>
         <script src="highlight-defcc054.js"></script>
-        <script src="book-a0b12cfe.js"></script>
+        <script src="book-609e4cb8.js"></script>
 
         <!-- Custom JS scripts -->
 
