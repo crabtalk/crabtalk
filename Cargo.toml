@@ -1,8 +1,9 @@
 [workspace]
 resolver = "3"
 members = ["apps/*", "crates/*", "crates/command/codegen", "harness/*"]
-# Guest crates build for RISC-V, not the host.
-exclude = ["harness/spike"]
+# Guest crates build for RISC-V, not the host. `harness/codegen` is a
+# proc-macro, so it builds for the host and stays a member.
+exclude = ["harness/sdk", "harness/spike"]
 
 [workspace.package]
 version = "0.0.23"

@@ -962,6 +962,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabtalk-harness-codegen"
+version = "0.0.23"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "crabtalk-hooks"
 version = "0.0.23"
 dependencies = [

@@ -1,0 +1,86 @@
+//! Build a Crabtalk harness.
+//!
+//! A harness is code the daemon schedules: one RV64IMAC ELF, confined to its
+//! own address space, reaching the world only through host calls it was
+//! granted. This crate is what an author writes against — it owns the ABI so
+//! they never see a call number, a register, or a pointer pair.
+//!
+//! ```ignore
+//! #![no_std]
+//! #![no_main]
+//!
+//! #[crabtalk_harness_sdk::harness(capabilities = ["log"])]
+//! mod tools {
+//!     use crabtalk_harness_sdk::{Failed, Out};
+//!
+//!     /// Echo the argument blob back.
+//!     pub fn echo(args: &[u8], out: &mut Out) -> Result<(), Failed> {
+//!         out.write(args);
+//!         Ok(())
+//!     }
+//! }
+//! ```
+//!
+//! Every `pub fn` in the module is a tool; its doc comment is what the model
+//! reads when deciding whether to call it.
+//!
+//! Build with the `riscv64imac-unknown-none-elf` target and
+//! `-Clink-arg=--emit-relocs`; the template's `.cargo/config.toml` carries
+//! both, and neither is optional.
+//!
+//! This is not [`crabtalk-client`](https://crates.io/crates/crabtalk-client),
+//! which connects to the daemon over a socket. Both speak the same protocol;
+//! only this one runs inside the sandbox.
+
+#![no_std]
+
+use core::panic::PanicInfo;
+
+mod abi;
+mod out;
+
+pub use abi::{Buf, args_len, log};
+pub use crabtalk_harness_codegen::harness;
+pub use out::Out;
+
+/// The ABI this SDK generates against. A host that does not recognise it
+/// refuses the harness rather than guessing.
+pub const ABI_VERSION: u32 = 0;
+
+#[doc(hidden)]
+pub const ABI_VERSION_TEXT: &str = "0";
+
+/// Returned by a handler that failed. Whatever it wrote to its [`Out`] becomes
+/// the failure message, so an error can be specific without an allocator.
+pub struct Failed;
+
+/// Traps instead of looping. An author's panic reaches the host as a
+/// breakpoint it can report, rather than hanging the thread that called in.
+#[panic_handler]
+fn panic(_: &PanicInfo) -> ! {
+    rvtime_guest::abort()
+}
+
+/// Installs the allocator over the heap the host committed, when this crate
+/// was built with `alloc`. The cfg lives here rather than in the macro because
+/// features belong to the crate that declares them, not to the crate the macro
+/// expands into.
+#[doc(hidden)]
+#[cfg(feature = "alloc")]
+pub fn init_heap(start: u64, size: u64) {
+    unsafe { rvtime_guest::heap::init(start as usize, size as usize) };
+}
+
+#[doc(hidden)]
+#[cfg(not(feature = "alloc"))]
+pub fn init_heap(_start: u64, _size: u64) {}
+
+#[doc(hidden)]
+pub fn read_args(buffer: &mut [u8]) -> usize {
+    abi::read_args(buffer)
+}
+
+#[doc(hidden)]
+pub fn fail(message: &[u8]) -> Buf {
+    abi::fail(message)
+}
