@@ -48,13 +48,19 @@ fn main() -> Result<()> {
 
     // A payload in the range a real tool call carries.
     let args = format!(r#"{{"query":"{}"}}"#, "x".repeat(256));
-    let echoed = harness.call(args.as_bytes())?;
+    let echoed = harness
+        .call("echo", args.as_bytes())?
+        .map_err(anyhow::Error::msg)?;
     assert!(echoed.contains(&args), "round trip lost the payload");
+    println!(
+        "failure path:          {:?}",
+        harness.call("boom", b"".to_vec())?.unwrap_err()
+    );
 
     let mut samples = Vec::with_capacity(ROUNDS);
     for _ in 0..ROUNDS {
         let start = Instant::now();
-        harness.call(args.as_bytes())?;
+        let _ = harness.call("echo", args.as_bytes())?;
         samples.push(start.elapsed());
     }
     samples.sort();
@@ -85,7 +91,7 @@ fn main() -> Result<()> {
         let mut samples = Vec::with_capacity(ROUNDS);
         for _ in 0..ROUNDS {
             let start = Instant::now();
-            harness.call(args.as_bytes())?;
+            let _ = harness.call("echo", args.as_bytes())?;
             samples.push(start.elapsed());
         }
         samples.sort();
