@@ -60,6 +60,10 @@ jobs:
       # exec, bounded by a root the guest cannot widen.
       - name: Build OS Harness
         run: cargo build --release -p crabtalk-harness-os --target riscv64imac-unknown-none-elf
+      # The protocol harness: proves the guest can carry the daemon's own
+      # message types, which needs prost built without std.
+      - name: Build Peers Harness
+        run: cargo build --release -p crabtalk-harness-peers --target riscv64imac-unknown-none-elf
       # And that the host can compile, instantiate, and call it — the one
       # place rvtime itself runs in this repo's CI.
       - name: Run Guest
@@ -69,6 +73,10 @@ jobs:
       # reaches: an unknown argument and a wrong argument type.
       - name: Run OS Harness
         run: cargo run --release --example os -p crabtalk-harness
+      # The grant, the decode-time allowlist, and the redaction that keeps a
+      # protocol read from being a credential read.
+      - name: Run Protocol Harness
+        run: cargo run --release --example protocol -p crabtalk-harness
 
   typos:
     name: Typos

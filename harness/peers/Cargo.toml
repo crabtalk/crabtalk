@@ -1,0 +1,17 @@
+[package]
+name = "crabtalk-harness-peers"
+description = "Name the other agents in the runtime — the smallest protocol harness"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "peers"
+path = "src/bin/main.rs"
+
+[dependencies]
+crabtalk-harness-sdk = { workspace = true, features = ["protocol"] }
+crabtalk-harness-proto.workspace = true
