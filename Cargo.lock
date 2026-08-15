@@ -1006,6 +1006,7 @@ dependencies = [
  "crabtalk-mcp",
  "crabtalk-memory",
  "crabtalk-runtime",
+ "dirs",
  "parking_lot",
  "schemars 1.2.1",
  "serde",

@@ -98,11 +98,11 @@ message SendMsg {
   reserved "cwd";
   optional string guest = 6;
   optional string tool_choice = 7;
-  // Client-provided tool schemas. When non-empty, these are the tools
-  // the client can execute locally. The daemon merges them with system
-  // tool schemas for the LLM request and forwards calls back to the
-  // client. When empty, the daemon uses built-in defaults (bash, read,
-  // edit, ask_user).
+  // Client-provided tool schemas: the tools this client can execute
+  // locally. The daemon merges them with system tool schemas for the LLM
+  // request and forwards calls back to the client. There is no default
+  // set — an undeclared tool is never offered, because a forward nobody
+  // answers is a hang rather than a fallback.
   repeated ToolDef tools = 8;
 }
 

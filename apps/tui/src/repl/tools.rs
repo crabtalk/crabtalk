@@ -1,31 +1,38 @@
 //! Client tool declarations sent to the daemon on every stream.
 //!
 //! The daemon advertises whatever we declare here and forwards the calls
-//! back — so this list is the client's capability surface, and it differs
-//! between the user's own turn and a delegated sub-agent's.
+//! back — so this list is the client's capability surface, and since OS tools
+//! became a harness that surface has shrunk to what genuinely needs a human or
+//! a user interface.
+//!
+//! `bash`, `read`, and `edit` are deliberately absent. They run in the runtime
+//! now, which is the machine that owns the files, and a client that declared
+//! them would be claiming to execute what the daemon already did.
 
 use crate::repl::delegate::Delegate;
 use wcore::{agent::AsTool, protocol::message::ToolDef};
 
-/// Tools for the user's own turn: OS tools, the ask-user modal, and
-/// delegate.
+/// Tools for the user's own turn: the ask-user modal, and delegate.
+///
+/// Both are here because they need *this process*: one needs the person
+/// sitting in front of it, the other renders sub-agent progress into this
+/// REPL. Delegate stays client-side until it becomes a harness of its own
+/// (RFC 0203, RFC 0205).
 pub fn client_tools() -> Vec<ToolDef> {
-    let mut tools = hooks::os::schemas();
-    tools.push(client::tools::ask_user::schema());
-    tools.push(Delegate::as_tool());
-    tools.into_iter().map(Into::into).collect()
+    vec![
+        client::tools::ask_user::schema().into(),
+        Delegate::as_tool().into(),
+    ]
 }
 
-/// Tools for a delegated sub-agent: hands, but no user and no further
-/// fan-out. Both omissions are properties of *this client*, not of any
-/// agent — the ask-user modal is a single slot, so two sub-agents asking at
-/// once would corrupt it, and withholding delegate caps recursion at one
-/// level without a depth counter.
+/// Tools for a delegated sub-agent: none from this client.
 ///
-/// What's left is an offer, not a grant: per-agent capability is
-/// `AgentConfig.tools`, which narrows this list at `extend_tools` and is
-/// enforced at dispatch. Scope a sub-agent by configuring the agent, not by
-/// editing this list.
+/// Not a restriction — the opposite. A sub-agent's hands come from its own
+/// agent config now, so it gets whatever harnesses that agent declares
+/// without the orchestrating client having to offer anything. What it still
+/// does not get is `ask_user`, because the REPL's modal is a single slot two
+/// concurrent sub-agents would corrupt, and `delegate`, which caps recursion
+/// at one level.
 pub fn sub_agent_tools() -> Vec<ToolDef> {
-    hooks::os::schemas().into_iter().map(Into::into).collect()
+    Vec::new()
 }
