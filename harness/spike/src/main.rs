@@ -4,8 +4,9 @@
 //! The exports, the manifest section, the dispatch, and the panic handler come
 //! from the SDK.
 
-#![no_std]
-#![no_main]
+// `no_std` and `no_main` are the guest's shape. Off its target this is an
+// ordinary binary so `cargo test` can run the tools below natively.
+#![cfg_attr(target_arch = "riscv64", no_std, no_main)]
 
 extern crate alloc;
 
@@ -54,5 +55,27 @@ mod tools {
     pub fn boom(_args: &[u8], out: &mut Out) -> Result<(), Failed> {
         out.write(b"boom, as requested");
         Err(Failed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crabtalk_harness_sdk::test;
+
+    #[test]
+    fn echo_wraps_the_payload() {
+        let out = test::call(crate::crabtalk_tool_echo, br#"{"query":"hi"}"#).unwrap();
+        assert_eq!(out, br#"{"echo":{"query":"hi"}}"#);
+    }
+
+    #[test]
+    fn boom_reports_its_message() {
+        let error = test::call(crate::crabtalk_tool_boom, b"").unwrap_err();
+        assert_eq!(error, "boom, as requested");
+    }
+
+    #[test]
+    fn probe_allocates() {
+        assert_eq!(test::call(crate::crabtalk_tool_probe, b"").unwrap(), [7, 7]);
     }
 }

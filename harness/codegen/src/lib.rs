@@ -190,8 +190,13 @@ pub fn harness(args: TokenStream, item: TokenStream) -> TokenStream {
         /// reads it out of the ELF without compiling or running anything, so
         /// learning what a harness claims never means executing it.
         #[used]
-        #[unsafe(link_section = ".crabtalk.abi")]
+        #[cfg_attr(target_arch = "riscv64", unsafe(link_section = ".crabtalk.abi"))]
         static _CRABTALK_ABI: [u8; #description_len] = *#description_bytes;
+
+        /// A harness is a binary, and off the guest's target a binary needs a
+        /// `main` — which is what lets `cargo test` build one natively.
+        #[cfg(not(target_arch = "riscv64"))]
+        fn main() {}
 
         /// The ELF entry point. Never called: it exists so `--gc-sections`
         /// keeps the exports, which nothing else in the image references.
