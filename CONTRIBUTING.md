@@ -25,7 +25,8 @@ Layer 4 ─ Adapters
   ├─ crabup               Package + service manager for the ecosystem
   ├─ sdk                  Client: connection, typed RPC sugars, stream adapters
   ├─ tui                  REPL, config TUI
-  └─ apps/                telegram, wechat (gateway clients); cron, search (standalone services)
+  ├─ apps/                telegram (gateway client)
+  └─ harness/             cron, search (standalone services)
 ```
 
 ## Where does my feature go?

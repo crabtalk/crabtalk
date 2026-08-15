@@ -1,5 +1,5 @@
-//! Crabtalk SDK — sugar layer over `crates/transport`. Apps (TUI, telegram,
-//! wechat, …) connect to the daemon through this crate.
+//! Crabtalk SDK — sugar layer over `crates/transport`. Apps (TUI,
+//! telegram, …) connect to the daemon through this crate.
 
 use std::{collections::HashSet, path::Path, sync::Arc};
 use tokio::sync::RwLock;

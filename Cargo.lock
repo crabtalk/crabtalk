@@ -1039,28 +1039,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabtalk-wechat"
-version = "0.0.23"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "clap",
- "crabtalk-command",
- "crabtalk-core",
- "crabtalk-sdk",
- "crabtalk-transport",
- "parking_lot",
- "qr2term",
- "rand 0.9.2",
- "reqwest 0.13.1",
- "serde",
- "serde_json",
- "tokio",
- "toml",
- "tracing",
-]
-
-[[package]]
 name = "crabtalkd"
 version = "0.0.23"
 dependencies = [
@@ -3367,22 +3345,6 @@ name = "pulp-wasm-simd-flag"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d8f70e07b9c3962945a74e59ca1c511bba65b6419468acc217c457d93f3c740"
-
-[[package]]
-name = "qr2term"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6867c60b38e9747a079a19614dbb5981a53f21b9a56c265f3bfdf6011a50a957"
-dependencies = [
- "crossterm 0.28.1",
- "qrcode",
-]
-
-[[package]]
-name = "qrcode"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 
 [[package]]
 name = "quinn"

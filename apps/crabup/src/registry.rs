@@ -39,13 +39,6 @@ const TABLE: &[Entry] = &[
         description: "Telegram gateway for Crabtalk",
     },
     Entry {
-        short: "wechat",
-        krate: "crabtalk-wechat",
-        bin: "crabtalk-wechat",
-        label: Some("ai.crabtalk.wechat"),
-        description: "WeChat gateway for Crabtalk",
-    },
-    Entry {
         short: "search",
         krate: "crabtalk-search",
         bin: "crabtalk-search",

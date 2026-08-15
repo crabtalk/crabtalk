@@ -1,7 +1,7 @@
 //! Slash-command parsing — the canonical set apps recognise from chat input.
 
-/// A parsed slash command. The set is shared across apps (TUI, telegram,
-/// wechat); each app maps the variants to its own dispatch.
+/// A parsed slash command. The set is shared across apps (TUI,
+/// telegram); each app maps the variants to its own dispatch.
 pub enum Command {
     /// `/clear` — drop the active conversation, start fresh.
     Clear,

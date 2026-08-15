@@ -6,6 +6,8 @@
 - Crates: new `crabup` binary; consumes `command`; shrinks `crabtalkd`
 - Updates: [0043 (Component System)](0043-component.md)
 
+> **Note (2026-08-15).** The `wechat` gateway was removed from the workspace, so its row is gone from the resolution table below and `crabup pull wechat` no longer resolves — the pass-through path still accepts the crate name verbatim. `search` and `cron` moved to `harness/`; their crate names, and everything else here, are unchanged.
+
 ## Summary
 
 `crabup` is a thin wrapper over `cargo install` that also owns `launchd`/`systemd`/`schtasks` lifecycle for every crabtalk binary. `crabup install crabtalkd` spawns `cargo install crabtalkd`. The value add is service management — the one thing `cargo install` doesn't do — not distribution, not version coordination, not a registry.

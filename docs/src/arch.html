@@ -182,9 +182,9 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 const STATS = [
-  ["Workspace members", "19"],
-  ["Crates · apps",     "12 · 7"],
-  ["Rust in src/",      "26,081 lines"],
+  ["Workspace members", "18"],
+  ["Crates · apps · harness", "12 · 4 · 2"],
+  ["Rust in src/",      "25,205 lines"],
   ["Agent tools",       "7 built-in + MCP"],
   ["Transports",        "2 — UDS, TCP"],
   ["Not wired in",      "2 — embed, bench"],
@@ -299,7 +299,7 @@ const NODES = [
   {
     id: "sdk", code: "S", name: "SDK", pkg: "crabtalk-sdk", path: "crates/sdk",
     loc: 742, files: 7, col: 1, row: 1, group: "library",
-    what: "The client library the gateways are built on: connect, make typed calls, adapt the reply stream. Telegram, WeChat and cron all talk to the daemon through this.",
+    what: "The client library the gateways are built on: connect, make typed calls, adapt the reply stream. Telegram and cron both talk to the daemon through this.",
     how: "It depends on core and transport and nothing else — deliberately no dependency on the runtime or on any provider. Boundary contract: the SDK is adapter-centric, not agent-centric. It knows how to carry a conversation over a socket; it does not know what an agent is beyond the protocol types.",
     inside: [
       { n: "stream.rs", loc: 269, f: 1, note: "Adapting the server's event stream for a client." },
@@ -345,20 +345,8 @@ const NODES = [
     ],
   },
   {
-    id: "wechat", code: "WC", name: "WeChat", pkg: "crabtalk-wechat", path: "apps/wechat",
-    loc: 876, files: 5, col: 2, row: 0, group: "edges",
-    what: "The same job as the Telegram gateway, against WeChat.",
-    how: "Split more evenly than Telegram's: <code>api.rs</code> carries the platform API and <code>serve.rs</code> the loop, because WeChat's API needs more of its own code to talk to at all.",
-    inside: [
-      { n: "serve.rs", loc: 277, f: 1, note: "The gateway loop." },
-      { n: "api.rs", loc: 276, f: 1, note: "The WeChat platform API." },
-      { n: "bin/", loc: 108, f: 1, note: "The entry point." },
-      { n: "config.rs", loc: 43, f: 1, note: "Gateway config." },
-    ],
-  },
-  {
-    id: "cron", code: "CR", name: "Cron", pkg: "crabtalk-cron", path: "apps/cron",
-    loc: 387, files: 5, col: 3, row: 0, group: "edges",
+    id: "cron", code: "CR", name: "Cron", pkg: "crabtalk-cron", path: "harness/cron",
+    loc: 387, files: 5, col: 2, row: 0, group: "edges",
     what: "Fires skills into agents on a schedule. It is a client of the daemon like any other, not a part of it.",
     how: "It goes through the SDK over a socket rather than reaching into the runtime, which is what keeps scheduling a system concern instead of a session one — a scheduled turn arrives by the same door as a typed one.",
     inside: [
@@ -369,8 +357,8 @@ const NODES = [
     ],
   },
   {
-    id: "search", code: "SE", name: "Search", pkg: "crabtalk-search", path: "apps/search",
-    loc: 1963, files: 23, col: 4, row: 0, group: "edges",
+    id: "search", code: "SE", name: "Search", pkg: "crabtalk-search", path: "harness/search",
+    loc: 1963, files: 23, col: 3, row: 0, group: "edges",
     what: "A meta search engine that aggregates results from several backends, usable as a CLI and exposed over MCP.",
     how: "The only member whose single internal dependency is <code>command</code> — it takes the service-management layer and nothing else. That is what makes it a standalone service rather than a part of the agent: it never links the runtime, and reaches agents the same way any MCP server does.",
     inside: [
@@ -410,7 +398,7 @@ const NODES = [
     ],
   },
   {
-    id: "codegen", code: "CG", name: "Command codegen", pkg: "crabtalk-command-codegen", path: "crates/command-codegen",
+    id: "codegen", code: "CG", name: "Command codegen", pkg: "crabtalk-command-codegen", path: "crates/command/codegen",
     loc: 157, files: 1, col: 4, row: 1, group: "service",
     what: "A proc macro that generates the service command surface, so each app declares its commands instead of writing them.",
     how: "157 lines, one file, zero dependencies inside the workspace — a proc macro crate can't have any, since it runs at compile time in the compiler's own process.",
@@ -449,7 +437,6 @@ const EDGES = [
   ["search","command"],
   ["telegram","command"],["telegram","core"],["telegram","sdk"],["telegram","transport"],
   ["transport","core"],
-  ["wechat","command"],["wechat","core"],["wechat","sdk"],["wechat","transport"],
   ["crabtalkd","crabtalk"],["crabtalkd","command"],["crabtalkd","core"],
   ["crabup","core"],
 ];

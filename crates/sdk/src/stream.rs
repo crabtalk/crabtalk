@@ -13,8 +13,8 @@ use wcore::protocol::{api::Client as _, message::*};
 
 /// Accumulates streaming events into a renderable text buffer.
 ///
-/// Used by chat-platform apps (telegram, wechat) where the UI is a single
-/// text bubble updated in place.
+/// Used by chat-platform apps (telegram) where the UI is a single text
+/// bubble updated in place.
 pub struct StreamAccumulator {
     /// Accumulated response text.
     text: String,
