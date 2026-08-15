@@ -757,7 +757,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml",
- "toml_edit",
  "tracing",
  "ulid",
 ]
@@ -806,7 +805,6 @@ dependencies = [
  "termimad",
  "tokio",
  "toml",
- "toml_edit",
  "tracing",
  "tracing-subscriber",
 ]

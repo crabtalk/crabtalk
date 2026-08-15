@@ -171,8 +171,6 @@ impl<P: Provider + 'static> CrabTalk<P> {
     )> {
         let dirs = resolve_dirs(config_dir);
         let storage = Self::build_storage(config_dir, &dirs);
-        crate::storage::fs::migrate::migrate_settings(storage.as_ref()).await?;
-        crate::storage::fs::migrate::migrate_sessions(storage.as_ref()).await?;
         // Ask the endpoint what it serves; an empty list is survivable, so a
         // failure only warns and the next reload retries.
         let models = match config.llm.kind.is_none() && config.llm.base_url.is_empty() {

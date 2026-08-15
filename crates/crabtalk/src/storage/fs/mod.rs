@@ -1,13 +1,15 @@
 //! Filesystem-backed [`Storage`] implementation.
 //!
 //! `FsStorage` owns the directory layout. Each storage domain
-//! (sessions, agents, mcps, skills, config) lives in its own
-//! submodule as free functions taking `&FsStorage`; the trait impl
-//! below is pure delegation. Settings file reads/writes are shared
-//! between agents, mcps, and config, so they sit on the struct itself.
+//! (sessions, agents, skills, config, scaffold) lives in its own
+//! submodule as a separate `impl FsStorage` block; the trait impl
+//! below forwards to those inherent methods, which shadow it by the
+//! same name. Settings file reads/writes are shared between agents
+//! and config, so they sit on the struct itself.
 
 use anyhow::Result;
 use parking_lot::Mutex;
+pub use scaffold::default_crab;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -24,12 +26,9 @@ use wcore::{
 
 mod agents;
 mod config;
-pub(crate) mod migrate;
 mod scaffold;
 mod sessions;
 mod skills;
-
-pub use scaffold::default_crab;
 
 /// Header prepended to `local/settings.toml` on every write — same
 /// template as the one scaffolded on first-run (`DEFAULT_SETTINGS`).
@@ -115,17 +114,21 @@ pub(super) struct SettingsFile {
     pub(super) agents: BTreeMap<String, AgentConfig>,
 }
 
+/// Every body here calls the inherent method of the same name, defined
+/// in the domain module. Inherent methods win resolution, so this is
+/// forwarding, not recursion — deleting one turns its trait method into
+/// an infinite loop rather than a compile error.
 impl Storage for FsStorage {
     async fn list_skills(&self) -> Result<Vec<Skill>> {
-        skills::list_skills(self).await
+        self.list_skills().await
     }
 
     async fn load_skill(&self, name: &str) -> Result<Option<Skill>> {
-        skills::load_skill(self, name).await
+        self.load_skill(name).await
     }
 
     async fn create_session(&self, agent: &str, created_by: &str) -> Result<SessionHandle> {
-        sessions::create_session(self, agent, created_by).await
+        self.create_session(agent, created_by).await
     }
 
     async fn find_latest_session(
@@ -133,15 +136,15 @@ impl Storage for FsStorage {
         agent: &str,
         created_by: &str,
     ) -> Result<Option<SessionHandle>> {
-        sessions::find_latest_session(self, agent, created_by).await
+        self.find_latest_session(agent, created_by).await
     }
 
     async fn load_session(&self, handle: &SessionHandle) -> Result<Option<SessionSnapshot>> {
-        sessions::load_session(self, handle).await
+        self.load_session(handle).await
     }
 
     async fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
-        sessions::list_sessions(self).await
+        self.list_sessions().await
     }
 
     async fn append_session_messages(
@@ -149,7 +152,7 @@ impl Storage for FsStorage {
         handle: &SessionHandle,
         entries: &[HistoryEntry],
     ) -> Result<()> {
-        sessions::append_session_messages(self, handle, entries).await
+        self.append_session_messages(handle, entries).await
     }
 
     async fn append_session_events(
@@ -157,7 +160,7 @@ impl Storage for FsStorage {
         handle: &SessionHandle,
         events: &[EventLine],
     ) -> Result<()> {
-        sessions::append_session_events(self, handle, events).await
+        self.append_session_events(handle, events).await
     }
 
     async fn append_session_compact(
@@ -165,11 +168,11 @@ impl Storage for FsStorage {
         handle: &SessionHandle,
         archive_name: &str,
     ) -> Result<()> {
-        sessions::append_session_compact(self, handle, archive_name).await
+        self.append_session_compact(handle, archive_name).await
     }
 
     async fn truncate_session_messages(&self, handle: &SessionHandle, keep: usize) -> Result<()> {
-        sessions::truncate_session_messages(self, handle, keep).await
+        self.truncate_session_messages(handle, keep).await
     }
 
     async fn update_session_meta(
@@ -177,46 +180,46 @@ impl Storage for FsStorage {
         handle: &SessionHandle,
         meta: &ConversationMeta,
     ) -> Result<()> {
-        sessions::update_session_meta(self, handle, meta).await
+        self.update_session_meta(handle, meta).await
     }
 
     async fn delete_session(&self, handle: &SessionHandle) -> Result<bool> {
-        sessions::delete_session(self, handle).await
+        self.delete_session(handle).await
     }
 
     async fn list_agents(&self) -> Result<Vec<AgentConfig>> {
-        agents::list_agents(self).await
+        self.list_agents().await
     }
 
     async fn load_agent(&self, id: &AgentId) -> Result<Option<AgentConfig>> {
-        agents::load_agent(self, id).await
+        self.load_agent(id).await
     }
 
     async fn load_agent_by_name(&self, name: &str) -> Result<Option<AgentConfig>> {
-        agents::load_agent_by_name(self, name).await
+        self.load_agent_by_name(name).await
     }
 
     async fn upsert_agent(&self, config: &AgentConfig, prompt: &str) -> Result<()> {
-        agents::upsert_agent(self, config, prompt).await
+        self.upsert_agent(config, prompt).await
     }
 
     async fn delete_agent(&self, id: &AgentId) -> Result<bool> {
-        agents::delete_agent(self, id).await
+        self.delete_agent(id).await
     }
 
     async fn rename_agent(&self, id: &AgentId, new_name: &str) -> Result<bool> {
-        agents::rename_agent(self, id, new_name).await
+        self.rename_agent(id, new_name).await
     }
 
     async fn load_config(&self) -> Result<Config> {
-        config::load_config(self).await
+        self.load_config().await
     }
 
     async fn save_config(&self, config: &Config) -> Result<()> {
-        config::save_config(self, config).await
+        self.save_config(config).await
     }
 
     async fn scaffold(&self, default_model: &str) -> Result<()> {
-        scaffold::scaffold(self, default_model).await
+        self.scaffold(default_model).await
     }
 }
