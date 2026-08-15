@@ -1,5 +1,5 @@
 [package]
-name = "crabtalk-harness-proto"
+name = "crabtalk-berm-proto"
 description = "Protocol types for Crabtalk harness guests — no_std, generated from the same .proto as the host"
 version.workspace = true
 edition.workspace = true

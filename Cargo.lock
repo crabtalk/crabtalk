@@ -275,6 +275,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "berm"
+version = "0.0.23"
+dependencies = [
+ "anyhow",
+ "object 0.40.0",
+ "rvtime",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "berm-codegen"
+version = "0.0.23"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "berm-sdk"
+version = "0.0.23"
+dependencies = [
+ "berm-codegen",
+ "crabtalk-berm-proto",
+ "linked_list_allocator",
+ "prost",
+ "rvtime-guest",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -781,8 +814,8 @@ dependencies = [
  "crabllm-core",
  "crabllm-provider",
  "crabllm-sdk",
+ "crabtalk-berm",
  "crabtalk-core",
- "crabtalk-harness",
  "crabtalk-hooks",
  "crabtalk-mcp",
  "crabtalk-runtime",
@@ -820,6 +853,28 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "crabtalk-berm"
+version = "0.0.23"
+dependencies = [
+ "anyhow",
+ "berm",
+ "crabllm-core",
+ "crabtalk-core",
+ "crabtalk-runtime",
+ "prost",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "crabtalk-berm-proto"
+version = "0.0.23"
+dependencies = [
+ "prost",
+ "prost-build",
 ]
 
 [[package]]
@@ -953,37 +1008,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabtalk-harness"
-version = "0.0.23"
-dependencies = [
- "anyhow",
- "crabllm-core",
- "crabtalk-core",
- "crabtalk-runtime",
- "object 0.40.0",
- "prost",
- "rvtime",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "crabtalk-harness-codegen"
-version = "0.0.23"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "crabtalk-harness-os"
 version = "0.0.23"
 dependencies = [
- "crabtalk-harness-sdk",
+ "berm-sdk",
  "serde",
  "serde_json",
 ]
@@ -992,27 +1020,8 @@ dependencies = [
 name = "crabtalk-harness-peers"
 version = "0.0.23"
 dependencies = [
- "crabtalk-harness-proto",
- "crabtalk-harness-sdk",
-]
-
-[[package]]
-name = "crabtalk-harness-proto"
-version = "0.0.23"
-dependencies = [
- "prost",
- "prost-build",
-]
-
-[[package]]
-name = "crabtalk-harness-sdk"
-version = "0.0.23"
-dependencies = [
- "crabtalk-harness-codegen",
- "crabtalk-harness-proto",
- "linked_list_allocator",
- "prost",
- "rvtime-guest",
+ "berm-sdk",
+ "crabtalk-berm-proto",
 ]
 
 [[package]]
@@ -4923,7 +4932,7 @@ dependencies = [
 name = "spike"
 version = "0.0.0"
 dependencies = [
- "crabtalk-harness-sdk",
+ "berm-sdk",
 ]
 
 [[package]]

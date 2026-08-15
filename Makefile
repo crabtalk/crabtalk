@@ -80,9 +80,9 @@ publish:
 # ── Harnesses ────────────────────────────────────────────────────
 #
 # A harness is one RV64 ELF rather than a binary per platform, so it has no
-# place in the platform matrix above. `make harness` builds the guests and
-# installs them where the daemon looks for them; the daemon loads what is
-# there and never fetches.
+# place in the platform matrix above. `make harness` builds them and installs
+# them where the daemon looks; the daemon loads what is there and never
+# fetches.
 #
 # CRABTALK_HOME follows the configuration directory rather than being written
 # out, so pointing crabtalk somewhere else points this there too.

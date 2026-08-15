@@ -8,7 +8,7 @@ use crate::{
     system::{event, host::SystemEnv, provider::DefaultProvider},
 };
 use anyhow::Result;
-use harness::HarnessHook;
+use crabtalk_berm::HarnessHook;
 use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook, SkillHook};
 use mcp::McpHandler;
 use runtime::{Hook, Runtime};
@@ -43,7 +43,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         // Harnesses load before the daemon that answers their protocol calls
         // exists, so they are handed the door rather than the server, and it
         // opens once there is something behind it.
-        let protocol: Arc<OnceLock<harness::Dispatch>> = Arc::new(OnceLock::new());
+        let protocol: Arc<OnceLock<crabtalk_berm::Dispatch>> = Arc::new(OnceLock::new());
 
         let hooks = Hooks::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
@@ -144,7 +144,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         // was the caller's choice at startup and isn't reconsidered here.
         let storage = self.runtime.read().await.storage().clone();
 
-        let protocol: Arc<OnceLock<harness::Dispatch>> = Arc::new(OnceLock::new());
+        let protocol: Arc<OnceLock<crabtalk_berm::Dispatch>> = Arc::new(OnceLock::new());
         let (mut new_runtime, _mcp, new_hook, _bridge) = Self::build_all(
             &config,
             &self.config_dir,
@@ -178,10 +178,10 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     /// `Server::dispatch` is already the one entry point every client goes
     /// through, so a harness gets the same one rather than a second vocabulary
     /// (RFC 0205). It is handed over as a closure because the trait is not
-    /// object-safe, and because `crates/harness` must not depend on the crate
+    /// object-safe, and because `berm` must not depend on the crate
     /// that implements it.
-    fn connect_protocol(protocol: &OnceLock<harness::Dispatch>, daemon: Self) {
-        let dispatch: harness::Dispatch = Arc::new(move |msg| {
+    fn connect_protocol(protocol: &OnceLock<crabtalk_berm::Dispatch>, daemon: Self) {
+        let dispatch: crabtalk_berm::Dispatch = Arc::new(move |msg| {
             let daemon = daemon.clone();
             Box::pin(async move {
                 use futures_util::StreamExt;
@@ -199,7 +199,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         storage: Arc<S>,
         build_provider: &BuildProvider<P>,
         runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>>,
-        protocol: Arc<OnceLock<harness::Dispatch>>,
+        protocol: Arc<OnceLock<crabtalk_berm::Dispatch>>,
         mut hooks: Hooks,
     ) -> Result<(
         Runtime<crate::system::SystemCfg<P, S>>,
@@ -263,7 +263,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         mcp_handler: Arc<McpHandler>,
         env_overlay: BTreeMap<String, String>,
         runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>>,
-        protocol: Arc<OnceLock<harness::Dispatch>>,
+        protocol: Arc<OnceLock<crabtalk_berm::Dispatch>>,
     ) -> Result<runtime::SharedMemory> {
         let memory_wrapper = Memory::open(config_dir.join("memory.db"))?;
         let shared_memory = memory_wrapper.shared();

@@ -1,0 +1,23 @@
+[package]
+name = "crabtalk-berm"
+description = "Crabtalk's side of berm — the harness hook and the protocol capability"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+berm.workspace = true
+crabllm-core.workspace = true
+runtime.workspace = true
+wcore.workspace = true
+
+anyhow.workspace = true
+prost.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

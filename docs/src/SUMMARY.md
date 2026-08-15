@@ -33,5 +33,5 @@
 - [0193 - Agent-Owned MCP](rfcs/0193-agent-owned-mcp.md)
 - [0203 - Client-Side Orchestration](rfcs/0203-client-side-orchestration.md)
 - [0204 - MCP Peer Lifetime](rfcs/0204-mcp-peer-lifetime.md)
-- [0205 - Harness](rfcs/0205-harness.md)
+- [0205 - Berm](rfcs/0205-berm.md)
 - [Superseded](rfcs/superseded.md)
