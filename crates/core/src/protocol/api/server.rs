@@ -4,9 +4,10 @@ use crate::protocol::message::{
     ActiveConversationInfo, ActiveConversationList, AgentEventMsg, AgentInfo, AgentList,
     ClientMessage, CompactResponse, ConversationHistory, ConversationInfo, ConversationList,
     CreateAgentMsg, DeleteMcpMsg, ErrorMsg, ListMcpsMsg, McpEventMsg, McpInfo, McpList, ModelInfo,
-    ModelList, Pong, PublishEventMsg, SendMsg, SendResponse, ServerMessage, SkillInfo, SkillList,
-    Stats, SteerSessionMsg, StreamEvent, StreamMsg, SubscribeEventMsg, SubscriptionInfo,
-    SubscriptionList, UpdateAgentMsg, UpsertMcpMsg, client_message, server_message,
+    ModelList, Pong, PublishEventMsg, ReconnectMcpMsg, SendMsg, SendResponse, ServerMessage,
+    SkillInfo, SkillList, Stats, SteerSessionMsg, StreamEvent, StreamMsg, SubscribeEventMsg,
+    SubscriptionInfo, SubscriptionList, UpdateAgentMsg, UpsertMcpMsg, client_message,
+    server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -196,6 +197,13 @@ pub trait Server: Sync {
         &self,
         req: DeleteMcpMsg,
     ) -> impl std::future::Future<Output = Result<bool>> + Send;
+
+    /// Handle `ReconnectMcp` — respawn the peer backing the named agent's
+    /// MCP. Stored config is untouched.
+    fn reconnect_mcp(
+        &self,
+        req: ReconnectMcpMsg,
+    ) -> impl std::future::Future<Output = Result<McpInfo>> + Send;
 
     /// Handle `SetActiveModel` — update the active model in config.toml.
     fn set_active_model(
@@ -449,6 +457,14 @@ pub trait Server: Sync {
                     yield match self.delete_mcp(req).await {
                         Ok(true) => server_pong(),
                         Ok(false) => server_error(404, format!("mcp '{name}' not found")),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ReconnectMcp(req) => {
+                    yield match self.reconnect_mcp(req).await {
+                        Ok(info) => ServerMessage {
+                            msg: Some(server_message::Msg::McpInfo(info)),
+                        },
                         Err(e) => server_error(500, e.to_string()),
                     };
                 }

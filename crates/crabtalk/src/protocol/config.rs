@@ -108,6 +108,24 @@ impl<P: Provider + 'static> CrabTalk<P> {
         Ok(true)
     }
 
+    /// Respawn the peer behind an agent's MCP. Nothing on disk changes —
+    /// the handler reconnects from the config the peer is already running,
+    /// so this is the answer to a dead connection, not to a stale one.
+    pub(crate) async fn reconnect_mcp(&self, agent: String, name: String) -> Result<McpInfo> {
+        anyhow::ensure!(
+            !agent.is_empty(),
+            "agent name is required for reconnect_mcp"
+        );
+        self.mcp
+            .reconnect_for_agent(&agent, &name)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let mcps = self.list_mcps(Some(agent)).await?;
+        mcps.into_iter()
+            .find(|m| m.name == name)
+            .ok_or_else(|| anyhow::anyhow!("mcp '{name}' missing from listing after reconnect"))
+    }
+
     pub(crate) fn list_skills(&self) -> Vec<SkillInfo> {
         let dirs = wcore::resolve_dirs(&self.config_dir);
         let local_skills_dir = self.config_dir.join(wcore::paths::SKILLS_DIR);

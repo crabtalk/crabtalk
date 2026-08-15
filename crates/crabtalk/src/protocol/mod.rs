@@ -194,6 +194,10 @@ impl<P: Provider + 'static> Server for CrabTalk<P> {
         self.delete_mcp(req.agent, req.name).await
     }
 
+    async fn reconnect_mcp(&self, req: ReconnectMcpMsg) -> Result<McpInfo> {
+        self.reconnect_mcp(req.agent, req.name).await
+    }
+
     async fn set_active_model(&self, model: String) -> Result<()> {
         self.set_active_model(model).await
     }

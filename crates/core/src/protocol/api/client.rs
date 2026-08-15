@@ -421,6 +421,34 @@ pub trait Client: Send {
         }
     }
 
+    /// Respawn the peer backing an already-registered MCP, leaving the
+    /// stored config alone. Returns its post-reconnect status.
+    fn reconnect_mcp(
+        &mut self,
+        agent: String,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<McpInfo>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::ReconnectMcp(ReconnectMcpMsg {
+                        agent,
+                        name,
+                    })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::McpInfo(info)),
+                } => Ok(info),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => anyhow::bail!("server error ({code}): {message}"),
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
     /// Set the active model.
     fn set_active_model(
         &mut self,

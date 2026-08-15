@@ -90,6 +90,12 @@ struct PeerEntry {
     state: McpServerState,
     /// Owners — at least one. When this drops to empty the peer is torn down.
     refs: BTreeSet<(String, String)>,
+    /// The config this peer was spawned from, env overlay already applied.
+    /// Kept so a reconnect can respawn the same process without asking a
+    /// caller to reproduce the effective config — the fingerprint is
+    /// derived from it, so any drift would strand the peer under an id
+    /// that no longer describes it.
+    cfg: McpServerConfig,
 }
 
 /// Lifecycle event emitted on every state transition.
@@ -291,6 +297,7 @@ impl McpHandler {
                         PeerEntry {
                             state: McpServerState::connecting(),
                             refs,
+                            cfg: cfg.clone(),
                         },
                     );
                     true
@@ -337,6 +344,67 @@ impl McpHandler {
             ServerStatus::Connecting | ServerStatus::Disconnected => return,
         };
         let _ = self.events_tx.send(event);
+    }
+
+    /// Tear down the peer backing `(agent, name)` and connect it again,
+    /// keeping every owner's claim.
+    ///
+    /// Reconnecting is per-peer, not per-claim: a process shared by
+    /// several agents comes back once for all of them, and they all see
+    /// the lifecycle events. The config comes from the peer itself, so a
+    /// reconnect always respawns what was actually running — changing the
+    /// config is `register_for_agent`'s job, and it mints a new peer.
+    pub async fn reconnect_for_agent(&self, agent: &str, name: &str) -> Result<(), String> {
+        let key = (agent.to_owned(), name.to_owned());
+        let Some(fp) = self.by_owner.read().get(&key).copied() else {
+            return Err(format!(
+                "mcp '{name}' is not registered for agent '{agent}'"
+            ));
+        };
+
+        let (cfg, owners): (McpServerConfig, Vec<(String, String)>) = {
+            let mut peers = self.peers.write();
+            let Some(entry) = peers.get_mut(&fp) else {
+                return Err(format!("mcp '{name}' has no live peer"));
+            };
+            entry.state = McpServerState::connecting();
+            (entry.cfg.clone(), entry.refs.iter().cloned().collect())
+        };
+
+        for (agent, name) in &owners {
+            let _ = self.events_tx.send(McpEvent::Connecting {
+                agent: agent.clone(),
+                name: name.clone(),
+            });
+        }
+
+        let bridge = self.bridge().await;
+        bridge.remove_server(&peer_id(fp)).await;
+        let state = connect_one(&bridge, &cfg, fp).await;
+        {
+            let mut peers = self.peers.write();
+            if let Some(entry) = peers.get_mut(&fp) {
+                entry.state = state.clone();
+            }
+        }
+
+        for (agent, name) in owners {
+            let event = match &state.status {
+                ServerStatus::Connected => McpEvent::Connected {
+                    agent,
+                    name,
+                    tools: state.tools.clone(),
+                },
+                ServerStatus::Failed => McpEvent::Failed {
+                    agent,
+                    name,
+                    error: state.last_error.clone().unwrap_or_default(),
+                },
+                ServerStatus::Connecting | ServerStatus::Disconnected => continue,
+            };
+            let _ = self.events_tx.send(event);
+        }
+        Ok(())
     }
 
     /// Drop the agent's claim on the named MCP. When the last claim is

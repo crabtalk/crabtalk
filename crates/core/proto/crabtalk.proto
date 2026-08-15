@@ -49,6 +49,7 @@ message ClientMessage {
     ListMcpsMsg list_mcps = 13;
     UpsertMcpMsg upsert_mcp = 45;
     DeleteMcpMsg delete_mcp = 46;
+    ReconnectMcpMsg reconnect_mcp = 54;
     // Agent management
     ListAgentsMsg list_agents = 15;
     GetAgentMsg get_agent = 16;
@@ -261,6 +262,14 @@ message UpsertMcpMsg {
 message DeleteMcpMsg {
   string name = 1;
   // Required — the agent whose `mcps` list is being modified.
+  string agent = 2;
+}
+
+// Drop and re-establish the peer backing an already-registered MCP.
+// Changes nothing on disk — for a new config, use UpsertMcp instead.
+message ReconnectMcpMsg {
+  string name = 1;
+  // Required — the agent that declared this MCP.
   string agent = 2;
 }
 
