@@ -8,8 +8,10 @@
 //! The same hash is computed host-side in `crates/harness/src/abi.rs`. The two
 //! must agree; if they ever drift, every call traps immediately as an unknown
 //! host call rather than reaching the wrong capability.
+//!
+//! Whether a call reaches a host at all is `sys`'s business, not this file's.
 
-use rvtime_guest::{call0, call2};
+use crate::sys;
 
 /// Write a UTF-8 message to the host log.
 const HOST_LOG: u64 = hash("crabtalk.log");
@@ -55,31 +57,29 @@ impl Buf {
 
 /// Write a line to the host's log.
 pub fn log(message: &str) {
-    unsafe { call2(HOST_LOG, message.as_ptr() as u64, message.len() as u64) };
+    sys::call2(HOST_LOG, message.as_ptr() as u64, message.len() as u64);
 }
 
 /// How many bytes this invocation was given.
 pub fn args_len() -> usize {
-    unsafe { call0(HOST_ARG_LEN) as usize }
+    sys::call0(HOST_ARG_LEN) as usize
 }
 
 /// Pull the argument blob into `buffer`, returning the blob's *full* length —
 /// not what fit. A caller that gets back more than it offered was truncated
 /// and must say so rather than acting on half a request.
 pub fn read_args(buffer: &mut [u8]) -> usize {
-    unsafe {
-        call2(
-            HOST_ARG_READ,
-            buffer.as_mut_ptr() as u64,
-            buffer.len() as u64,
-        ) as usize
-    }
+    sys::call2(
+        HOST_ARG_READ,
+        buffer.as_mut_ptr() as u64,
+        buffer.len() as u64,
+    ) as usize
 }
 
 /// Report failure. The host marks the invocation an error rather than a
 /// result, which is the difference between a tool that failed and a tool that
 /// returned the word "error".
 pub fn fail(message: &[u8]) -> Buf {
-    unsafe { call2(HOST_FAIL, message.as_ptr() as u64, message.len() as u64) };
+    sys::call2(HOST_FAIL, message.as_ptr() as u64, message.len() as u64);
     Buf { ptr: 0, len: 0 }
 }

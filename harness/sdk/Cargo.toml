@@ -1,15 +1,18 @@
-# Standalone: excluded from the crabtalk workspace because it builds for RISC-V.
-[workspace]
-
 [package]
 name = "crabtalk-harness-sdk"
 description = "Guest-side library for building Crabtalk harnesses"
-version = "0.0.23"
-edition = "2024"
-license = "MIT"
-repository = "https://github.com/crabtalk/crabtalk"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 keywords = ["crabtalk", "harness", "sandbox", "riscv"]
 readme = "README.md"
+
+[lib]
+# No host tests yet: the crate is `no_std`, so a test harness would need one
+# written against the stubs below.
+test = false
 
 [features]
 # Installs rvtime-guest's allocator and generates an `init` export for it.
@@ -17,6 +20,10 @@ default = ["alloc"]
 alloc = ["rvtime-guest/alloc"]
 
 [dependencies]
-# Builds for the host even here, so it lives in the workspace next door.
-crabtalk-harness-codegen = { path = "../codegen", version = "0.0.23" }
-rvtime-guest = { version = "0.0.1", default-features = false }
+crabtalk-harness-codegen.workspace = true
+
+# Only on the target a guest actually runs on: its host calls are RISC-V
+# inline asm, which no other architecture can even parse. Off-target, the
+# stubs in `abi.rs` stand in so authors can build and test natively.
+[target.'cfg(target_arch = "riscv64")'.dependencies]
+rvtime-guest.workspace = true

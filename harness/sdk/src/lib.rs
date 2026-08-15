@@ -34,10 +34,16 @@
 
 #![no_std]
 
-use core::panic::PanicInfo;
-
 mod abi;
 mod out;
+
+// One boundary for the whole crate. Everything the guest's target has and the
+// host does not lives behind it — today only because the published
+// `rvtime-guest` cannot compile off RISC-V; once a release carries its own
+// stubs, `sys/stub.rs` goes away and this becomes a plain dependency.
+#[cfg_attr(target_arch = "riscv64", path = "sys/riscv.rs")]
+#[cfg_attr(not(target_arch = "riscv64"), path = "sys/stub.rs")]
+mod sys;
 
 pub use abi::{Buf, args_len, log};
 pub use crabtalk_harness_codegen::harness;
@@ -56,8 +62,12 @@ pub struct Failed;
 
 /// Traps instead of looping. An author's panic reaches the host as a
 /// breakpoint it can report, rather than hanging the thread that called in.
+///
+/// Only on the guest's own target — off it, the crate is an ordinary library
+/// linked into someone's tests, where std already supplies one.
+#[cfg(target_arch = "riscv64")]
 #[panic_handler]
-fn panic(_: &PanicInfo) -> ! {
+fn panic(_: &core::panic::PanicInfo) -> ! {
     rvtime_guest::abort()
 }
 
@@ -68,7 +78,7 @@ fn panic(_: &PanicInfo) -> ! {
 #[doc(hidden)]
 #[cfg(feature = "alloc")]
 pub fn init_heap(start: u64, size: u64) {
-    unsafe { rvtime_guest::heap::init(start as usize, size as usize) };
+    unsafe { sys::heap_init(start as usize, size as usize) };
 }
 
 #[doc(hidden)]

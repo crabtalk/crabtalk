@@ -971,6 +971,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabtalk-harness-sdk"
+version = "0.0.23"
+dependencies = [
+ "crabtalk-harness-codegen",
+ "rvtime-guest",
+]
+
+[[package]]
 name = "crabtalk-hooks"
 version = "0.0.23"
 dependencies = [
@@ -3024,6 +3032,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "linked_list_allocator"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b23ac50abb8261cb38c6e2a7192d3302e0836dac1628f6a93b82b4fad185897"
+dependencies = [
+ "spinning_top",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4455,6 +4472,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rvtime-guest"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90ee27d2b38b8f7ce753eb0e68e9c556bbdd38f85c11bca5886c1d13359854e0"
+dependencies = [
+ "linked_list_allocator",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4859,6 +4885,15 @@ name = "spin"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
+name = "spinning_top"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b9eb1a2f4c41445a3a0ff9abc5221c5fcd28e1f13cd7c0397706f9ac938ddb0"
 dependencies = [
  "lock_api",
 ]
