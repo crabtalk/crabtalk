@@ -961,6 +961,7 @@ dependencies = [
  "crabtalk-core",
  "crabtalk-runtime",
  "object 0.40.0",
+ "prost",
  "rvtime",
  "serde",
  "serde_json",
@@ -988,11 +989,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabtalk-harness-peers"
+version = "0.0.23"
+dependencies = [
+ "crabtalk-harness-proto",
+ "crabtalk-harness-sdk",
+]
+
+[[package]]
+name = "crabtalk-harness-proto"
+version = "0.0.23"
+dependencies = [
+ "prost",
+ "prost-build",
+]
+
+[[package]]
 name = "crabtalk-harness-sdk"
 version = "0.0.23"
 dependencies = [
  "crabtalk-harness-codegen",
+ "crabtalk-harness-proto",
  "linked_list_allocator",
+ "prost",
  "rvtime-guest",
 ]
 
