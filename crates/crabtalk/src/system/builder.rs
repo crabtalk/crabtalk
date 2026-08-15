@@ -40,6 +40,10 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         build_provider: BuildProvider<P>,
     ) -> Result<Self> {
         let runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>> = Arc::new(OnceLock::new());
+        // Harnesses load before the daemon that answers their protocol calls
+        // exists, so they are handed the door rather than the server, and it
+        // opens once there is something behind it.
+        let protocol: Arc<OnceLock<harness::Dispatch>> = Arc::new(OnceLock::new());
 
         let hooks = Hooks::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
@@ -49,6 +53,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             storage,
             &build_provider,
             runtime_once.clone(),
+            protocol.clone(),
             hooks,
         )
         .await?;
@@ -113,7 +118,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             hooks.set_event_sink(sink);
         }
 
-        Ok(Self {
+        let daemon = Self {
             runtime: shared_runtime,
             hook: hooks,
             config_dir: config_dir.to_path_buf(),
@@ -122,7 +127,9 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             build_provider,
             mcp,
             bridge,
-        })
+        };
+        Self::connect_protocol(&protocol, daemon.clone());
+        Ok(daemon)
     }
 
     pub async fn reload(&self) -> Result<()> {
@@ -137,15 +144,18 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         // was the caller's choice at startup and isn't reconsidered here.
         let storage = self.runtime.read().await.storage().clone();
 
+        let protocol: Arc<OnceLock<harness::Dispatch>> = Arc::new(OnceLock::new());
         let (mut new_runtime, _mcp, new_hook, _bridge) = Self::build_all(
             &config,
             &self.config_dir,
             storage,
             &self.build_provider,
             runtime_once,
+            protocol.clone(),
             hooks,
         )
         .await?;
+        Self::connect_protocol(&protocol, self.clone());
         {
             let old_runtime = self.runtime.read().await;
             (**old_runtime).transfer_to(&mut new_runtime).await;
@@ -162,6 +172,26 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         Ok(())
     }
 
+    /// Open the protocol door for harnesses, now that there is something
+    /// behind it.
+    ///
+    /// `Server::dispatch` is already the one entry point every client goes
+    /// through, so a harness gets the same one rather than a second vocabulary
+    /// (RFC 0205). It is handed over as a closure because the trait is not
+    /// object-safe, and because `crates/harness` must not depend on the crate
+    /// that implements it.
+    fn connect_protocol(protocol: &OnceLock<harness::Dispatch>, daemon: Self) {
+        let dispatch: harness::Dispatch = Arc::new(move |msg| {
+            let daemon = daemon.clone();
+            Box::pin(async move {
+                use futures_util::StreamExt;
+                use wcore::protocol::api::Server as _;
+                daemon.dispatch(msg).collect::<Vec<_>>().await
+            })
+        });
+        let _ = protocol.set(dispatch);
+    }
+
     /// Build Hooks, SystemEnv, and Runtime in one shot.
     async fn build_all(
         config: &wcore::Config,
@@ -169,6 +199,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         storage: Arc<S>,
         build_provider: &BuildProvider<P>,
         runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>>,
+        protocol: Arc<OnceLock<harness::Dispatch>>,
         mut hooks: Hooks,
     ) -> Result<(
         Runtime<crate::system::SystemCfg<P, S>>,
@@ -202,6 +233,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             mcp_handler.clone(),
             config.env.clone(),
             runtime_once,
+            protocol,
         )
         .await?;
         let hooks = Arc::new(hooks);
@@ -231,6 +263,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         mcp_handler: Arc<McpHandler>,
         env_overlay: BTreeMap<String, String>,
         runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>>,
+        protocol: Arc<OnceLock<harness::Dispatch>>,
     ) -> Result<runtime::SharedMemory> {
         let memory_wrapper = Memory::open(config_dir.join("memory.db"))?;
         let shared_memory = memory_wrapper.shared();
@@ -255,7 +288,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         // agent exists — a tool the catalogue never saw is a tool no model is
         // offered. Registering an agent later loads its own through
         // `on_register_agent`.
-        match HarnessHook::new() {
+        match HarnessHook::new(protocol) {
             Ok(harnesses) => {
                 for agent in storage.list_agents().await.unwrap_or_default() {
                     harnesses.load(&agent.name, &agent.harnesses);

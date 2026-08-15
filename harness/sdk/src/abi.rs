@@ -30,6 +30,8 @@ pub(crate) const HOST_FS_READ: u64 = hash("crabtalk.fs.read");
 pub(crate) const HOST_FS_WRITE: u64 = hash("crabtalk.fs.write");
 /// Run a command. Request and result are both JSON.
 pub(crate) const HOST_EXEC_RUN: u64 = hash("crabtalk.exec.run");
+/// Send one `ClientMessage`; the reply is a `ServerMessage`.
+pub(crate) const HOST_PROTOCOL_CALL: u64 = hash("crabtalk.protocol.call");
 
 /// Set on the length a capability returns when the staged bytes are an error
 /// message rather than a result. A length never reaches this bit on its own,

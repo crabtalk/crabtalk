@@ -42,7 +42,9 @@ fn main() -> Result<()> {
             root: Some(sandbox.clone()),
             fs: true,
             exec: true,
+            protocol_read: false,
         },
+        Default::default(),
     )?;
 
     println!("tools:    {:?}", harness.tools().collect::<Vec<_>>());
