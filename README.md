@@ -33,7 +33,7 @@ crabup add cron              # scheduler
 crabup add search            # meta-search
 ```
 
-Full config reference: [`crates/crabtalk/config.toml`](crates/crabtalk/config.toml).
+Full config reference: [`crates/storage/config.toml`](crates/storage/config.toml).
 
 ## How It Works
 
@@ -47,7 +47,7 @@ auto-discovery.
 ## Learn More
 
 - [The Crabtalk Book][book] — manifesto, architecture, and design RFCs
-- [Configuration](crates/crabtalk/config.toml) — config.toml reference
+- [Configuration](crates/storage/config.toml) — config.toml reference
 - [Contributing](CONTRIBUTING.md) — architecture, layering, and data flow
 
 ## License

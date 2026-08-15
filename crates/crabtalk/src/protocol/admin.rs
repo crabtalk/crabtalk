@@ -7,6 +7,7 @@ use anyhow::Result;
 use mcp::McpEvent;
 use runtime::Env;
 use wcore::protocol::message::*;
+use wcore::storage::Storage;
 
 fn mcp_event_to_msg(event: McpEvent) -> McpEventMsg {
     let now = chrono::Utc::now().to_rfc3339();
@@ -46,7 +47,7 @@ fn mcp_event_to_msg(event: McpEvent) -> McpEventMsg {
     }
 }
 
-impl<P: Provider + 'static> CrabTalk<P> {
+impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn get_stats(&self) -> Result<Stats> {
         let rt = self.runtime.read().await.clone();
         let active = rt.conversation_count().await;

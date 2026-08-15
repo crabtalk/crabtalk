@@ -7,6 +7,7 @@ use runtime::sessions::{SearchOptions, SessionHit, WindowItem};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use wcore::ToolDispatch;
+use wcore::storage::Storage;
 
 /// Search past conversation messages by keyword. Returns ranked
 /// excerpts (matched message + surrounding context) — never full
@@ -28,7 +29,7 @@ pub struct SearchSessions {
     pub sender: Option<String>,
 }
 
-impl<P: Provider + 'static> SessionsHook<P> {
+impl<P: Provider + 'static, S: Storage> SessionsHook<P, S> {
     pub(super) async fn handle_search_sessions(
         &self,
         call: ToolDispatch,

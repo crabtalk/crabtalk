@@ -23,6 +23,7 @@ wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.23" }
 memory = { path = "crates/memory", package = "crabtalk-memory", version = "0.0.23" }
 embed = { path = "crates/embed", package = "crabtalk-embed", version = "0.0.23" }
 hooks = { path = "crates/hooks", package = "crabtalk-hooks", version = "0.0.23", default-features = false }
+storage = { path = "crates/storage", package = "crabtalk-storage", version = "0.0.23", default-features = false }
 mcp = { path = "crates/mcp", package = "crabtalk-mcp", version = "0.0.23", default-features = false }
 command = { path = "crates/command", package = "crabtalk-command", version = "0.0.23" }
 command-codegen = { path = "crates/command/codegen", package = "crabtalk-command-codegen", version = "0.0.23" }
@@ -122,6 +123,10 @@ tokio = { version = "1", features = [
 teloxide = { version = "0.17", default-features = false, features = ["rustls"] }
 textwrap = "0.16"
 toml = "0.8"
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+] }
 tracing = "0.1"
 ulid = { version = "1", features = ["serde"] }
 tracing-subscriber = "0.3"

@@ -2,7 +2,7 @@
 //! `sessions/<slug>/`. The on-disk step shape (`StepLine`) and
 //! step-counter recovery live here too.
 
-use crate::storage::fs::{FsStorage, atomic_write};
+use crate::fs::{FsStorage, atomic_write};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{

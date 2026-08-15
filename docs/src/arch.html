@@ -182,9 +182,9 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 const STATS = [
-  ["Workspace members", "18"],
-  ["Crates · apps · harness", "12 · 4 · 2"],
-  ["Rust in src/",      "25,205 lines"],
+  ["Workspace members", "19"],
+  ["Crates · apps · harness", "13 · 4 · 2"],
+  ["Rust in src/",      "25,412 lines"],
   ["Agent tools",       "7 built-in + MCP"],
   ["Transports",        "2 — UDS, TCP"],
   ["Not wired in",      "2 — embed, bench"],
@@ -273,16 +273,28 @@ const NODES = [
   },
   {
     id: "crabtalk", code: "K", name: "Crabtalk", pkg: "crabtalk", path: "crates/crabtalk",
-    loc: 3710, files: 25, col: 1, row: 2, group: "library",
-    what: "The product. This is the crate that assembles everything else into a running system: hooks composed, storage backed by the filesystem, the protocol served, agents built. Everything else in the workspace either powers this or connects to it.",
-    how: "<code>bridge.rs</code> is the join — it takes a decoded protocol message and drives the runtime with it. <code>SystemEnv</code> in <code>system/host.rs</code> is this crate's <code>Env</code> implementation, wiring the composite hook to event broadcasting. Storage is a filesystem implementation of core's <code>Storage</code> trait, including the migration and scaffolding paths.",
+    loc: 2267, files: 15, col: 1, row: 2, group: "library",
+    what: "The product. This is the crate that assembles everything else into a running system: hooks composed, a storage backend wired in, the protocol served, agents built. Everything else in the workspace either powers this or connects to it.",
+    how: "<code>bridge.rs</code> is the join — it takes a decoded protocol message and drives the runtime with it. <code>SystemEnv</code> in <code>system/host.rs</code> is this crate's <code>Env</code> implementation, wiring the composite hook to event broadcasting. Persistence moved out to <code>storage</code>; what stays is the choice of backend, one line of <code>SystemCfg</code>.",
     note: "Boundary contract: this crate never interprets tool semantics, it only routes. Cron and config are treated as system concerns — process-lifetime, not session-lifetime.",
     inside: [
-      { n: "storage/", loc: 1270, f: 9, note: "Filesystem Storage: agents, sessions, skills, config, migrate, scaffold." },
-      { n: "system/", loc: 1019, f: 6, note: "The builder, SystemEnv, event broadcast, transport wiring, default provider." },
-      { n: "protocol/", loc: 858, f: 4, note: "Serving the protocol: admin, config and conversation handlers." },
-      { n: "hooks/", loc: 349, f: 4, note: "The delegate tool and session search, as hooks." },
+      { n: "system/", loc: 1012, f: 6, note: "The builder, SystemEnv, event broadcast, transport wiring, default provider." },
+      { n: "protocol/", loc: 884, f: 4, note: "Serving the protocol: admin, config and conversation handlers." },
       { n: "bridge.rs", loc: 201, f: 1, note: "Routes a decoded protocol message into the runtime." },
+      { n: "hooks/", loc: 156, f: 3, note: "Session search, as a hook." },
+    ],
+  },
+  {
+    id: "storage", code: "ST", name: "Storage", pkg: "crabtalk-storage", path: "crates/storage",
+    loc: 1650, files: 15, col: 4, row: 3, group: "library",
+    what: "Implementations of core's <code>Storage</code> trait, and the first-run scaffolding that lays out <code>~/.crabtalk/</code>. Core declares the trait; this crate is where a backend actually touches a disk. Two of them: a directory tree, and a database file.",
+    how: "Which backend a host uses is the <code>Storage</code> associated type on <code>runtime::Config</code>, decided when the binary is compiled — so this crate is a menu, not a switch. The <code>sqlite</code> feature only keeps <code>sqlx</code> out of builds that want the filesystem; it never changes which backend runs.",
+    note: "Lifted out of the daemon library so a desktop app or a cloud tenant can implement <code>runtime::Config</code> against a backend without depending on <code>crabtalk</code>. Skills stay filesystem-backed under both, through one shared scan — a skill is content, not state.",
+    inside: [
+      { n: "fs/", loc: 829, f: 7, note: "FsStorage: agents, sessions, skills, config, scaffold, and the config-dir loader — one impl block per file." },
+      { n: "sqlite/", loc: 732, f: 6, note: "SqliteStorage over sqlx: schema, sessions, agents, config." },
+      { n: "skills.rs", loc: 70, f: 1, note: "The SKILL.md scan both backends share." },
+      { n: "lib.rs", loc: 19, f: 1, note: "What the crate offers." },
     ],
   },
   {
@@ -425,7 +437,8 @@ const NODES = [
 
 /* Internal dependency edges — `cargo metadata`, normal dependencies only. */
 const EDGES = [
-  ["crabtalk","core"],["crabtalk","hooks"],["crabtalk","mcp"],["crabtalk","runtime"],["crabtalk","sdk"],["crabtalk","transport"],
+  ["crabtalk","core"],["crabtalk","hooks"],["crabtalk","mcp"],["crabtalk","runtime"],["crabtalk","sdk"],["crabtalk","storage"],["crabtalk","transport"],
+  ["storage","core"],["storage","hooks"],
   ["bench","crabtalk"],["bench","core"],["bench","memory"],["bench","runtime"],
   ["tui","core"],["tui","hooks"],["tui","sdk"],["tui","transport"],
   ["command","codegen"],["command","core"],

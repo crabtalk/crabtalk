@@ -21,6 +21,8 @@ pub mod memory;
 pub mod os;
 #[cfg(feature = "skill")]
 pub mod skill;
+#[cfg(feature = "memory")]
+mod utils;
 
 #[cfg(feature = "mcp")]
 pub use mcp::McpHook;
@@ -30,6 +32,8 @@ pub use memory::{DEFAULT_SOUL, Memory, MemoryHook};
 pub use os::OsHook;
 #[cfg(feature = "skill")]
 pub use skill::handler::SkillHook;
+#[cfg(feature = "memory")]
+pub use utils::default_crab;
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
 #[derive(Default)]

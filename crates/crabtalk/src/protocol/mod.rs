@@ -5,6 +5,7 @@ use crate::system::CrabTalk;
 use anyhow::Result;
 use wcore::protocol::api::Server;
 use wcore::protocol::message::*;
+use wcore::storage::Storage;
 
 mod admin;
 mod config;
@@ -27,7 +28,7 @@ fn format_date_label(created_at: &str) -> String {
     }
 }
 
-impl<P: Provider + 'static> Server for CrabTalk<P> {
+impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         self.send(req).await
     }

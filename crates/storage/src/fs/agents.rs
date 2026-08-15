@@ -1,7 +1,7 @@
 //! Agent persistence — definitions in `local/settings.toml` under
 //! `[agents.<name>]`, system prompt in `agents/<ulid>/prompt.md`.
 
-use crate::storage::fs::{FsStorage, atomic_write};
+use crate::fs::{FsStorage, atomic_write};
 use anyhow::Result;
 use std::{io::ErrorKind, path::PathBuf};
 use tokio::fs;

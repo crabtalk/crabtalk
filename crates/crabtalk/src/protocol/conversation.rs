@@ -8,8 +8,9 @@ use futures_util::{StreamExt, pin_mut};
 use std::sync::Arc;
 use wcore::AgentEvent;
 use wcore::protocol::message::*;
+use wcore::storage::Storage;
 
-impl<P: Provider + 'static> CrabTalk<P> {
+impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
@@ -298,11 +299,10 @@ fn resolve_client_tools(
     conversation_id: u64,
     proto_tools: Vec<ToolDef>,
 ) -> Vec<crate::llm::Tool> {
-    if proto_tools.is_empty() {
-        return bridge.effective_tools(conversation_id);
-    }
     let tools: Vec<crate::llm::Tool> = proto_tools.into_iter().map(tool_from_proto).collect();
-    bridge.register_tools(conversation_id, tools.clone());
+    // Registered even when empty: a client that declares nothing has no
+    // client tools, which is a different thing from having not been asked.
+    bridge.register_tools(conversation_id, &tools);
     tools
 }
 

@@ -8,8 +8,8 @@
 //! and config, so they sit on the struct itself.
 
 use anyhow::Result;
+pub use loader::{DEFAULT_CONFIG, DEFAULT_SETTINGS, scaffold_config_dir};
 use parking_lot::Mutex;
-pub use scaffold::default_crab;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -26,6 +26,7 @@ use wcore::{
 
 mod agents;
 mod config;
+mod loader;
 mod scaffold;
 mod sessions;
 mod skills;
@@ -34,7 +35,7 @@ mod skills;
 /// template as the one scaffolded on first-run (`DEFAULT_SETTINGS`).
 /// Tells humans not to edit the file while the daemon is running and
 /// documents the allowed sections.
-pub(super) const SETTINGS_HEADER: &str = crate::storage::DEFAULT_SETTINGS;
+pub(super) const SETTINGS_HEADER: &str = DEFAULT_SETTINGS;
 
 /// Filesystem persistence backend.
 pub struct FsStorage {

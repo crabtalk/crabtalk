@@ -17,7 +17,6 @@ crabllm-sdk = { workspace = true, features = ["hyper"] }
 hooks = { workspace = true, default-features = false, features = ["memory", "mcp", "os", "skill"] }
 mcp = { workspace = true, default-features = false, features = ["hyper"] }
 runtime.workspace = true
-sdk.workspace = true
 transport.workspace = true
 wcore.workspace = true
 
@@ -55,5 +54,6 @@ rustls = [
 ]
 
 [dev-dependencies]
+storage.workspace = true
 tempfile.workspace = true
 wcore = { workspace = true, features = ["testing"] }

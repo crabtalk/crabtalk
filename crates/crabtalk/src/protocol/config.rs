@@ -3,12 +3,13 @@
 use crate::llm::Provider;
 use crate::system::CrabTalk;
 use anyhow::{Context, Result};
+use hooks::default_crab;
 use mcp::{McpServerState, ServerStatus};
 use std::collections::BTreeMap;
 use wcore::protocol::message::*;
 use wcore::storage::Storage;
 
-impl<P: Provider + 'static> CrabTalk<P> {
+impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn set_active_model(&self, model: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
         let storage = rt.storage();
@@ -23,7 +24,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         let mut crab = storage
             .load_agent_by_name(wcore::paths::DEFAULT_AGENT)
             .await?
-            .unwrap_or_else(|| crate::storage::default_crab(&model));
+            .unwrap_or_else(|| default_crab(&model));
         let prompt = std::mem::take(&mut crab.system_prompt);
         crab.model = model;
         storage.upsert_agent(&crab, &prompt).await?;
@@ -82,7 +83,9 @@ impl<P: Provider + 'static> CrabTalk<P> {
         // first use. Connect this one now anyway: a human just typed the
         // config, and a bad command or a stale token should surface here
         // rather than inside some later tool call.
-        self.mcp.ensure_connected(&agent, &[mcp_name.clone()]).await;
+        self.mcp
+            .ensure_connected(&agent, std::slice::from_ref(&mcp_name))
+            .await;
 
         let mcps = self.list_mcps(Some(agent)).await?;
         mcps.into_iter()

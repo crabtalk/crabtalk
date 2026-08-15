@@ -7,7 +7,8 @@ use wcore::paths::{CONFIG_DIR, TCP_PORT_FILE};
 
 pub async fn start() -> Result<()> {
     crate::ensure_config()?;
-    let handle = crabtalk::CrabTalk::start(&CONFIG_DIR).await?;
+    let storage = crate::build_storage(&CONFIG_DIR);
+    let handle = crabtalk::CrabTalk::start(&CONFIG_DIR, storage).await?;
 
     #[cfg(unix)]
     let (socket_path, socket_join) =

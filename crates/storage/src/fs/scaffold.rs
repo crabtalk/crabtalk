@@ -1,26 +1,10 @@
 //! First-startup scaffold: create the directory layout and seed the
-//! built-in `crab` agent. Owns the default crab definition because it
-//! is the only producer of fresh installs.
+//! built-in `crab` agent.
 
-use crate::storage::fs::FsStorage;
+use crate::fs::FsStorage;
 use anyhow::Result;
+use hooks::default_crab;
 use tokio::fs;
-use wcore::AgentConfig;
-
-/// Built-in crab agent prompt (from `prompts/crab.md`).
-const CRAB_PROMPT: &str = hooks::DEFAULT_SOUL;
-
-/// Construct the default `crab` system agent with the given model.
-///
-/// Used by [`FsStorage::scaffold`] to seed a fresh install and by the
-/// daemon as a fallback when no `crab` agent is stored. Callers must
-/// provide a model — agents without a model can't run.
-pub fn default_crab(model: impl Into<String>) -> AgentConfig {
-    let mut cfg = AgentConfig::new(wcore::paths::DEFAULT_AGENT);
-    cfg.system_prompt = CRAB_PROMPT.to_owned();
-    cfg.model = model.into();
-    cfg
-}
 
 impl FsStorage {
     pub(super) async fn scaffold(&self, default_model: &str) -> Result<()> {
