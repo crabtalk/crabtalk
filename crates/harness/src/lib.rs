@@ -7,17 +7,47 @@
 use anyhow::{Context, Result, bail};
 use object::{Object, ObjectSection};
 use rvtime::{Caller, Engine, Linker, Module, Store, TypedFunc};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::PathBuf};
 
 pub mod abi;
+mod exec;
+mod fs;
+mod hook;
+mod manifest;
+mod root;
+mod wire;
+
+pub use hook::HarnessHook;
+pub use manifest::{Manifest, ToolSpec};
 
 /// A guest entry point: takes nothing, returns a pointer and a length.
 type Export = TypedFunc<(), (u64, u64)>;
+
+/// What a harness may reach.
+///
+/// A capability missing here is missing from the [`Linker`], and that absence
+/// is the enforcement — there is no check to write and no check to forget.
+/// `root` is the argument to both `fs` and `exec`, and the grant is the
+/// argument: without it neither is registered, so an under-specified
+/// declaration reaches nothing rather than everything.
+#[derive(Debug, Default, Clone)]
+pub struct Grants {
+    /// The subtree `fs` and `exec` are bounded by.
+    pub root: Option<PathBuf>,
+    /// Read and write files.
+    pub fs: bool,
+    /// Run commands.
+    pub exec: bool,
+}
 
 /// Guest state for one invocation. Memory is per-invocation; anything a
 /// harness needs to survive belongs in a storage capability, not here.
 pub struct Invocation {
     args: Vec<u8>,
+    /// The last capability call's result, waiting for the guest to pull it.
+    /// Staged rather than pushed because its size is not known until the work
+    /// is done, and doing the work twice to measure it is not an option.
+    result: Vec<u8>,
     /// Set when the guest reports failure, which is how a tool that failed is
     /// told apart from one that returned the word "error".
     failure: Option<String>,
@@ -30,17 +60,17 @@ pub struct Harness {
     module: Module,
     linker: Linker<Invocation>,
     /// Read from the ELF at load, without running anything.
-    manifest: String,
+    manifest: Manifest,
     /// Resolved once at load. A [`TypedFunc`] belongs to the module rather
     /// than to a store, so these stay valid for every invocation.
     tools: BTreeMap<String, Export>,
 }
 
 impl Harness {
-    /// Compile `elf` and resolve its exports. The engine's code cache makes a
-    /// second load of the same bytes cheap across processes as well as within
-    /// one.
-    pub fn load(engine: &Engine, elf: &[u8]) -> Result<Self> {
+    /// Compile `elf` and resolve its exports, granting `grants`. The engine's
+    /// code cache makes a second load of the same bytes cheap across processes
+    /// as well as within one.
+    pub fn load(engine: &Engine, elf: &[u8], grants: &Grants) -> Result<Self> {
         let module = Module::new(engine, elf).context("failed to compile harness")?;
         let mut linker = Linker::new(engine);
 
@@ -88,6 +118,48 @@ impl Harness {
             },
         )?;
 
+        // The other half of every capability call. Plumbing rather than a
+        // grant: a harness with no capabilities never stages anything, so this
+        // is registered unconditionally and has nothing to hand over.
+        linker.func_wrap(
+            abi::HOST_RESULT_READ,
+            |mut caller: Caller<'_, Invocation>, ptr, capacity| {
+                let length = caller.data().result.len();
+                let result = caller.data().result[..length.min(capacity as usize)].to_vec();
+                caller.write(ptr, &result)?;
+                Ok(length as u64)
+            },
+        )?;
+
+        if let Some(root) = grants.root.clone() {
+            if grants.fs {
+                let read = root.clone();
+                linker.func_wrap(
+                    abi::HOST_FS_READ,
+                    move |caller: Caller<'_, Invocation>, ptr, len| {
+                        stage(caller, ptr, len, |request| fs::read(&read, request))
+                    },
+                )?;
+
+                let write = root.clone();
+                linker.func_wrap(
+                    abi::HOST_FS_WRITE,
+                    move |caller: Caller<'_, Invocation>, ptr, len| {
+                        stage(caller, ptr, len, |request| fs::write(&write, request))
+                    },
+                )?;
+            }
+
+            if grants.exec {
+                linker.func_wrap(
+                    abi::HOST_EXEC_RUN,
+                    move |caller: Caller<'_, Invocation>, ptr, len| {
+                        stage(caller, ptr, len, |request| exec::run(&root, request))
+                    },
+                )?;
+            }
+        }
+
         let mut store = Store::new(engine, Invocation::empty());
         let instance = linker.instantiate(&mut store, &module)?;
 
@@ -106,11 +178,25 @@ impl Harness {
             tools.insert(name, instance.get_typed_func(&symbol)?);
         }
 
+        // A harness that advertises a tool it does not export would fail at
+        // dispatch, on a model's turn, as a missing symbol. The symbol table
+        // and the manifest are both in hand here, so disagreement is caught
+        // before the harness is ever offered.
+        let manifest = Manifest::parse(&section(elf)?)?;
+        for tool in &manifest.tools {
+            if !tools.contains_key(&tool.name) {
+                bail!(
+                    "harness manifest declares tool {:?}, which it does not export",
+                    tool.name
+                );
+            }
+        }
+
         Ok(Self {
             engine: engine.clone(),
             module,
             linker,
-            manifest: manifest(elf)?,
+            manifest,
             tools,
         })
     }
@@ -121,7 +207,7 @@ impl Harness {
     }
 
     /// What the harness says it is: ABI version, tools, capabilities wanted.
-    pub fn manifest(&self) -> &str {
+    pub fn manifest(&self) -> &Manifest {
         &self.manifest
     }
 
@@ -152,6 +238,7 @@ impl Harness {
             &self.engine,
             Invocation {
                 args,
+                result: Vec::new(),
                 failure: None,
             },
         );
@@ -164,15 +251,38 @@ impl Invocation {
     fn empty() -> Self {
         Self {
             args: Vec::new(),
+            result: Vec::new(),
             failure: None,
         }
     }
 }
 
+/// Run one capability and leave its bytes for the guest to pull.
+///
+/// Failure rides on the same return value: the [`abi::ERROR`] bit says the
+/// staged bytes are a message. A capability that fails therefore costs the
+/// guest nothing extra to find out about, and an empty result cannot be
+/// mistaken for one.
+fn stage(
+    mut caller: Caller<'_, Invocation>,
+    ptr: u64,
+    len: u64,
+    capability: impl FnOnce(&[u8]) -> Result<Vec<u8>>,
+) -> Result<u64> {
+    let request = caller.read(ptr, len)?.to_vec();
+    let (staged, outcome) = match capability(&request) {
+        Ok(result) => (result, 0),
+        Err(error) => (error.to_string().into_bytes(), abi::ERROR),
+    };
+    let length = staged.len() as u64;
+    caller.data_mut().result = staged;
+    Ok(length | outcome)
+}
+
 /// Pull the manifest out of the ELF. This runs before anything is compiled,
 /// let alone executed — a harness gets to describe itself without being given
 /// a turn.
-fn manifest(elf: &[u8]) -> Result<String> {
+fn section(elf: &[u8]) -> Result<String> {
     let file = object::File::parse(elf).context("harness is not a readable ELF")?;
     let section = file
         .section_by_name(abi::ABI_SECTION)

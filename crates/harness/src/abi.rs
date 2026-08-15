@@ -18,6 +18,20 @@ pub const HOST_ARG_LEN: u64 = hash("crabtalk.args.len");
 pub const HOST_ARG_READ: u64 = hash("crabtalk.args.read");
 /// Fail this invocation with a message. `(ptr, len) -> 0`
 pub const HOST_FAIL: u64 = hash("crabtalk.fail");
+/// Copy the staged capability result into guest memory. `(ptr, cap) -> full length`
+pub const HOST_RESULT_READ: u64 = hash("crabtalk.result.read");
+
+/// Read a file. `(ptr, len) -> staged length`
+pub const HOST_FS_READ: u64 = hash("crabtalk.fs.read");
+/// Write a file. `(ptr, len) -> staged length`
+pub const HOST_FS_WRITE: u64 = hash("crabtalk.fs.write");
+/// Run a command. `(ptr, len) -> staged length`
+pub const HOST_EXEC_RUN: u64 = hash("crabtalk.exec.run");
+
+/// Set on a staged length when the bytes are an error message rather than a
+/// result. A length never reaches this bit on its own, so one return value
+/// carries the outcome and the size together.
+pub const ERROR: u64 = 1 << 63;
 
 /// FNV-1a over the capability's name, evaluated at compile time.
 pub const fn hash(name: &str) -> u64 {

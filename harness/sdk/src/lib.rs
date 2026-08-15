@@ -40,7 +40,20 @@
 #[cfg(not(target_arch = "riscv64"))]
 extern crate std;
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 mod abi;
+/// One call path shared by every capability. Needs a heap: a result whose size
+/// the guest learns at runtime has nowhere else to go.
+#[cfg(feature = "alloc")]
+mod cap;
+/// Commands. Granted as `exec`.
+#[cfg(feature = "alloc")]
+pub mod exec;
+/// Files, bounded by the granted root. Granted as `fs`.
+#[cfg(feature = "alloc")]
+pub mod fs;
 // Installing a global allocator is something only the whole program may do,
 // so like the panic handler it happens on the guest's target and nowhere else.
 #[cfg(all(feature = "alloc", target_arch = "riscv64"))]
@@ -50,6 +63,8 @@ mod out;
 /// there is a test to run them from.
 #[cfg(not(target_arch = "riscv64"))]
 pub mod test;
+#[cfg(feature = "alloc")]
+mod wire;
 
 // One boundary for the whole crate: `riscv.rs` makes real host calls, and
 // `stub.rs` is a host a test can stand in for. The split is about behaviour

@@ -11,7 +11,7 @@
 //! ```
 
 use anyhow::{Context, Result};
-use crabtalk_harness::Harness;
+use crabtalk_harness::{Grants, Harness};
 use rvtime::{Config, Engine};
 use std::{
     fs,
@@ -49,7 +49,7 @@ fn main() -> Result<()> {
     println!("compile (warm cache):  {warm:>10.3?}");
 
     let harness = compile(&cache, &elf)?;
-    println!("manifest:              {}", harness.manifest());
+    println!("manifest:              {:?}", harness.manifest());
 
     println!(
         "heap probe:            {:?}",
@@ -105,7 +105,7 @@ fn main() -> Result<()> {
         let mut config = Config::new();
         config.cache_dir(&cache).memory_size(mib * 1024 * 1024);
         let engine = Engine::new(&config)?;
-        let harness = Harness::load(&engine, &elf)?;
+        let harness = Harness::load(&engine, &elf, &Grants::default())?;
 
         let mut samples = Vec::with_capacity(ROUNDS);
         for _ in 0..ROUNDS {
@@ -124,7 +124,7 @@ fn compile(cache: &std::path::Path, elf: &[u8]) -> Result<Harness> {
     let mut config = Config::new();
     config.cache_dir(cache);
     let engine = Engine::new(&config)?;
-    Harness::load(&engine, elf)
+    Harness::load(&engine, elf, &Grants::default())
 }
 
 fn time<T>(f: impl FnOnce() -> Result<T>) -> Result<Duration> {
