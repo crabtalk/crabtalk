@@ -27,8 +27,13 @@ Layer 4 ─ Adapters
   ├─ client               Connection, typed RPC sugars, stream adapters
   ├─ tui                  REPL, config TUI
   ├─ apps/                telegram (gateway client)
-  └─ harness/             cron, search (standalone services)
+  └─ harness/             the harnesses (berm guests, RV64 ELFs)
 ```
+
+Beside all of it sits `berm/` — the sandbox harnesses run in, plus its SDK
+and its macro. It depends on no crate of ours, because crabtalk is one thing
+that embeds it and deliberately not the only one; `berm/` and `harness/` leave
+together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 
 ## Where does my feature go?
 

@@ -1,7 +1,7 @@
 //! Exercise the protocol door: the grant, the allowlist, and the redaction.
 //!
 //! ```sh
-//! cargo build --release -p crabtalk-harness-peers --target riscv64imac-unknown-none-elf
+//! cargo build --release -p berm-peers --target riscv64imac-unknown-none-elf
 //! cargo run --example protocol -p berm
 //! ```
 //!
@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
         .context("no workspace root")?
         .to_path_buf();
     let elf = fs::read(workspace.join(GUEST)).with_context(|| {
-        format!("build the guest first: cargo build --release -p crabtalk-harness-peers --target riscv64imac-unknown-none-elf ({GUEST})")
+        format!("build the guest first: cargo build --release -p berm-peers --target riscv64imac-unknown-none-elf ({GUEST})")
     })?;
 
     let engine = Engine::new(&Config::new())?;

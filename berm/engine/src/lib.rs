@@ -50,6 +50,10 @@ pub struct Grants {
     pub exec: bool,
 }
 
+/// What a capability does: request bytes in, result bytes out. An `Err`
+/// reaches the guest as a failure message on the same wire as a result.
+pub type Call = Arc<dyn Fn(&[u8]) -> Result<Vec<u8>> + Send + Sync>;
+
 /// A capability the embedder implements.
 ///
 /// berm knows `fs` and `exec` because they are about the machine, which every
@@ -64,9 +68,8 @@ pub struct Grants {
 pub struct Capability {
     /// What the guest calls it, e.g. `crabtalk.protocol.call`.
     pub name: String,
-    /// Request bytes in, result bytes out. An `Err` reaches the guest as a
-    /// failure message on the same wire as a result.
-    pub call: Arc<dyn Fn(&[u8]) -> Result<Vec<u8>> + Send + Sync>,
+    /// What it does.
+    pub call: Call,
 }
 
 /// Guest state for one invocation. Memory is per-invocation; anything a

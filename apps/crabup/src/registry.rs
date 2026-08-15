@@ -78,22 +78,6 @@ const TABLE: &[Entry] = &[
         description: "Telegram gateway for Crabtalk",
         kind: Kind::App,
     },
-    Entry {
-        short: "search",
-        krate: "crabtalk-search",
-        bin: "crabtalk-search",
-        label: Some("ai.crabtalk.search"),
-        description: "Meta-search engine for Crabtalk",
-        kind: Kind::Harness,
-    },
-    Entry {
-        short: "cron",
-        krate: "crabtalk-cron",
-        bin: "crabtalk-cron",
-        label: Some("ai.crabtalk.cron"),
-        description: "Cron scheduler for Crabtalk",
-        kind: Kind::Harness,
-    },
 ];
 
 impl Entry {

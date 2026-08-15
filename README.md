@@ -26,13 +26,6 @@ crabtalk                     # chat
 Set `llm.base_url` in `~/.crabtalk/config.toml` before the first chat — the
 daemon scaffolds the file on first run and warns if the endpoint is unset.
 
-Harness services attach to a running daemon and use `add` instead:
-
-```bash
-crabup add cron              # scheduler
-crabup add search            # meta-search
-```
-
 Full config reference: [`crates/storage/config.toml`](crates/storage/config.toml).
 
 ## How It Works

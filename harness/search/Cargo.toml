@@ -1,8 +1,8 @@
 [package]
 name = "crabtalk-search"
-description = "Meta search engine CLI with aggregated results from multiple backends"
-keywords = ["search", "meta-search", "cli", "web-scraping"]
-categories = ["command-line-utilities", "web-programming"]
+description = "Meta search engine — aggregated results from multiple backends"
+keywords = ["search", "meta-search", "web-scraping"]
+categories = ["web-programming"]
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
@@ -10,21 +10,13 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[[bin]]
-name = "crabtalk-search"
-path = "src/bin/main.rs"
-required-features = ["cli"]
-
 [features]
-default = ["cli", "mcp", "native-tls"]
-cli = ["dep:clap", "dep:tracing-subscriber"]
-mcp = ["dep:rmcp", "dep:schemars", "dep:axum", "dep:command", "dep:anyhow", "cli"]
+default = ["native-tls"]
 native-tls = ["reqwest/native-tls"]
 rustls = ["reqwest/rustls"]
 
 [dependencies]
 base64.workspace = true
-clap = { workspace = true, optional = true }
 lru.workspace = true
 rand.workspace = true
 reqwest.workspace = true
@@ -35,15 +27,5 @@ thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
-tracing-subscriber = { workspace = true, optional = true }
 url.workspace = true
 percent-encoding.workspace = true
-anyhow = { workspace = true, optional = true }
-axum = { workspace = true, optional = true }
-command = { workspace = true, features = ["mcp"], optional = true }
-rmcp = { workspace = true, optional = true, features = [
-    "server",
-    "macros",
-    "transport-streamable-http-server",
-] }
-schemars = { workspace = true, optional = true }

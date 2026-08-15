@@ -1,7 +1,7 @@
 //! Exercise the OS harness against a real directory.
 //!
 //! ```sh
-//! cargo build --release -p crabtalk-harness-os --target riscv64imac-unknown-none-elf
+//! cargo build --release -p berm-os --target riscv64imac-unknown-none-elf
 //! cargo run --example os -p berm
 //! ```
 
@@ -26,10 +26,10 @@ fn main() -> Result<()> {
     let profile = std::env::args().nth(1).unwrap_or_else(|| "release".into());
     let guest = GUEST.replace("{profile}", &profile);
     let elf = fs::read(workspace.join(&guest)).with_context(|| {
-        format!("build the guest first: cargo build --release -p crabtalk-harness-os --target riscv64imac-unknown-none-elf ({guest})")
+        format!("build the guest first: cargo build --release -p berm-os --target riscv64imac-unknown-none-elf ({guest})")
     })?;
 
-    let sandbox = std::env::temp_dir().join("crabtalk-harness-os");
+    let sandbox = std::env::temp_dir().join("berm-os");
     let _ = fs::remove_dir_all(&sandbox);
     fs::create_dir_all(&sandbox)?;
     fs::write(sandbox.join("hello.txt"), "alpha\nbeta\ngamma\n")?;

@@ -22,7 +22,7 @@ The function is defined once in the core `Server` trait. Any implementor — the
 
 There is no serializing queue, no `DaemonEvent` enum, and no actor that owns mutation. Operations reach into shared state directly and hold locks for the duration of the critical section.
 
-Shared state is protected by `parking_lot::Mutex` or `parking_lot::RwLock`. Event bus subscriptions, conversation working-directory overrides, pending `ask_user` replies, and cron state each live behind their own lock. Locks are acquired, the work is done, and the lock is released. Ordering between operations is whatever Tokio's scheduler produces.
+Shared state is protected by `parking_lot::Mutex` or `parking_lot::RwLock`. Event bus subscriptions, conversation working-directory overrides, and pending `ask_user` replies each live behind their own lock. Locks are acquired, the work is done, and the lock is released. Ordering between operations is whatever Tokio's scheduler produces.
 
 ## Ordering guarantees
 

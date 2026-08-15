@@ -8,4 +8,5 @@ RFCs that have been replaced by newer designs. Kept for historical reference.
 | [0038](0038-memory.md) | Memory | [0150 - Memory Store](0150-memory-store.md) |
 | [0064](0064-session.md) | Session | [0135 - Agent-First Protocol](0135-agent-first.md) |
 | [0078](0078-compact-session.md) | Compact Session | [0135 - Agent-First Protocol](0135-agent-first.md) |
+| [0080](0080-cron.md) | Cron | [0205 - Berm](0205-berm.md) |
 | [0171](0171-topic-switching.md) | Topic Switching | [0185 - Session Search and Storage Primitives](0185-session-search.md) |
