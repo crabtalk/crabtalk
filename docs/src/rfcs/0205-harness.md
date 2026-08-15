@@ -67,7 +67,9 @@ rvtime exposes `Instance::exports()`. A harness that exports `on_wake` can be sc
 
 The harness ABI exposes the smallest subset that makes real harnesses possible, and grows an export only when a harness needs one. Internal hooks stay internal Rust. Concretely, the exports are `call` (a tool was invoked), `on_wake` (a scheduled instant arrived), and `on_notify` (a subscribed event fired) — three entry points, none of them a mirror of a trait method.
 
-The hard case is events, and it is settled by not inventing anything: harnesses receive events by **subscribing through the protocol**, exactly as a client does. `AgentEvent::TextDelta(String)` is per-token and `on_event` runs inline in the streaming loop (`crates/runtime/src/engine/execution.rs:82,139`) from sync code on an async path, so a guest invocation per token would be unviable — but no exclusion rule is needed to prevent it, because the per-token stream was never on the event bus. The bus carries semantically meaningful topics like `agent:{name}:done`, which is precisely the granularity a harness can afford.
+The hard case is events, and it wants **subscribing through the protocol**, the way a client does, rather than anything invented for harnesses. Granularity is already right: `AgentEvent::TextDelta(String)` is per-token and `on_event` runs inline in the streaming loop (`crates/runtime/src/engine/execution.rs:82,139`) from sync code on an async path, so a guest invocation per token would be unviable — but no exclusion rule is needed to prevent it, because the per-token stream was never on the event bus. The bus carries semantically meaningful topics, which is precisely what a harness can afford.
+
+**The bus cannot deliver to a harness today, and that is what blocks `on_notify`.** `SubscribeEventMsg` is `{source, target_agent, once}` — a subscription routes an event *to an agent* — and the client-facing `subscribe_events` is a stream, which a harness has no lifetime to hold. So there is no `protocol:events` group in this RFC: naming one would grant a mechanism that does not exist. `subscribe_event`, `unsubscribe_event`, and `publish_event` stay ungrantable until the bus grows a harness as a subscription target, at which point the group is named alongside it. `on_notify` stays in the ABI because the export table is the registration and a harness that does not export it simply never receives one.
 
 | Frequency | Surface | Treatment |
 |-----------|---------|-----------|
@@ -107,9 +109,11 @@ Measured on one arm64 machine with a 72 KB guest, a 256-byte payload, and static
 
 Host functions are keyed by number, and a number with nothing registered traps as `Trap::UnknownHostCall(n)`. So the grant is not a check somebody has to write and remember to enforce — **the `Linker` a harness is instantiated with is its capability set**. Enforcement is the absence of code.
 
-Two families, and they warrant different postures:
+Not everything numbered is a grant. `args.len`, `args.read`, `fail`, `heap.start`, `heap.size`, and `log` carry the invocation itself — a harness without them cannot receive its arguments, report failure, allocate, or be debugged — so they are unconditionally in the `Linker` and never appear in a declaration. Logging in particular is deliberately not grantable: it writes host-side only, and an author whose harness a user installed without it has no way to find out why it traps.
 
-- **Host-provided** — `log`, `clock`, `random`, `http`, `storage`. One number each; a bad grant leaks data outward. These have no protocol equivalent: per-harness persistence in particular is not a `ClientMessage`, and inventing one so that everything goes through a single door would be symmetry for its own sake.
+Above that line, two families, and they warrant different postures:
+
+- **Host-provided** — one number each; a bad grant leaks data outward. These have no protocol equivalent: per-harness persistence in particular is not a `ClientMessage`, and inventing one so that everything goes through a single door would be symmetry for its own sake.
 - **The protocol** — one number, carrying the whole of `ClientMessage`. A bad grant spends the user's tokens, reads their conversations, and deletes their agents.
 
 Two rules that do not bend:
@@ -118,6 +122,40 @@ Two rules that do not bend:
 2. **Requested is not granted.** The manifest states what a harness *wants* — documentation, enough for a client to prompt. The declaration states what it *gets*. The daemon never infers one from the other.
 
 Every capability we write needs its own timeout. rvtime's interrupt check covers every case of non-termination in guest code — a guest can only run forever by looping, and unbounded recursion exhausts the native stack and traps — so the remaining way to wedge a worker forever is a host call of ours that never returns.
+
+#### The set
+
+Each name is here because a harness on the migration path needs it, and no name is here for a harness we have not written:
+
+| Name | Needed by | Shape |
+|------|-----------|-------|
+| `clock` | cron as a harness | UTC instant plus the host's local offset — a wall-clock intent is not an instant |
+| `http` | search; every engine is fetch-then-parse | Request out, response in, over a declared host allowlist |
+| `fs` | `read` and `edit` | File operations bounded by a declared root |
+| `exec` | `bash` | A command, an environment, a working directory, and a timeout |
+| `protocol` | everything that touches the runtime | One number over `ClientMessage`, allowlisted on decode |
+
+**`exec` subsumes `fs`.** Anything `fs` does, a shell does with `cat`, `tee`, and `sed`, so these are not two rungs of a privilege ladder and a harness holding `exec` gains nothing from being denied `fs`. The split earns its keep for harnesses that are not the OS one: reading files without acquiring a shell is the common third-party shape, and `fs` is what it holds. Within the OS harness the two coexist for implementation reasons rather than containment ones — `read` built on `exec("cat")` would lose its size cap and its line windowing and gain shell-quoting bugs.
+
+**A root is not a working directory.** The declaration names a **root**, which is the boundary: a path resolving outside it is refused host-side, and nothing in a call can widen it. The **working directory** is a call parameter defaulting to the root — where inside the boundary this invocation operates. Keeping them separate is what makes the OS harness stateless: the model says where it is working on each call, so there is no cwd to carry between invocations and no conversation state to reconstruct.
+
+**`exec` has no command filtering, and should not grow any.** A deny list guards against a *model* choosing something destructive; it does nothing against a harness author, who is arbitrary code and simply calls the capability with what they want. Putting one behind `exec` would move a behaviour guardrail into the capability layer and buy the appearance of containment rather than containment. What actually bounds `exec` is the grant: a harness that does not hold it cannot reach a shell, and one that does can do anything the user can. Deciding who holds it is an install-time judgement, not a runtime check.
+
+`http` is the exception, because there the allowlist is not theatre: a harness declares the hosts it reaches, the check is a comparison the guest cannot influence, and the declaration is readable out of the ELF without running it. The grant is *those hosts*, not the network — the same relationship `root` has to `fs` and `exec`, and the reason both carry an argument in the declaration rather than only a name.
+
+Excluded deliberately, and why:
+
+| Excluded | Why |
+|----------|-----|
+| `storage` | Persistence is a capability (see [Memory is per-invocation](#memory-is-per-invocation-storage-is-persistent)) — but the first harness has nothing to persist. Dropping read-before-edit leaves the OS harness stateless, and a stateless harness needs no store. It arrives with the first harness that outlives its own invocation, which is the re-arming one. |
+| `random` | A guest has no entropy without us, so this is a real gap — but nothing on the path to the first harness needs it. It arrives with the first re-arming harness that wants jittered backoff, and because numbers are hashed from names, adding it then costs nothing it would have saved by being here now. |
+| `env` | Reading the daemon's environment is reading the user's secrets. Whatever a harness needs comes through its declaration. |
+| `net` | Raw sockets are a bypass of every host `http` was allowlisted against. `http` is the network surface. |
+| `sleep` | A sleeping guest pins a worker. Waiting is `protocol:schedule` and `on_wake`. |
+| `thread` | Concurrency belongs to the queue, which is where the timeout, the rate limit, and the single-in-flight rule already live. |
+| `mcp` | A harness reaching MCP servers is the daemon's own privilege laundered through a grant that looks smaller than it is. |
+| `memory` | `crates/memory` is one global BM25 store, which is the opposite of per-harness namespacing. Its tools are thin wrappers over state a harness cannot own, so they stay an internal hook until there is a reason otherwise. |
+| `html` | Deferred rather than refused — it is search's problem and is decided with search, not before it. |
 
 ### The protocol is the syscall surface
 
@@ -136,21 +174,38 @@ Three rules govern what goes in that allowlist:
 
 **Authority rides on the invocation, not only the declaration.** A harness invoked during agent X's tool call and calling `send` is acting as *someone*. The invocation carries `(agent, conversation, sender)`, and protocol calls are scoped to that context unless a broader grant exists. The declaration grants classes of operation; the invocation supplies the instance. It is the difference between handing a process a file descriptor and granting it permission to open any file.
 
-**Filesystem and command capabilities are scoped, not sandboxed.** A harness granted `exec` can do anything the user can, and no amount of address-space confinement changes that. Its containment comes from the capability's own implementation — a path subtree, the per-agent bash deny rules already in `HooksConfig` — enforced host-side. Installing OS tools as a harness makes them modular and placeable; it does not make `bash` safe, and this RFC should not be read as claiming otherwise.
+**Filesystem and command capabilities are scoped, not sandboxed.** A harness granted `exec` can do anything the user can, and no amount of address-space confinement changes that. `fs` is bounded by a path subtree enforced host-side; `exec` is bounded by the grant and nothing finer, for the reason given above. Installing OS tools as a harness makes them modular and placeable; it does not make `bash` safe, and this RFC should not be read as claiming otherwise.
+
+#### The groups
+
+`ClientMessage` sorts by blast radius rather than by the section of the proto a message happens to sit in:
+
+| Group | Messages |
+|-------|----------|
+| `protocol:read` | `ping`, `get_stats`, `list_agents`, `get_agent`, `list_skills`, `list_models`, `list_subscriptions` |
+| `protocol:history` | `list_conversations`, `list_active_conversations`, `get_conversation_history` |
+| `protocol:send` | `send`, `stream`, `steer_session` |
+| `protocol:schedule` | The wake, its cancellation, and its listing — none of which exist yet |
+
+`steer_session` is in `protocol:send` because injecting content into a live run has the same blast radius as starting one, which the proto's own grouping obscures by filing it under Steering.
+
+Everything else is in no group a third party can hold, in three kinds:
+
+- **Destructive or configuring** — `create_agent`, `update_agent`, `delete_agent`, `rename_agent`, `delete_conversation`, `upsert_mcp`, `delete_mcp`, `reconnect_mcp`, `set_active_model`, `kill`, `compact`, `reload`, `get_config`, and `extension`, which is opaque bytes for downstream products.
+- **Answering for someone else** — `reply_to_ask` and `reply_to_tool`. Both respond to a request routed to a human or a client, and a harness answering one is impersonation rather than capability.
+- **Credential reads** — `list_mcps`, whose payload is substantially the credential: `McpInfo.auth` is documented as the full `Authorization` header value, and `env` is the server's environment.
+
+Two messages are excluded by shape rather than by policy. `subscribe_events` and `subscribe_mcp_events` are streams, and a harness has no lifetime to hold one; there is nothing to decide about them.
+
+**A protocol read is a credential read until one field is dropped.** `AgentInfo.config` carries the full `AgentConfig` as JSON, and `AgentConfig.mcps` holds `McpServerConfig` by value — `env` and `auth` included. So `list_agents` hands a harness every MCP bearer token the user has, and `protocol:read` is unshippable as written. The fix is small and the existing consumer proves it is sufficient: `apps/tui/src/repl/delegate.rs` reads only `name` and `description` off `AgentInfo` and never touches `.config`, so the protocol door blanks that one field for harnesses. This is the harness boundary paying for a bill RFC 0193 deferred — secrets stored as literal values — and the redaction should be understood as holding the line until that is paid, not as settling it.
 
 ### Placement
 
-Where a harness runs is a deployment property, not a design one. The same ELF, with the same protocol calls, runs in the runtime or in a client that hosts the harness runtime; only the capability implementations differ, because only the machine differs.
+**Harnesses run in the runtime. The client never executes one.** The daemon's machine is the workspace, and a client — TUI, web, phone — is a view onto it. Where the files are is not a spectrum to be resolved per deployment: if the work is on machine M, the runtime for that work is on machine M, which is what one-runtime-per-user (RFC 0193) already implies.
 
-This dissolves the "client tool" category. The boundary was never about tenancy — RFC 0193 already settled that, with one runtime per user and multi-tenancy reached by running more of them — it was about *where the files are*:
+This dissolves the "client tool" category, and the reason to state it as a rule rather than a table is that the table gets the failure direction wrong. Treating client-hosted execution as one valid row among several is how `bash` ends up somewhere a web client cannot follow: a browser has no filesystem to offer, so a design that puts OS tools in the client hasn't chosen a deployment, it has decided which clients are permanently second-class. Today's rule — `crates/hooks/src/os/mod.rs:3`, "the daemon never executes these" — is exactly that decision, and it inverts here.
 
-| Deployment | Files live | Harness runs |
-|---|---|---|
-| Desktop | Same machine as the runtime | In the runtime; forwarding is pure overhead |
-| Cloud runtime, local work | On the user's machine | In the client that hosts it |
-| Cloud runtime, cloud workspace | Beside the runtime | In the runtime |
-
-Two of three want local execution, and today's rule — `crates/hooks/src/os/mod.rs:3`, "the daemon never executes these" — was written for the one case that doesn't and is paid by the two that do.
+A pleasant consequence of ruling out client-side hosting: the JIT question disappears. Hosting harnesses needs one and iOS forbids one, which would have been a hard ceiling on rich mobile clients. No client hosts, so no client needs a JIT, and a phone is a view for the same reason every other client is.
 
 **A client tool is one whose result requires a human to be present.** `ask_user` passes that test and stays a forwarded tool; `read` fails it and becomes a harness capability. The code has already half-found this line, special-casing `ask_user` out of the generic forward path at `crates/sdk/src/stream.rs:82`.
 
@@ -160,7 +215,7 @@ Forwarding also gets the granularity wrong. A harness invocation crosses the bou
 
 Two consequences worth stating. A thin client — the proto carries a `swift_prefix` option, so they are already in the picture — gains the same tools as the TUI, because tools no longer live in the client; today it cannot have `bash` by construction. And approval inverts: with execution in the runtime, prompts cross the wire instead of results, which is the rare path rather than the frequent one.
 
-Placement has a hard ceiling worth recording: hosting harnesses requires a JIT, and iOS forbids one. Rich clients that own files can host; thin clients cannot and do not need to, because a phone is a view rather than a place to run `bash`.
+What a client keeps is the work that genuinely needs it: rendering the stream, sending input, answering `ask_user`, and prompting for approvals.
 
 ### Bounding invocation chains
 
@@ -212,6 +267,13 @@ name = "search"
 source = "github:crabtalk/search@v0.1.0"
 sha256 = "9f2a…"
 capabilities = ["http", "clock"]
+hosts = ["bing.com", "search.brave.com", "html.duckduckgo.com", "mojeek.com", "*.wikipedia.org"]
+
+[[harnesses]]
+name = "os"
+source = "builtin"
+capabilities = ["fs", "exec"]
+root = "/Users/clearloop/code/crabtalk"
 
 [[harnesses]]
 name = "reminders"
@@ -221,6 +283,10 @@ capabilities = ["clock", "protocol:schedule", "protocol:send"]
 ```
 
 `AgentConfig.harnesses: Vec<HarnessConfig>` sits beside `mcps`. Tools land in the agent's tool list under their own names and schemas, read from the manifest at register time — the per-agent declaration is already the gate, so there is no meta-tool indirection to pay for.
+
+Two capabilities take an argument rather than only a name, and both follow the same rule: the grant is the argument. `hosts` bounds `http` and `root` bounds `fs` and `exec`, and either one absent grants nothing — `http` with no `hosts` reaches no host, `fs` with no `root` reaches no path. A grant that decays to a no-op when under-specified is the right failure direction for the capabilities whose whole point is a boundary.
+
+**One agent is one workspace.** With `root` on the declaration, working on a second project means a second agent rather than retargeting the first. That follows from agents owning their harnesses by value, and it is a product consequence rather than an implementation detail: it is visible in how someone works across repositories.
 
 **The daemon does not download code.** crabup fetches and verifies; the daemon loads what is present and errors if it is not. A daemon that fetches third-party code because an agent config named a URL is a daemon making a policy decision with a network connection.
 
@@ -274,7 +340,16 @@ The SDK's first obligation is the one the spike tripped over: **generate `_start
 
 Beneath that, the SDK builds on `rvtime-guest` for the ecall wrappers rather than reimplementing them; the spike confirmed the swap is free, producing a byte-identical image. What our SDK owns is everything harness-shaped above that line: the entry anchor, the `describe`/`call` scaffolding, and typed capability wrappers.
 
-One gap to design before the first external author hits it: **when a harness traps, its author currently gets `guest memory fault at 0x…` and nothing else.** We hold the ELF with relocations and function names in `module.program().functions`, so mapping a trap address back to a function name is available to us. A `log` capability plus symbolised traps is plausibly the difference between people building harnesses and people giving up.
+**What a guest may contain is decided by rvtime's control-flow integrity, and building the first real harness moved that line twice.** An indirect jump is legal only if the target is both named by a relocation and known as a function entry, which is a real guarantee and worth keeping — but it was reading half the evidence. Two gaps, found by porting the OS tools and fixed in `crabtalk/rvtime`:
+
+- **Address-taken functions were only recognised in data.** `indirect_targets` accepted `R_RISCV_64` — a pointer stored in a vtable or a jump table — and ignored `R_RISCV_PCREL_HI20`, the `auipc`/`addi` pair that materialises a function address into a register. That is how `core::fmt` builds the formatter pointers it calls through, so *any* guest that formats a non-trivial argument list trapped, along with `serde_json::Value` and every `Box<dyn Trait>`. Seventy such targets in the OS guest were invisible.
+- **Jump tables land inside a function, and the dispatch table cannot express that.** Eighty-four relocation-named addresses in the OS guest point into the middle of a function — LLVM's lowering for a dense `match`. The dispatch table maps an entry address to a compiled function, and a CLIF function has one entry, so a mid-function target has no slot it could ever fill. These are now lowered as local branches: the translator compares the computed address against the relocation-named addresses inside the current function and jumps to the matching block, falling through to the ordinary dispatch check when none match. The candidates are the same evidence the dispatch path already trusts, so nothing is widened.
+
+Both are reachable from a model's own output rather than exotic: an unknown field in a tool call takes serde into `IgnoredAny`, and a wrong argument type takes it into `peek_invalid_type`, and both are jump tables. Untreated they surfaced as a wild jump and a panic rather than an argument error.
+
+The lesson for the ABI is that guest-side avoidance was never a viable answer. Telling authors not to use `dyn` or `core::fmt` is not a contract anyone would build against, and the workaround this design *did* keep — deserializing tool arguments into structs rather than reading a `serde_json::Value` — survives only because it is better code anyway.
+
+One gap to design before the first external author hits it: **when a harness traps, its author currently gets `guest memory fault at 0x…` and nothing else.** We hold the ELF with relocations and function names in `module.program().functions`, so mapping a trap address back to a function name is available to us. A `log` capability plus symbolised traps is plausibly the difference between people building harnesses and people giving up. `BadIndirectTarget` now at least carries the address it refused — diagnosing the two gaps above took a probe matrix and a hand-written relocation dump because it did not — but an address is not yet a name.
 
 ### Layout
 
@@ -308,7 +383,17 @@ The bill: every protocol change now carries ABI weight; the queue acquires the o
 
 **`harness/search` becomes a guest.** It loses `mcp.rs`, its `mcp` feature, and the rmcp/axum/schemars dependencies with it. Its engines are `reqwest` and `scraper`, which are `std` and cannot cross into a `no_std` guest as they are — so search is not the first harness we ship. See [Unresolved questions](#unresolved-questions).
 
-**`crates/hooks/src/os` becomes a harness.** The daemon stops compiling in an opinion about what a filesystem tool is and installs one instead. State the hook holds per instance moves with it: the cwd is already supplied as `req.cwd` and becomes conversation state, and the read-before-edit set — a `Mutex<HashSet<PathBuf>>` that today dies with the client and diverges across two open windows — becomes harness storage keyed by conversation. `ask_user` stays a forwarded client tool.
+**`crates/hooks/src/os` becomes a harness, and it is the first one.** The daemon stops compiling in an opinion about what a filesystem tool is and installs one instead. It goes first rather than fourth because it is the only harness on this list that needs neither the queue nor a protocol grant — it is pure tool calls, no `on_wake`, no `on_notify`, no chain depth — and because the seam is already cut: `OsHook::execute(name, args) -> Result<String, String>` is the harness call signature already, down to the inner `Result` telling a failed tool from one that returned the word "error".
+
+Both pieces of state the hook holds are removed rather than moved.
+
+The cwd was fixed at construction from the client's own `current_dir`. It becomes a call parameter over a declared root — see [A root is not a working directory](#the-set). It does not come back over the wire: `SendMsg` tag 5 was removed with the note "the daemon does not read the user's filesystem," and that field should stay dead, because it carried the *client's* directory to a daemon that executed nothing — a different thing from the daemon owning a workspace.
+
+**Read-before-edit is dropped, not relocated.** A `Mutex<HashSet<PathBuf>>` (`crates/hooks/src/os/mod.rs:34`) records paths this instance has read, and `edit` refuses a path missing from it. It is redundant against the tool's own shape: `edit` is a find-and-replace requiring `old_string` to appear *exactly once* (`crates/hooks/src/os/edit.rs:60-68`), so an edit cannot be a blind overwrite — naming a unique string means already knowing the file's current content. Nor does the set catch staleness, since it stores no mtime and no hash; it catches only "you never looked," which uniqueness already catches wherever it matters. What remains is a guardrail against *the model* making a mistake, sitting a layer below where behaviour belongs — the same misplacement as a command deny list, and it goes for the same reason.
+
+`ask_user` stays a forwarded client tool, and so does `delegate` until it becomes a harness of its own. Everything else the TUI used to declare is gone from `StreamMsg.tools`, and `sub_agent_tools` is now empty — not as a restriction but as the reverse: a sub-agent's hands come from its own agent config, so the orchestrating client no longer has to offer anything for a delegated run to be able to do work. That is the condition RFC 0203 said it was waiting for.
+
+Images are built by `make harness` and installed under `HARNESSES_DIR`, which is derived from the configuration directory rather than written out, so pointing crabtalk elsewhere points harness lookup there too. The daemon reads that directory and never writes to it.
 
 **`delegate` becomes a harness, after the OS one.** RFC 0203's client-side implementation stands until then; see [Delegation as a harness](#delegation-as-a-harness) for why the order is not optional. Its sender-keyed sub-conversation mechanism is unchanged by the move.
 
@@ -316,13 +401,13 @@ The bill: every protocol change now carries ABI weight; the queue acquires the o
 
 ## Unresolved questions
 
-- **The capability set, and what is deliberately excluded.** `log`, `clock`, `random`, `http`, `storage`, plus the protocol is the starting shape. The exclusions need writing down alongside the inclusions, before any number is assigned.
-- **How protocol grants are grouped.** Thirty-six live message types is too many to declare one by one, and "the whole protocol" is too coarse to be a grant at all. Groups named by intent (`protocol:send`, `protocol:schedule`, `protocol:read`) are the shape; which message belongs to which group, and which belong to no group a third party can hold, is the work.
+- **How a harness becomes an event subscription target.** `SubscribeEventMsg` routes to an agent, so `on_notify` has no delivery path and `protocol:events` has nothing to grant. Whether the target becomes a sum type on the existing subscription or something else is undesigned, and it gates the third trigger kind in the queue.
+- **Whether `http` fans out.** `harness/search`'s aggregator runs five engines concurrently (`harness/search/src/aggregator.rs`), and a guest is synchronous — a literal port makes search five sequential fetches. Issuing many requests and then collecting them is the same pull shape as `arg_len`/`arg_read` and does not change the capability's name, so it is a shape question that can be answered when search is ported.
 - **What a real harness's own work costs.** The boundary is measured at ~12µs; the guest that produced that number has static buffers and no parser. An allocator, JSON, and actual logic are the author's cost rather than the design's, but a harness on the `preprocess` path is worth profiling before it is normal to put one there.
 - **Whether the protocol types can be shared with the guest.** prost supports `no_std` with alloc, so `crates/core`'s generated types could in principle be built for a guest, giving `harness/sdk` and `crates/client` the same message structs. Whether that module is separable from the rest of `wcore` is unexamined; the fallback is generating them twice from one `.proto`, which is duplication a build script can at least keep honest.
 - **Schedule granularity.** The finest interval the due-set will honour is a product decision, not a number to pick here.
 - **A logical epoch counter.** Not needed for correctness with a sorted due-set, but "harness X ran at epoch N" is a coordinate that makes replay, tests, and per-epoch rate limits legible. If we want it, it should be a counter incremented per drain rather than a wall-clock heartbeat.
-- **The first harness.** Something small with one capability, to exercise ABI, grants, traps, and distribution end to end without search's `no_std` port confusing the signal. Search follows; then cron, as the proof that protocol capabilities are real; then OS; then delegation, which depends on OS.
+- **Whether one agent is one workspace stays true.** `root` on the declaration is the simplest thing that works and it means a second project is a second agent. Whether that holds under real use — or wants a way to retarget an agent's root, which is a different design — is worth revisiting once the OS harness is in hand rather than guessed at now.
 - **Whether other policy follows delegation.** RFC 0189 handed compaction timing to clients on the same reasoning that handed them delegation, and the same argument — every client reimplements it, and a clientless run has none of it — applies unchanged. Left alone deliberately until a delegation harness exists to learn from.
 - **Approval.** With execution in the runtime, a capability grant that needs a human turns into a prompt crossing the wire. Where the answer is stored, and whether it is remembered per agent or per invocation, is undesigned.
 - **`harness/search`'s engines.** Either the host offers HTML querying as a capability (the host keeps `scraper`) or the guest gains a `no_std` parser. This is a real rewrite and it should not ride along inside the foundational change.
