@@ -32,6 +32,7 @@ crabtalk-cron = { path = "harness/cron", version = "0.0.23" }
 harness = { path = "crates/harness", package = "crabtalk-harness", version = "0.0.23" }
 crabtalk-harness-sdk = { path = "harness/sdk", version = "0.0.23" }
 crabtalk-harness-codegen = { path = "harness/codegen", version = "0.0.23" }
+crabtalk-harness-proto = { path = "harness/proto", version = "0.0.23" }
 
 # rvtime
 object = "0.40"
@@ -81,6 +82,10 @@ rand = "0.9"
 ratatui = "0.29"
 scraper = "0.22"
 prost = "0.13"
+# prost for guests: no_std with an allocator, same reason as serde above.
+prost_guest = { package = "prost", version = "0.13", default-features = false, features = [
+    "derive",
+] }
 prost-build = "0.13"
 reqwest = { version = "0.13", default-features = false, features = [
     "blocking",
