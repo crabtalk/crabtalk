@@ -1,9 +1,8 @@
 //! The provider crabtalk runs against when the embedder doesn't supply one.
 
 use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, BoxStream, ChatCompletionChunk,
-    ChatCompletionRequest, ChatCompletionResponse, Error, GeminiRequest, GeminiResponse, ModelList,
-    Provider, ProviderConfig,
+    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Error,
+    ModelList, Provider, ProviderConfig, anthropic, gemini,
 };
 use crabllm_provider::{RemoteProvider, make_client};
 use wcore::LlmConfig;
@@ -76,8 +75,8 @@ impl Provider for DefaultProvider {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         match self {
             Self::Gateway(p) => p.anthropic_messages(request).await,
             Self::Direct(p) => p.anthropic_messages(request).await,
@@ -86,8 +85,8 @@ impl Provider for DefaultProvider {
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         match self {
             Self::Gateway(p) => p.anthropic_messages_stream(request).await,
             Self::Direct(p) => p.anthropic_messages_stream(request).await,
@@ -97,8 +96,8 @@ impl Provider for DefaultProvider {
     async fn gemini_generate_content_stream(
         &self,
         model: &str,
-        request: &GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
+        request: &gemini::Request,
+    ) -> Result<BoxStream<'static, Result<gemini::Response, Error>>, Error> {
         match self {
             Self::Gateway(p) => p.gemini_generate_content_stream(model, request).await,
             Self::Direct(p) => p.gemini_generate_content_stream(model, request).await,

@@ -1,7 +1,7 @@
 //! Session persistence — one row per thread, plus the message and event
 //! streams keyed to it.
 
-use crate::sqlite::{SqliteStorage, schema::BEGIN_IMMEDIATE};
+use crate::sqlite::{SqliteStorage, convert, schema::BEGIN_IMMEDIATE};
 use anyhow::Result;
 use sqlx::Row;
 use wcore::{
@@ -69,7 +69,7 @@ impl SqliteStorage {
             return Ok(None);
         };
 
-        let meta = meta_from_row(&row)?;
+        let meta = convert::meta(&row)?;
         let archive: Option<String> = row.try_get("archive")?;
         let entry_jsons: Vec<String> = sqlx::query_scalar(
             "SELECT entry_json FROM session_messages
@@ -108,7 +108,7 @@ impl SqliteStorage {
         for row in rows {
             out.push(SessionSummary {
                 handle: SessionHandle::new(row.try_get::<String, _>("handle")?),
-                meta: meta_from_row(&row)?,
+                meta: convert::meta(&row)?,
             });
         }
         Ok(out)
@@ -164,7 +164,7 @@ impl SqliteStorage {
         let mut tx = self.pool.begin().await?;
         let next: i64 = next_idx(&mut tx, "session_events", h).await?;
         for (offset, event) in events.iter().enumerate() {
-            let (kind, ts) = kind_and_ts(event);
+            let (kind, ts) = convert::kind_and_ts(event);
             sqlx::query(
                 "INSERT INTO session_events (session_handle, idx, ts, kind, payload_json)
                  VALUES (?, ?, ?, ?, ?)",
@@ -286,30 +286,4 @@ async fn next_idx(
     // `table` is a literal from the two call sites, never user input.
     let sql = format!("SELECT COALESCE(MAX(idx) + 1, 0) FROM {table} WHERE session_handle = ?");
     sqlx::query_scalar(&sql).bind(handle).fetch_one(tx).await
-}
-
-fn meta_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ConversationMeta> {
-    Ok(ConversationMeta {
-        agent: row.try_get("agent")?,
-        created_by: row.try_get("created_by")?,
-        created_at: row.try_get("created_at")?,
-        title: row.try_get("title")?,
-        updated_at: row.try_get("updated_at")?,
-        message_count: row.try_get::<i64, _>("message_count")? as u64,
-        summary: row.try_get("summary")?,
-    })
-}
-
-/// Discriminator and timestamp for an event row. These mirror
-/// `EventLine`'s `#[serde(tag = "event", rename_all = "snake_case")]`, so
-/// `WHERE kind = 'done'` selects exactly the rows whose payload carries
-/// that tag. The match is exhaustive on purpose: a new variant should
-/// fail to compile here rather than land under a wrong `kind`.
-fn kind_and_ts(event: &EventLine) -> (&'static str, &str) {
-    match event {
-        EventLine::ToolStart { ts, .. } => ("tool_start", ts),
-        EventLine::ToolResult { ts, .. } => ("tool_result", ts),
-        EventLine::Done { ts, .. } => ("done", ts),
-        EventLine::UserSteered { ts, .. } => ("user_steered", ts),
-    }
 }

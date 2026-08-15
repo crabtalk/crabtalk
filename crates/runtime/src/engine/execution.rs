@@ -4,9 +4,7 @@ use super::Runtime;
 use crate::{Config, Conversation, Env, Hook};
 use anyhow::Result;
 use async_stream::stream;
-use crabllm_core::{
-    AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicSystem, ToolChoice,
-};
+use crabllm_core::{ToolChoice, anthropic};
 use futures_core::Stream;
 use futures_util::StreamExt;
 use tokio::sync::{mpsc, watch};
@@ -267,24 +265,24 @@ impl<C: Config> Runtime<C> {
             let system = if guest_agent.config.system_prompt.is_empty() {
                 None
             } else {
-                Some(AnthropicSystem::Text(guest_agent.config.system_prompt.clone()))
+                Some(anthropic::System::Text(guest_agent.config.system_prompt.clone()))
             };
 
-            let messages: Vec<AnthropicMessage> = conversation
+            let messages: Vec<anthropic::Message> = conversation
                 .history
                 .iter()
                 .map(|e| {
                     let msg = e.to_wire_message();
-                    AnthropicMessage {
+                    anthropic::Message {
                         role: msg.role.as_str().to_string(),
-                        content: AnthropicContent::Blocks(msg.content),
+                        content: anthropic::Content::Blocks(msg.content),
                     }
                 })
                 .collect();
 
             let (max_tokens, thinking) = guest_agent.config.token_budget();
 
-            let request = AnthropicRequest {
+            let request = anthropic::Request {
                 model: model_name.clone(),
                 messages,
                 max_tokens,
@@ -302,30 +300,30 @@ impl<C: Config> Runtime<C> {
             let mut reasoning = String::new();
             let mut truncated = false;
             {
-                use crabllm_core::{AnthropicStreamEvent, BlockDelta};
+
 
                 let mut stream = std::pin::pin!(self.model.stream(request));
                 let mut saw_stop = false;
                 while let Some(result) = stream.next().await {
                     match result {
-                        Ok(AnthropicStreamEvent::ContentBlockDelta { delta, .. }) => {
+                        Ok(anthropic::StreamEvent::ContentBlockDelta { delta, .. }) => {
                             match delta {
-                                BlockDelta::Text { text } => {
+                                anthropic::BlockDelta::Text { text } => {
                                     response_text.push_str(&text);
                                     yield AgentEvent::TextDelta(text);
                                 }
-                                BlockDelta::Thinking { thinking } => {
+                                anthropic::BlockDelta::Thinking { thinking } => {
                                     reasoning.push_str(&thinking);
                                     yield AgentEvent::ThinkingDelta(thinking);
                                 }
-                                BlockDelta::InputJson { .. } => {}
+                                anthropic::BlockDelta::InputJson { .. } => {}
                             }
                         }
-                        Ok(AnthropicStreamEvent::MessageDelta { delta, .. }) => {
+                        Ok(anthropic::StreamEvent::MessageDelta { delta, .. }) => {
                             saw_stop |= delta.stop_reason.is_some();
                             truncated |= delta.stop_reason.as_deref() == Some("max_tokens");
                         }
-                        Ok(AnthropicStreamEvent::MessageStop) => {
+                        Ok(anthropic::StreamEvent::MessageStop) => {
                             saw_stop = true;
                         }
                         Ok(_) => {}

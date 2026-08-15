@@ -4,7 +4,7 @@ use crate::llm::Provider;
 use crate::system::CrabTalk;
 use anyhow::{Context, Result};
 use hooks::default_crab;
-use mcp::{McpServerState, ServerStatus};
+use mcp::McpServerState;
 use std::collections::BTreeMap;
 use wcore::protocol::message::*;
 use wcore::storage::Storage;
@@ -179,7 +179,7 @@ fn mcp_info(
     let key = (agent.to_owned(), cfg.name.clone());
     let (status, tool_count, error) = match states.get(&key) {
         Some(state) => (
-            proto_status(state.status),
+            state.status.into(),
             state.tools.len() as u32,
             state.last_error.clone().unwrap_or_default(),
         ),
@@ -205,14 +205,5 @@ fn mcp_info(
         status: status.into(),
         error,
         tool_count,
-    }
-}
-
-fn proto_status(s: ServerStatus) -> McpStatus {
-    match s {
-        ServerStatus::Connecting => McpStatus::Connecting,
-        ServerStatus::Connected => McpStatus::Connected,
-        ServerStatus::Failed => McpStatus::Failed,
-        ServerStatus::Disconnected => McpStatus::Disconnected,
     }
 }

@@ -1,10 +1,7 @@
 //! Context compaction — summarize conversation history and replace it.
 
 use crate::model::HistoryEntry;
-use crabllm_core::{
-    AnthropicContent, AnthropicMessage, AnthropicRequest, AnthropicSystem, ContentBlock,
-    DEFAULT_MAX_TOKENS, Provider, ToolResultContent,
-};
+use crabllm_core::{ContentBlock, Provider, ToolResultContent, anthropic};
 
 pub(crate) const COMPACT_PROMPT: &str = include_str!("../../prompts/compact.md");
 
@@ -20,9 +17,9 @@ impl<P: Provider + 'static> super::Agent<P> {
 
         let mut messages = Vec::with_capacity(1 + history.len());
         if !self.config.system_prompt.is_empty() {
-            messages.push(AnthropicMessage {
+            messages.push(anthropic::Message {
                 role: "user".to_string(),
-                content: AnthropicContent::Text(format!(
+                content: anthropic::Content::Text(format!(
                     "Agent system prompt (preserve identity/profile info):\n{}",
                     self.config.system_prompt
                 )),
@@ -42,17 +39,17 @@ impl<P: Provider + 'static> super::Agent<P> {
                     text.push_str("... [truncated]");
                 }
             }
-            messages.push(AnthropicMessage {
+            messages.push(anthropic::Message {
                 role: msg.role.as_str().to_string(),
-                content: AnthropicContent::Blocks(msg.content),
+                content: anthropic::Content::Blocks(msg.content),
             });
         }
 
-        let request = AnthropicRequest {
+        let request = anthropic::Request {
             model: model_name,
             messages,
-            max_tokens: DEFAULT_MAX_TOKENS,
-            system: Some(AnthropicSystem::Text(prompt)),
+            max_tokens: anthropic::DEFAULT_MAX_TOKENS,
+            system: Some(anthropic::System::Text(prompt)),
             temperature: None,
             top_p: None,
             stream: None,

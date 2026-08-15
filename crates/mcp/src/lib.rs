@@ -31,5 +31,6 @@ pub use {
 
 pub mod bridge;
 pub mod client;
+mod convert;
 pub mod dispatch;
 pub mod handler;

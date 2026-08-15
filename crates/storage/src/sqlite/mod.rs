@@ -18,6 +18,7 @@ use std::{path::PathBuf, str::FromStr};
 
 mod agents;
 mod config;
+mod convert;
 mod schema;
 mod sessions;
 mod storage;

@@ -5,7 +5,6 @@
 //! between the user's own turn and a delegated sub-agent's.
 
 use crate::repl::delegate::Delegate;
-use sdk::tools::to_def;
 use wcore::{agent::AsTool, protocol::message::ToolDef};
 
 /// Tools for the user's own turn: OS tools, the ask-user modal, and
@@ -14,7 +13,7 @@ pub fn client_tools() -> Vec<ToolDef> {
     let mut tools = hooks::os::schemas();
     tools.push(sdk::tools::ask_user::schema());
     tools.push(Delegate::as_tool());
-    tools.into_iter().map(to_def).collect()
+    tools.into_iter().map(Into::into).collect()
 }
 
 /// Tools for a delegated sub-agent: hands, but no user and no further
@@ -28,5 +27,5 @@ pub fn client_tools() -> Vec<ToolDef> {
 /// enforced at dispatch. Scope a sub-agent by configuring the agent, not by
 /// editing this list.
 pub fn sub_agent_tools() -> Vec<ToolDef> {
-    hooks::os::schemas().into_iter().map(to_def).collect()
+    hooks::os::schemas().into_iter().map(Into::into).collect()
 }
