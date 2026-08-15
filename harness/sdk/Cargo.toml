@@ -21,10 +21,10 @@ alloc = ["dep:linked_list_allocator"]
 
 [dependencies]
 crabtalk-harness-codegen.workspace = true
+rvtime-guest.workspace = true
 
-# Only on the target a guest actually runs on: its host calls are RISC-V
-# inline asm, which no other architecture can even parse. Off-target, the
-# stubs in `abi.rs` stand in so authors can build and test natively.
+# The allocator is installed as *the* global allocator, which only the guest's
+# own target may do — off it, this crate is a library inside someone's tests and
+# std already has one.
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 linked_list_allocator = { workspace = true, optional = true }
-rvtime-guest.workspace = true

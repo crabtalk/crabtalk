@@ -1,9 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["apps/*", "crates/*", "crates/command/codegen", "harness/*"]
-# Guest programs build for RISC-V, not the host. The SDK they are built with
-# is an ordinary library, and stays a member.
-exclude = ["harness/spike"]
 
 [workspace.package]
 version = "0.0.23"
@@ -154,6 +151,11 @@ debug = false
 debug-assertions = false
 overflow-checks = false
 strip = true
+
+[patch.crates-io]
+# Until an rvtime release carries it: the published 0.0.1 cannot compile off
+# RISC-V, which is what a harness author needs to test their tools natively.
+rvtime-guest = { git = "https://github.com/crabtalk/rvtime", branch = "dev" }
 
 [workspace.metadata.conta]
 ignore = []

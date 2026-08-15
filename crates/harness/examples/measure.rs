@@ -6,7 +6,7 @@
 //! transfer, guest call, result read, teardown.
 //!
 //! ```sh
-//! cd harness/spike && cargo build --release && cd -
+//! cargo build --release -p spike --target riscv64imac-unknown-none-elf
 //! cargo run --release --example measure -p crabtalk-harness
 //! ```
 
@@ -19,7 +19,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const GUEST: &str = "harness/spike/target/riscv64imac-unknown-none-elf/release/spike";
+const GUEST: &str = "target/riscv64imac-unknown-none-elf/release/spike";
 const ROUNDS: usize = 1000;
 
 fn main() -> Result<()> {
@@ -35,7 +35,7 @@ fn main() -> Result<()> {
         .to_path_buf();
 
     let elf = fs::read(root.join(GUEST)).with_context(|| {
-        format!("build the guest first: cd harness/spike && cargo build --release ({GUEST})")
+        format!("build the guest first: cargo build --release -p spike --target riscv64imac-unknown-none-elf ({GUEST})")
     })?;
     println!("guest: {} bytes", elf.len());
 

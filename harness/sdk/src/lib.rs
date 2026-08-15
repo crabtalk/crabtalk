@@ -51,10 +51,10 @@ mod out;
 #[cfg(not(target_arch = "riscv64"))]
 pub mod test;
 
-// One boundary for the whole crate. Everything the guest's target has and the
-// host does not lives behind it — today only because the published
-// `rvtime-guest` cannot compile off RISC-V; once a release carries its own
-// stubs, `sys/stub.rs` goes away and this becomes a plain dependency.
+// One boundary for the whole crate: `riscv.rs` makes real host calls, and
+// `stub.rs` is a host a test can stand in for. The split is about behaviour
+// rather than compilability — `rvtime-guest` builds everywhere — and it is what
+// lets a harness author run their tools without a guest around them.
 #[cfg_attr(target_arch = "riscv64", path = "sys/riscv.rs")]
 #[cfg_attr(not(target_arch = "riscv64"), path = "sys/stub.rs")]
 mod sys;

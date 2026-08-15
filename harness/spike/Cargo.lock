@@ -59,8 +59,7 @@ dependencies = [
 [[package]]
 name = "rvtime-guest"
 version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90ee27d2b38b8f7ce753eb0e68e9c556bbdd38f85c11bca5886c1d13359854e0"
+source = "git+https://github.com/crabtalk/rvtime?branch=dev#733dcc67ae155c9c977febcfa69e80635cb653f6"
 
 [[package]]
 name = "scopeguard"

@@ -1,14 +1,8 @@
-# Standalone: excluded from the crabtalk workspace because it builds for RISC-V.
-[workspace]
-
 [package]
 name = "spike"
 version = "0.0.0"
 edition = "2024"
-
-[profile.release]
-panic = "abort"
-opt-level = 2
+publish = false
 
 [dependencies]
 # No allocator: static buffers keep the measurement about the boundary.

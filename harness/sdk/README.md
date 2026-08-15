@@ -69,32 +69,27 @@ mod tests {
 A capability with no stand-in — `http`, say — panics naming itself rather than
 returning a plausible zero, so a test that reached one says so.
 
-Because the build target below is pinned to the guest, tests need the host
-triple:
-
-```sh
-cargo test --target "$(rustc -vV | sed -n 's/^host: //p')"
-```
-
 ## Building
 
-Guests are `no_std` and compile for RISC-V. Both settings below are required —
-without `--emit-relocs` the host cannot tell which functions have their address
-taken, and rejects the image.
+The guest artifact is a RISC-V build. `--emit-relocs` is not optional: without
+it the host cannot tell which functions have their address taken, and rejects
+the image.
 
 ```toml
 # .cargo/config.toml
-[build]
-target = "riscv64imac-unknown-none-elf"
-
 [target.riscv64imac-unknown-none-elf]
 rustflags = ["-Clink-arg=--emit-relocs"]
 ```
 
 ```sh
 rustup target add riscv64imac-unknown-none-elf
-cargo build --release
+cargo build --release --target riscv64imac-unknown-none-elf
 ```
+
+Leaving `[build] target` unset is deliberate: the same crate builds for the host,
+which is what makes `cargo test` above work without a flag. Tests run constantly
+and the artifact is built occasionally, so the explicit `--target` belongs on the
+build.
 
 The resulting ELF is the whole artifact: one file, every platform.
 
