@@ -1,0 +1,109 @@
+//! What a harness invocation costs.
+//!
+//! RFC 0205 puts store-per-invocation on the critical path for every tool
+//! call, so this measures the parts that decide whether that holds: compiling
+//! an ELF cold and warm, and one full invocation — instantiate, argument
+//! transfer, guest call, result read, teardown.
+//!
+//! ```sh
+//! cd harness/spike && cargo build --release && cd -
+//! cargo run --release --example measure -p crabtalk-harness
+//! ```
+
+use anyhow::{Context, Result};
+use crabtalk_harness::Harness;
+use rvtime::{Config, Engine};
+use std::{
+    fs,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
+
+const GUEST: &str = "harness/spike/target/riscv64imac-unknown-none-elf/release/spike";
+const ROUNDS: usize = 1000;
+
+fn main() -> Result<()> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .context("no workspace root")?
+        .to_path_buf();
+
+    let elf = fs::read(root.join(GUEST)).with_context(|| {
+        format!("build the guest first: cd harness/spike && cargo build --release ({GUEST})")
+    })?;
+    println!("guest: {} bytes", elf.len());
+
+    let cache = std::env::temp_dir().join("crabtalk-harness-measure");
+    let _ = fs::remove_dir_all(&cache);
+
+    let cold = time(|| compile(&cache, &elf))?;
+    println!("compile (cold cache):  {cold:>10.3?}");
+
+    let warm = time(|| compile(&cache, &elf))?;
+    println!("compile (warm cache):  {warm:>10.3?}");
+
+    let harness = compile(&cache, &elf)?;
+    println!("describe:              {}", harness.describe()?);
+
+    // A payload in the range a real tool call carries.
+    let args = format!(r#"{{"query":"{}"}}"#, "x".repeat(256));
+    let echoed = harness.call(args.as_bytes())?;
+    assert!(echoed.contains(&args), "round trip lost the payload");
+
+    let mut samples = Vec::with_capacity(ROUNDS);
+    for _ in 0..ROUNDS {
+        let start = Instant::now();
+        harness.call(args.as_bytes())?;
+        samples.push(start.elapsed());
+    }
+    samples.sort();
+
+    println!("invocations:           {ROUNDS}");
+    println!("  min:                 {:>10.3?}", samples[0]);
+    println!("  p50:                 {:>10.3?}", samples[ROUNDS / 2]);
+    println!(
+        "  p99:                 {:>10.3?}",
+        samples[ROUNDS * 99 / 100]
+    );
+    println!("  max:                 {:>10.3?}", samples[ROUNDS - 1]);
+    println!(
+        "  mean:                {:>10.3?}",
+        samples.iter().sum::<Duration>() / ROUNDS as u32
+    );
+
+    // Instantiate maps a guest address space per invocation. If that cost
+    // tracked the configured size, a harness wanting room would pay for it on
+    // every call.
+    println!("p50 by guest memory size:");
+    for mib in [16u64, 64, 256, 1024] {
+        let mut config = Config::new();
+        config.cache_dir(&cache).memory_size(mib * 1024 * 1024);
+        let engine = Engine::new(&config)?;
+        let harness = Harness::load(&engine, &elf)?;
+
+        let mut samples = Vec::with_capacity(ROUNDS);
+        for _ in 0..ROUNDS {
+            let start = Instant::now();
+            harness.call(args.as_bytes())?;
+            samples.push(start.elapsed());
+        }
+        samples.sort();
+        println!("  {mib:>5} MiB:          {:>10.3?}", samples[ROUNDS / 2]);
+    }
+
+    Ok(())
+}
+
+fn compile(cache: &std::path::Path, elf: &[u8]) -> Result<Harness> {
+    let mut config = Config::new();
+    config.cache_dir(cache);
+    let engine = Engine::new(&config)?;
+    Harness::load(&engine, elf)
+}
+
+fn time<T>(f: impl FnOnce() -> Result<T>) -> Result<Duration> {
+    let start = Instant::now();
+    f()?;
+    Ok(start.elapsed())
+}

@@ -1,0 +1,13 @@
+[package]
+name = "crabtalk-harness"
+description = "Sandboxed harness host — runs guest ELFs under rvtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+rvtime.workspace = true
+tracing.workspace = true

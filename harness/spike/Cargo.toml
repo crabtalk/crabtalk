@@ -1,0 +1,15 @@
+# Standalone: excluded from the crabtalk workspace because it builds for RISC-V.
+[workspace]
+
+[package]
+name = "spike"
+version = "0.0.0"
+edition = "2021"
+
+[profile.release]
+panic = "abort"
+opt-level = 2
+
+[dependencies]
+# No allocator: static buffers keep the measurement about the boundary.
+rvtime-guest = { version = "0.0.1", default-features = false }

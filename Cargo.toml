@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["apps/*", "crates/*", "crates/command/codegen", "harness/*"]
+# Guest crates build for RISC-V, not the host.
+exclude = ["harness/spike"]
 
 [workspace.package]
 version = "0.0.23"
@@ -29,6 +31,10 @@ command = { path = "crates/command", package = "crabtalk-command", version = "0.
 command-codegen = { path = "crates/command/codegen", package = "crabtalk-command-codegen", version = "0.0.23" }
 search = { path = "harness/search", package = "crabtalk-search", version = "0.0.23", default-features = false }
 crabtalk-cron = { path = "harness/cron", version = "0.0.23" }
+harness = { path = "crates/harness", package = "crabtalk-harness", version = "0.0.23" }
+
+# rvtime
+rvtime = "0.0.1"
 
 # crabllm
 crabllm-core = "0.0.23"
