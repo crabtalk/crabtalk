@@ -25,7 +25,7 @@ compile_error!("features `native-tls` and `rustls` are mutually exclusive");
 compile_error!("one of `native-tls` or `rustls` must be enabled");
 
 pub use {
-    bridge::McpBridge,
+    bridge::{CallError, McpBridge},
     handler::{Fingerprint, McpEvent, McpHandler, McpServerState, ServerStatus, fingerprint},
 };
 

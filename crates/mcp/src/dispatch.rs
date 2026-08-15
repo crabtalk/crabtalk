@@ -5,7 +5,10 @@
 //! agents may declare different MCPs that both expose a tool with the
 //! same name without collision.
 
-use crate::McpHandler;
+use crate::{
+    McpHandler,
+    handler::{Fingerprint, peer_id},
+};
 use serde::Deserialize;
 use std::collections::BTreeSet;
 
@@ -27,22 +30,21 @@ pub async fn dispatch_mcp(
         serde_json::from_str(args).map_err(|e| format!("invalid arguments: {e}"))?;
 
     let allowed = handler.allowed(agent, allowed_mcp_names);
-    let bridge = handler.bridge().await;
 
     // Try exact call first. First declarer wins on name collisions.
     if !input.name.is_empty() {
-        let Some((peer_id, _)) = allowed.iter().find(|(_, n)| n == &input.name) else {
+        let Some((fp, _)) = allowed.iter().find(|(_, n)| n == &input.name) else {
             return Err(format!("tool not available: {}", input.name));
         };
         let tool_args = input.args.unwrap_or_default();
-        return bridge.call(peer_id, &input.name, &tool_args).await;
+        return handler.call(*fp, &input.name, &tool_args).await;
     }
 
     // No exact name — fuzzy / list. Pull tool defs only for peers the
     // agent has access to, then filter by query.
-    let unique_peers: BTreeSet<String> = allowed.iter().map(|(p, _)| p.clone()).collect();
-    let peer_ids: Vec<String> = unique_peers.into_iter().collect();
-    let tools = bridge.tools_for(&peer_ids).await;
+    let unique_peers: BTreeSet<Fingerprint> = allowed.iter().map(|(fp, _)| *fp).collect();
+    let peer_ids: Vec<String> = unique_peers.into_iter().map(peer_id).collect();
+    let tools = handler.bridge().await.tools_for(&peer_ids).await;
     let query = input.name.to_lowercase();
     let matches: Vec<String> = tools
         .iter()

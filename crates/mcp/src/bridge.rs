@@ -10,6 +10,24 @@ use anyhow::Result;
 use tokio::sync::Mutex;
 use wcore::model::Tool;
 
+/// Why a tool call failed.
+///
+/// Only `Transport` says anything about the peer's health — a rejected
+/// call means the connection worked and the far side said no.
+#[derive(Debug)]
+pub enum CallError {
+    Rejected(String),
+    Transport(String),
+}
+
+impl std::fmt::Display for CallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rejected(msg) | Self::Transport(msg) => f.write_str(msg),
+        }
+    }
+}
+
 /// A connected MCP server peer with its tool definitions.
 struct ConnectedPeer {
     id: String,
@@ -107,15 +125,17 @@ impl McpBridge {
         peer_id: &str,
         tool_name: &str,
         arguments: &str,
-    ) -> Result<String, String> {
+    ) -> Result<String, CallError> {
         let mut peers = self.peers.lock().await;
         let Some(peer) = peers.iter_mut().find(|p| p.id == peer_id) else {
-            return Err(format!("mcp peer '{peer_id}' not connected"));
+            return Err(CallError::Rejected(format!(
+                "mcp peer '{peer_id}' not connected"
+            )));
         };
         if !peer.tools.iter().any(|t| t.function.name == tool_name) {
-            return Err(format!(
+            return Err(CallError::Rejected(format!(
                 "mcp tool '{tool_name}' not exported by peer '{peer_id}'"
-            ));
+            )));
         }
 
         let args: Option<serde_json::Map<String, serde_json::Value>> = if arguments.is_empty() {
@@ -123,7 +143,7 @@ impl McpBridge {
         } else {
             Some(
                 serde_json::from_str(arguments)
-                    .map_err(|e| format!("invalid tool arguments: {e}"))?,
+                    .map_err(|e| CallError::Rejected(format!("invalid tool arguments: {e}")))?,
             )
         };
 
@@ -131,12 +151,12 @@ impl McpBridge {
             Ok(result) => {
                 let text = extract_text(&result.content);
                 if result.is_error == Some(true) {
-                    Err(format!("mcp tool error: {text}"))
+                    Err(CallError::Rejected(format!("mcp tool error: {text}")))
                 } else {
                     Ok(text)
                 }
             }
-            Err(e) => Err(format!("mcp call failed: {e}")),
+            Err(e) => Err(CallError::Transport(format!("mcp call failed: {e}"))),
         }
     }
 }
