@@ -9,5 +9,9 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+object.workspace = true
 rvtime.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

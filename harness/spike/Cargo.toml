@@ -6,4 +6,4 @@ publish = false
 
 [dependencies]
 # No allocator: static buffers keep the measurement about the boundary.
-crabtalk-harness-sdk = { path = "../sdk", default-features = false }
+crabtalk-harness-sdk = { path = "../sdk" }

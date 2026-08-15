@@ -34,8 +34,10 @@ crabtalk-harness-sdk = { path = "harness/sdk", version = "0.0.23" }
 crabtalk-harness-codegen = { path = "harness/codegen", version = "0.0.23" }
 
 # rvtime
+object = "0.40"
 rvtime = "0.0.1"
 rvtime-guest = { version = "0.0.1", default-features = false }
+linked_list_allocator = "0.10"
 
 # crabllm
 crabllm-core = "0.0.23"

@@ -23,6 +23,11 @@ const GUEST: &str = "target/riscv64imac-unknown-none-elf/release/spike";
 const ROUNDS: usize = 1000;
 
 fn main() -> Result<()> {
+    // Only the guest's own log; cranelift is chatty at info.
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("warn,harness=info"))
+        .init();
+
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(|p| p.parent())
@@ -44,7 +49,12 @@ fn main() -> Result<()> {
     println!("compile (warm cache):  {warm:>10.3?}");
 
     let harness = compile(&cache, &elf)?;
-    println!("describe:              {}", harness.describe()?);
+    println!("manifest:              {}", harness.manifest());
+
+    println!(
+        "heap probe:            {:?}",
+        harness.call("probe", b"".to_vec())?
+    );
 
     // A payload in the range a real tool call carries.
     let args = format!(r#"{{"query":"{}"}}"#, "x".repeat(256));
@@ -56,6 +66,15 @@ fn main() -> Result<()> {
         "failure path:          {:?}",
         harness.call("boom", b"".to_vec())?.unwrap_err()
     );
+
+    let mut chatty = Vec::with_capacity(ROUNDS);
+    for _ in 0..ROUNDS {
+        let start = Instant::now();
+        let _ = harness.call("chatty", b"".to_vec())?;
+        chatty.push(start.elapsed());
+    }
+    chatty.sort();
+    println!("  +100 host calls:     {:>10.3?}", chatty[ROUNDS / 2]);
 
     let mut samples = Vec::with_capacity(ROUNDS);
     for _ in 0..ROUNDS {

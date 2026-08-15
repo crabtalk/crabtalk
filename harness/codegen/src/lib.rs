@@ -12,6 +12,8 @@ use syn::{
     parse_macro_input,
 };
 
+mod schema;
+
 /// Default size of the argument and result buffers, in bytes.
 ///
 /// This is paid on every invocation, not once: the buffers live in `.bss`,
@@ -27,12 +29,12 @@ const DEFAULT_PARAMETERS: &str = r#"{"type":"object"}"#;
 /// `describe` cannot collide with the exports the ABI reserves.
 const TOOL_PREFIX: &str = "crabtalk_tool_";
 
-struct Args {
+struct Config {
     capabilities: Vec<String>,
     buffer: usize,
 }
 
-impl Parse for Args {
+impl Parse for Config {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut capabilities = Vec::new();
         let mut buffer = DEFAULT_BUFFER;
@@ -76,7 +78,7 @@ impl Parse for Args {
             }
         }
 
-        Ok(Args {
+        Ok(Config {
             capabilities,
             buffer,
         })
@@ -89,6 +91,17 @@ struct Tool {
     name: String,
     description: String,
     parameters: String,
+    args: Args,
+}
+
+/// Where a tool's schema comes from. The handler always receives the raw
+/// blob — parsing is the author's choice, and not every harness wants a JSON
+/// parser linked into it.
+enum Args {
+    /// No declared shape; the schema is an open object.
+    Raw,
+    /// A struct declared beside the tool, read for its fields.
+    Struct(syn::Ident),
 }
 
 /// Declare a harness from a module of tool functions.
@@ -111,7 +124,7 @@ struct Tool {
 /// its arguments.
 #[proc_macro_attribute]
 pub fn harness(args: TokenStream, item: TokenStream) -> TokenStream {
-    let args = parse_macro_input!(args as Args);
+    let config = parse_macro_input!(args as Config);
     let mut module = parse_macro_input!(item as ItemMod);
 
     let tools = match collect(&mut module) {
@@ -119,9 +132,12 @@ pub fn harness(args: TokenStream, item: TokenStream) -> TokenStream {
         Err(error) => return error.to_compile_error().into(),
     };
 
-    let description = describe(&args, &tools);
+    let description = describe(&config, &tools);
+    let description_len = description.len();
+    let description_bytes =
+        syn::LitByteStr::new(description.as_bytes(), proc_macro2::Span::call_site());
     let module_ident = &module.ident;
-    let buffer = args.buffer;
+    let buffer = config.buffer;
 
     // One export per tool, so the host resolves it the way it resolves any
     // other symbol. An index would couple the two sides by declaration order
@@ -130,6 +146,7 @@ pub fn harness(args: TokenStream, item: TokenStream) -> TokenStream {
         let ident = &tool.ident;
         let symbol = syn::Ident::new(&format!("{TOOL_PREFIX}{}", tool.name), ident.span());
         let doc = format!("Tool `{}`. {}", tool.name, tool.description);
+
         quote! {
             #[doc = #doc]
             #[unsafe(no_mangle)]
@@ -169,9 +186,12 @@ pub fn harness(args: TokenStream, item: TokenStream) -> TokenStream {
         static mut _CRABTALK_ARGS: [u8; _CRABTALK_BUFFER] = [0; _CRABTALK_BUFFER];
         static mut _CRABTALK_OUT: [u8; _CRABTALK_BUFFER] = [0; _CRABTALK_BUFFER];
 
-        /// What this harness is. Built at compile time, so reading it costs
-        /// the host one call and the guest no work.
-        const _CRABTALK_DESCRIPTION: &str = #description;
+        /// What this harness is, as a section rather than an export: the host
+        /// reads it out of the ELF without compiling or running anything, so
+        /// learning what a harness claims never means executing it.
+        #[used]
+        #[unsafe(link_section = ".crabtalk.abi")]
+        static _CRABTALK_ABI: [u8; #description_len] = *#description_bytes;
 
         /// The ELF entry point. Never called: it exists so `--gc-sections`
         /// keeps the exports, which nothing else in the image references.
@@ -181,33 +201,20 @@ pub fn harness(args: TokenStream, item: TokenStream) -> TokenStream {
             unsafe {
                 ::core::ptr::write_volatile(
                     &raw mut ANCHOR,
-                    describe as *const () as u64
-                        ^ init as *const () as u64
+                    _CRABTALK_ABI.as_ptr() as u64
                         #(#anchors)*,
                 );
             }
         }
 
-        /// Hands the guest the heap the host committed for it.
-        #[unsafe(no_mangle)]
-        pub extern "C" fn init(start: u64, size: u64) -> u64 {
-            ::crabtalk_harness_sdk::init_heap(start, size);
-            0
-        }
-
-        /// ABI version, tools, and the capabilities this harness wants.
-        #[unsafe(no_mangle)]
-        pub extern "C" fn describe() -> ::crabtalk_harness_sdk::Buf {
-            ::crabtalk_harness_sdk::Buf::new(_CRABTALK_DESCRIPTION.as_bytes())
-        }
 
         #(#exports)*
     }
     .into()
 }
 
-/// Pull the tools out of the module, stripping the attributes that only exist
-/// to be read here.
+/// Pull the tools out of the module, along with the structs that describe
+/// their arguments, stripping the attributes that only exist to be read here.
 fn collect(module: &mut ItemMod) -> syn::Result<Vec<Tool>> {
     let Some((_, items)) = module.content.as_mut() else {
         return Err(syn::Error::new_spanned(
@@ -232,27 +239,47 @@ fn collect(module: &mut ItemMod) -> syn::Result<Vec<Tool>> {
         ));
     }
 
+    // Second pass: a tool taking a struct gets its schema from that struct's
+    // fields, and the struct gets the derive that lets it be deserialized. The
+    // author writes neither.
+    for item in items.iter_mut() {
+        let Item::Struct(item) = item else { continue };
+        let Some(tool) = tools
+            .iter_mut()
+            .find(|tool| matches!(&tool.args, Args::Struct(ty) if ty == &item.ident))
+        else {
+            continue;
+        };
+        tool.parameters = schema::object(item)?;
+        // The struct is an interface declaration: read for its shape, never
+        // constructed. Saying so beats an author silencing the warning.
+        item.attrs.push(syn::parse_quote!(#[allow(dead_code)]));
+    }
+
+    for tool in &tools {
+        if let Args::Struct(ty) = &tool.args
+            && tool.parameters == DEFAULT_PARAMETERS
+        {
+            return Err(syn::Error::new_spanned(
+                ty,
+                format!(
+                    "`{ty}` is not declared in this module — a tool's argument struct has to live \
+                     beside it so the schema can be derived from its fields"
+                ),
+            ));
+        }
+    }
+
     Ok(tools)
 }
 
 fn tool(function: &mut ItemFn) -> syn::Result<Tool> {
-    let mut description = String::new();
+    let description = docs(&function.attrs);
+    let args = args_of(function)?;
     let mut parameters = None;
 
     for attribute in &function.attrs {
-        if attribute.path().is_ident("doc") {
-            if let syn::Meta::NameValue(pair) = &attribute.meta
-                && let Expr::Lit(ExprLit {
-                    lit: Lit::Str(line),
-                    ..
-                }) = &pair.value
-            {
-                if !description.is_empty() {
-                    description.push(' ');
-                }
-                description.push_str(line.value().trim());
-            }
-        } else if attribute.path().is_ident("params") {
+        if attribute.path().is_ident("params") {
             parameters = Some(attribute.parse_args::<LitStr>()?.value());
         }
     }
@@ -261,7 +288,6 @@ fn tool(function: &mut ItemFn) -> syn::Result<Tool> {
     // compiler as an unknown attribute.
     function.attrs.retain(|a| !a.path().is_ident("params"));
 
-    let description = description.trim().to_owned();
     if description.is_empty() {
         return Err(syn::Error::new_spanned(
             &function.sig.ident,
@@ -273,13 +299,60 @@ fn tool(function: &mut ItemFn) -> syn::Result<Tool> {
         ident: function.sig.ident.clone(),
         name: function.sig.ident.to_string(),
         description,
+        args,
         parameters: parameters.unwrap_or_else(|| DEFAULT_PARAMETERS.to_owned()),
     })
 }
 
+/// Where a tool's schema comes from: `#[args(Shape)]` names a struct declared
+/// beside it. The handler still receives bytes.
+fn args_of(function: &mut ItemFn) -> syn::Result<Args> {
+    let mut declared = None;
+    for attribute in &function.attrs {
+        if attribute.path().is_ident("args") {
+            declared = Some(attribute.parse_args::<syn::Ident>()?);
+        }
+    }
+    function.attrs.retain(|a| !a.path().is_ident("args"));
+
+    match function.sig.inputs.first() {
+        Some(syn::FnArg::Typed(first)) if matches!(&*first.ty, syn::Type::Reference(r) if matches!(&*r.elem, syn::Type::Slice(_))) =>
+            {}
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &function.sig,
+                "a tool takes the argument blob as `&[u8]` and an `&mut Out` to write its result \
+                 into — declare its shape with #[args(Struct)] if it has one",
+            ));
+        }
+    }
+
+    Ok(declared.map_or(Args::Raw, Args::Struct))
+}
+
+/// Join a doc comment into one line — the description is a JSON string.
+pub(crate) fn docs(attrs: &[syn::Attribute]) -> String {
+    let mut description = String::new();
+    for attribute in attrs {
+        if attribute.path().is_ident("doc")
+            && let syn::Meta::NameValue(pair) = &attribute.meta
+            && let Expr::Lit(ExprLit {
+                lit: Lit::Str(line),
+                ..
+            }) = &pair.value
+        {
+            if !description.is_empty() {
+                description.push(' ');
+            }
+            description.push_str(line.value().trim());
+        }
+    }
+    description.trim().to_owned()
+}
+
 /// Build the description JSON at compile time.
-fn describe(args: &Args, tools: &[Tool]) -> String {
-    let capabilities = args
+fn describe(config: &Config, tools: &[Tool]) -> String {
+    let capabilities = config
         .capabilities
         .iter()
         .map(|c| format!("\"{}\"", escape(c)))
@@ -305,7 +378,7 @@ fn describe(args: &Args, tools: &[Tool]) -> String {
 /// Minimal JSON string escaping — doc comments are prose and can carry
 /// anything, and a stray quote would produce a description the host cannot
 /// parse at all.
-fn escape(text: &str) -> String {
+pub(crate) fn escape(text: &str) -> String {
     let mut escaped = String::with_capacity(text.len());
     for character in text.chars() {
         match character {
