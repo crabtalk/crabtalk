@@ -1,9 +1,0 @@
-[package]
-name = "spike"
-version = "0.0.0"
-edition = "2024"
-publish = false
-
-[dependencies]
-# No allocator: static buffers keep the measurement about the boundary.
-crabtalk-harness-sdk = { path = "../sdk" }

@@ -13,6 +13,6 @@ name = "os"
 path = "src/bin/main.rs"
 
 [dependencies]
-crabtalk-harness-sdk.workspace = true
+berm-sdk.workspace = true
 serde_guest.workspace = true
 serde_json_guest.workspace = true

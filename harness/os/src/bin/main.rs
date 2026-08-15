@@ -12,7 +12,7 @@
 //! Arguments are deserialized into structs rather than read off a
 //! `serde_json::Value`. That is not a style preference: `Value` reaches the
 //! guest's only unsupported construct, dynamic dispatch, and traps. See
-//! `docs/src/rfcs/0205-harness.md`.
+//! `docs/src/rfcs/0205-berm.md`.
 
 // `no_std` and `no_main` are the guest's shape. Off its target this is an
 // ordinary binary so `cargo test` can run the tools below natively.
@@ -24,11 +24,11 @@ extern crate alloc;
 // one result, so this harness needs more room than the SDK's default. The
 // buffers live in `.bss` and are zeroed per invocation, which against an LLM
 // round trip is not a cost worth trading a truncated read for.
-#[crabtalk_harness_sdk::harness(capabilities = ["fs", "exec"], buffer = 262144)]
+#[berm_sdk::harness(capabilities = ["fs", "exec"], buffer = 262144)]
 mod tools {
     use alloc::{collections::BTreeMap, string::String, vec::Vec};
+    use berm_sdk::{Failed, Out, exec, fs};
     use core::fmt::Write;
-    use crabtalk_harness_sdk::{Failed, Out, exec, fs};
     use serde_guest::Deserialize;
 
     /// Lines returned per read when the caller does not say.

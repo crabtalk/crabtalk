@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/*", "crates/*", "crates/command/codegen", "harness/*"]
+members = ["apps/*", "berm/*", "crates/*", "crates/command/codegen", "harness/*"]
 
 [workspace.package]
 version = "0.0.23"
@@ -29,10 +29,11 @@ command = { path = "crates/command", package = "crabtalk-command", version = "0.
 command-codegen = { path = "crates/command/codegen", package = "crabtalk-command-codegen", version = "0.0.23" }
 search = { path = "harness/search", package = "crabtalk-search", version = "0.0.23", default-features = false }
 crabtalk-cron = { path = "harness/cron", version = "0.0.23" }
-harness = { path = "crates/harness", package = "crabtalk-harness", version = "0.0.23" }
-crabtalk-harness-sdk = { path = "harness/sdk", version = "0.0.23" }
-crabtalk-harness-codegen = { path = "harness/codegen", version = "0.0.23" }
-crabtalk-harness-proto = { path = "harness/proto", version = "0.0.23" }
+berm = { path = "berm/engine", version = "0.0.23" }
+crabtalk-berm = { path = "crates/berm", version = "0.0.23" }
+berm-sdk = { path = "berm/sdk", version = "0.0.23" }
+berm-codegen = { path = "berm/codegen", version = "0.0.23" }
+crabtalk-berm-proto = { path = "harness/proto", version = "0.0.23" }
 
 # rvtime
 object = "0.40"
