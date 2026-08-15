@@ -11,7 +11,7 @@ use wcore::{agent::AsTool, protocol::message::ToolDef};
 /// delegate.
 pub fn client_tools() -> Vec<ToolDef> {
     let mut tools = hooks::os::schemas();
-    tools.push(sdk::tools::ask_user::schema());
+    tools.push(client::tools::ask_user::schema());
     tools.push(Delegate::as_tool());
     tools.into_iter().map(Into::into).collect()
 }

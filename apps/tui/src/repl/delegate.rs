@@ -8,7 +8,7 @@
 //! own tool set.
 
 use crate::repl::tools::sub_agent_tools;
-use sdk::{ConnectionInfo, StreamAccumulator};
+use client::{ConnectionInfo, StreamAccumulator};
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::mpsc;

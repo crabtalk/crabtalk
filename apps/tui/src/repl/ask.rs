@@ -4,6 +4,7 @@
 //! Tab/Shift+Tab switches between them. A final "Submit" tab confirms.
 
 use crate::tui;
+use client::tools::ask_user::Question;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -11,7 +12,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Tabs},
 };
-use sdk::tools::ask_user::Question;
 use std::collections::{BTreeSet, HashMap};
 
 // ── Action returned by handle_key ────────────────────────────────

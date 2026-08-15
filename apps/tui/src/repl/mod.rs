@@ -8,6 +8,7 @@ use crate::repl::{
     render::MarkdownRenderer,
 };
 use anyhow::Result;
+use client::{ConnectionInfo, OutputChunk, Transport};
 use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
 use futures_util::StreamExt;
 use ratatui::{
@@ -16,7 +17,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
-use sdk::{ConnectionInfo, OutputChunk, Transport};
 use std::{
     collections::{HashSet, VecDeque},
     path::PathBuf,
@@ -520,7 +520,7 @@ fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<
     };
     app.streaming = true;
     app.renderer.start_waiting();
-    sdk::spawn_stream(app.conn_info.clone(), req)
+    client::spawn_stream(app.conn_info.clone(), req)
 }
 
 /// Fold a fan-out update into the chat buffer. `Started` seeds the task

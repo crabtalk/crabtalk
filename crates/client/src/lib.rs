@@ -1,4 +1,4 @@
-//! Crabtalk SDK — sugar layer over `crates/transport`. Apps (TUI,
+//! Crabtalk client — sugar layer over `crates/transport`. Apps (TUI,
 //! telegram, …) connect to the daemon through this crate.
 
 use std::{collections::HashSet, path::Path, sync::Arc};

@@ -830,9 +830,9 @@ dependencies = [
  "chrono",
  "clap",
  "console 0.15.11",
+ "crabtalk-client",
  "crabtalk-core",
  "crabtalk-hooks",
- "crabtalk-sdk",
  "crabtalk-transport",
  "crossterm 0.28.1",
  "dialoguer",
@@ -849,6 +849,24 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "crabtalk-client"
+version = "0.0.23"
+dependencies = [
+ "anyhow",
+ "crabtalk-core",
+ "crabtalk-transport",
+ "dirs",
+ "futures-core",
+ "futures-util",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -911,9 +929,9 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "crabtalk-client",
  "crabtalk-command",
  "crabtalk-core",
- "crabtalk-sdk",
  "cron",
  "serde",
  "tokio",
@@ -1014,24 +1032,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabtalk-sdk"
-version = "0.0.23"
-dependencies = [
- "anyhow",
- "crabtalk-core",
- "crabtalk-transport",
- "dirs",
- "futures-core",
- "futures-util",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "crabtalk-search"
 version = "0.0.23"
 dependencies = [
@@ -1081,9 +1081,9 @@ version = "0.0.23"
 dependencies = [
  "anyhow",
  "clap",
+ "crabtalk-client",
  "crabtalk-command",
  "crabtalk-core",
- "crabtalk-sdk",
  "crabtalk-transport",
  "crossterm 0.28.1",
  "futures-util",

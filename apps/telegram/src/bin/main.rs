@@ -14,7 +14,7 @@ struct TelegramApp;
 
 impl TelegramApp {
     async fn run(&self) -> anyhow::Result<()> {
-        let conn_info = sdk::ConnectionInfo::platform_default()?;
+        let conn_info = client::ConnectionInfo::platform_default()?;
         let config_path = config_path();
         let config = TelegramConfig::load(&config_path)?;
         crabtalk_telegram::serve::run(conn_info, &config).await

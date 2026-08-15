@@ -4,7 +4,7 @@
 use crate::entry::{CronEntry, is_quiet};
 use crate::store::Store;
 use anyhow::Result;
-use sdk::ConnectionInfo;
+use client::ConnectionInfo;
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},

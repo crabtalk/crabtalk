@@ -1,6 +1,6 @@
 [package]
-name = "crabtalk-sdk"
-description = "Gateway library for Crabtalk platform adapters"
+name = "crabtalk-client"
+description = "Client library for the Crabtalk daemon"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
