@@ -54,31 +54,12 @@ impl<C: Config> Runtime<C> {
             .collect()
     }
 
-    // --- Ephemeral agents ---
-
-    pub async fn add_ephemeral(&self, config: AgentConfig) {
-        let (name, agent) = self.build_agent(config);
-        self.ephemeral_agents.write().await.insert(name, agent);
+    pub(crate) fn resolve_agent(&self, name: &str) -> Option<Agent<C::Provider>> {
+        self.agents.read().get(name).cloned()
     }
 
-    pub async fn remove_ephemeral(&self, name: &str) {
-        self.ephemeral_agents.write().await.remove(name);
-    }
-
-    pub(crate) async fn resolve_agent(&self, name: &str) -> Option<Agent<C::Provider>> {
-        let persistent = self.agents.read().get(name).cloned();
-        if persistent.is_some() {
-            return persistent;
-        }
-        self.ephemeral_agents.read().await.get(name).cloned()
-    }
-
-    pub(crate) async fn has_agent(&self, name: &str) -> bool {
-        let has_persistent = self.agents.read().contains_key(name);
-        if has_persistent {
-            return true;
-        }
-        self.ephemeral_agents.read().await.contains_key(name)
+    pub(crate) fn has_agent(&self, name: &str) -> bool {
+        self.agents.read().contains_key(name)
     }
 
     // --- Storage-backed CRUD ---
@@ -132,8 +113,50 @@ impl<C: Config> Runtime<C> {
         let removed = storage.delete_agent(&existing.id).await?;
         if removed {
             self.remove_agent(name);
+            // Sessions outlive the registry entry unless they are cascaded: they
+            // are found by `meta.agent`, so the next agent created under this
+            // name would resume a stranger's conversation.
+            let purged = self.drop_sessions_of(name).await?;
+            if purged > 0 {
+                tracing::info!("purged {purged} session(s) of deleted agent '{name}'");
+            }
         }
         Ok(removed)
+    }
+
+    /// Delete every persisted session belonging to `agent`.
+    async fn drop_sessions_of(&self, agent: &str) -> Result<usize> {
+        let storage = self.storage();
+        let mut removed = 0;
+        for summary in storage.list_sessions().await? {
+            if summary.meta.agent != agent {
+                continue;
+            }
+            if storage.delete_session(&summary.handle).await? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+
+    /// Re-point every persisted session of `from` at `to`.
+    ///
+    /// A session is located by `meta.agent`, and [`Runtime::load`] refuses one
+    /// whose agent is not registered — so without this a renamed agent both
+    /// loses its history and cannot resume what it still has.
+    async fn reassign_sessions(&self, from: &str, to: &str) -> Result<usize> {
+        let storage = self.storage();
+        let mut moved = 0;
+        for summary in storage.list_sessions().await? {
+            if summary.meta.agent != from {
+                continue;
+            }
+            let mut meta = summary.meta;
+            meta.agent = to.to_owned();
+            storage.update_session_meta(&summary.handle, &meta).await?;
+            moved += 1;
+        }
+        Ok(moved)
     }
 
     /// Rename a persisted agent. Updates storage, re-registers under the
@@ -158,6 +181,10 @@ impl<C: Config> Runtime<C> {
             .await?
             .ok_or_else(|| anyhow::anyhow!("agent '{old_name}' not found"))?;
         storage.rename_agent(&existing.id, new_name).await?;
+        let moved = self.reassign_sessions(old_name, new_name).await?;
+        if moved > 0 {
+            tracing::info!("re-pointed {moved} session(s) from '{old_name}' to '{new_name}'");
+        }
         self.remove_agent(old_name);
         self.load_and_register(new_name).await
     }

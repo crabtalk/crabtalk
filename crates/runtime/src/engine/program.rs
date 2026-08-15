@@ -46,7 +46,7 @@ impl<C: Config> Runtime<C> {
         correlation_id: u64,
     ) -> impl Stream<Item = AgentEvent> + 'a {
         stream! {
-            let Some(agent) = self.resolve_agent(agent_name).await else {
+            let Some(agent) = self.resolve_agent(agent_name) else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("agent '{agent_name}' not registered"),
                 ));

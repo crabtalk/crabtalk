@@ -1,4 +1,4 @@
-//! Inbound message types for chat-platform apps (telegram, wechat, …).
+//! Inbound message types for chat-platform apps (telegram, …).
 
 /// A message received from a chat platform.
 #[derive(Debug, Clone)]

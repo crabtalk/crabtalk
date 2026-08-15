@@ -4,7 +4,7 @@
 //! Used by [`super::AgentBuilder`] to construct an [`super::Agent`].
 
 use crate::{AgentId, config::hooks::HooksConfig, model::ToolChoice};
-use crabllm_core::ThinkingConfig;
+use crabllm_core::anthropic;
 use serde::{Deserialize, Serialize};
 
 /// Default maximum iterations for agent execution.
@@ -83,7 +83,7 @@ fn default_max_iterations() -> usize {
 }
 
 fn default_max_tokens() -> u32 {
-    crabllm_core::DEFAULT_MAX_TOKENS
+    crabllm_core::anthropic::DEFAULT_MAX_TOKENS
 }
 
 fn default_thinking_budget() -> u32 {
@@ -105,7 +105,7 @@ impl Default for AgentConfig {
             max_iterations: DEFAULT_MAX_ITERATIONS,
             tool_choice: ToolChoice::Auto,
             thinking: false,
-            max_tokens: crabllm_core::DEFAULT_MAX_TOKENS,
+            max_tokens: crabllm_core::anthropic::DEFAULT_MAX_TOKENS,
             thinking_budget: DEFAULT_THINKING_BUDGET,
             skills: Vec::new(),
             mcps: Vec::new(),
@@ -153,8 +153,8 @@ impl AgentConfig {
 
     /// For extended thinking `max_tokens` is the TOTAL budget, so the reasoning
     /// allowance is added to the output allowance rather than carved out of it.
-    pub fn token_budget(&self) -> (u32, Option<ThinkingConfig>) {
-        let thinking = self.thinking.then(|| ThinkingConfig {
+    pub fn token_budget(&self) -> (u32, Option<anthropic::ThinkingConfig>) {
+        let thinking = self.thinking.then(|| anthropic::ThinkingConfig {
             kind: "enabled".to_string(),
             budget_tokens: Some(self.thinking_budget),
         });

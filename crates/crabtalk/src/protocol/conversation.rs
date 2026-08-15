@@ -8,8 +8,9 @@ use futures_util::{StreamExt, pin_mut};
 use std::sync::Arc;
 use wcore::AgentEvent;
 use wcore::protocol::message::*;
+use wcore::storage::Storage;
 
-impl<P: Provider + 'static> CrabTalk<P> {
+impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
@@ -34,7 +35,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
             agent: req.agent,
             content: response.final_response.unwrap_or_default(),
             model: response.model,
-            usage: Some(sum_usage(&response.steps)),
+            usage: Some(TokenUsage::sum(&response.steps)),
         })
     }
 
@@ -67,7 +68,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
                 pin_mut!(stream);
                 while let Some(event) = stream.next().await {
                     let is_done = matches!(event, AgentEvent::Done(_));
-                    yield agent_event_to_stream(event, &agent);
+                    yield event.to_stream(&agent);
                     if is_done { return; }
                 }
                 yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd {
@@ -114,7 +115,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
                     Vec::new()
                 };
                 let is_done = matches!(event, AgentEvent::Done(_));
-                yield agent_event_to_stream(event, &responding_agent);
+                yield event.to_stream(&responding_agent);
                 for fwd in forwards {
                     yield StreamEvent { event: Some(stream_event::Event::ToolCallForward(fwd)) };
                 }
@@ -178,151 +179,14 @@ impl Drop for ListenerGuard {
     }
 }
 
-/// Map one agent loop event to its wire `StreamEvent`. Shared by the
-/// persisted and ephemeral stream paths; client-tool forwarding (which
-/// only the persisted path can route) is handled by the caller.
-fn agent_event_to_stream(event: AgentEvent, responding_agent: &str) -> StreamEvent {
-    use stream_event::Event;
-    let event = match event {
-        AgentEvent::TextStart => Event::TextStart(TextStartEvent {
-            agent: responding_agent.to_string(),
-        }),
-        AgentEvent::TextDelta(text) => Event::Chunk(StreamChunk { content: text }),
-        AgentEvent::TextEnd => Event::TextEnd(TextEndEvent {
-            agent: responding_agent.to_string(),
-        }),
-        AgentEvent::ThinkingStart => Event::ThinkingStart(ThinkingStartEvent {
-            agent: responding_agent.to_string(),
-        }),
-        AgentEvent::ThinkingDelta(text) => Event::Thinking(StreamThinking { content: text }),
-        AgentEvent::ThinkingEnd => Event::ThinkingEnd(ThinkingEndEvent {
-            agent: responding_agent.to_string(),
-        }),
-        AgentEvent::ToolCallsBegin(calls) => Event::ToolStart(ToolStartEvent {
-            calls: calls
-                .into_iter()
-                .map(|c| ToolCallInfo {
-                    name: c.function.name.to_string(),
-                    arguments: String::new(),
-                })
-                .collect(),
-        }),
-        AgentEvent::ToolCallsStart(calls) => Event::ToolStart(ToolStartEvent {
-            calls: calls
-                .into_iter()
-                .map(|c| ToolCallInfo {
-                    name: c.function.name.to_string(),
-                    arguments: c.function.arguments,
-                })
-                .collect(),
-        }),
-        AgentEvent::ToolResult {
-            call_id,
-            output,
-            duration_ms,
-        } => {
-            let is_error = output.is_err();
-            let output = match output {
-                Ok(s) | Err(s) => s,
-            };
-            Event::ToolResult(ToolResultEvent {
-                call_id: call_id.to_string(),
-                output,
-                duration_ms,
-                is_error,
-            })
-        }
-        AgentEvent::ToolCallsComplete => Event::ToolsComplete(ToolsCompleteEvent {}),
-        AgentEvent::ContextUsage { usage } => Event::ContextUsage(ContextUsageEvent {
-            usage: Some(usage_to_proto(&usage)),
-        }),
-        AgentEvent::UserSteered { content } => Event::UserSteered(UserSteeredEvent { content }),
-        AgentEvent::Done(resp) => {
-            let error = if let wcore::AgentStopReason::Error(ref e) = resp.stop_reason {
-                e.clone()
-            } else {
-                String::new()
-            };
-            Event::End(StreamEnd {
-                agent: responding_agent.to_string(),
-                error,
-                model: resp.model,
-                usage: Some(sum_usage(&resp.steps)),
-            })
-        }
-    };
-    StreamEvent { event: Some(event) }
-}
-
-pub(super) fn sum_usage(steps: &[wcore::AgentStep]) -> TokenUsage {
-    let mut prompt = 0u32;
-    let mut completion = 0u32;
-    let mut total = 0u32;
-    let mut cache_hit = 0u32;
-    let mut cache_miss = 0u32;
-    let mut reasoning = 0u32;
-
-    for step in steps {
-        let u = &step.usage;
-        prompt += u.prompt_tokens();
-        completion += u.completion_tokens();
-        total += u.total_tokens();
-        cache_hit += u.cache_read_tokens;
-        cache_miss += u.cache_write_tokens;
-        reasoning += u.reasoning_tokens;
-    }
-
-    TokenUsage {
-        prompt_tokens: prompt,
-        completion_tokens: completion,
-        total_tokens: total,
-        cache_hit_tokens: (cache_hit > 0).then_some(cache_hit),
-        cache_miss_tokens: (cache_miss > 0).then_some(cache_miss),
-        reasoning_tokens: (reasoning > 0).then_some(reasoning),
-    }
-}
-
-fn usage_to_proto(u: &crate::llm::Usage) -> TokenUsage {
-    TokenUsage {
-        prompt_tokens: u.prompt_tokens(),
-        completion_tokens: u.completion_tokens(),
-        total_tokens: u.total_tokens(),
-        cache_hit_tokens: (u.cache_read_tokens > 0).then_some(u.cache_read_tokens),
-        cache_miss_tokens: (u.cache_write_tokens > 0).then_some(u.cache_write_tokens),
-        reasoning_tokens: (u.reasoning_tokens > 0).then_some(u.reasoning_tokens),
-    }
-}
-
 fn resolve_client_tools(
     bridge: &crate::bridge::ClientBridge,
     conversation_id: u64,
     proto_tools: Vec<ToolDef>,
 ) -> Vec<crate::llm::Tool> {
-    if proto_tools.is_empty() {
-        return bridge.effective_tools(conversation_id);
-    }
-    let tools: Vec<crate::llm::Tool> = proto_tools.into_iter().map(tool_from_proto).collect();
-    bridge.register_tools(conversation_id, tools.clone());
+    let tools: Vec<crate::llm::Tool> = proto_tools.into_iter().map(Into::into).collect();
+    // Registered even when empty: a client that declares nothing has no
+    // client tools, which is a different thing from having not been asked.
+    bridge.register_tools(conversation_id, &tools);
     tools
-}
-
-fn tool_from_proto(def: ToolDef) -> crate::llm::Tool {
-    let parameters = if def.parameters_schema.is_empty() {
-        None
-    } else {
-        serde_json::from_str(&def.parameters_schema).ok()
-    };
-    crate::llm::Tool {
-        kind: crate::llm::ToolType::Function,
-        function: crate::llm::FunctionDef {
-            name: def.name,
-            description: if def.description.is_empty() {
-                None
-            } else {
-                Some(def.description)
-            },
-            parameters,
-        },
-        strict: None,
-    }
 }

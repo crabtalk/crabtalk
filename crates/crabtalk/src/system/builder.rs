@@ -4,10 +4,8 @@ use crate::llm::Provider;
 use crate::{
     CrabTalk,
     bridge::ClientBridge,
-    hooks::delegate,
-    storage::FsStorage,
     system::RuntimeHandle,
-    system::{event, host::SystemEnv},
+    system::{event, host::SystemEnv, provider::DefaultProvider},
 };
 use anyhow::Result;
 use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook, SkillHook};
@@ -15,13 +13,11 @@ use mcp::McpHandler;
 use runtime::{Hook, Runtime};
 use std::{
     collections::BTreeMap,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{Arc, OnceLock},
 };
 use tokio::sync::{RwLock, broadcast};
-use wcore::{LlmConfig, ResolvedDirs, model::Model, resolve_dirs, storage::Storage};
-
-pub type DefaultProvider = crabllm_sdk::Client;
+use wcore::{ResolvedDirs, model::Model, resolve_dirs, storage::Storage};
 
 /// Build the LLM `Model<P>` given the config and the list of models
 /// advertised by the endpoint (fetched from `/v1/models` at startup).
@@ -35,25 +31,27 @@ pub fn build_default_provider(
     build_providers(config, models)
 }
 
-impl<P: Provider + 'static> CrabTalk<P> {
+impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn build(
         config: &wcore::Config,
         config_dir: &Path,
+        storage: Arc<S>,
         build_provider: BuildProvider<P>,
     ) -> Result<Self> {
-        let runtime_once: Arc<OnceLock<RuntimeHandle<P>>> = Arc::new(OnceLock::new());
+        let runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>> = Arc::new(OnceLock::new());
 
         let hooks = Hooks::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
 
         let (runtime, mcp, hooks, bridge) = Self::build_all(
             config,
             config_dir,
+            storage,
             &build_provider,
             runtime_once.clone(),
             hooks,
         )
         .await?;
-        let shared_runtime: RuntimeHandle<P> = Arc::new(RwLock::new(Arc::new(runtime)));
+        let shared_runtime: RuntimeHandle<P, S> = Arc::new(RwLock::new(Arc::new(runtime)));
         runtime_once
             .set(shared_runtime.clone())
             .unwrap_or_else(|_| panic!("runtime already initialized"));
@@ -128,16 +126,20 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
     pub async fn reload(&self) -> Result<()> {
         let config = wcore::Config::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
-        let runtime_once: Arc<OnceLock<RuntimeHandle<P>>> = Arc::new(OnceLock::new());
+        let runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>> = Arc::new(OnceLock::new());
         runtime_once
             .set(self.runtime.clone())
             .unwrap_or_else(|_| panic!("runtime_once already set"));
 
         let hooks = Hooks::new(self.hook.scopes.clone());
+        // Reload rebuilds the runtime around the same store — the backend
+        // was the caller's choice at startup and isn't reconsidered here.
+        let storage = self.runtime.read().await.storage().clone();
 
         let (mut new_runtime, _mcp, new_hook, _bridge) = Self::build_all(
             &config,
             &self.config_dir,
+            storage,
             &self.build_provider,
             runtime_once,
             hooks,
@@ -163,24 +165,34 @@ impl<P: Provider + 'static> CrabTalk<P> {
     async fn build_all(
         config: &wcore::Config,
         config_dir: &Path,
+        storage: Arc<S>,
         build_provider: &BuildProvider<P>,
-        runtime_once: Arc<OnceLock<RuntimeHandle<P>>>,
+        runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>>,
         mut hooks: Hooks,
     ) -> Result<(
-        Runtime<crate::system::SystemCfg<P>>,
+        Runtime<crate::system::SystemCfg<P, S>>,
         Arc<McpHandler>,
         Arc<Hooks>,
         Arc<ClientBridge>,
     )> {
         let dirs = resolve_dirs(config_dir);
-        let storage = Self::build_storage(config_dir, &dirs);
-        crate::storage::fs::migrate::migrate_settings(storage.as_ref()).await?;
-        let models = fetch_models(&config.llm).await;
+        // Ask the endpoint what it serves; an empty list is survivable, so a
+        // failure only warns and the next reload retries.
+        let models = match config.llm.kind.is_none() && config.llm.base_url.is_empty() {
+            true => {
+                tracing::warn!("no llm.base_url configured in config.toml — model list is empty");
+                Vec::new()
+            }
+            false => DefaultProvider::from(&config.llm).model_ids().await,
+        };
         let default_model = models.first().cloned().unwrap_or_default();
         storage.scaffold(&default_model).await?;
 
         let model = build_provider(config, &models)?;
-        let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::empty());
+        let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::new(
+            std::time::Duration::from_secs(config.mcp.idle_timeout),
+        ));
+        mcp_handler.spawn_reaper();
         let bridge = Arc::new(ClientBridge::default());
         let shared_memory = Self::register_hooks(
             &mut hooks,
@@ -211,28 +223,13 @@ impl<P: Provider + 'static> CrabTalk<P> {
         Ok((runtime, mcp_handler, hooks, bridge))
     }
 
-    fn build_storage(config_dir: &Path, dirs: &ResolvedDirs) -> Arc<FsStorage> {
-        let skill_roots: Vec<PathBuf> = dirs
-            .skill_dirs
-            .iter()
-            .filter(|dir| dir.exists())
-            .cloned()
-            .collect();
-
-        Arc::new(FsStorage::new(
-            config_dir.to_path_buf(),
-            config_dir.join("sessions"),
-            skill_roots,
-        ))
-    }
-
     async fn register_hooks(
         hooks: &mut Hooks,
-        storage: Arc<FsStorage>,
+        storage: Arc<S>,
         config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         env_overlay: BTreeMap<String, String>,
-        runtime_once: Arc<OnceLock<RuntimeHandle<P>>>,
+        runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>>,
     ) -> Result<runtime::SharedMemory> {
         let memory_wrapper = Memory::open(config_dir.join("memory.db"))?;
         let shared_memory = memory_wrapper.shared();
@@ -244,23 +241,18 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
         hooks.register_hook(
             "sessions",
-            Arc::new(crate::hooks::sessions::SessionsHook::<P>::new(
-                runtime_once.clone(),
+            Arc::new(crate::hooks::sessions::SessionsHook::<P, S>::new(
+                runtime_once,
             )),
         );
 
         hooks.register_hook("skill", Arc::new(SkillHook::new(skills, scopes.clone())));
-        hooks.register_hook(
-            "delegate",
-            Arc::new(delegate::DelegateHook::<P>::new(runtime_once)),
-        );
-
         hooks.register_hook("mcp", Arc::new(McpHook::new(mcp_handler, env_overlay)));
         Ok(shared_memory)
     }
 
     async fn register_agents(
-        runtime: &mut Runtime<crate::system::SystemCfg<P>>,
+        runtime: &mut Runtime<crate::system::SystemCfg<P, S>>,
         dirs: &ResolvedDirs,
     ) -> Result<()> {
         let stored_agents = runtime.storage().list_agents().await?;
@@ -301,29 +293,10 @@ impl<P: Provider + 'static> CrabTalk<P> {
 
 fn build_providers(config: &wcore::Config, models: &[String]) -> Result<Model<DefaultProvider>> {
     let llm = &config.llm;
-    let client = crabllm_sdk::Client::new(llm.base_url.clone(), llm.api_key.clone());
     tracing::info!(
         "llm endpoint registered — {} models from {}",
         models.len(),
         llm.base_url
     );
-    Ok(Model::new(client))
-}
-
-/// Fetch `/v1/models` from the configured LLM endpoint. Returns an empty
-/// list on failure (logged as a warning) so startup proceeds — the next
-/// reload will retry.
-async fn fetch_models(llm: &LlmConfig) -> Vec<String> {
-    if llm.base_url.is_empty() {
-        tracing::warn!("no llm.base_url configured in config.toml — model list is empty");
-        return Vec::new();
-    }
-    let client = crabllm_sdk::Client::new(llm.base_url.clone(), llm.api_key.clone());
-    match client.models().await {
-        Ok(list) => list.data.into_iter().map(|m| m.id).collect(),
-        Err(e) => {
-            tracing::warn!("failed to list models from {}: {e}", llm.base_url);
-            Vec::new()
-        }
-    }
+    Ok(Model::new(DefaultProvider::from(llm)))
 }

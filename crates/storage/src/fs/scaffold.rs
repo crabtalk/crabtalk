@@ -1,0 +1,25 @@
+//! First-startup scaffold: create the directory layout and seed the
+//! built-in `crab` agent.
+
+use crate::fs::FsStorage;
+use anyhow::Result;
+use hooks::default_crab;
+use tokio::fs;
+
+impl FsStorage {
+    pub(super) async fn scaffold(&self, default_model: &str) -> Result<()> {
+        fs::create_dir_all(&self.config_dir).await?;
+        fs::create_dir_all(self.config_dir.join(wcore::paths::LOCAL_DIR)).await?;
+        fs::create_dir_all(self.config_dir.join(wcore::paths::SKILLS_DIR)).await?;
+        fs::create_dir_all(self.config_dir.join(wcore::paths::AGENTS_DIR)).await?;
+        fs::create_dir_all(&self.sessions_root).await?;
+
+        let file = self.read_settings().await?;
+        if file.agents.is_empty() {
+            let crab = default_crab(default_model);
+            let prompt = crab.system_prompt.clone();
+            self.upsert_agent(&crab, &prompt).await?;
+        }
+        Ok(())
+    }
+}

@@ -8,7 +8,6 @@ parsing used by platform gateway binaries.
 ## Crates
 
 - [`crabtalk-telegram`](https://crates.io/crates/crabtalk-telegram) — Telegram bot gateway
-- [`crabtalk-wechat`](https://crates.io/crates/crabtalk-wechat) — WeChat bot gateway
 
 ## License
 

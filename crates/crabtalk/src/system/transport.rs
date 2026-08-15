@@ -8,9 +8,10 @@ use futures_util::{StreamExt, pin_mut};
 use std::path::Path;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use wcore::protocol::{api::Server, message::ClientMessage};
+use wcore::storage::Storage;
 
-fn dispatch_callback<P: Provider + 'static>(
-    daemon: CrabTalk<P>,
+fn dispatch_callback<P: Provider + 'static, S: Storage>(
+    daemon: CrabTalk<P, S>,
 ) -> impl Fn(ClientMessage, mpsc::Sender<wcore::protocol::message::ServerMessage>) + Clone + Send + 'static
 {
     move |msg, reply| {
@@ -28,8 +29,8 @@ fn dispatch_callback<P: Provider + 'static>(
 }
 
 #[cfg(unix)]
-pub fn setup_socket<P: Provider + 'static>(
-    daemon: CrabTalk<P>,
+pub fn setup_socket<P: Provider + 'static, S: Storage>(
+    daemon: CrabTalk<P, S>,
     shutdown_tx: &broadcast::Sender<()>,
 ) -> Result<(&'static Path, tokio::task::JoinHandle<()>)> {
     let resolved_path: &'static Path = &wcore::paths::SOCKET_PATH;
@@ -53,8 +54,8 @@ pub fn setup_socket<P: Provider + 'static>(
     Ok((resolved_path, join))
 }
 
-pub fn setup_tcp<P: Provider + 'static>(
-    daemon: CrabTalk<P>,
+pub fn setup_tcp<P: Provider + 'static, S: Storage>(
+    daemon: CrabTalk<P, S>,
     shutdown_tx: &broadcast::Sender<()>,
 ) -> Result<(tokio::task::JoinHandle<()>, u16)> {
     let (std_listener, addr) = ::transport::tcp::bind()?;

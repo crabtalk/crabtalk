@@ -2,24 +2,40 @@
 
 The Crabtalk daemon binary.
 
-Wraps `crabtalk` (the daemon library) with a minimal CLI: run the event loop
-(what the service unit invokes), scaffold first-run config interactively,
-hot-reload, stream events, and install/uninstall runtime plugins over the
-socket. The daemon no longer manages its own service lifecycle — that's
-[crabup](../crabup).
+A thin wrapper over `crabtalk`, the daemon library: it scaffolds the config
+directory on first run and starts the event loop. Everything else the daemon
+does is reached over the socket rather than through this CLI.
 
 ## Usage
 
 ```bash
-crabtalkd setup              # one-time interactive LLM endpoint config
+crabtalkd start              # install the platform service unit and start it
+crabtalkd stop               # stop and uninstall it
 crabtalkd run                # run in the foreground (launchd/systemd invokes this)
-crabtalkd reload             # hot-reload config over the socket
-crabtalkd events             # stream agent/tool events
-crabtalkd pull <plugin>      # install a runtime plugin into a running daemon
-crabtalkd rm <plugin>        # uninstall a runtime plugin
+crabtalkd logs               # view service logs
 ```
 
-Install/start as a service via `crabup daemon start`.
+Service lifecycle is normally driven through [crabup](../crabup), which
+forwards the same verbs: `crabup daemon start`.
+
+Config lives in `~/.crabtalk/config.toml`, scaffolded on first run. Set
+`llm.base_url` there — the daemon warns when it is unset and serves an empty
+model list.
+
+## Administration
+
+The daemon does not administer itself. These go over the socket, from the
+client:
+
+| Task                    | Command                                  |
+|-------------------------|------------------------------------------|
+| Hot-reload config       | `crabtalk reload`                        |
+| Install/remove packages | `crabtalk pkg add` / `crabtalk pkg remove` |
+| Agents                  | `crabtalk agent`                         |
+| MCP servers             | `crabtalk mcp`                           |
+
+Event streaming has no CLI of its own: clients subscribe over the protocol,
+and `crabtalk` surfaces the stream in its console view.
 
 ## Features
 

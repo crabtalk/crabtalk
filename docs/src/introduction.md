@@ -10,6 +10,7 @@ For user-facing documentation (installation, configuration, commands), see
 ## How this book is organized
 
 - **[Manifesto](manifesto.md)** — What crabtalk is and what it stands for.
+- **[The workspace](arch.html)** — Every crate and app drawn to scale, the dependency graph between them, and one message traced end to end.
 - **RFCs** — Design decisions and features.
 
 ## RFCs

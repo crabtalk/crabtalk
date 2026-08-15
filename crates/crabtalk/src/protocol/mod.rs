@@ -5,6 +5,7 @@ use crate::system::CrabTalk;
 use anyhow::Result;
 use wcore::protocol::api::Server;
 use wcore::protocol::message::*;
+use wcore::storage::Storage;
 
 mod admin;
 mod config;
@@ -27,7 +28,7 @@ fn format_date_label(created_at: &str) -> String {
     }
 }
 
-impl<P: Provider + 'static> Server for CrabTalk<P> {
+impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         self.send(req).await
     }
@@ -192,6 +193,10 @@ impl<P: Provider + 'static> Server for CrabTalk<P> {
 
     async fn delete_mcp(&self, req: DeleteMcpMsg) -> Result<bool> {
         self.delete_mcp(req.agent, req.name).await
+    }
+
+    async fn reconnect_mcp(&self, req: ReconnectMcpMsg) -> Result<McpInfo> {
+        self.reconnect_mcp(req.agent, req.name).await
     }
 
     async fn set_active_model(&self, model: String) -> Result<()> {

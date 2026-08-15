@@ -2,16 +2,20 @@
 //! awaits replies.
 //!
 //! This is the client-side dispatch layer. System capabilities (memory,
-//! delegate, sessions, skill, mcp) dispatch through daemon-side hooks.
-//! Client tools dispatch through this bridge: the protocol layer emits a
+//! sessions, skill, mcp) dispatch through daemon-side hooks. Client tools
+//! dispatch through this bridge: the protocol layer emits a
 //! `ToolCallForward` event, the client executes locally, and posts a reply
 //! which resolves via [`ClientBridge::try_resolve`].
 //!
-//! Clients declare their tools at stream/send time via the `tools` field
-//! on `StreamMsg`/`SendMsg`. When the field is empty, built-in defaults
-//! (bash, read, edit, ask_user) are used for backwards compatibility.
-//! Per-conversation tool sets are stored so `dispatch` and `is_client_tool`
-//! route correctly when different clients bring different tools.
+//! A client's tools are exactly what it declares in `StreamMsg.tools`.
+//! There is no default set: the daemon cannot execute a client tool, so
+//! advertising one the client never claimed only buys a forward nobody
+//! answers — a hang until the timeout, not a fallback. Sets are kept per
+//! conversation, so clients with different capabilities can be connected
+//! at once.
+//!
+//! Which tools those are is not this crate's business. It forwards the
+//! names it was handed and never inspects them.
 
 use parking_lot::Mutex;
 use std::{
@@ -32,72 +36,29 @@ enum PendingState {
 type PendingKey = (u64, String);
 
 /// Bridge that forwards client-tool dispatches over the active stream.
+#[derive(Default)]
 pub struct ClientBridge {
-    defaults: ClientToolSet,
-    conversations: Mutex<HashMap<u64, ClientToolSet>>,
+    /// Declared tool names per conversation. Only names are kept — the
+    /// schemas go to the model, not through here.
+    conversations: Mutex<HashMap<u64, HashSet<String>>>,
     listeners: Mutex<HashSet<u64>>,
     pending: Mutex<HashMap<PendingKey, PendingState>>,
 }
 
-struct ClientToolSet {
-    schemas: Vec<Tool>,
-    names: HashSet<String>,
-}
-
-impl ClientToolSet {
-    fn new(schemas: Vec<Tool>) -> Self {
-        let names = schemas.iter().map(|t| t.function.name.clone()).collect();
-        Self { schemas, names }
-    }
-}
-
-impl Default for ClientBridge {
-    fn default() -> Self {
-        let mut schemas = hooks::os::schemas();
-        schemas.push(sdk::tools::ask_user::schema());
-        Self {
-            defaults: ClientToolSet::new(schemas),
-            conversations: Mutex::new(HashMap::new()),
-            listeners: Mutex::new(HashSet::new()),
-            pending: Mutex::new(HashMap::new()),
-        }
-    }
-}
-
 impl ClientBridge {
-    /// Default tool schemas used when clients don't declare their own.
-    pub fn default_schemas(&self) -> Vec<Tool> {
-        self.defaults.schemas.clone()
+    /// Record what the client declared for this conversation.
+    pub fn register_tools(&self, conversation_id: u64, tools: &[Tool]) {
+        let names = tools.iter().map(|t| t.function.name.clone()).collect();
+        self.conversations.lock().insert(conversation_id, names);
     }
 
-    /// Register client-provided tools for a conversation. These override
-    /// the built-in defaults for dispatch and forwarding within this
-    /// conversation.
-    pub fn register_tools(&self, conversation_id: u64, tools: Vec<Tool>) {
+    /// Whether `name` is a client tool for this conversation. False when
+    /// nothing was declared — there is nowhere to forward it.
+    pub fn is_client_tool(&self, conversation_id: u64, name: &str) -> bool {
         self.conversations
             .lock()
-            .insert(conversation_id, ClientToolSet::new(tools));
-    }
-
-    /// Return the effective tool schemas for a conversation — per-
-    /// conversation if registered, otherwise the built-in defaults.
-    pub fn effective_tools(&self, conversation_id: u64) -> Vec<Tool> {
-        let conversations = self.conversations.lock();
-        conversations
             .get(&conversation_id)
-            .unwrap_or(&self.defaults)
-            .schemas
-            .clone()
-    }
-
-    /// Whether `name` is a client tool for the given conversation.
-    pub fn is_client_tool(&self, conversation_id: u64, name: &str) -> bool {
-        let conversations = self.conversations.lock();
-        conversations
-            .get(&conversation_id)
-            .unwrap_or(&self.defaults)
-            .names
-            .contains(name)
+            .is_some_and(|names| names.contains(name))
     }
 
     /// Mark `conversation_id` as having an active stream listener.

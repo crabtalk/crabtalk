@@ -30,6 +30,16 @@ pub enum ToolStatus {
     Failure,
 }
 
+/// One delegated task's live state within a fan-out.
+#[derive(Debug, Clone)]
+pub struct TaskProgress {
+    pub agent: String,
+    pub status: ToolStatus,
+    /// Trailing text: what the sub-agent is doing while it runs, then its
+    /// result headline or error once it settles.
+    pub detail: String,
+}
+
 /// One logical chunk in the chat output.
 #[derive(Debug, Clone)]
 pub enum ChatEntry {
@@ -42,6 +52,12 @@ pub enum ChatEntry {
     },
     /// Tool result output (`⎿ ...`).
     ToolResult(Vec<Line<'static>>),
+    /// Live per-task status for one `delegate` fan-out. Keyed by the
+    /// forwarded call so two concurrent fan-outs update independently.
+    DelegateTasks {
+        call_id: String,
+        tasks: Vec<TaskProgress>,
+    },
     /// Thinking / reasoning text (dimmed, italic).
     Thinking(Vec<Line<'static>>),
     /// Blank separator line.
@@ -84,6 +100,53 @@ impl ChatBuffer {
         }
     }
 
+    /// Settle one task of the fan-out identified by `call_id`.
+    pub fn finish_delegate_task(&mut self, call_id: &str, index: usize, ok: bool, detail: String) {
+        let status = if ok {
+            ToolStatus::Success
+        } else {
+            ToolStatus::Failure
+        };
+        if let Some(task) = self.delegate_task_mut(call_id, index) {
+            task.status = status;
+            task.detail = detail;
+        }
+    }
+
+    /// Replace a running task's trailing text with what it's doing now.
+    pub fn set_delegate_task_detail(&mut self, call_id: &str, index: usize, detail: String) {
+        if let Some(task) = self.delegate_task_mut(call_id, index)
+            && task.status == ToolStatus::Running
+        {
+            task.detail = detail;
+        }
+    }
+
+    fn delegate_task_mut(&mut self, call_id: &str, index: usize) -> Option<&mut TaskProgress> {
+        for entry in self.entries.iter_mut().rev() {
+            if let ChatEntry::DelegateTasks { call_id: id, tasks } = entry
+                && id == call_id
+            {
+                return tasks.get_mut(index);
+            }
+        }
+        None
+    }
+
+    /// Settle every still-running task row. Called when a turn is
+    /// cancelled — the `Finished` updates that would have settled them are
+    /// never coming, and a row left `Running` spins forever.
+    pub fn cancel_running_tasks(&mut self) {
+        for entry in self.entries.iter_mut() {
+            if let ChatEntry::DelegateTasks { tasks, .. } = entry {
+                for task in tasks.iter_mut().filter(|t| t.status == ToolStatus::Running) {
+                    task.status = ToolStatus::Failure;
+                    task.detail = "cancelled".to_owned();
+                }
+            }
+        }
+    }
+
     /// Flatten all entries into display lines for the chat widget.
     ///
     /// `frame` drives the animation for running tool markers (pass the
@@ -95,18 +158,10 @@ impl ChatBuffer {
                 ChatEntry::Text(lines) => out.extend(lines.iter().cloned()),
                 ChatEntry::ToolMarker { labels, status } => {
                     let (marker, label_style) = match status {
-                        ToolStatus::Running => {
-                            const BRAILLE: &[&str] =
-                                &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-                            let ch = BRAILLE[(frame as usize / 2) % BRAILLE.len()];
-                            (
-                                Span::styled(
-                                    format!("{ch} "),
-                                    Style::new().add_modifier(Modifier::DIM),
-                                ),
-                                Style::new().add_modifier(Modifier::BOLD | Modifier::DIM),
-                            )
-                        }
+                        ToolStatus::Running => (
+                            Span::styled(spinner(frame), Style::new().add_modifier(Modifier::DIM)),
+                            Style::new().add_modifier(Modifier::BOLD | Modifier::DIM),
+                        ),
                         ToolStatus::Success => (
                             Span::styled("⏺ ", Style::new().fg(GREEN)),
                             Style::new().add_modifier(Modifier::BOLD | Modifier::DIM),
@@ -124,12 +179,54 @@ impl ChatBuffer {
                     }
                 }
                 ChatEntry::ToolResult(lines) => out.extend(lines.iter().cloned()),
+                ChatEntry::DelegateTasks { tasks, .. } => {
+                    for task in tasks {
+                        let (marker, detail_style) = match task.status {
+                            ToolStatus::Running => (
+                                Span::styled(
+                                    spinner(frame),
+                                    Style::new().add_modifier(Modifier::DIM),
+                                ),
+                                S_DIM,
+                            ),
+                            ToolStatus::Success => {
+                                (Span::styled("⏺ ", Style::new().fg(GREEN)), S_DIM)
+                            }
+                            ToolStatus::Failure => (
+                                Span::styled("⏺ ", Style::new().fg(RED)),
+                                Style::new().fg(RED),
+                            ),
+                        };
+                        let mut spans = vec![
+                            Span::raw(TASK_INDENT),
+                            marker,
+                            Span::styled(
+                                task.agent.clone(),
+                                Style::new().add_modifier(Modifier::BOLD | Modifier::DIM),
+                            ),
+                        ];
+                        if !task.detail.is_empty() {
+                            spans.push(Span::styled(format!("  {}", task.detail), detail_style));
+                        }
+                        out.push(Line::from(spans));
+                    }
+                }
                 ChatEntry::Thinking(lines) => out.extend(lines.iter().cloned()),
                 ChatEntry::Blank => out.push(Line::raw("")),
             }
         }
         out
     }
+}
+
+/// Indent nesting delegate task lines under their `⏺ Delegate(...)` marker.
+const TASK_INDENT: &str = "    ";
+
+/// Braille spinner frame, trailing space included so it drops in where a
+/// settled `⏺ ` marker would go.
+fn spinner(frame: u64) -> String {
+    const BRAILLE: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    format!("{} ", BRAILLE[(frame as usize / 2) % BRAILLE.len()])
 }
 
 // ── Style mapping ────────────────────────────────────────────────

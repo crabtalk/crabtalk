@@ -105,6 +105,13 @@ impl MarkdownRenderer {
         self.width = width;
     }
 
+    /// Label a tool call the way the top-level tool markers do, at the
+    /// current render width. Lets delegate task rows name a sub-agent's
+    /// live activity in the same vocabulary as the main transcript.
+    pub fn tool_label(&self, name: &str, args: &str) -> String {
+        format_tool_label(name, args, self.width)
+    }
+
     /// Signal that we're waiting for a new response.
     ///
     /// Resets streaming state so the first text of the new response gets a

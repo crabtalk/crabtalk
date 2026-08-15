@@ -3,8 +3,11 @@
 use super::Runtime;
 use crate::Config;
 use anyhow::Result;
-use wcore::protocol::message::{ConversationHistory, ConversationInfo, ConversationMessage};
-use wcore::storage::{SessionHandle, Storage};
+use std::collections::HashMap;
+use wcore::{
+    protocol::message::{ConversationHistory, ConversationInfo, ConversationMessage},
+    storage::{SessionHandle, SessionSummary, Storage},
+};
 
 impl<C: Config> Runtime<C> {
     /// List persisted conversations, optionally filtered by agent and sender.
@@ -68,34 +71,37 @@ async fn scan_sessions(storage: &impl Storage, agent: &str, sender: &str) -> Vec
         return Vec::new();
     };
 
-    let agent_filter = if agent.is_empty() {
-        None
-    } else {
-        Some(wcore::sender_slug(agent))
-    };
-    let sender_filter = if sender.is_empty() {
-        None
-    } else {
-        Some(wcore::sender_slug(sender))
-    };
+    // Filtered on `meta`, the only place the association lives now that the
+    // directory name is opaque. Also an exact match, where slugifying both sides
+    // conflated agents whose names differ only in punctuation.
+    let mut matched: Vec<_> = summaries
+        .into_iter()
+        .filter(|s| agent.is_empty() || s.meta.agent == agent)
+        .filter(|s| sender.is_empty() || s.meta.created_by == sender)
+        .collect();
+
+    // `seq` is the nth conversation of an (agent, sender) pair. It used to be
+    // read out of the path; it is derived here instead, by creation order within
+    // the pair, so nothing has to store it.
+    matched.sort_by(|a, b| {
+        (&a.meta.created_at, a.handle.as_str()).cmp(&(&b.meta.created_at, b.handle.as_str()))
+    });
+    let mut seqs: HashMap<(&str, &str), u32> = HashMap::new();
+    let numbered: Vec<(u32, &SessionSummary)> = matched
+        .iter()
+        .map(|s| {
+            let seq = seqs
+                .entry((s.meta.agent.as_str(), s.meta.created_by.as_str()))
+                .and_modify(|n| *n += 1)
+                .or_insert(1);
+            (*seq, s)
+        })
+        .collect();
 
     let mut results = Vec::new();
-    for summary in summaries {
+    for (seq, summary) in numbered {
         let slug = summary.handle.as_str().to_owned();
         let meta = &summary.meta;
-        let Some((slug_agent, slug_sender, seq)) = parse_session_slug(&slug) else {
-            continue;
-        };
-        if let Some(ref want) = agent_filter
-            && &slug_agent != want
-        {
-            continue;
-        }
-        if let Some(ref want) = sender_filter
-            && &slug_sender != want
-        {
-            continue;
-        }
         results.push(ConversationInfo {
             agent: meta.agent.clone(),
             sender: meta.created_by.clone(),
@@ -129,19 +135,4 @@ fn rfc3339_diff_secs(start: &str, end: &str) -> u64 {
         return 0;
     };
     (e - s).num_seconds().max(0) as u64
-}
-
-fn parse_session_slug(slug: &str) -> Option<(String, String, u32)> {
-    let parts: Vec<&str> = slug.split('_').collect();
-    if parts.len() < 3 {
-        return None;
-    }
-    let last = parts.len() - 1;
-    if !parts[last].chars().all(|c| c.is_ascii_digit()) || parts[last].is_empty() {
-        return None;
-    }
-    let seq: u32 = parts[last].parse().ok()?;
-    let agent = parts[0].to_string();
-    let sender = parts[1..last].join("_");
-    Some((agent, sender, seq))
 }

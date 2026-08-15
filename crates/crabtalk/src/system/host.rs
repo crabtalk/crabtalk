@@ -170,7 +170,7 @@ impl wcore::ToolDispatcher for SystemEnv {
             call_id: call_id.to_owned(),
         };
 
-        // System tools — daemon-side hooks (memory, delegate, sessions, etc.)
+        // System tools — daemon-side hooks (memory, sessions, skill, mcp).
         if let Some(fut) = self.hook.dispatch(name, call.clone()) {
             return fut;
         }

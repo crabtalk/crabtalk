@@ -1,0 +1,36 @@
+[package]
+name = "crabtalk-storage"
+description = "Persistence backends for Crabtalk"
+documentation = "https://docs.rs/crabtalk-storage"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+wcore.workspace = true
+hooks = { workspace = true, default-features = false, features = [
+    "memory",
+    "skill",
+] }
+
+anyhow.workspace = true
+chrono.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+ulid.workspace = true
+
+# Backends beyond the filesystem are opt-in: nothing that only needs
+# `FsStorage` should compile a SQL driver.
+sqlx = { workspace = true, optional = true }
+
+[features]
+default = []
+sqlite = ["dep:sqlx"]

@@ -17,6 +17,7 @@ path = "src/bin/main.rs"
 [dependencies]
 command.workspace = true
 crabtalk.workspace = true
+storage.workspace = true
 wcore.workspace = true
 
 # crates.io

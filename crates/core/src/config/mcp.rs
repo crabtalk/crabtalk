@@ -3,6 +3,22 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Daemon-wide MCP peer lifetime (`[mcp]` in `config.toml`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct McpConfig {
+    /// Seconds a peer may sit unused before it is shut down (default
+    /// 1800). Its declaration survives — the next call reconnects it.
+    /// Zero disables eviction and peers live until unregistered.
+    pub idle_timeout: u64,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self { idle_timeout: 1800 }
+    }
+}
+
 /// MCP server configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

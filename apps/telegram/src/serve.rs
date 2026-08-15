@@ -212,6 +212,10 @@ async fn tg_stream(
         agent: agent.to_string(),
         content: content.to_string(),
         sender: Some(sender.to_string()),
+        // The inline keyboard below answers `ask_user`, and this gateway
+        // answers nothing else — anything further would be advertised to
+        // the model and then never replied to.
+        tools: vec![sdk::tools::ask_user::schema().into()],
         ..Default::default()
     };
     let mut event_rx = conn_info.stream(req);

@@ -13,6 +13,8 @@ keywords.workspace = true
 wcore.workspace = true
 
 anyhow.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true

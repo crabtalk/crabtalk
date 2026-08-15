@@ -6,8 +6,8 @@
 //! single seam between crabtalk and any `crabllm_core::Provider`.
 
 pub use crabllm_core::{
-    AnthropicRequest, AnthropicResponse, AnthropicStreamEvent, FinishReason, FunctionCall,
-    FunctionDef, Message, Role, Tool, ToolCall, ToolChoice, ToolType, Usage,
+    FinishReason, FunctionCall, FunctionDef, Message, Role, Tool, ToolCall, ToolChoice, ToolType,
+    Usage, anthropic,
 };
 
 use anyhow::Result;
@@ -226,20 +226,19 @@ impl MessageBuilder {
         }
     }
 
-    pub fn accept(&mut self, event: &AnthropicStreamEvent) {
-        use crabllm_core::BlockDelta;
+    pub fn accept(&mut self, event: &anthropic::StreamEvent) {
         match event {
-            AnthropicStreamEvent::ContentBlockStart {
+            anthropic::StreamEvent::ContentBlockStart {
                 index,
-                content_block: crabllm_core::AnthropicContentBlock::ToolUse { id, name, .. },
+                content_block: crabllm_core::anthropic::ContentBlock::ToolUse { id, name, .. },
             } => {
                 self.tool_blocks
                     .insert(*index, (id.clone(), name.clone(), String::new()));
             }
-            AnthropicStreamEvent::ContentBlockDelta { index, delta } => match delta {
-                BlockDelta::Text { text } => self.content.push_str(text),
-                BlockDelta::Thinking { thinking } => self.reasoning.push_str(thinking),
-                BlockDelta::InputJson { partial_json } => {
+            anthropic::StreamEvent::ContentBlockDelta { index, delta } => match delta {
+                anthropic::BlockDelta::Text { text } => self.content.push_str(text),
+                anthropic::BlockDelta::Thinking { thinking } => self.reasoning.push_str(thinking),
+                anthropic::BlockDelta::InputJson { partial_json } => {
                     if let Some((_, _, args)) = self.tool_blocks.get_mut(index) {
                         args.push_str(partial_json);
                     }
@@ -345,7 +344,7 @@ impl<P: Provider + 'static> Model<P> {
     }
 
     /// Send a non-streaming Anthropic messages request.
-    pub async fn send(&self, request: AnthropicRequest) -> Result<AnthropicResponse> {
+    pub async fn send(&self, request: anthropic::Request) -> Result<anthropic::Response> {
         let model = request.model.clone();
         self.inner.anthropic_messages(&request).await.map_err(|e| {
             tracing::warn!(model = %model, op = "send", error = %e, "provider request failed");
@@ -356,8 +355,8 @@ impl<P: Provider + 'static> Model<P> {
     /// Stream an Anthropic messages response.
     pub fn stream(
         &self,
-        request: AnthropicRequest,
-    ) -> impl Stream<Item = Result<AnthropicStreamEvent>> + Send + 'static {
+        request: anthropic::Request,
+    ) -> impl Stream<Item = Result<anthropic::StreamEvent>> + Send + 'static {
         let inner = Arc::clone(&self.inner);
         let mut req = request;
         req.stream = Some(true);

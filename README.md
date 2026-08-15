@@ -11,20 +11,29 @@ Start it, talk to it, extend it with packages.
 curl -fsSL https://crabtalk.ai/install.sh | sh
 ```
 
-Or `cargo install crabup` and use it to pull the rest. See the [installation guide][install] for details.
+Or `cargo install crabup` and use it to fetch the rest. See the [installation guide][install] for details.
 
 ## Quick Start
 
 ```bash
 cargo install crabup         # one-time: install the package manager
-crabup pull daemon           # fetch the daemon binary
-crabup pull tui              # fetch the TUI client
-crabtalkd setup              # one-time interactive LLM endpoint config
+crabup install daemon        # fetch the daemon binary
+crabup install cli           # fetch the CLI client
 crabup daemon start          # install the service unit and start it
-crabtalk-tui                 # chat
+crabtalk                     # chat
 ```
 
-Full config reference: [`crates/crabtalk/config.toml`](crates/crabtalk/config.toml).
+Set `llm.base_url` in `~/.crabtalk/config.toml` before the first chat — the
+daemon scaffolds the file on first run and warns if the endpoint is unset.
+
+Harness services attach to a running daemon and use `add` instead:
+
+```bash
+crabup add cron              # scheduler
+crabup add search            # meta-search
+```
+
+Full config reference: [`crates/storage/config.toml`](crates/storage/config.toml).
 
 ## How It Works
 
@@ -38,7 +47,7 @@ auto-discovery.
 ## Learn More
 
 - [The Crabtalk Book][book] — manifesto, architecture, and design RFCs
-- [Configuration](crates/crabtalk/config.toml) — config.toml reference
+- [Configuration](crates/storage/config.toml) — config.toml reference
 - [Contributing](CONTRIBUTING.md) — architecture, layering, and data flow
 
 ## License

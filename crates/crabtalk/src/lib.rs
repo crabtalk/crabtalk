@@ -3,7 +3,6 @@
 pub mod bridge;
 pub mod hooks;
 mod protocol;
-pub mod storage;
 pub mod system;
 
 pub use crabllm_core as llm;

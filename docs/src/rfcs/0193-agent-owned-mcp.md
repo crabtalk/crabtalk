@@ -6,6 +6,8 @@
 - Crates: core, mcp, crabtalk, runtime
 - Updates: [0082 (Scoping)](0082-scoping.md), [0135 (Agent-First)](0135-agent-first.md), [0190 (MCP Lifecycle)](https://github.com/crabtalk/crabtalk/pull/192)
 
+> **Updated by [0204 (MCP Peer Lifetime)](0204-mcp-peer-lifetime.md) (2026-08-15).** The fingerprint gains `auth`, and registering an MCP no longer spawns a process — a declaration and a peer now have separate lifetimes.
+
 ## Summary
 
 Agents own their MCP servers by value, not by name reference into a daemon-global registry. `AgentConfig.mcps` becomes `Vec<McpServerConfig>` — every agent carries the full configuration of every MCP it uses. The daemon's job shrinks to "spawn what agents declare, dedup identical processes, route tool calls per agent." `Storage::{list,upsert,delete}_mcp` and `crabtalkd mcp` go away. Forking an agent now means copying one config; the new owner gets a self-contained, runnable artifact.

@@ -6,6 +6,8 @@
 - Crates: new `crabup` binary; consumes `command`; shrinks `crabtalkd`
 - Updates: [0043 (Component System)](0043-component.md)
 
+> **Note (2026-08-15).** The verbs below are superseded. `pull` / `rm` shipped as `install` / `uninstall`, and the `pkg add` / `pkg remove` surface never shipped at all — so `add` / `remove` were free, and now pair with `install` / `uninstall` to split binaries by role, following `rustup`. Apps (daemon, cli, telegram) and any crate by name are `install` / `uninstall`; harness services (cron, search), which live under `harness/` in the workspace, are `add` / `remove`. Naming one to the wrong verb is an error that names the right one. Pass-through is unchanged but belongs to the app verbs, since an unknown crate cannot be shown to be harness. This RFC's rejection of "a `component add` vs `pull` split" stands on its own terms: that split was about install *mechanism*, and there is still only one — this one is about what a binary is to the user. The `wechat` row is gone from the resolution table along with the gateway.
+
 ## Summary
 
 `crabup` is a thin wrapper over `cargo install` that also owns `launchd`/`systemd`/`schtasks` lifecycle for every crabtalk binary. `crabup install crabtalkd` spawns `cargo install crabtalkd`. The value add is service management — the one thing `cargo install` doesn't do — not distribution, not version coordination, not a registry.

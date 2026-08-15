@@ -3,12 +3,13 @@
 use crate::llm::Provider;
 use crate::system::CrabTalk;
 use anyhow::{Context, Result};
-use mcp::{McpServerState, ServerStatus};
+use hooks::default_crab;
+use mcp::McpServerState;
 use std::collections::BTreeMap;
 use wcore::protocol::message::*;
 use wcore::storage::Storage;
 
-impl<P: Provider + 'static> CrabTalk<P> {
+impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn set_active_model(&self, model: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
         let storage = rt.storage();
@@ -23,7 +24,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
         let mut crab = storage
             .load_agent_by_name(wcore::paths::DEFAULT_AGENT)
             .await?
-            .unwrap_or_else(|| crate::storage::default_crab(&model));
+            .unwrap_or_else(|| default_crab(&model));
         let prompt = std::mem::take(&mut crab.system_prompt);
         crab.model = model;
         storage.upsert_agent(&crab, &prompt).await?;
@@ -78,8 +79,14 @@ impl<P: Provider + 'static> CrabTalk<P> {
         }
         rt.update_agent(existing, &prompt).await?;
 
-        // Re-list this agent to surface runtime status set by the
-        // background register triggered through `on_register_agent`.
+        // Registration only records the declaration — peers connect on
+        // first use. Connect this one now anyway: a human just typed the
+        // config, and a bad command or a stale token should surface here
+        // rather than inside some later tool call.
+        self.mcp
+            .ensure_connected(&agent, std::slice::from_ref(&mcp_name))
+            .await;
+
         let mcps = self.list_mcps(Some(agent)).await?;
         mcps.into_iter()
             .find(|m| m.name == mcp_name)
@@ -106,6 +113,24 @@ impl<P: Provider + 'static> CrabTalk<P> {
         // calls `unregister_for_agent` for entries that disappeared —
         // so the bridge peer is released (refcounted) automatically.
         Ok(true)
+    }
+
+    /// Respawn the peer behind an agent's MCP. Nothing on disk changes —
+    /// the handler reconnects from the config the peer is already running,
+    /// so this is the answer to a dead connection, not to a stale one.
+    pub(crate) async fn reconnect_mcp(&self, agent: String, name: String) -> Result<McpInfo> {
+        anyhow::ensure!(
+            !agent.is_empty(),
+            "agent name is required for reconnect_mcp"
+        );
+        self.mcp
+            .reconnect_for_agent(&agent, &name)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let mcps = self.list_mcps(Some(agent)).await?;
+        mcps.into_iter()
+            .find(|m| m.name == name)
+            .ok_or_else(|| anyhow::anyhow!("mcp '{name}' missing from listing after reconnect"))
     }
 
     pub(crate) fn list_skills(&self) -> Vec<SkillInfo> {
@@ -154,7 +179,7 @@ fn mcp_info(
     let key = (agent.to_owned(), cfg.name.clone());
     let (status, tool_count, error) = match states.get(&key) {
         Some(state) => (
-            proto_status(state.status),
+            state.status.into(),
             state.tools.len() as u32,
             state.last_error.clone().unwrap_or_default(),
         ),
@@ -180,14 +205,5 @@ fn mcp_info(
         status: status.into(),
         error,
         tool_count,
-    }
-}
-
-fn proto_status(s: ServerStatus) -> McpStatus {
-    match s {
-        ServerStatus::Connecting => McpStatus::Connecting,
-        ServerStatus::Connected => McpStatus::Connected,
-        ServerStatus::Failed => McpStatus::Failed,
-        ServerStatus::Disconnected => McpStatus::Disconnected,
     }
 }

@@ -6,23 +6,24 @@ use crate::system::RuntimeHandle;
 use runtime::Hook;
 use search::SearchSessions;
 use std::sync::{Arc, OnceLock};
+use wcore::storage::Storage;
 use wcore::{ToolDispatch, ToolFuture, agent::AsTool, model::Tool};
 
 mod search;
 
 const SESSIONS_PROMPT: &str = include_str!("../../../prompts/sessions.md");
 
-pub struct SessionsHook<P: Provider + 'static> {
-    pub(super) runtime: Arc<OnceLock<RuntimeHandle<P>>>,
+pub struct SessionsHook<P: Provider + 'static, S: Storage> {
+    pub(super) runtime: Arc<OnceLock<RuntimeHandle<P, S>>>,
 }
 
-impl<P: Provider + 'static> SessionsHook<P> {
-    pub fn new(runtime: Arc<OnceLock<RuntimeHandle<P>>>) -> Self {
+impl<P: Provider + 'static, S: Storage> SessionsHook<P, S> {
+    pub fn new(runtime: Arc<OnceLock<RuntimeHandle<P, S>>>) -> Self {
         Self { runtime }
     }
 }
 
-impl<P: Provider + 'static> Hook for SessionsHook<P> {
+impl<P: Provider + 'static, S: Storage> Hook for SessionsHook<P, S> {
     fn schema(&self) -> Vec<Tool> {
         vec![SearchSessions::as_tool()]
     }

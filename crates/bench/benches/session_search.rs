@@ -9,7 +9,6 @@
 //! `criterion` reports mean times by default; we run a few sizes so a
 //! regression sticks out as a step change.
 
-use crabtalk::storage::FsStorage;
 use crabtalk_bench::generate_corpus;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use runtime::{
@@ -17,6 +16,7 @@ use runtime::{
     sessions::{SearchOptions, SessionIndex},
 };
 use std::sync::Arc;
+use storage::FsStorage;
 use tempfile::TempDir;
 use tokio::runtime::Runtime as TokioRuntime;
 use wcore::{

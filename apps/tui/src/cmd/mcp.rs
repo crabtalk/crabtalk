@@ -37,6 +37,14 @@ pub enum McpCmd {
         /// MCP server name.
         name: String,
     },
+    /// Respawn the peer behind an MCP, leaving its config alone.
+    Reconnect {
+        /// Agent name.
+        #[arg(long)]
+        agent: String,
+        /// MCP server name.
+        name: String,
+    },
 }
 
 impl Mcp {
@@ -61,6 +69,10 @@ impl Mcp {
             }
             McpCmd::Delete { agent, name } => {
                 runner.delete_mcp(agent, name).await?;
+            }
+            McpCmd::Reconnect { agent, name } => {
+                let info = runner.reconnect_mcp(agent, name).await?;
+                println!("{}  {}", info.name, info.status().as_str_name());
             }
         }
         Ok(())

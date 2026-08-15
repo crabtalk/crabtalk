@@ -1,0 +1,45 @@
+# Crabtalk daemon configuration.
+#
+# Holds immutable per-install settings. Mutable runtime records (MCPs,
+# agents) are managed by the daemon in `local/settings.toml` — edit
+# them via `crabtalk agent`/`crabtalk mcp` rather than by hand.
+
+# ---------------------------------------------------------------------------
+# LLM — a single OpenAI-compatible endpoint.
+#
+# Model routing is the endpoint's concern (crabllm, openrouter, etc.).
+# The daemon queries GET {base_url}/models at startup to discover what's
+# available.
+# ---------------------------------------------------------------------------
+
+# [llm]
+# base_url = "http://localhost:4000/v1"
+# api_key = "${OPENAI_API_KEY}"
+
+# ---------------------------------------------------------------------------
+# Task executor pool — bounded workers for cron/skill execution.
+# ---------------------------------------------------------------------------
+
+[tasks]
+max_concurrent = 4
+viewable_window = 16
+task_timeout = 300
+
+# ---------------------------------------------------------------------------
+# MCP — peer process lifetime.
+#
+# Peers start on an agent's first MCP tool call, not when the agent is
+# registered, and stop again after `idle_timeout` seconds without one.
+# The declaration survives eviction; the next call reconnects. Set to 0
+# to keep peers alive until their last agent unregisters.
+# ---------------------------------------------------------------------------
+
+[mcp]
+idle_timeout = 1800
+
+# ---------------------------------------------------------------------------
+# Env — environment variables passed to all MCP server processes.
+# ---------------------------------------------------------------------------
+
+# [env]
+# SOME_TOKEN = "${SOME_TOKEN}"

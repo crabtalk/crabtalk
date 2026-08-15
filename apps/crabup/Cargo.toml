@@ -1,6 +1,7 @@
 [package]
 name = "crabup"
 description = "Version manager for the Crabtalk ecosystem"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

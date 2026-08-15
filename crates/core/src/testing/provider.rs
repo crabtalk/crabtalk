@@ -16,11 +16,9 @@
 //! .. }` struct literals across three files.
 
 use crabllm_core::{
-    AnthropicContentBlock, AnthropicRequest, AnthropicResponse, AnthropicStreamEvent,
-    AnthropicUsage, BlockDelta, BoxStream, ChatCompletionChunk, ChatCompletionRequest,
-    ChatCompletionResponse, Choice, ChunkChoice, Delta, Error, FinishReason, FunctionCallDelta,
-    GeminiRequest, GeminiResponse, Message, MessageDeltaPayload, Provider, Role, ToolCall,
-    ToolCallDelta, ToolType,
+    BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Choice,
+    ChunkChoice, Delta, Error, FinishReason, FunctionCallDelta, Message, Provider, Role, ToolCall,
+    ToolCallDelta, ToolType, anthropic, gemini,
 };
 use futures_util::StreamExt;
 use parking_lot::Mutex;
@@ -104,19 +102,19 @@ impl Provider for TestProvider {
 
     async fn anthropic_messages(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<AnthropicResponse, Error> {
+        request: &anthropic::Request,
+    ) -> Result<anthropic::Response, Error> {
         let ir_req = crabllm_core::ir::Request::from(request.clone());
         let chat_req = ChatCompletionRequest::from(&ir_req);
         let resp = self.chat_completion(&chat_req).await?;
         let ir_resp = crabllm_core::ir::Response::from(resp);
-        Ok(AnthropicResponse::from(&ir_resp))
+        Ok(anthropic::Response::from(&ir_resp))
     }
 
     async fn anthropic_messages_stream(
         &self,
-        request: &AnthropicRequest,
-    ) -> Result<BoxStream<'static, Result<AnthropicStreamEvent, Error>>, Error> {
+        request: &anthropic::Request,
+    ) -> Result<BoxStream<'static, Result<anthropic::StreamEvent, Error>>, Error> {
         let ir_req = crabllm_core::ir::Request::from(request.clone());
         let chat_req = ChatCompletionRequest::from(&ir_req);
         let mut chunks = self.chat_completion_stream(&chat_req).await?;
@@ -131,15 +129,15 @@ impl Provider for TestProvider {
                 let Some(choice) = chunk.choices.first() else { continue };
                 let delta = &choice.delta;
                 if let Some(text) = &delta.content {
-                    yield Ok(AnthropicStreamEvent::ContentBlockDelta {
+                    yield Ok(anthropic::StreamEvent::ContentBlockDelta {
                         index: block_index,
-                        delta: BlockDelta::Text { text: text.clone() },
+                        delta: anthropic::BlockDelta::Text { text: text.clone() },
                     });
                 }
                 if let Some(reason) = &delta.reasoning_content {
-                    yield Ok(AnthropicStreamEvent::ContentBlockDelta {
+                    yield Ok(anthropic::StreamEvent::ContentBlockDelta {
                         index: block_index,
-                        delta: BlockDelta::Thinking { thinking: reason.clone() },
+                        delta: anthropic::BlockDelta::Thinking { thinking: reason.clone() },
                     });
                 }
                 if let Some(calls) = &delta.tool_calls {
@@ -147,9 +145,9 @@ impl Provider for TestProvider {
                         if tc.id.is_some() {
                             block_index += 1;
                             _tool_idx = tc.index;
-                            yield Ok(AnthropicStreamEvent::ContentBlockStart {
+                            yield Ok(anthropic::StreamEvent::ContentBlockStart {
                                 index: block_index,
-                                content_block: AnthropicContentBlock::ToolUse {
+                                content_block: anthropic::ContentBlock::ToolUse {
                                     id: tc.id.clone().unwrap_or_default(),
                                     name: tc.function.as_ref().and_then(|f| f.name.clone()).unwrap_or_default(),
                                     input: serde_json::json!({}),
@@ -160,9 +158,9 @@ impl Provider for TestProvider {
                         if let Some(func) = &tc.function
                             && let Some(args) = &func.arguments
                         {
-                            yield Ok(AnthropicStreamEvent::ContentBlockDelta {
+                            yield Ok(anthropic::StreamEvent::ContentBlockDelta {
                                 index: block_index,
-                                delta: BlockDelta::InputJson { partial_json: args.clone() },
+                                delta: anthropic::BlockDelta::InputJson { partial_json: args.clone() },
                             });
                         }
                     }
@@ -174,12 +172,12 @@ impl Provider for TestProvider {
                         FinishReason::ToolCalls => "tool_use",
                         _ => "end_turn",
                     };
-                    yield Ok(AnthropicStreamEvent::MessageDelta {
-                        delta: MessageDeltaPayload {
+                    yield Ok(anthropic::StreamEvent::MessageDelta {
+                        delta: anthropic::MessageDeltaPayload {
                             stop_reason: Some(stop.to_string()),
                             stop_sequence: None,
                         },
-                        usage: AnthropicUsage {
+                        usage: anthropic::Usage {
                             input_tokens: 0,
                             output_tokens: 0,
                             cache_read_input_tokens: None,
@@ -195,8 +193,8 @@ impl Provider for TestProvider {
     async fn gemini_generate_content_stream(
         &self,
         _model: &str,
-        _request: &GeminiRequest,
-    ) -> Result<BoxStream<'static, Result<GeminiResponse, Error>>, Error> {
+        _request: &gemini::Request,
+    ) -> Result<BoxStream<'static, Result<gemini::Response, Error>>, Error> {
         Err(Error::Internal(
             "TestProvider: gemini streaming not supported".into(),
         ))

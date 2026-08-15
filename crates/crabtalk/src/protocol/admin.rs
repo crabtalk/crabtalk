@@ -4,49 +4,11 @@ use crate::llm::Provider;
 use crate::system::CrabTalk;
 use crate::system::event::EventSubscription;
 use anyhow::Result;
-use mcp::McpEvent;
 use runtime::Env;
 use wcore::protocol::message::*;
+use wcore::storage::Storage;
 
-fn mcp_event_to_msg(event: McpEvent) -> McpEventMsg {
-    let now = chrono::Utc::now().to_rfc3339();
-    match event {
-        McpEvent::Connecting { agent, name } => McpEventMsg {
-            kind: McpEventKind::Connecting.into(),
-            name,
-            tools: Vec::new(),
-            error: String::new(),
-            timestamp: now,
-            agent,
-        },
-        McpEvent::Connected { agent, name, tools } => McpEventMsg {
-            kind: McpEventKind::Connected.into(),
-            name,
-            tools,
-            error: String::new(),
-            timestamp: now,
-            agent,
-        },
-        McpEvent::Failed { agent, name, error } => McpEventMsg {
-            kind: McpEventKind::Failed.into(),
-            name,
-            tools: Vec::new(),
-            error,
-            timestamp: now,
-            agent,
-        },
-        McpEvent::Disconnected { agent, name } => McpEventMsg {
-            kind: McpEventKind::Disconnected.into(),
-            name,
-            tools: Vec::new(),
-            error: String::new(),
-            timestamp: now,
-            agent,
-        },
-    }
-}
-
-impl<P: Provider + 'static> CrabTalk<P> {
+impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn get_stats(&self) -> Result<Stats> {
         let rt = self.runtime.read().await.clone();
         let active = rt.conversation_count().await;
@@ -88,7 +50,7 @@ impl<P: Provider + 'static> CrabTalk<P> {
             let mut rx = mcp.subscribe();
             loop {
                 match rx.recv().await {
-                    Ok(event) => yield mcp_event_to_msg(event),
+                    Ok(event) => yield event.into(),
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 }

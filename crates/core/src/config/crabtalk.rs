@@ -1,6 +1,6 @@
 //! Top-level configuration loaded from `config.toml`.
 
-use crate::config::{LlmConfig, system::TasksConfig};
+use crate::config::{LlmConfig, mcp::McpConfig, system::TasksConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -20,6 +20,9 @@ pub struct Config {
     /// Task executor pool configuration (`[tasks]`).
     #[serde(default)]
     pub tasks: TasksConfig,
+    /// MCP peer lifetime (`[mcp]`).
+    #[serde(default)]
+    pub mcp: McpConfig,
     /// Environment variables passed to all MCP server processes.
     #[serde(default)]
     pub env: BTreeMap<String, String>,

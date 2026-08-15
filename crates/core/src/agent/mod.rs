@@ -13,8 +13,8 @@ use async_stream::stream;
 pub use builder::AgentBuilder;
 pub use config::AgentConfig;
 use crabllm_core::{
-    AnthropicContent, AnthropicMessage, AnthropicMessages, AnthropicRequest, AnthropicSystem,
-    AnthropicTool, ContentBlock, FinishReason, Provider, Role, Tool, ToolCall, ToolChoice, Usage,
+    ContentBlock, FinishReason, Provider, Role, Tool, ToolCall, ToolChoice, Usage,
+    anthropic::{self, Messages},
 };
 use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
 use futures_core::Stream;
@@ -105,8 +105,22 @@ impl<P: Provider + 'static> Clone for Agent<P> {
 impl<P: Provider + 'static> Agent<P> {
     /// Append additional tool schemas (e.g. client-provided tools for a
     /// specific conversation). Call on a cloned agent before running.
+    ///
+    /// A client offers what it can execute; `config.tools` decides what this
+    /// agent may see. Without the filter a scoped agent is advertised tools
+    /// the dispatcher will reject — enforcement without advertisement just
+    /// buys a wasted turn. Empty whitelist = unrestricted, matching
+    /// [`ToolRegistry::filtered_snapshot`].
     pub fn extend_tools(&mut self, tools: Vec<Tool>) {
-        self.tools.extend(tools);
+        if self.config.tools.is_empty() {
+            self.tools.extend(tools);
+            return;
+        }
+        self.tools.extend(
+            tools
+                .into_iter()
+                .filter(|t| self.config.tools.contains(&t.function.name)),
+        );
     }
 
     /// Resolve the model name from agent config.
@@ -114,7 +128,7 @@ impl<P: Provider + 'static> Agent<P> {
         self.config.model.clone()
     }
 
-    /// Build an `AnthropicRequest` from config state (system prompt +
+    /// Build an `anthropic::Request` from config state (system prompt +
     /// history + tool schemas).
     ///
     /// If `tool_choice_override` is provided, it takes precedence over the
@@ -125,16 +139,16 @@ impl<P: Provider + 'static> Agent<P> {
         &self,
         history: &[HistoryEntry],
         tool_choice_override: Option<&ToolChoice>,
-    ) -> AnthropicRequest {
+    ) -> anthropic::Request {
         let model_name = self.model_name();
 
-        let mut messages: Vec<AnthropicMessage> = history
+        let mut messages: Vec<anthropic::Message> = history
             .iter()
             .map(|e| {
                 let msg = e.to_wire_message();
-                AnthropicMessage {
+                anthropic::Message {
                     role: msg.role.as_str().to_string(),
-                    content: AnthropicContent::Blocks(msg.content),
+                    content: anthropic::Content::Blocks(msg.content),
                 }
             })
             .collect();
@@ -144,7 +158,7 @@ impl<P: Provider + 'static> Agent<P> {
         let system = if self.config.system_prompt.is_empty() {
             None
         } else {
-            Some(AnthropicSystem::Blocks(vec![ContentBlock::Text {
+            Some(anthropic::System::Blocks(vec![ContentBlock::Text {
                 text: self.config.system_prompt.clone(),
                 cache_control: Some(serde_json::json!({"type": "ephemeral"})),
             }]))
@@ -159,18 +173,18 @@ impl<P: Provider + 'static> Agent<P> {
         let tools = if is_disabled || self.tools.is_empty() {
             None
         } else {
-            Some(tools_to_anthropic(&self.tools))
+            Some(anthropic::Tool::cached(&self.tools))
         };
 
         let tool_choice = if is_disabled || self.tools.is_empty() {
             None
         } else {
-            Some(tool_choice_to_anthropic(&tool_choice))
+            Some(anthropic::tool_choice(&tool_choice))
         };
 
         let (max_tokens, thinking) = self.config.token_budget();
 
-        AnthropicRequest {
+        anthropic::Request {
             model: model_name,
             messages,
             max_tokens,
@@ -187,7 +201,7 @@ impl<P: Provider + 'static> Agent<P> {
 
     /// Perform a single LLM round: send request, dispatch tools, return step.
     ///
-    /// Composes an [`AnthropicRequest`] from config state (system prompt +
+    /// Composes an [`anthropic::Request`] from config state (system prompt +
     /// history + tool schemas), calls the stored model, dispatches any tool
     /// calls via the [`ToolDispatcher`], and appends results to history.
     pub async fn step(
@@ -360,16 +374,16 @@ impl<P: Provider + 'static> Agent<P> {
 
                 {
                     use crate::model::map_stop_reason_str;
-                    use crabllm_core::{AnthropicStreamEvent, BlockDelta};
+
 
                     let mut event_stream = std::pin::pin!(self.model.stream(request));
                     while let Some(result) = event_stream.next().await {
                         match result {
                             Ok(ref event) => {
                                 match event {
-                                    AnthropicStreamEvent::ContentBlockDelta { delta, .. } => {
+                                    anthropic::StreamEvent::ContentBlockDelta { delta, .. } => {
                                         match delta {
-                                            BlockDelta::Text { text } => {
+                                            anthropic::BlockDelta::Text { text } => {
                                                 if open != OpenSegment::Text {
                                                     if open == OpenSegment::Thinking {
                                                         yield AgentEvent::ThinkingEnd;
@@ -379,7 +393,7 @@ impl<P: Provider + 'static> Agent<P> {
                                                 }
                                                 yield AgentEvent::TextDelta(text.clone());
                                             }
-                                            BlockDelta::Thinking { thinking } => {
+                                            anthropic::BlockDelta::Thinking { thinking } => {
                                                 if !thinking.is_empty() {
                                                     if open != OpenSegment::Thinking {
                                                         if open == OpenSegment::Text {
@@ -391,10 +405,10 @@ impl<P: Provider + 'static> Agent<P> {
                                                     yield AgentEvent::ThinkingDelta(thinking.clone());
                                                 }
                                             }
-                                            BlockDelta::InputJson { .. } => {}
+                                            anthropic::BlockDelta::InputJson { .. } => {}
                                         }
                                     }
-                                    AnthropicStreamEvent::MessageDelta { delta, usage } => {
+                                    anthropic::StreamEvent::MessageDelta { delta, usage } => {
                                         finish_reason = delta.stop_reason.as_deref().map(map_stop_reason_str);
                                         last_usage = Some(Usage::from(usage));
                                     }
@@ -600,36 +614,5 @@ impl<P: Provider + 'static> Agent<P> {
                 model: model_name,
             });
         }
-    }
-}
-
-fn tools_to_anthropic(tools: &[Tool]) -> Vec<AnthropicTool> {
-    let len = tools.len();
-    tools
-        .iter()
-        .enumerate()
-        .map(|(i, t)| AnthropicTool {
-            name: t.function.name.clone(),
-            description: t.function.description.clone(),
-            input_schema: t
-                .function
-                .parameters
-                .clone()
-                .unwrap_or(serde_json::json!({"type": "object"})),
-            cache_control: if i == len - 1 {
-                Some(serde_json::json!({"type": "ephemeral"}))
-            } else {
-                None
-            },
-        })
-        .collect()
-}
-
-fn tool_choice_to_anthropic(tc: &ToolChoice) -> serde_json::Value {
-    match tc {
-        ToolChoice::Auto => serde_json::json!({"type": "auto"}),
-        ToolChoice::Required => serde_json::json!({"type": "any"}),
-        ToolChoice::Function { name } => serde_json::json!({"type": "tool", "name": name}),
-        ToolChoice::Disabled => serde_json::json!({"type": "none"}),
     }
 }

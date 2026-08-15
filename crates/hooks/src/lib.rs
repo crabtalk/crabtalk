@@ -21,6 +21,8 @@ pub mod memory;
 pub mod os;
 #[cfg(feature = "skill")]
 pub mod skill;
+#[cfg(feature = "memory")]
+mod utils;
 
 #[cfg(feature = "mcp")]
 pub use mcp::McpHook;
@@ -30,6 +32,8 @@ pub use memory::{DEFAULT_SOUL, Memory, MemoryHook};
 pub use os::OsHook;
 #[cfg(feature = "skill")]
 pub use skill::handler::SkillHook;
+#[cfg(feature = "memory")]
+pub use utils::default_crab;
 
 /// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
 #[derive(Default)]
@@ -44,7 +48,6 @@ pub type EventSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 /// Aggregates all sub-hooks behind a single `Hook` impl.
 pub struct Hooks {
     pub scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
-    agent_descriptions: RwLock<BTreeMap<String, String>>,
     hooks: BTreeMap<String, Arc<dyn Hook>>,
     /// Dispatchable but never advertised ambiently, so a surface's own tools
     /// can't leak into ordinary chat or unattended heartbeats.
@@ -60,7 +63,6 @@ impl Hooks {
     pub fn new(scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>) -> Self {
         Self {
             scopes,
-            agent_descriptions: RwLock::new(BTreeMap::new()),
             hooks: BTreeMap::new(),
             scoped: BTreeMap::new(),
             scoped_names: BTreeSet::new(),
@@ -152,38 +154,20 @@ impl Hook for Hooks {
     }
 
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
+        // A store that persists only a description composes the identity line
+        // here; one that persists a full prompt already filled this in, so
+        // seeding only when empty leaves it untouched.
+        if config.system_prompt.is_empty() && !config.description.is_empty() {
+            config.system_prompt = format!("You are {}.\n\n{}", config.name, config.description);
+        }
         if let Some(ref prompt) = self.system_prompt() {
             config.system_prompt.push_str(prompt);
-        }
-        // Peer-agents block — names and descriptions of every other
-        // registered agent, for the `delegate` tool to target. Built
-        // once at agent-build time; later registry mutations only
-        // appear after the agent is rebuilt (re-upserted or
-        // daemon-reloaded).
-        let descriptions = self.agent_descriptions.read();
-        let peers: Vec<_> = descriptions
-            .iter()
-            .filter(|(name, _)| name.as_str() != config.name)
-            .collect();
-        if !peers.is_empty() {
-            config.system_prompt.push_str("\n\n<agents>\n");
-            for (name, desc) in peers {
-                config
-                    .system_prompt
-                    .push_str(&format!("- {name}: {desc}\n"));
-            }
-            config.system_prompt.push_str("</agents>");
         }
         self.apply_scope(&mut config);
         config
     }
 
     fn on_register_agent(&self, name: &str, config: &AgentConfig) {
-        if name != wcore::paths::DEFAULT_AGENT && !config.description.is_empty() {
-            self.agent_descriptions
-                .write()
-                .insert(name.to_owned(), config.description.clone());
-        }
         self.scopes.write().insert(
             name.to_owned(),
             AgentScope {
@@ -198,7 +182,6 @@ impl Hook for Hooks {
 
     fn on_unregister_agent(&self, name: &str) {
         self.scopes.write().remove(name);
-        self.agent_descriptions.write().remove(name);
         for hook in self.hooks.values() {
             hook.on_unregister_agent(name);
         }
