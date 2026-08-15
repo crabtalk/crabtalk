@@ -21,6 +21,20 @@ pub(crate) const HOST_ARG_LEN: u64 = hash("crabtalk.args.len");
 pub(crate) const HOST_ARG_READ: u64 = hash("crabtalk.args.read");
 /// Fail this invocation with a message.
 pub(crate) const HOST_FAIL: u64 = hash("crabtalk.fail");
+/// Copy the last capability call's staged result into guest memory.
+pub(crate) const HOST_RESULT_READ: u64 = hash("crabtalk.result.read");
+
+/// Read a file. Request is the path; the result is its bytes.
+pub(crate) const HOST_FS_READ: u64 = hash("crabtalk.fs.read");
+/// Write a file. Request is a `u32` path length, the path, then the content.
+pub(crate) const HOST_FS_WRITE: u64 = hash("crabtalk.fs.write");
+/// Run a command. Request and result are both JSON.
+pub(crate) const HOST_EXEC_RUN: u64 = hash("crabtalk.exec.run");
+
+/// Set on the length a capability returns when the staged bytes are an error
+/// message rather than a result. A length never reaches this bit on its own,
+/// so one return value carries both without a second call to ask which.
+pub(crate) const ERROR: u64 = 1 << 63;
 
 /// FNV-1a over the capability's name, evaluated at compile time.
 pub const fn hash(name: &str) -> u64 {
@@ -82,4 +96,14 @@ pub fn read_args(buffer: &mut [u8]) -> usize {
 pub fn fail(message: &[u8]) -> Buf {
     sys::call2(HOST_FAIL, message.as_ptr() as u64, message.len() as u64);
     Buf { ptr: 0, len: 0 }
+}
+
+/// Pull the last capability call's staged result, returning its *full* length
+/// exactly as [`read_args`] does — the one pattern both use.
+pub(crate) fn read_result(buffer: &mut [u8]) -> usize {
+    sys::call2(
+        HOST_RESULT_READ,
+        buffer.as_mut_ptr() as u64,
+        buffer.len() as u64,
+    ) as usize
 }

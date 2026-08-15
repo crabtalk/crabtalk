@@ -8,6 +8,7 @@ use crate::{
     system::{event, host::SystemEnv, provider::DefaultProvider},
 };
 use anyhow::Result;
+use harness::HarnessHook;
 use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook, SkillHook};
 use mcp::McpHandler;
 use runtime::{Hook, Runtime};
@@ -248,6 +249,22 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 
         hooks.register_hook("skill", Arc::new(SkillHook::new(skills, scopes.clone())));
         hooks.register_hook("mcp", Arc::new(McpHook::new(mcp_handler, env_overlay)));
+
+        // Harnesses are loaded here rather than when their agent registers,
+        // because the schema catalogue is built from `Hook::schema` before any
+        // agent exists — a tool the catalogue never saw is a tool no model is
+        // offered. Registering an agent later loads its own through
+        // `on_register_agent`.
+        match HarnessHook::new() {
+            Ok(harnesses) => {
+                for agent in storage.list_agents().await.unwrap_or_default() {
+                    harnesses.load(&agent.name, &agent.harnesses);
+                }
+                hooks.register_hook("harness", Arc::new(harnesses));
+            }
+            Err(error) => tracing::warn!("harness engine unavailable: {error:#}"),
+        }
+
         Ok(shared_memory)
     }
 

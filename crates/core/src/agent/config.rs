@@ -64,6 +64,10 @@ pub struct AgentConfig {
     /// daemon spawns or connects to on the agent's behalf. Empty = none.
     #[serde(default)]
     pub mcps: Vec<crate::config::McpServerConfig>,
+    /// Harnesses this agent uses, and what each is granted. Their tools join
+    /// this agent's tool list under their own names. Empty = none.
+    #[serde(default)]
+    pub harnesses: Vec<crate::config::HarnessConfig>,
     /// Computed tool whitelist. Empty = all tools. Not serialized.
     #[serde(skip)]
     pub tools: Vec<String>,
@@ -71,9 +75,8 @@ pub struct AgentConfig {
     /// Longer results are truncated before sending to the compaction LLM.
     #[serde(default = "default_compact_tool_max_len")]
     pub compact_tool_max_len: usize,
-    /// Hook configuration for this agent (bash deny rules, memory recall
-    /// limit, etc.). Each agent owns its own hook state — there is no
-    /// global override.
+    /// Hook configuration for this agent (memory recall limit, etc.).
+    /// Each agent owns its own hook state — there is no global override.
     #[serde(default)]
     pub hooks: HooksConfig,
 }
@@ -108,6 +111,7 @@ impl Default for AgentConfig {
             max_tokens: crabllm_core::anthropic::DEFAULT_MAX_TOKENS,
             thinking_budget: DEFAULT_THINKING_BUDGET,
             skills: Vec::new(),
+            harnesses: Vec::new(),
             mcps: Vec::new(),
             tools: Vec::new(),
             compact_tool_max_len: DEFAULT_COMPACT_TOOL_MAX_LEN,
