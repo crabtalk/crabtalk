@@ -3,7 +3,15 @@
 ## Imports
 
 - Always use group imports: `use foo::{Bar, Baz};` — never individual `use` lines for the same crate.
-- No empty lines between `use` items. `mod` / `pub mod` declarations go after all `use` items.
+- No empty lines between `use` items. `mod` / `pub mod` declarations go after all `use` items, separated from them by one empty line — the two are distinct blocks:
+
+```rust
+use foo::Bar;
+use std::sync::Arc;
+
+mod thing;
+mod other;
+```
 - Never use `super::` in imports — always use `crate::`.
 
 ## File Organization

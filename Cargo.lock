@@ -682,7 +682,9 @@ dependencies = [
 
 [[package]]
 name = "crabllm-core"
-version = "0.0.22"
+version = "0.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8da0dc440d784c240b1aa5f4406f48a965263585287a2c0350e298e78810f8d0"
 dependencies = [
  "bytes",
  "futures",
@@ -696,7 +698,9 @@ dependencies = [
 
 [[package]]
 name = "crabllm-http"
-version = "0.0.22"
+version = "0.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b05f3e7d6214af01f60ee8c9592b0ddc5e615b784b76c33ead7c0c534d14e6d"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -716,7 +720,9 @@ dependencies = [
 
 [[package]]
 name = "crabllm-provider"
-version = "0.0.22"
+version = "0.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17f66632db58bd7883d2bd33478e5c53704d68a5daccf18ac44f5d1b6826df30"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -729,7 +735,9 @@ dependencies = [
 
 [[package]]
 name = "crabllm-sdk"
-version = "0.0.22"
+version = "0.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9dc75589c54530ccea98faf1cff6ef611c6a0442c80a757e7d722351517255cd"
 dependencies = [
  "bytes",
  "crabllm-core",
