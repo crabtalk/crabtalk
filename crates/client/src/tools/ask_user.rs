@@ -1,7 +1,7 @@
 //! Ask-user tool — schema and client-side types.
 //!
-//! The daemon advertises this tool via `ClientToolHook` and forwards
-//! calls to the connected client as `ToolCallForward` events. The
+//! The client declares this tool in `StreamMsg.tools` and the daemon
+//! forwards calls back as `ToolCallForward` events. The
 //! client parses the JSON arguments into [`AskUser`], renders the
 //! questions, and replies via `ReplyToTool`.
 
