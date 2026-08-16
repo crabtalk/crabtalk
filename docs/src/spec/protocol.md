@@ -1,4 +1,39 @@
-# Dispatch
+# Protocol
+
+The protocol is the daemon's surface for everything outside its process. Clients speak it over a socket; a harness holding a `protocol:*` capability speaks the same one from inside a sandbox. There is no second vocabulary for guests.
+
+## Addressing
+
+A conversation is addressed by the pair `(agent, sender)`.
+
+- `agent` names an agent registered in the daemon.
+- `sender` is a client-provided string identifying the counterparty — `"user"`, `"event:deploy.done"`, a delegate id. Clients choose their own convention.
+
+The pair is a conversation's only externally addressable name. **The wire carries no conversation identifier.** The `u64` the runtime keys its live map by is internal and never leaves the process.
+
+| Message | Effect |
+|---------|--------|
+| `StreamMsg` | Append user content, run the agent, stream the response. |
+| `SendMsg` | The same, returning one complete response rather than a stream. |
+| `KillMsg` | Cancel the in-flight run, if any. |
+| `CompactMsg` | Compact the current history into an archive. |
+| `SteerSessionMsg` | Inject user content into a run already in flight. |
+| `ReplyToTool` | Supply the result of a forwarded client-side tool call. |
+
+`StreamMsg.sender` is optional; when omitted the daemon resolves a default determined by the transport. `StreamMsg.guest` selects who speaks on this turn without changing whose conversation it is.
+
+There is no working directory on the wire. `StreamMsg.cwd` was removed: the daemon does not read the user's filesystem, and a client that wants local context renders it into `content` itself.
+
+## Capability groups
+
+A harness reaches this surface through `crabtalk.protocol.call`, and what it may send is checked on decode against the group its declaration granted. The check is **default-deny**: a message type in no group reaches nothing, and a group the harness was not granted is the same.
+
+- `protocol:read` — the catalogue, and nothing that spends tokens.
+- `protocol:sessions` — ranked excerpts of the declaring agent's own past conversations.
+
+Anything destructive, anything that answers on someone else's behalf, and anything whose payload is substantially a credential belongs to no group a third party can hold. Where a request carries a scope the guest should not choose — `SearchSessions.agent` — the host **overwrites** it rather than validating it. Refusing a wrong value would only teach the guest to send the right one.
+
+## Transports
 
 The daemon accepts client messages on its transports and produces a stream of server messages in response. Each message is handled independently, with no central event loop mediating between the transport and the operations.
 
@@ -11,6 +46,8 @@ Concurrency is unbounded at this layer: nothing throttles or serializes incoming
 ## Dispatch function
 
 `Server::dispatch(ClientMessage) -> Stream<ServerMessage>` is the single entry into the daemon's operations. It inspects the `ClientMessage` variant and routes to the corresponding method on the `Server` trait.
+
+It is also the door a harness comes back through. A guest granted a `protocol:*` capability sends the same `ClientMessage` a client would and receives the same reply — one vocabulary, not two. What it is *allowed* to send is checked on decode against the group its declaration granted, and default-deny: a message named in no group reaches nothing.
 
 - Request-response operations (`ping`, `kill_conversation`, `compact_conversation`, administrative calls) yield exactly one `ServerMessage`.
 - Streaming operations (`stream`, `subscribe_events`) yield many `ServerMessage` values over time.

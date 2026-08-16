@@ -8,12 +8,15 @@ The daemon owns:
 
 - **Transports** — UDS and TCP listeners. Listening endpoints belong to the daemon, not to individual clients or agents.
 - **Runtime** — a single shared runtime instance behind `RwLock`. Agents share the runtime; the runtime is never cloned per conversation.
-- **Hooks** — the composite `Hook` assembled from sub-hooks (OS tools, `ask_user`, delegation, event subscription, memory).
+- **Hooks** — the composite `Hook`. Two ship today: the harness hook, which surfaces the tools of each agent's declared harnesses, and the MCP hook. `Hook` is public API at the runtime layer, so an embedder registers their own.
 - **Event bus** — subscription table and fire callback. File-backed by `events/subscriptions.toml` under the config directory.
 - **MCP handler** — connections to external MCP servers and routing to the tools they advertise.
+- **Harness images** — compiled RV64 guests, keyed by a content digest of the ELF, its grants, and the scope its capabilities close over.
 - **Configuration** — current `DaemonConfig`, reloaded in place on explicit reload.
 
 The daemon does not interpret tool semantics. Tool dispatch is the runtime's responsibility, routed through the composite hook.
+
+The daemon owns no tools of its own. `bash`, `read` and `edit` are a harness an agent declares; `ask_user` is a client tool the daemon forwards and never answers. What the daemon supplies is the socket, the runtime, and the state — not a set of capabilities it decided every agent should have.
 
 ## Process model
 
