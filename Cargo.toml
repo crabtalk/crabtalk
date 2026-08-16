@@ -5,7 +5,6 @@ members = [
     "berm/*",
     "crates/*",
     "crates/berm/proto",
-    "crates/command/codegen",
     "harness/*",
 ]
 
@@ -18,7 +17,6 @@ repository = "https://github.com/crabtalk/crabtalk"
 keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
-telegram = { path = "apps/telegram", package = "crabtalk-telegram", version = "0.0.23" }
 client = { path = "crates/client", package = "crabtalk-client", version = "0.0.23" }
 cli = { path = "apps/tui", package = "crabtalk-cli", version = "0.0.23" }
 crabtalk = { path = "crates/crabtalk", package = "crabtalk", version = "0.0.23", default-features = false }
@@ -32,8 +30,6 @@ embed = { path = "crates/embed", package = "crabtalk-embed", version = "0.0.23" 
 hooks = { path = "crates/hooks", package = "crabtalk-hooks", version = "0.0.23", default-features = false }
 storage = { path = "crates/storage", package = "crabtalk-storage", version = "0.0.23", default-features = false }
 mcp = { path = "crates/mcp", package = "crabtalk-mcp", version = "0.0.23", default-features = false }
-command = { path = "crates/command", package = "crabtalk-command", version = "0.0.23" }
-command-codegen = { path = "crates/command/codegen", package = "crabtalk-command-codegen", version = "0.0.23" }
 search = { path = "harness/search", package = "crabtalk-search", version = "0.0.23", default-features = false }
 berm = { path = "berm/engine", version = "0.0.23" }
 crabtalk-berm = { path = "crates/berm", version = "0.0.23" }
@@ -65,7 +61,6 @@ sha2 = "0.10"
 # crates.io
 base64 = "0.22"
 bytes = "1"
-qr2term = "0.3"
 anyhow = "1"
 proc-macro2 = "1"
 quote = "1"
@@ -115,11 +110,6 @@ hyper-rustls = { version = "0.27", default-features = false, features = [
     "ring",
     "webpki-tokio",
 ] }
-axum = { version = "0.8", default-features = false, features = [
-    "http1",
-    "query",
-    "tokio",
-] }
 parking_lot = "0.12"
 schemars = "1.1.0"
 serde = { version = "1", features = ["derive"] }
@@ -150,7 +140,6 @@ tokio = { version = "1", features = [
     "sync",
     "time",
 ] }
-teloxide = { version = "0.17", default-features = false, features = ["rustls"] }
 textwrap = "0.16"
 toml = "0.8"
 sqlx = { version = "0.8", default-features = false, features = [

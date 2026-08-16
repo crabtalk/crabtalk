@@ -19,7 +19,7 @@ pub struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
-    /// Install an app — daemon, cli, telegram — or any crate by name.
+    /// Install an app — daemon, cli — or any crate by name.
     Install {
         #[command(flatten)]
         fetch: Fetch,
@@ -41,19 +41,15 @@ pub enum Command {
     },
     /// Update all installed crabtalk binaries to the latest version.
     Update,
-    /// List available crabtalk binaries (installed + running status).
+    /// List available crabtalk binaries.
     List,
-
-    /// `<name> <args…>` — forward to the service binary.
-    #[command(external_subcommand)]
-    Service(Vec<String>),
 }
 
 /// Everything `install` and `add` share. They differ only in which
 /// [`Kind`] of binary they accept — the fetch itself is identical.
 #[derive(clap::Args, Debug)]
 pub struct Fetch {
-    /// Short name (daemon, cli, telegram, …) or crate name.
+    /// Short name (daemon, cli, …) or crate name.
     #[arg(required = true)]
     pub names: Vec<String>,
     /// Pin to a specific version (e.g. v0.0.21).
@@ -222,30 +218,6 @@ impl Cli {
                 github::install(&outdated, Some(&latest))
             }
             Command::List => list::run(),
-            Command::Service(args) => forward_service(args),
         }
     }
-}
-
-fn forward_service(args: Vec<String>) -> Result<()> {
-    let mut iter = args.into_iter();
-    let name = iter.next().ok_or_else(|| anyhow!("missing service name"))?;
-    let entry = Entry::by_short(&name).ok_or_else(|| anyhow!("unknown service: {name}"))?;
-    let binary = entry.binary_path().ok_or_else(|| {
-        anyhow!(
-            "{} not installed — run `crabup {} {}` first",
-            entry.bin,
-            entry.kind.install_verb(),
-            entry.short
-        )
-    })?;
-    let remaining: Vec<String> = iter.collect();
-    let status = std::process::Command::new(&binary)
-        .args(&remaining)
-        .status()
-        .map_err(|e| anyhow!("failed to exec {}: {e}", binary.display()))?;
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
-    }
-    Ok(())
 }

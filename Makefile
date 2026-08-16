@@ -4,19 +4,12 @@
 #
 # Usage:
 # make release        (core binaries, all platforms)
-# make bundle         (core + services, all platforms)
 # make macos-arm64    (all packages, one platform)
 VERSION = v$(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
 CARGO = cargo b --profile prod
 
 CORE_PACKAGES = -p crabup -p crabtalkd -p crabtalk-cli
 CORE_BINS = crabup crabtalkd crabtalk
-
-SERVICE_PACKAGES = -p crabtalk-telegram
-SERVICE_BINS = crabtalk-telegram
-
-ALL_PACKAGES = $(CORE_PACKAGES) $(SERVICE_PACKAGES)
-ALL_BINS = $(CORE_BINS) $(SERVICE_BINS)
 
 # TLS backend: native-tls on macOS, rustls on Linux/Windows.
 tls-macos-arm64 =
@@ -61,16 +54,8 @@ release: $(addprefix release-,$(PLATFORMS))
 release-%:
 	$(build-$*) $(CORE_PACKAGES) $(tls-$*)
 
-# Build all packages (core + services) for all platforms.
-bundle: $(PLATFORMS) tar-all
-
-tar-all:
-	mkdir -p target/bundle
-	$(foreach bin,$(ALL_BINS),$(foreach p,$(PLATFORMS),\
-		tar -czf target/bundle/$(bin)-$(VERSION)-$(p).tar.gz -C target/$(triple-$(p))/prod $(bin)$(ext-$(p));))
-
 macos-arm64 macos-amd64 linux-arm64 linux-amd64 windows-amd64:
-	$(build-$@) $(ALL_PACKAGES) $(tls-$@)
+	$(build-$@) $(CORE_PACKAGES) $(tls-$@)
 
 # Create a GitHub release and upload all core tarballs.
 # Assumes `make release` has been run and tarballs exist in target/bundle/.

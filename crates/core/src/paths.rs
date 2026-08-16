@@ -23,9 +23,6 @@ pub static SOCKET_PATH: LazyLock<PathBuf> = LazyLock::new(|| RUN_DIR.join("crabt
 /// TCP port file (`~/.crabtalk/run/crabtalk.port`). Contains the port number as text.
 pub static TCP_PORT_FILE: LazyLock<PathBuf> = LazyLock::new(|| RUN_DIR.join("crabtalk.port"));
 
-/// Logs directory (`~/.crabtalk/logs/`).
-pub static LOGS_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("logs"));
-
 /// Configuration file name.
 pub const CONFIG_FILE: &str = "config.toml";
 /// Mutable settings file (daemon-owned, persisted under `local/`).
@@ -56,13 +53,3 @@ pub static TOKENS_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("tok
 
 /// Default agent name used when no custom agents are configured.
 pub const DEFAULT_AGENT: &str = "crab";
-
-/// Port file for a named service: `~/.crabtalk/run/{name}.port`
-pub fn service_port_file(name: &str) -> PathBuf {
-    RUN_DIR.join(format!("{name}.port"))
-}
-
-/// Log file for a named service: `~/.crabtalk/logs/{name}.log`
-pub fn service_log_path(name: &str) -> PathBuf {
-    LOGS_DIR.join(format!("{name}.log"))
-}

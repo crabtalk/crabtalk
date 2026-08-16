@@ -11,8 +11,7 @@ Layer 0 ─ Foundation
 
 Layer 1 ─ Backends (independent of each other)
   ├─ model               ProviderRegistry (OpenAI, Anthropic, Google, Bedrock, Azure)
-  ├─ transport            UDS + TCP socket layers, shared Transport enum
-  └─ command              Service management (systemd/launchd), proc macro codegen
+  └─ transport            UDS + TCP socket layers, shared Transport enum
 
 Layer 2 ─ Engine
   └─ runtime              Env, tool dispatch, MCP, skills, memory
@@ -23,10 +22,9 @@ Layer 3 ─ Library
 
 Layer 4 ─ Adapters
   ├─ crabtalkd            Daemon CLI: run, setup, reload, events
-  ├─ crabup               Package + service manager for the ecosystem
+  ├─ crabup               Package manager for the ecosystem
   ├─ client               Connection, typed RPC sugars, stream adapters
   ├─ tui                  REPL, config TUI
-  ├─ apps/                telegram (gateway client)
   └─ harness/             the harnesses (berm guests, RV64 ELFs)
 ```
 
@@ -46,7 +44,7 @@ together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 | Does it need network I/O, scheduling, or process lifecycle? | crabtalk (system) |
 | Does it adapt a platform or parse bot commands? | client |
 | Does it add a daemon admin command (over the socket)? | crabtalkd |
-| Does it install, update, or service-manage a crabtalk binary? | crabup |
+| Does it install or update a crabtalk binary? | crabup |
 | Does it add a TUI feature or interactive UI? | tui |
 | **If none of these fit, challenge whether the feature should exist.** | |
 
