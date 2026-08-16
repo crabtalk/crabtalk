@@ -54,8 +54,8 @@ jobs:
       # Proves what only a real build can: that the macro's exports survive
       # --gc-sections, that --emit-relocs reached the linker, and that the
       # manifest section is where the host looks for it.
-      - name: Build Guest
-        run: cargo build --release -p spike --target riscv64imac-unknown-none-elf
+      - name: Build Fixture Guest
+        run: cargo build --release -p berm-fixture --target riscv64imac-unknown-none-elf
       # The first real harness, and the one that proves capabilities: fs and
       # exec, bounded by a root the guest cannot widen.
       - name: Build OS Harness
