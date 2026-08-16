@@ -18,7 +18,7 @@ mod schema;
 ///
 /// This is paid on every invocation, not once: the buffers live in `.bss`,
 /// which the host zeroes each time it instantiates the guest. Measured against
-/// the spike, 64 KiB costs a few microseconds per call over 16 KiB, and 4 KiB
+/// the reference guest, 64 KiB costs a few microseconds per call over 16 KiB, and 4 KiB
 /// buys nothing back. `buffer = N` overrides it for a harness that needs room.
 const DEFAULT_BUFFER: usize = 16 * 1024;
 
@@ -262,6 +262,13 @@ fn collect(module: &mut ItemMod) -> syn::Result<Vec<Tool>> {
         // The struct is an interface declaration: read for its shape, never
         // constructed. Saying so beats an author silencing the warning.
         item.attrs.push(syn::parse_quote!(#[allow(dead_code)]));
+        // Reached through the SDK rather than named directly, so a harness
+        // depends on one crate and cannot pick a serde the derive disagrees
+        // with. This is why the author writes neither line.
+        item.attrs
+            .push(syn::parse_quote!(#[derive(::berm_sdk::serde::Deserialize)]));
+        item.attrs
+            .push(syn::parse_quote!(#[serde(crate = "::berm_sdk::serde")]));
     }
 
     for tool in &tools {

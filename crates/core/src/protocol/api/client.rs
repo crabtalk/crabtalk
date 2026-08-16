@@ -496,6 +496,31 @@ pub trait Client: Send {
         }
     }
 
+    /// Load one skill's instructions by name.
+    fn get_skill(
+        &mut self,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<SkillBody>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::GetSkill(GetSkillMsg { name })),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::SkillBody(skill)),
+                } => Ok(skill),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
     /// List all resolved models with provider and active state.
     fn list_models(&mut self) -> impl std::future::Future<Output = Result<Vec<ModelInfo>>> + Send {
         async move {

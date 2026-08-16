@@ -1,6 +1,6 @@
 [package]
-name = "berm-os"
-description = "OS tools — bash, read, edit — as a Crabtalk harness"
+name = "berm-fixture"
+description = "The reference guest berm is measured and tested against"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 publish = false
 
 [[bin]]
-name = "os"
+name = "fixture"
 path = "src/bin/main.rs"
 
 [dependencies]

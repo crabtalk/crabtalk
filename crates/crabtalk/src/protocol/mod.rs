@@ -204,7 +204,11 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
     }
 
     async fn list_skills(&self) -> Result<Vec<SkillInfo>> {
-        Ok(self.list_skills())
+        Ok(self.list_skills().await)
+    }
+
+    async fn get_skill(&self, name: String) -> Result<SkillBody> {
+        self.get_skill(name).await
     }
 
     async fn list_models(&self) -> Result<Vec<ModelInfo>> {

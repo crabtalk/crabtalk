@@ -1,8 +1,16 @@
-//! Spike guest — the smallest real harness, used to measure the boundary.
+//! The reference guest: the smallest real harness, and what berm is measured
+//! and tested against.
 //!
 //! Everything below the `#[harness]` line is what an author actually writes.
 //! The exports, the manifest section, the dispatch, and the panic handler come
 //! from the SDK.
+//!
+//! Each tool prices or proves one thing, which is why they are not useful on
+//! their own: `echo` carries typed arguments across the boundary, `chatty`
+//! makes a hundred host calls to price one, `probe` allocates to show the heap
+//! arrives without a second entry into the guest, and `boom` fails on purpose.
+//! `berm/engine/examples/measure.rs` reads the numbers off them, and the tests
+//! below are the only exercise the SDK's host-side `test::call` gets.
 
 // `no_std` and `no_main` are the guest's shape. Off its target this is an
 // ordinary binary so `cargo test` can run the tools below natively.

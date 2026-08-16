@@ -54,9 +54,9 @@ impl HarnessHook {
 
     /// Load what `agent` declared. Failures are logged rather than fatal: one
     /// unreadable image should cost its own tools, not the daemon's startup.
-    pub fn load(&self, agent: &str, declarations: &[HarnessConfig]) {
-        for declaration in declarations {
-            match self.image(declaration) {
+    pub fn load(&self, agent: &str, config: &AgentConfig) {
+        for declaration in &config.harnesses {
+            match self.image(declaration, &config.skills) {
                 Ok(harness) => {
                     self.loaded.write().expect("harness registry").insert(
                         (agent.to_owned(), declaration.name.clone()),
@@ -77,7 +77,7 @@ impl HarnessHook {
     /// The daemon does not download code: it loads what is present and errors
     /// if it is not. Fetching because a config named something would be the
     /// daemon making a policy decision with a network connection.
-    fn image(&self, declaration: &HarnessConfig) -> anyhow::Result<Harness> {
+    fn image(&self, declaration: &HarnessConfig, skills: &[String]) -> anyhow::Result<Harness> {
         let path = wcore::paths::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
         let elf = std::fs::read(&path).map_err(|e| {
             anyhow::anyhow!(
@@ -94,9 +94,13 @@ impl HarnessHook {
         let mut extra = Vec::new();
         if granted("protocol:read") {
             let protocol = self.protocol.clone();
+            let scope = crate::protocol::Scope {
+                read: true,
+                skills: skills.to_vec(),
+            };
             extra.push(Capability {
                 name: crate::protocol::CALL.to_owned(),
-                call: Arc::new(move |request| crate::protocol::call(&protocol, request, true)),
+                call: Arc::new(move |request| crate::protocol::call(&protocol, request, &scope)),
             });
         }
 
@@ -158,7 +162,7 @@ impl Hook for HarnessHook {
     }
 
     fn on_register_agent(&self, name: &str, config: &AgentConfig) {
-        self.load(name, &config.harnesses);
+        self.load(name, config);
     }
 
     fn on_unregister_agent(&self, name: &str) {

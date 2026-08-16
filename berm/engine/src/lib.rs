@@ -23,6 +23,7 @@ mod exec;
 mod fs;
 mod manifest;
 mod root;
+mod watchdog;
 mod wire;
 
 pub use manifest::{Manifest, ToolSpec};
@@ -270,6 +271,12 @@ impl Harness {
         };
 
         let mut store = self.instantiate(args.into())?;
+
+        // Entering the guest blocks this thread until the guest chooses to
+        // return, so the bound on that has to be held by someone else. Dropped
+        // on the way out of this function, before the store is.
+        let _deadline = watchdog::Deadline::set(store.interrupt_handle()?);
+
         let (ptr, len) = func
             .call(&mut store, ())
             .with_context(|| format!("harness trapped in {tool}"))?;

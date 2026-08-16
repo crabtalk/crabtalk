@@ -133,9 +133,46 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .ok_or_else(|| anyhow::anyhow!("mcp '{name}' missing from listing after reconnect"))
     }
 
-    pub(crate) fn list_skills(&self) -> Vec<SkillInfo> {
+    /// One skill's instructions, for a client or a harness that has chosen
+    /// from the catalogue.
+    pub(crate) async fn get_skill(&self, name: String) -> Result<SkillBody> {
+        let rt = self.runtime.read().await.clone();
+        let skill = rt
+            .storage()
+            .load_skill(&name)
+            .await?
+            .with_context(|| format!("no skill named '{name}'"))?;
+        Ok(SkillBody {
+            name: skill.name,
+            body: skill.body,
+        })
+    }
+
+    pub(crate) async fn list_skills(&self) -> Vec<SkillInfo> {
         let dirs = wcore::resolve_dirs(&self.config_dir);
         let local_skills_dir = self.config_dir.join(wcore::paths::SKILLS_DIR);
+
+        // Descriptions come from the parsed frontmatter, which only the
+        // storage scan reads; the walk below is what knows where a skill
+        // came from. Neither has the other's half.
+        let described: BTreeMap<String, String> = match self
+            .runtime
+            .read()
+            .await
+            .clone()
+            .storage()
+            .list_skills()
+            .await
+        {
+            Ok(skills) => skills
+                .into_iter()
+                .map(|s| (s.name, s.description))
+                .collect(),
+            Err(e) => {
+                tracing::warn!("failed to read skill descriptions: {e}");
+                BTreeMap::new()
+            }
+        };
 
         let dir_to_pkg: std::collections::BTreeMap<_, _> = dirs
             .package_skill_dirs
@@ -160,10 +197,12 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                 if !seen.insert(name.clone()) {
                     continue;
                 }
+                let description = described.get(&name).cloned().unwrap_or_default();
                 skills.push(SkillInfo {
                     name,
                     source: source.clone(),
                     source_kind: source_kind.into(),
+                    description,
                 });
             }
         }

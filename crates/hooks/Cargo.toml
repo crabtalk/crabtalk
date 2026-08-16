@@ -24,14 +24,12 @@ serde_json.workspace = true
 anyhow = { workspace = true, optional = true }
 mcp = { workspace = true, default-features = false, features = ["hyper"], optional = true }
 memory = { workspace = true, optional = true }
-serde_yml = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
 [features]
-default = ["memory", "mcp", "skill", "native-tls"]
+default = ["memory", "mcp", "native-tls"]
 memory = ["dep:memory", "dep:anyhow"]
 mcp = ["dep:mcp", "dep:tokio"]
-skill = ["dep:anyhow", "dep:serde_yml"]
 native-tls = ["mcp?/native-tls"]
 rustls = ["mcp?/rustls"]
 

@@ -14,6 +14,7 @@ pub use fs::{DEFAULT_CONFIG, DEFAULT_SETTINGS, FsStorage, scaffold_config_dir};
 pub use sqlite::SqliteStorage;
 
 mod fs;
+mod skill_md;
 mod skills;
 #[cfg(feature = "sqlite")]
 mod sqlite;

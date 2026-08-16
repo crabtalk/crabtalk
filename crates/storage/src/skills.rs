@@ -44,7 +44,7 @@ pub(crate) async fn list(roots: &[PathBuf]) -> Result<Vec<Skill>> {
                     continue;
                 }
             };
-            match hooks::skill::loader::parse_skill_md(&content) {
+            match crate::skill_md::parse_skill_md(&content) {
                 Ok(skill) => {
                     seen.insert(name);
                     skills.push(skill);
@@ -64,7 +64,7 @@ pub(crate) async fn load(roots: &[PathBuf], name: &str) -> Result<Option<Skill>>
             continue;
         }
         let content = fs::read_to_string(&skill_path).await?;
-        return Ok(Some(hooks::skill::loader::parse_skill_md(&content)?));
+        return Ok(Some(crate::skill_md::parse_skill_md(&content)?));
     }
     Ok(None)
 }

@@ -36,6 +36,35 @@ pub type Dispatch = Arc<
     dyn Fn(ClientMessage) -> Pin<Box<dyn Future<Output = Vec<ServerMessage>> + Send>> + Send + Sync,
 >;
 
+/// What one agent's declaration granted the harness it loaded.
+///
+/// A harness image is keyed by `(agent, harness)` precisely because the grant
+/// lives in the declaration, so the agent's own limits are known here without
+/// the invocation having to carry them: two agents declaring the same ELF get
+/// two linkers, and this is what differs between them.
+pub struct Scope {
+    /// Whether `protocol:read` was granted.
+    pub read: bool,
+    /// The skills this agent declared. Empty is unrestricted, which is what
+    /// an agent naming none has always meant.
+    pub skills: Vec<String>,
+}
+
+impl Scope {
+    /// Whether `name` is a skill this agent may reach.
+    fn may_use(&self, name: &str) -> bool {
+        self.skills.is_empty() || self.skills.iter().any(|s| s == name)
+    }
+
+    /// Drop what the agent did not declare from a catalogue listing.
+    fn narrow(&self, mut reply: ServerMessage) -> ServerMessage {
+        if let Some(server_message::Msg::SkillList(list)) = reply.msg.as_mut() {
+            list.skills.retain(|skill| self.may_use(&skill.name));
+        }
+        reply
+    }
+}
+
 /// Whether a message type is in a group this harness holds.
 ///
 /// Default-deny: a message named in no group reaches nothing, and a group a
@@ -51,6 +80,7 @@ pub(crate) fn allowed(message: &client_message::Msg, read: bool) -> bool {
         | Msg::ListAgents(_)
         | Msg::GetAgent(_)
         | Msg::ListSkills(_)
+        | Msg::GetSkill(_)
         | Msg::ListModels(_)
         | Msg::ListSubscriptions(_) => read,
         _ => false,
@@ -81,13 +111,20 @@ pub(crate) fn redact(mut reply: ServerMessage) -> ServerMessage {
 /// The dispatcher arrives after the harnesses do — the daemon that implements
 /// it is built on top of them — so it is read through a `OnceLock` rather than
 /// held. A call before it is connected fails rather than waiting.
-pub fn call(protocol: &OnceLock<Dispatch>, request: &[u8], read: bool) -> Result<Vec<u8>> {
+pub fn call(protocol: &OnceLock<Dispatch>, request: &[u8], scope: &Scope) -> Result<Vec<u8>> {
     let message = ClientMessage::decode(request)?;
     let Some(inner) = message.msg.as_ref() else {
         bail!("empty client message");
     };
-    if !allowed(inner, read) {
+    if !allowed(inner, scope.read) {
         bail!("this message type is in no group this harness was granted");
+    }
+    // Refused here rather than filtered out of the reply, so asking for a
+    // skill outside the declaration costs nothing and says so.
+    if let client_message::Msg::GetSkill(msg) = inner
+        && !scope.may_use(&msg.name)
+    {
+        bail!("skill not available: {}", msg.name);
     }
 
     let Some(dispatch) = protocol.get() else {
@@ -104,6 +141,6 @@ pub fn call(protocol: &OnceLock<Dispatch>, request: &[u8], read: bool) -> Result
     };
 
     let mut encoded = Vec::new();
-    redact(reply).encode(&mut encoded)?;
+    scope.narrow(redact(reply)).encode(&mut encoded)?;
     Ok(encoded)
 }

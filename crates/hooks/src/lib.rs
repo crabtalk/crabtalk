@@ -17,8 +17,6 @@ use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 pub mod mcp;
 #[cfg(feature = "memory")]
 pub mod memory;
-#[cfg(feature = "skill")]
-pub mod skill;
 #[cfg(feature = "memory")]
 mod utils;
 
@@ -26,16 +24,13 @@ mod utils;
 pub use mcp::McpHook;
 #[cfg(feature = "memory")]
 pub use memory::{DEFAULT_SOUL, Memory, MemoryHook};
-#[cfg(feature = "skill")]
-pub use skill::handler::SkillHook;
 #[cfg(feature = "memory")]
 pub use utils::default_crab;
 
-/// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
+/// Per-agent scope for dispatch enforcement. An empty vec is unrestricted.
 #[derive(Default)]
 pub struct AgentScope {
     pub tools: Vec<String>,
-    pub skills: Vec<String>,
 }
 
 /// Late-bindable sink for `agent:{name}:done` event publishes.
@@ -168,7 +163,6 @@ impl Hook for Hooks {
             name.to_owned(),
             AgentScope {
                 tools: config.tools.clone(),
-                skills: config.skills.clone(),
             },
         );
         for hook in self.hooks.values() {

@@ -17,7 +17,7 @@ Layer 2 ─ Engine
   └─ runtime              Env, tool dispatch, MCP, skills, memory
 
 Layer 3 ─ Library
-  ├─ storage              Storage backends (FsStorage); config scaffolding
+  ├─ storage              Storage backends (FsStorage); config scaffolding, SKILL.md parsing
   └─ crabtalk             Hooks, protocol, composite hook, builder (CrabTalk)
 
 Layer 4 ─ Adapters
@@ -40,7 +40,8 @@ together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 | Does it define agent behavior, protocol types, or tool schemas? | core |
 | Does it add or configure an LLM provider? | model |
 | Does it add a wire transport? | transport |
-| Does it add a tool the agent can call, a skill, or memory? | runtime |
+| Does it add a tool the agent can call, or memory? | runtime |
+| Does it decide how skills are matched, worded, or offered? | harness/skill |
 | Does it need network I/O, scheduling, or process lifecycle? | crabtalk (system) |
 | Does it adapt a platform or parse bot commands? | client |
 | Does it add a daemon admin command (over the socket)? | crabtalkd |

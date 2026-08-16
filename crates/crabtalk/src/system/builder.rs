@@ -9,7 +9,7 @@ use crate::{
 };
 use anyhow::Result;
 use crabtalk_berm::HarnessHook;
-use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook, SkillHook};
+use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook};
 use mcp::McpHandler;
 use runtime::{Hook, Runtime};
 use std::{
@@ -268,8 +268,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let memory_wrapper = Memory::open(config_dir.join("memory.db"))?;
         let shared_memory = memory_wrapper.shared();
         let memory = Arc::new(memory_wrapper);
-        let scopes = hooks.scopes.clone();
-        let skills = storage.list_skills().await.unwrap_or_default();
 
         hooks.register_hook("memory", Arc::new(MemoryHook::new(memory)));
 
@@ -280,7 +278,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             )),
         );
 
-        hooks.register_hook("skill", Arc::new(SkillHook::new(skills, scopes.clone())));
         hooks.register_hook("mcp", Arc::new(McpHook::new(mcp_handler, env_overlay)));
 
         // Harnesses are loaded here rather than when their agent registers,
@@ -291,7 +288,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         match HarnessHook::new(protocol) {
             Ok(harnesses) => {
                 for agent in storage.list_agents().await.unwrap_or_default() {
-                    harnesses.load(&agent.name, &agent.harnesses);
+                    harnesses.load(&agent.name, &agent);
                 }
                 hooks.register_hook("harness", Arc::new(harnesses));
             }

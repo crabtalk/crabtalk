@@ -214,12 +214,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "berm-fixture"
+version = "0.0.23"
+dependencies = [
+ "berm-sdk",
+]
+
+[[package]]
 name = "berm-os"
 version = "0.0.23"
 dependencies = [
  "berm-sdk",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -227,7 +232,6 @@ name = "berm-peers"
 version = "0.0.23"
 dependencies = [
  "berm-sdk",
- "crabtalk-berm-proto",
 ]
 
 [[package]]
@@ -239,6 +243,15 @@ dependencies = [
  "linked_list_allocator",
  "prost",
  "rvtime-guest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "berm-skill"
+version = "0.0.23"
+dependencies = [
+ "berm-sdk",
 ]
 
 [[package]]
@@ -816,7 +829,6 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "serde_yml",
  "tempfile",
  "tokio",
 ]
@@ -902,6 +914,7 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
+ "serde_yml",
  "sqlx",
  "tokio",
  "toml",
@@ -3989,13 +4002,6 @@ checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "spike"
-version = "0.0.0"
-dependencies = [
- "berm-sdk",
 ]
 
 [[package]]

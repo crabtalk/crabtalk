@@ -14,9 +14,12 @@ extern crate alloc;
 
 #[berm_sdk::harness(capabilities = ["protocol:read"])]
 mod tools {
-    use berm_sdk::{Failed, Out, protocol};
+    use berm_sdk::{
+        Failed, Out,
+        proto::{ClientMessage, ListAgentsMsg, client_message, server_message},
+        protocol,
+    };
     use core::fmt::Write;
-    use crabtalk_berm_proto::{ClientMessage, ListAgentsMsg, client_message, server_message};
 
     /// List the other agents in this runtime, with their descriptions.
     pub fn peers(_args: &[u8], out: &mut Out) -> Result<(), Failed> {

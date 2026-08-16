@@ -59,6 +59,7 @@ message ClientMessage {
     RenameAgentMsg rename_agent = 51;
     // Skills
     ListSkillsMsg list_skills = 23;
+    GetSkillMsg get_skill = 55;
     // Models
     ListModelsMsg list_models = 36;
     // Conversation history
@@ -216,6 +217,10 @@ message RenameAgentMsg {
 
 message ListSkillsMsg {}
 
+message GetSkillMsg {
+  string name = 1;
+}
+
 message ListModelsMsg {}
 
 message GetConversationHistoryMsg {
@@ -317,6 +322,7 @@ message ServerMessage {
     AgentList agent_list = 12;
     // Skills
     SkillList skill_list = 15;
+    SkillBody skill_body = 31;
     // Models
     ModelList model_list = 22;
     // Conversation history
@@ -590,10 +596,20 @@ message SkillInfo {
   reserved "enabled";
   string source = 3;
   SourceKind source_kind = 4;
+  // What the skill is for. The catalogue is chosen from by description, so
+  // a listing without one cannot be selected from.
+  string description = 5;
 }
 
 message SkillList {
   repeated SkillInfo skills = 1;
+}
+
+// One skill's instructions. Separate from the listing because a catalogue
+// carrying every body is a context tax paid on every request.
+message SkillBody {
+  string name = 1;
+  string body = 2;
 }
 
 message ModelInfo {

@@ -1,6 +1,6 @@
 [package]
-name = "berm-os"
-description = "OS tools — bash, read, edit — as a Crabtalk harness"
+name = "berm-skill"
+description = "Skill discovery and loading as a Crabtalk harness"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -9,8 +9,8 @@ repository.workspace = true
 publish = false
 
 [[bin]]
-name = "os"
+name = "skill"
 path = "src/bin/main.rs"
 
 [dependencies]
-berm-sdk.workspace = true
+berm-sdk = { workspace = true, features = ["protocol"] }

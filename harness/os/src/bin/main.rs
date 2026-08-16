@@ -27,9 +27,8 @@ extern crate alloc;
 #[berm_sdk::harness(capabilities = ["fs", "exec"], buffer = 262144)]
 mod tools {
     use alloc::{collections::BTreeMap, string::String, vec::Vec};
-    use berm_sdk::{Failed, Out, exec, fs};
+    use berm_sdk::{Failed, Out, capability, exec, failed, fs, parse};
     use core::fmt::Write;
-    use serde_guest::Deserialize;
 
     /// Lines returned per read when the caller does not say.
     const DEFAULT_LIMIT: usize = 2000;
@@ -134,8 +133,6 @@ mod tools {
     }
 
     /// Arguments for `bash`.
-    #[derive(Deserialize)]
-    #[serde(crate = "serde_guest")]
     pub struct Bash {
         /// Shell command to run (e.g. `"ls -la"`, `"cat foo.txt | grep bar"`).
         pub command: String,
@@ -146,8 +143,6 @@ mod tools {
     }
 
     /// Arguments for `read`.
-    #[derive(Deserialize)]
-    #[serde(crate = "serde_guest")]
     pub struct Read {
         /// Path to the file, relative to the workspace root.
         pub path: String,
@@ -158,8 +153,6 @@ mod tools {
     }
 
     /// Arguments for `edit`.
-    #[derive(Deserialize)]
-    #[serde(crate = "serde_guest")]
     pub struct Edit {
         /// Path to the file, relative to the workspace root.
         pub path: String,
@@ -167,29 +160,6 @@ mod tools {
         pub old_string: String,
         /// Replacement string.
         pub new_string: String,
-    }
-
-    /// Parse a tool's arguments, reporting the error to the model rather than
-    /// trapping — a malformed call is the model's mistake to fix, not the
-    /// harness's to die of.
-    fn parse<T: for<'de> Deserialize<'de>>(args: &[u8], out: &mut Out) -> Result<T, Failed> {
-        match serde_json_guest::from_slice(args) {
-            Ok(parsed) => Ok(parsed),
-            Err(error) => {
-                let _ = write!(out, "invalid arguments: {error}");
-                Err(Failed)
-            }
-        }
-    }
-
-    /// Turn a capability's failure into this tool's failure, unchanged. The
-    /// host already said what went wrong, and in more detail than a rewording
-    /// would keep.
-    fn capability<T>(result: Result<T, String>, out: &mut Out) -> Result<T, Failed> {
-        result.map_err(|error| {
-            out.write(error.as_bytes());
-            Failed
-        })
     }
 
     fn utf8<'a>(content: &'a [u8], path: &str, out: &mut Out) -> Result<&'a str, Failed> {
@@ -200,10 +170,5 @@ mod tools {
                 Err(Failed)
             }
         }
-    }
-
-    fn failed(message: &str, out: &mut Out) -> Result<(), Failed> {
-        out.write(message.as_bytes());
-        Err(Failed)
     }
 }

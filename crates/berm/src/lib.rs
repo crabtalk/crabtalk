@@ -18,4 +18,4 @@ mod hook;
 mod protocol;
 
 pub use hook::HarnessHook;
-pub use protocol::{Dispatch, call as protocol_call};
+pub use protocol::{Dispatch, Scope, call as protocol_call};

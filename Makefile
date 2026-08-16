@@ -76,7 +76,7 @@ publish:
 CRABTALK_HOME ?= $(HOME)/.crabtalk
 HARNESS_TARGET = riscv64imac-unknown-none-elf
 HARNESS_DIR = $(CRABTALK_HOME)/harnesses
-HARNESSES = os peers
+HARNESSES = os peers skill
 
 harness:
 	cargo build --release --target $(HARNESS_TARGET) \
