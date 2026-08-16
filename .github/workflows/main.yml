@@ -64,6 +64,13 @@ jobs:
       # message types, which needs prost built without std.
       - name: Build Peers Harness
         run: cargo build --release -p berm-peers --target riscv64imac-unknown-none-elf
+      # The remaining two, so `make harness` cannot install something CI never
+      # built. Sessions also proves `usage_file`: the macro reads it at compile
+      # time, and a missing file has to fail here rather than at load.
+      - name: Build Skill Harness
+        run: cargo build --release -p berm-skill --target riscv64imac-unknown-none-elf
+      - name: Build Sessions Harness
+        run: cargo build --release -p berm-sessions --target riscv64imac-unknown-none-elf
       # And that the host can compile, instantiate, and call it — the one
       # place rvtime itself runs in this repo's CI.
       - name: Run Guest

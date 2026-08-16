@@ -337,6 +337,15 @@ fn stage(
 /// Pull the manifest out of the ELF. This runs before anything is compiled,
 /// let alone executed — a harness gets to describe itself without being given
 /// a turn.
+/// Read what an ELF claims to be, without compiling or running it.
+///
+/// This is what the section is *for* (RFC 0205): learning a harness's tools,
+/// wants, and usage must not mean instantiating it. An embedder assembling a
+/// prompt or listing a registry needs exactly this and nothing else.
+pub fn manifest(elf: &[u8]) -> Result<Manifest> {
+    Manifest::parse(&section(elf)?)
+}
+
 fn section(elf: &[u8]) -> Result<String> {
     let file = object::File::parse(elf).context("harness is not a readable ELF")?;
     let section = file

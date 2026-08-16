@@ -23,7 +23,7 @@ mod utils;
 #[cfg(feature = "mcp")]
 pub use mcp::McpHook;
 #[cfg(feature = "memory")]
-pub use memory::{DEFAULT_SOUL, Memory, MemoryHook};
+pub use memory::{Memory, MemoryHook};
 #[cfg(feature = "memory")]
 pub use utils::default_crab;
 
@@ -108,7 +108,7 @@ impl Hooks {
 
         if !scope_lines.is_empty() {
             let scope_block = format!("\n\n<scope>\n{}\n</scope>", scope_lines.join("\n"));
-            config.system_prompt.push_str(&scope_block);
+            config.description.push_str(&scope_block);
         }
 
         config.tools = whitelist;
@@ -141,14 +141,12 @@ impl Hook for Hooks {
     }
 
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
-        // A store that persists only a description composes the identity line
-        // here; one that persists a full prompt already filled this in, so
-        // seeding only when empty leaves it untouched.
-        if config.system_prompt.is_empty() && !config.description.is_empty() {
-            config.system_prompt = format!("You are {}.\n\n{}", config.name, config.description);
-        }
+        // The description is used as written. Framing it — "You are X." — was
+        // the daemon supplying prose nobody asked for, and an agent that
+        // cannot say who it is in its own description will not be rescued by
+        // a sentence we prepend.
         if let Some(ref usage) = self.usage() {
-            config.system_prompt.push_str(usage);
+            config.description.push_str(usage);
         }
         self.apply_scope(&mut config);
         config

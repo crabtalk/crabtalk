@@ -25,9 +25,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .load_agent_by_name(wcore::paths::DEFAULT_AGENT)
             .await?
             .unwrap_or_else(|| default_crab(&model));
-        let prompt = std::mem::take(&mut crab.system_prompt);
         crab.model = model;
-        storage.upsert_agent(&crab, &prompt).await?;
+        storage.upsert_agent(&crab).await?;
         self.reload().await
     }
 
@@ -71,13 +70,12 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .load_agent_by_name(&agent)
             .await?
             .ok_or_else(|| anyhow::anyhow!("agent '{agent}' not found"))?;
-        let prompt = std::mem::take(&mut existing.system_prompt);
         if let Some(slot) = existing.mcps.iter_mut().find(|m| m.name == mcp_name) {
             *slot = cfg;
         } else {
             existing.mcps.push(cfg);
         }
-        rt.update_agent(existing, &prompt).await?;
+        rt.update_agent(existing).await?;
 
         // Registration only records the declaration — peers connect on
         // first use. Connect this one now anyway: a human just typed the
@@ -101,13 +99,12 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .load_agent_by_name(&agent)
             .await?
             .ok_or_else(|| anyhow::anyhow!("agent '{agent}' not found"))?;
-        let prompt = std::mem::take(&mut existing.system_prompt);
         let before = existing.mcps.len();
         existing.mcps.retain(|m| m.name != name);
         if existing.mcps.len() == before {
             return Ok(false);
         }
-        rt.update_agent(existing, &prompt).await?;
+        rt.update_agent(existing).await?;
         // The runtime's `update_agent` triggers `on_register_agent`,
         // which diffs the new declarations against the prior set and
         // calls `unregister_for_agent` for entries that disappeared —

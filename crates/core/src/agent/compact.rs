@@ -16,12 +16,12 @@ impl<P: Provider + 'static> super::Agent<P> {
         let prompt = COMPACT_PROMPT.to_owned();
 
         let mut messages = Vec::with_capacity(1 + history.len());
-        if !self.config.system_prompt.is_empty() {
+        if !self.config.description.is_empty() {
             messages.push(anthropic::Message {
                 role: "user".to_string(),
                 content: anthropic::Content::Text(format!(
                     "Agent system prompt (preserve identity/profile info):\n{}",
-                    self.config.system_prompt
+                    self.config.description
                 )),
             });
         }

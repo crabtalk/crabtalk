@@ -25,7 +25,7 @@ pub struct InMemoryStorage {
     skills: Mutex<Vec<Skill>>,
     sessions: Mutex<HashMap<String, SessionState>>,
     next_session_seq: Mutex<u32>,
-    agents: Mutex<HashMap<String, (AgentConfig, String)>>,
+    agents: Mutex<HashMap<String, AgentConfig>>,
     config: Mutex<Config>,
 }
 
@@ -197,42 +197,19 @@ impl Storage for InMemoryStorage {
     // ── Agents ─────────────────────────────────────────────────────
 
     async fn list_agents(&self) -> Result<Vec<AgentConfig>> {
-        Ok(self
-            .agents
-            .lock()
-            .values()
-            .map(|(c, prompt)| {
-                let mut config = c.clone();
-                config.system_prompt = prompt.clone();
-                config
-            })
-            .collect())
+        Ok(self.agents.lock().values().cloned().collect())
     }
 
     async fn load_agent(&self, id: &AgentId) -> Result<Option<AgentConfig>> {
         let agents = self.agents.lock();
-        for (config, prompt) in agents.values() {
-            if config.id == *id {
-                let mut c = config.clone();
-                c.system_prompt = prompt.clone();
-                return Ok(Some(c));
-            }
-        }
-        Ok(None)
+        Ok(agents.values().find(|config| config.id == *id).cloned())
     }
 
     async fn load_agent_by_name(&self, name: &str) -> Result<Option<AgentConfig>> {
-        let agents = self.agents.lock();
-        if let Some((config, prompt)) = agents.get(name) {
-            let mut c = config.clone();
-            c.system_prompt = prompt.clone();
-            Ok(Some(c))
-        } else {
-            Ok(None)
-        }
+        Ok(self.agents.lock().get(name).cloned())
     }
 
-    async fn upsert_agent(&self, config: &AgentConfig, prompt: &str) -> Result<()> {
+    async fn upsert_agent(&self, config: &AgentConfig) -> Result<()> {
         if config.id.is_nil() {
             anyhow::bail!("cannot upsert agent with nil ID");
         }
@@ -241,7 +218,7 @@ impl Storage for InMemoryStorage {
         }
         self.agents
             .lock()
-            .insert(config.name.clone(), (config.clone(), prompt.to_owned()));
+            .insert(config.name.clone(), config.clone());
         Ok(())
     }
 
@@ -249,7 +226,7 @@ impl Storage for InMemoryStorage {
         let mut agents = self.agents.lock();
         let name = agents
             .iter()
-            .find(|(_, (c, _))| c.id == *id)
+            .find(|(_, c)| c.id == *id)
             .map(|(n, _)| n.clone());
         if let Some(name) = name {
             agents.remove(&name);
@@ -263,13 +240,13 @@ impl Storage for InMemoryStorage {
         let mut agents = self.agents.lock();
         let old_name = agents
             .iter()
-            .find(|(_, (c, _))| c.id == *id)
+            .find(|(_, c)| c.id == *id)
             .map(|(n, _)| n.clone());
         if let Some(old_name) = old_name
-            && let Some((mut config, prompt)) = agents.remove(&old_name)
+            && let Some(mut config) = agents.remove(&old_name)
         {
             config.name = new_name.to_owned();
-            agents.insert(new_name.to_owned(), (config, prompt));
+            agents.insert(new_name.to_owned(), config);
             return Ok(true);
         }
         Ok(false)

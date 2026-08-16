@@ -22,8 +22,6 @@ mod remember;
 /// compaction and reading them back on session resume.
 pub type SharedStore = Arc<RwLock<Store>>;
 
-pub const DEFAULT_SOUL: &str = include_str!("../../prompts/crab.md");
-
 /// Behavioural guidance for the agent — when/how to use the memory
 /// tools. Tool *signatures* come from each struct's `///` doc comment
 /// via schemars; this prompt covers everything that doesn't fit in a

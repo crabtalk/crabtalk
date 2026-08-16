@@ -17,7 +17,8 @@ pub enum AgentCmd {
     /// List registered agents.
     List,
     /// Create an agent. Reads `AgentConfig` JSON from `--config` (file or `-`
-    /// for stdin), and a system prompt from `--prompt` or `--prompt-file`.
+    /// for stdin), and its description from `--description` or
+    /// `--description-file`. The description is the system message.
     Create {
         /// Agent name.
         name: String,
@@ -25,12 +26,12 @@ pub enum AgentCmd {
         /// the daemon receives `{}` and fills defaults.
         #[arg(long)]
         config: Option<PathBuf>,
-        /// System prompt as an inline string.
-        #[arg(long, conflicts_with = "prompt_file")]
-        prompt: Option<String>,
-        /// Read system prompt from a file (or `-` for stdin).
+        /// Description as an inline string.
+        #[arg(long, conflicts_with = "description_file")]
+        description: Option<String>,
+        /// Read the description from a file (or `-` for stdin).
         #[arg(long)]
-        prompt_file: Option<PathBuf>,
+        description_file: Option<PathBuf>,
     },
     /// Delete an agent by name.
     Delete {
@@ -64,19 +65,31 @@ impl Agent {
             AgentCmd::Create {
                 name,
                 config,
-                prompt,
-                prompt_file,
+                description,
+                description_file,
             } => {
                 let config_json = match config {
                     Some(path) => super::read_path_or_stdin(&path)?,
                     None => "{}".to_string(),
                 };
-                let prompt_text = match (prompt, prompt_file) {
-                    (Some(p), _) => p,
-                    (None, Some(path)) => super::read_path_or_stdin(&path)?,
-                    (None, None) => String::new(),
+                let described = match (description, description_file) {
+                    (Some(text), _) => Some(text),
+                    (None, Some(path)) => Some(super::read_path_or_stdin(&path)?),
+                    (None, None) => None,
                 };
-                let info = runner.create_agent(name, config_json, prompt_text).await?;
+                // Merged into the config rather than sent beside it: the
+                // description *is* the config's description, and a flag that
+                // silently lost to a `--config` field would be worse than no
+                // flag at all.
+                let config_json = match described {
+                    Some(text) => {
+                        let mut value: serde_json::Value = serde_json::from_str(&config_json)?;
+                        value["description"] = serde_json::Value::String(text);
+                        serde_json::to_string(&value)?
+                    }
+                    None => config_json,
+                };
+                let info = runner.create_agent(name, config_json).await?;
                 println!("saved '{}'", info.name);
             }
             AgentCmd::Delete { name } => {

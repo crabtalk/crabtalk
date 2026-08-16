@@ -69,7 +69,9 @@ async fn main() -> Result<()> {
                 let protocol = protocol.clone();
                 let scope = crabtalk_berm::Scope {
                     read: true,
+                    sessions: false,
                     skills: Vec::new(),
+                    agent: "example".to_owned(),
                 };
                 Arc::new(move |request| crabtalk_berm::protocol_call(&protocol, request, &scope))
             },

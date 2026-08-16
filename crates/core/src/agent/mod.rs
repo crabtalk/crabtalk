@@ -155,11 +155,11 @@ impl<P: Provider + 'static> Agent<P> {
         messages.coalesce_tool_results();
         messages.ensure_tool_pairing();
 
-        let system = if self.config.system_prompt.is_empty() {
+        let system = if self.config.description.is_empty() {
             None
         } else {
             Some(anthropic::System::Blocks(vec![ContentBlock::Text {
-                text: self.config.system_prompt.clone(),
+                text: self.config.description.clone(),
                 cache_control: Some(serde_json::json!({"type": "ephemeral"})),
             }]))
         };

@@ -4,10 +4,10 @@ use crate::protocol::message::{
     ActiveConversationInfo, ActiveConversationList, AgentEventMsg, AgentInfo, AgentList,
     ClientMessage, CompactResponse, ConversationHistory, ConversationInfo, ConversationList,
     CreateAgentMsg, DeleteMcpMsg, ErrorMsg, ListMcpsMsg, McpEventMsg, McpInfo, McpList, ModelInfo,
-    ModelList, Pong, PublishEventMsg, ReconnectMcpMsg, SendMsg, SendResponse, ServerMessage,
-    SkillBody, SkillInfo, SkillList, Stats, SteerSessionMsg, StreamEvent, StreamMsg,
-    SubscribeEventMsg, SubscriptionInfo, SubscriptionList, UpdateAgentMsg, UpsertMcpMsg,
-    client_message, server_message,
+    ModelList, Pong, PublishEventMsg, ReconnectMcpMsg, SearchSessionsMsg, SendMsg, SendResponse,
+    ServerMessage, SessionHit, SessionHitList, SkillBody, SkillInfo, SkillList, Stats,
+    SteerSessionMsg, StreamEvent, StreamMsg, SubscribeEventMsg, SubscriptionInfo, SubscriptionList,
+    UpdateAgentMsg, UpsertMcpMsg, client_message, server_message,
 };
 use anyhow::Result;
 use futures_core::Stream;
@@ -183,6 +183,16 @@ pub trait Server: Sync {
         &self,
         file_path: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `SearchSessions` — ranked excerpts from past conversations.
+    ///
+    /// Returns the matched message and a bounded window around it, never a
+    /// whole session: the handle is there to drill in with
+    /// `get_conversation_history` if the excerpt warrants it.
+    fn search_sessions(
+        &self,
+        req: SearchSessionsMsg,
+    ) -> impl std::future::Future<Output = Result<Vec<SessionHit>>> + Send;
 
     /// Handle `ListMcps` — return MCPs declared by agents. When
     /// `req.agent` is non-empty, scoped to that agent; otherwise the
@@ -421,6 +431,14 @@ pub trait Server: Sync {
                             msg: Some(server_message::Msg::SkillBody(skill)),
                         },
                         Err(e) => server_error(404, e.to_string()),
+                    };
+                }
+                client_message::Msg::SearchSessions(msg) => {
+                    yield match self.search_sessions(msg).await {
+                        Ok(hits) => ServerMessage {
+                            msg: Some(server_message::Msg::SessionHits(SessionHitList { hits })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
                     };
                 }
                 client_message::Msg::ListModels(_) => {

@@ -16,9 +16,7 @@ impl FsStorage {
 
         let file = self.read_settings().await?;
         if file.agents.is_empty() {
-            let crab = default_crab(default_model);
-            let prompt = crab.system_prompt.clone();
-            self.upsert_agent(&crab, &prompt).await?;
+            self.upsert_agent(&default_crab(default_model)).await?;
         }
         Ok(())
     }

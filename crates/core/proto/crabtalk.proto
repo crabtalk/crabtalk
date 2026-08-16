@@ -64,6 +64,8 @@ message ClientMessage {
     ListModelsMsg list_models = 36;
     // Conversation history
     GetConversationHistoryMsg get_conversation_history = 38;
+    // Session search
+    SearchSessionsMsg search_sessions = 56;
     // Delete conversation
     DeleteConversationMsg delete_conversation = 39;
     // Daemon lifecycle
@@ -196,14 +198,19 @@ message GetAgentMsg {
 
 message CreateAgentMsg {
   string name = 1;
+  // JSON-encoded `AgentConfig`. The description travels inside it — it is
+  // the system message, so a second field for the prompt would be the same
+  // text twice.
   string config = 2;
-  string prompt = 3;
+  reserved 3;
+  reserved "prompt";
 }
 
 message UpdateAgentMsg {
   string name = 1;
   string config = 2;
-  string prompt = 3;
+  reserved 3;
+  reserved "prompt";
 }
 
 message DeleteAgentMsg {
@@ -248,6 +255,47 @@ enum SourceKind {
 message ListConversationsMsg {
   string agent = 1;
   string sender = 2;
+}
+
+message SearchSessionsMsg {
+  string query = 1;
+  // Absent means the server's default; the server clamps its own caps.
+  // Optional rather than a zero sentinel, because zero context is a
+  // thing a caller may legitimately want.
+  optional uint32 limit = 2;
+  optional uint32 context_before = 3;
+  optional uint32 context_after = 4;
+  // Empty means unrestricted. A caller reaching this through a harness
+  // does not get to choose: the grant overwrites both filters.
+  string agent = 5;
+  string sender = 6;
+}
+
+// One message inside a hit's window. `role` and `tool_name` travel raw —
+// composing a label out of them is presentation, and belongs to whatever
+// is doing the presenting.
+message SessionWindowItem {
+  string role = 1;
+  uint32 msg_idx = 2;
+  string snippet = 3;
+  bool truncated = 4;
+  string tool_name = 5;
+}
+
+message SessionHit {
+  string session_handle = 1;
+  uint32 msg_idx = 2;
+  double score = 3;
+  string title = 4;
+  string agent = 5;
+  string sender = 6;
+  string created_at = 7;
+  string updated_at = 8;
+  repeated SessionWindowItem window = 9;
+}
+
+message SessionHitList {
+  repeated SessionHit hits = 1;
 }
 
 message ListMcpsMsg {
@@ -327,6 +375,8 @@ message ServerMessage {
     ModelList model_list = 22;
     // Conversation history
     ConversationHistory conversation_history = 24;
+    // Session search
+    SessionHitList session_hits = 32;
     // Lifecycle
     ConfigMsg config = 19;
     Stats stats = 20;

@@ -5,12 +5,76 @@ use crate::llm::Provider;
 use crate::system::CrabTalk;
 use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
+use runtime::sessions::SearchOptions;
 use std::sync::Arc;
 use wcore::AgentEvent;
 use wcore::protocol::message::*;
 use wcore::storage::Storage;
 
+/// Roles travel raw — a label like `tool:read` is presentation, and the
+/// protocol carries `role` and `tool_name` separately so whatever renders
+/// them can decide.
+fn role_name(role: wcore::model::Role) -> String {
+    use wcore::model::Role;
+    match role {
+        Role::User => "user",
+        Role::Assistant => "assistant",
+        Role::Tool => "tool",
+        Role::System => "system",
+        _ => "other",
+    }
+    .to_owned()
+}
+
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
+    /// Ranked excerpts from past conversations.
+    ///
+    /// The index is the runtime's; this converts the request into its
+    /// options and its hits back onto the wire. Defaults live in
+    /// [`SearchOptions`], so an absent field means whatever the index
+    /// considers sensible rather than a number repeated here.
+    pub(crate) async fn search_sessions(&self, req: SearchSessionsMsg) -> Result<Vec<SessionHit>> {
+        let rt = self.runtime.read().await.clone();
+        let defaults = SearchOptions::default();
+        let opts = SearchOptions {
+            limit: req.limit.map_or(defaults.limit, |n| n as usize),
+            context_before: req
+                .context_before
+                .map_or(defaults.context_before, |n| n as usize),
+            context_after: req
+                .context_after
+                .map_or(defaults.context_after, |n| n as usize),
+            agent_filter: (!req.agent.is_empty()).then_some(req.agent),
+            sender_filter: (!req.sender.is_empty()).then_some(req.sender),
+        };
+
+        Ok(rt
+            .search_sessions(&req.query, &opts)
+            .into_iter()
+            .map(|hit| SessionHit {
+                session_handle: hit.session_handle.as_str().to_owned(),
+                msg_idx: hit.msg_idx,
+                score: hit.score,
+                title: hit.title,
+                agent: hit.agent,
+                sender: hit.sender,
+                created_at: hit.created_at,
+                updated_at: hit.updated_at,
+                window: hit
+                    .window
+                    .into_iter()
+                    .map(|item| SessionWindowItem {
+                        role: role_name(item.role),
+                        msg_idx: item.msg_idx,
+                        snippet: item.snippet,
+                        truncated: item.truncated,
+                        tool_name: item.tool_name.unwrap_or_default(),
+                    })
+                    .collect(),
+            })
+            .collect())
+    }
+
     pub(crate) async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");

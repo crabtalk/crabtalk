@@ -45,9 +45,15 @@ pub type Dispatch = Arc<
 pub struct Scope {
     /// Whether `protocol:read` was granted.
     pub read: bool,
+    /// Whether `protocol:sessions` was granted.
+    pub sessions: bool,
     /// The skills this agent declared. Empty is unrestricted, which is what
     /// an agent naming none has always meant.
     pub skills: Vec<String>,
+    /// The agent that declared the harness. Session search is narrowed to it
+    /// rather than filtered by it: a harness asking for someone else's
+    /// conversations is answered about its own.
+    pub agent: String,
 }
 
 impl Scope {
@@ -65,25 +71,31 @@ impl Scope {
     }
 }
 
-/// Whether a message type is in a group this harness holds.
-///
-/// Default-deny: a message named in no group reaches nothing, and a group a
-/// harness was not granted is the same. Anything destructive, anything that
-/// answers on someone else's behalf, and anything whose payload is
-/// substantially a credential belongs to no group a third party can hold.
-pub(crate) fn allowed(message: &client_message::Msg, read: bool) -> bool {
-    use client_message::Msg;
-    match message {
-        // protocol:read — the catalogue, and nothing that spends tokens.
-        Msg::Ping(_)
-        | Msg::GetStats(_)
-        | Msg::ListAgents(_)
-        | Msg::GetAgent(_)
-        | Msg::ListSkills(_)
-        | Msg::GetSkill(_)
-        | Msg::ListModels(_)
-        | Msg::ListSubscriptions(_) => read,
-        _ => false,
+impl Scope {
+    /// Whether a message type is in a group this harness holds.
+    ///
+    /// Default-deny: a message named in no group reaches nothing, and a group
+    /// a harness was not granted is the same. Anything destructive, anything
+    /// that answers on someone else's behalf, and anything whose payload is
+    /// substantially a credential belongs to no group a third party can hold.
+    fn allows(&self, message: &client_message::Msg) -> bool {
+        use client_message::Msg;
+        match message {
+            // protocol:read — the catalogue, and nothing that spends tokens.
+            Msg::Ping(_)
+            | Msg::GetStats(_)
+            | Msg::ListAgents(_)
+            | Msg::GetAgent(_)
+            | Msg::ListSkills(_)
+            | Msg::GetSkill(_)
+            | Msg::ListModels(_)
+            | Msg::ListSubscriptions(_) => self.read,
+            // protocol:sessions — excerpts of the declaring agent's own past
+            // conversations. Its own group rather than part of `read`, which
+            // is the catalogue: this is content, and content is not a listing.
+            Msg::SearchSessions(_) => self.sessions,
+            _ => false,
+        }
     }
 }
 
@@ -112,11 +124,11 @@ pub(crate) fn redact(mut reply: ServerMessage) -> ServerMessage {
 /// it is built on top of them — so it is read through a `OnceLock` rather than
 /// held. A call before it is connected fails rather than waiting.
 pub fn call(protocol: &OnceLock<Dispatch>, request: &[u8], scope: &Scope) -> Result<Vec<u8>> {
-    let message = ClientMessage::decode(request)?;
+    let mut message = ClientMessage::decode(request)?;
     let Some(inner) = message.msg.as_ref() else {
         bail!("empty client message");
     };
-    if !allowed(inner, scope.read) {
+    if !scope.allows(inner) {
         bail!("this message type is in no group this harness was granted");
     }
     // Refused here rather than filtered out of the reply, so asking for a
@@ -125,6 +137,14 @@ pub fn call(protocol: &OnceLock<Dispatch>, request: &[u8], scope: &Scope) -> Res
         && !scope.may_use(&msg.name)
     {
         bail!("skill not available: {}", msg.name);
+    }
+
+    // Overwritten rather than checked: the agent filter is not the guest's to
+    // choose, and refusing a wrong one would only teach it to send the right
+    // one. `sender` stays free — an agent's own conversations span every
+    // partner it has, and it can already resume any of them.
+    if let Some(client_message::Msg::SearchSessions(msg)) = message.msg.as_mut() {
+        msg.agent = scope.agent.clone();
     }
 
     let Some(dispatch) = protocol.get() else {

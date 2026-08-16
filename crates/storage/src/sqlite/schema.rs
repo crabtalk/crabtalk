@@ -51,8 +51,7 @@ pub(super) const DDL: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS agents (
         id            TEXT PRIMARY KEY,
         name          TEXT NOT NULL UNIQUE,
-        config_json   TEXT NOT NULL,
-        system_prompt TEXT NOT NULL DEFAULT ''
+        config_json   TEXT NOT NULL
     )",
     // Install config, one row. Kept in the database so a tenant is one
     // file — the point of a database per tenant.

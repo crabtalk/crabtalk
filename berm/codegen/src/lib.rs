@@ -32,12 +32,18 @@ const TOOL_PREFIX: &str = "berm_tool_";
 struct Config {
     capabilities: Vec<String>,
     buffer: usize,
+    usage: String,
+    /// Kept only to re-emit as an `include_str!`, so editing the file
+    /// rebuilds the harness.
+    usage_file: Option<syn::LitStr>,
 }
 
 impl Parse for Config {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut capabilities = Vec::new();
         let mut buffer = DEFAULT_BUFFER;
+        let mut usage = String::new();
+        let mut usage_file = None;
 
         while !input.is_empty() {
             let key: syn::Ident = input.parse()?;
@@ -65,10 +71,29 @@ impl Parse for Config {
                     let size: syn::LitInt = input.parse()?;
                     buffer = size.base10_parse()?;
                 }
+                // A path rather than the text, because usage runs to
+                // paragraphs and `include_str!` cannot help here: a proc
+                // macro sees the unexpanded call, never the file. So the
+                // macro reads it, and the expansion carries an
+                // `include_str!` of its own purely so cargo rebuilds when
+                // the file changes.
+                "usage_file" => {
+                    let path: syn::LitStr = input.parse()?;
+                    let root = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| {
+                        syn::Error::new(key.span(), "usage_file needs CARGO_MANIFEST_DIR")
+                    })?;
+                    let full = std::path::Path::new(&root).join(path.value());
+                    usage = std::fs::read_to_string(&full).map_err(|e| {
+                        syn::Error::new(path.span(), format!("{}: {e}", full.display()))
+                    })?;
+                    usage_file = Some(path);
+                }
                 other => {
                     return Err(syn::Error::new(
                         key.span(),
-                        format!("unknown argument: {other} (expected `capabilities` or `buffer`)"),
+                        format!(
+                            "unknown argument: {other} (expected `capabilities`, `buffer` or `usage_file`)"
+                        ),
                     ));
                 }
             }
@@ -81,6 +106,8 @@ impl Parse for Config {
         Ok(Config {
             capabilities,
             buffer,
+            usage,
+            usage_file,
         })
     }
 }
@@ -179,8 +206,19 @@ pub fn harness(args: TokenStream, item: TokenStream) -> TokenStream {
         quote! { ^ #symbol as *const () as u64 }
     });
 
+    // The macro read the usage file itself, which cargo cannot see. This
+    // makes the dependency visible so editing it rebuilds the harness.
+    let usage_rebuild = config.usage_file.as_ref().map(|path| {
+        quote! {
+            const _CRABTALK_USAGE: &str =
+                include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/", #path));
+        }
+    });
+
     quote! {
         #module
+
+        #usage_rebuild
 
         const _CRABTALK_BUFFER: usize = #buffer;
         static mut _CRABTALK_ARGS: [u8; _CRABTALK_BUFFER] = [0; _CRABTALK_BUFFER];
@@ -387,7 +425,10 @@ fn describe(config: &Config, tools: &[Tool]) -> String {
         .collect::<Vec<_>>()
         .join(",");
 
-    format!(r#"{{"abi_version":0,"capabilities":[{capabilities}],"tools":[{tools}]}}"#)
+    format!(
+        r#"{{"abi_version":0,"capabilities":[{capabilities}],"tools":[{tools}],"usage":"{}"}}"#,
+        escape(&config.usage),
+    )
 }
 
 /// Minimal JSON string escaping — doc comments are prose and can carry

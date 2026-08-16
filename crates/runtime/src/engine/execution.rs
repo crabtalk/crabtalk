@@ -262,10 +262,10 @@ impl<C: Config> Runtime<C> {
 
             let model_name = guest_agent.config.model.clone();
 
-            let system = if guest_agent.config.system_prompt.is_empty() {
+            let system = if guest_agent.config.description.is_empty() {
                 None
             } else {
-                Some(anthropic::System::Text(guest_agent.config.system_prompt.clone()))
+                Some(anthropic::System::Text(guest_agent.config.description.clone()))
             };
 
             let messages: Vec<anthropic::Message> = conversation

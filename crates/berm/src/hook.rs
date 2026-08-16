@@ -98,7 +98,7 @@ impl HarnessHook {
         let mut registry = self.registry.write().expect("harness registry");
         let mut declared = Vec::new();
         for declaration in &config.harnesses {
-            match self.image(&mut registry, declaration, &config.skills) {
+            match self.image(&mut registry, agent, declaration, &config.skills) {
                 Ok(digest) => declared.push(digest),
                 Err(error) => tracing::warn!(
                     agent,
@@ -121,6 +121,7 @@ impl HarnessHook {
     fn image(
         &self,
         registry: &mut Registry,
+        agent: &str,
         declaration: &HarnessConfig,
         skills: &[String],
     ) -> anyhow::Result<Digest> {
@@ -139,11 +140,15 @@ impl HarnessHook {
             exec: granted("exec"),
         };
         // The runtime is not something berm knows about, so it arrives the way
-        // any embedder's capability does. The group the declaration granted is
-        // captured here and checked on decode.
-        let scope = granted("protocol:read").then(|| Scope {
-            read: true,
+        // any embedder's capability does. The groups the declaration granted
+        // are captured here and checked on decode.
+        let read = granted("protocol:read");
+        let sessions = granted("protocol:sessions");
+        let scope = (read || sessions).then(|| Scope {
+            read,
+            sessions,
             skills: skills.to_vec(),
+            agent: agent.to_owned(),
         });
         // The hosts are the grant, exactly as the root is: naming the
         // capability without naming where it may go reaches nothing.
@@ -214,7 +219,12 @@ fn digest(elf: &[u8], grants: &Grants, scope: Option<&Scope>, hosts: Option<&[St
     }
     hasher.update([0]);
     if let Some(scope) = scope {
-        hasher.update([1, scope.read as u8]);
+        hasher.update([1, scope.read as u8, scope.sessions as u8]);
+        // Narrowing is per-agent, so two agents declaring the same session
+        // harness are deliberately two images: sharing one would be sharing
+        // the narrowing.
+        hasher.update(scope.agent.as_bytes());
+        hasher.update([0]);
         for skill in &scope.skills {
             hasher.update(skill.as_bytes());
             hasher.update([0]);
@@ -248,6 +258,32 @@ impl Hook for HarnessHook {
                 strict: None,
             })
             .collect()
+    }
+
+    /// Append the usage each declared harness carries.
+    ///
+    /// Per-agent rather than through [`Hook::usage`], which has no agent in
+    /// its signature and would put every harness's text in front of every
+    /// agent. The declaration is the gate here as everywhere else.
+    ///
+    /// Read straight off the ELF, because this runs *before*
+    /// `on_register_agent` and nothing is compiled yet. That is what the
+    /// manifest being a section rather than an export buys: the text is
+    /// available without instantiating anything.
+    fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
+        for declaration in &config.harnesses {
+            let path = wcore::paths::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
+            let usage = std::fs::read(&path)
+                .ok()
+                .and_then(|elf| berm::manifest(&elf).ok())
+                .map(|manifest| manifest.usage)
+                .unwrap_or_default();
+            if !usage.is_empty() {
+                config.description.push_str("\n\n");
+                config.description.push_str(usage.trim_end());
+            }
+        }
+        config
     }
 
     fn on_register_agent(&self, name: &str, config: &AgentConfig) {

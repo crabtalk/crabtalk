@@ -152,7 +152,6 @@ pub trait Client: Send {
         &mut self,
         name: String,
         config: String,
-        prompt: String,
     ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send {
         async move {
             match self
@@ -160,7 +159,6 @@ pub trait Client: Send {
                     msg: Some(client_message::Msg::CreateAgent(CreateAgentMsg {
                         name,
                         config,
-                        prompt,
                     })),
                 })
                 .await?
@@ -183,7 +181,6 @@ pub trait Client: Send {
         &mut self,
         name: String,
         config: String,
-        prompt: String,
     ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send {
         async move {
             match self
@@ -191,7 +188,6 @@ pub trait Client: Send {
                     msg: Some(client_message::Msg::UpdateAgent(UpdateAgentMsg {
                         name,
                         config,
-                        prompt,
                     })),
                 })
                 .await?
@@ -486,6 +482,32 @@ pub trait Client: Send {
                 ServerMessage {
                     msg: Some(server_message::Msg::SkillList(SkillList { skills })),
                 } => Ok(skills),
+                ServerMessage {
+                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                } => {
+                    anyhow::bail!("server error ({code}): {message}")
+                }
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Ranked excerpts from past conversations. `agent` and `sender` are
+    /// filters; empty means unrestricted.
+    fn search_sessions(
+        &mut self,
+        req: SearchSessionsMsg,
+    ) -> impl std::future::Future<Output = Result<Vec<SessionHit>>> + Send {
+        async move {
+            match self
+                .request(ClientMessage {
+                    msg: Some(client_message::Msg::SearchSessions(req)),
+                })
+                .await?
+            {
+                ServerMessage {
+                    msg: Some(server_message::Msg::SessionHits(list)),
+                } => Ok(list.hits),
                 ServerMessage {
                     msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
                 } => {

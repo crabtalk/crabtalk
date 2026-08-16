@@ -248,6 +248,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "berm-sessions"
+version = "0.0.23"
+dependencies = [
+ "berm-sdk",
+]
+
+[[package]]
 name = "berm-skill"
 version = "0.0.23"
 dependencies = [
@@ -757,6 +764,7 @@ dependencies = [
  "crabtalk-client",
  "crabtalk-core",
  "serde",
+ "serde_json",
  "tokio",
  "toml",
  "tracing",

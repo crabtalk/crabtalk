@@ -131,7 +131,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
             .map_err(|e| anyhow::anyhow!("invalid AgentConfig JSON: {e}"))?;
         config.name = req.name;
         let rt = self.runtime.read().await.clone();
-        let registered = rt.create_agent(config, &req.prompt).await?;
+        let registered = rt.create_agent(config).await?;
         Ok(AgentInfo::from(&registered))
     }
 
@@ -140,7 +140,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
             .map_err(|e| anyhow::anyhow!("invalid AgentConfig JSON: {e}"))?;
         config.name = req.name;
         let rt = self.runtime.read().await.clone();
-        let registered = rt.update_agent(config, &req.prompt).await?;
+        let registered = rt.update_agent(config).await?;
         Ok(AgentInfo::from(&registered))
     }
 
@@ -209,6 +209,10 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
 
     async fn get_skill(&self, name: String) -> Result<SkillBody> {
         self.get_skill(name).await
+    }
+
+    async fn search_sessions(&self, req: SearchSessionsMsg) -> Result<Vec<SessionHit>> {
+        self.search_sessions(req).await
     }
 
     async fn list_models(&self) -> Result<Vec<ModelInfo>> {

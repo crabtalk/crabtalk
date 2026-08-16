@@ -1,33 +1,20 @@
 //! Agent persistence — definitions in `local/settings.toml` under
-//! `[agents.<name>]`, system prompt in `agents/<ulid>/prompt.md`.
+//! `[agents.<name>]`, whole. The description is the system message and
+//! serializes with everything else, so there is no second file to keep in
+//! step with the first.
 
-use crate::fs::{FsStorage, atomic_write};
+use crate::fs::FsStorage;
 use anyhow::Result;
-use std::{io::ErrorKind, path::PathBuf};
+use std::io::ErrorKind;
 use tokio::fs;
 use wcore::{AgentConfig, AgentId, storage::validate_table_name};
 
 impl FsStorage {
-    fn agent_prompt_path(&self, id: &AgentId) -> PathBuf {
-        self.config_dir
-            .join("agents")
-            .join(id.to_string())
-            .join("prompt.md")
-    }
-
-    async fn read_agent_prompt(&self, id: &AgentId) -> Option<String> {
-        if id.is_nil() {
-            return None;
-        }
-        fs::read_to_string(self.agent_prompt_path(id)).await.ok()
-    }
-
     pub(super) async fn list_agents(&self) -> Result<Vec<AgentConfig>> {
         let file = self.read_settings().await?;
         let mut out = Vec::with_capacity(file.agents.len());
         for (name, mut cfg) in file.agents {
             cfg.name = name;
-            cfg.system_prompt = self.read_agent_prompt(&cfg.id).await.unwrap_or_default();
             out.push(cfg);
         }
         Ok(out)
@@ -42,7 +29,6 @@ impl FsStorage {
             return Ok(None);
         };
         cfg.name = name;
-        cfg.system_prompt = self.read_agent_prompt(id).await.unwrap_or_default();
         Ok(Some(cfg))
     }
 
@@ -52,11 +38,10 @@ impl FsStorage {
             return Ok(None);
         };
         cfg.name = name.to_owned();
-        cfg.system_prompt = self.read_agent_prompt(&cfg.id).await.unwrap_or_default();
         Ok(Some(cfg))
     }
 
-    pub(super) async fn upsert_agent(&self, config: &AgentConfig, prompt: &str) -> Result<()> {
+    pub(super) async fn upsert_agent(&self, config: &AgentConfig) -> Result<()> {
         if config.id.is_nil() {
             anyhow::bail!("cannot upsert agent with nil ID");
         }
@@ -66,12 +51,7 @@ impl FsStorage {
         validate_table_name("agent", &config.name)?;
         let mut file = self.read_settings().await?;
         file.agents.insert(config.name.clone(), config.clone());
-        self.write_settings(&file).await?;
-        let path = self.agent_prompt_path(&config.id);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).await?;
-        }
-        atomic_write(&path, prompt.as_bytes()).await
+        self.write_settings(&file).await
     }
 
     pub(super) async fn delete_agent(&self, id: &AgentId) -> Result<bool> {

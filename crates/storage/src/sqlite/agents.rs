@@ -7,7 +7,7 @@ use wcore::{AgentConfig, AgentId, storage::validate_table_name};
 
 impl SqliteStorage {
     pub(super) async fn list_agents(&self) -> Result<Vec<AgentConfig>> {
-        let rows = sqlx::query("SELECT name, config_json, system_prompt FROM agents ORDER BY name")
+        let rows = sqlx::query("SELECT name, config_json FROM agents ORDER BY name")
             .fetch_all(&self.pool)
             .await?;
         let mut out = Vec::with_capacity(rows.len());
@@ -26,7 +26,7 @@ impl SqliteStorage {
         if id.is_nil() {
             return Ok(None);
         }
-        let row = sqlx::query("SELECT name, config_json, system_prompt FROM agents WHERE id = ?")
+        let row = sqlx::query("SELECT name, config_json FROM agents WHERE id = ?")
             .bind(id.to_string())
             .fetch_optional(&self.pool)
             .await?;
@@ -34,14 +34,14 @@ impl SqliteStorage {
     }
 
     pub(super) async fn load_agent_by_name(&self, name: &str) -> Result<Option<AgentConfig>> {
-        let row = sqlx::query("SELECT name, config_json, system_prompt FROM agents WHERE name = ?")
+        let row = sqlx::query("SELECT name, config_json FROM agents WHERE name = ?")
             .bind(name)
             .fetch_optional(&self.pool)
             .await?;
         row.as_ref().map(hydrate).transpose()
     }
 
-    pub(super) async fn upsert_agent(&self, config: &AgentConfig, prompt: &str) -> Result<()> {
+    pub(super) async fn upsert_agent(&self, config: &AgentConfig) -> Result<()> {
         if config.id.is_nil() {
             anyhow::bail!("cannot upsert agent with nil ID");
         }
@@ -49,20 +49,15 @@ impl SqliteStorage {
             anyhow::bail!("cannot upsert agent with empty name");
         }
         validate_table_name("agent", &config.name)?;
-        // The prompt is a column, so it isn't duplicated inside the blob.
-        let mut stored = config.clone();
-        stored.system_prompt = String::new();
         sqlx::query(
-            "INSERT INTO agents (id, name, config_json, system_prompt) VALUES (?, ?, ?, ?)
+            "INSERT INTO agents (id, name, config_json) VALUES (?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                  name = excluded.name,
-                 config_json = excluded.config_json,
-                 system_prompt = excluded.system_prompt",
+                 config_json = excluded.config_json",
         )
         .bind(config.id.to_string())
         .bind(&config.name)
-        .bind(serde_json::to_string(&stored)?)
-        .bind(prompt)
+        .bind(serde_json::to_string(config)?)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -106,12 +101,11 @@ impl SqliteStorage {
     }
 }
 
-/// Rebuild an `AgentConfig` from its row: the blob, plus the two fields
-/// stored as columns.
+/// Rebuild an `AgentConfig` from its row: the blob, plus the name, which is
+/// a column because lookup by name is a trait method.
 fn hydrate(row: &sqlx::sqlite::SqliteRow) -> Result<AgentConfig> {
     let json: String = row.try_get("config_json")?;
     let mut cfg: AgentConfig = serde_json::from_str(&json)?;
     cfg.name = row.try_get("name")?;
-    cfg.system_prompt = row.try_get("system_prompt")?;
     Ok(cfg)
 }
