@@ -1,6 +1,6 @@
 [package]
 name = "crabtalk-cli"
-description = "Crabtalk CLI — TUI client and management commands"
+description = "Crabtalk CLI — daemon management commands"
 documentation = "https://docs.rs/crabtalk"
 readme = "README.md"
 version.workspace = true
@@ -16,26 +16,12 @@ path = "src/bin/main.rs"
 
 [dependencies]
 client.workspace = true
-transport.workspace = true
 wcore.workspace = true
 
 # crates.io
 anyhow.workspace = true
-chrono.workspace = true
-dirs.workspace = true
-async-stream.workspace = true
 clap.workspace = true
-console.workspace = true
-crossterm.workspace = true
-dialoguer.workspace = true
-futures-core.workspace = true
-futures-util.workspace = true
-heck.workspace = true
-ratatui.workspace = true
-schemars.workspace = true
 serde.workspace = true
-serde_json.workspace = true
-termimad.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true

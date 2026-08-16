@@ -7,27 +7,24 @@ use std::path::PathBuf;
 
 pub mod agent;
 pub mod auth;
-pub mod console;
 pub mod mcp;
 pub mod package;
 pub mod reload;
 
-/// Crabtalk CLI — interactive agent client.
+/// Crabtalk CLI — daemon management commands.
 #[derive(Parser, Debug)]
 #[command(
     name = "crabtalk",
-    about = "Crabtalk CLI — TUI client and management commands"
+    about = "Crabtalk CLI — daemon management commands",
+    arg_required_else_help = true
 )]
 pub struct Cli {
     /// Connect via TCP instead of Unix domain socket.
     #[arg(long)]
     pub tcp: bool,
-    /// Agent to use.
-    #[arg(long, default_value = "crab")]
-    pub agent: String,
     /// Subcommand to execute.
     #[command(subcommand)]
-    pub command: Option<Command>,
+    pub command: Command,
 }
 
 /// Top-level subcommands.
@@ -37,11 +34,6 @@ pub enum Command {
     Agent(agent::Agent),
     /// Manage MCP servers (create, list, delete).
     Mcp(mcp::Mcp),
-    /// Resume a previous conversation.
-    Resume {
-        /// Conversation file to resume. If omitted, shows a conversation picker.
-        file: Option<String>,
-    },
 
     /// Cloud authentication.
     Auth {
@@ -93,36 +85,13 @@ pub enum PkgAction {
 impl Cli {
     pub async fn run(self) -> Result<()> {
         match self.command {
-            None => {
-                let (transport, conn_info) = connect(self.tcp).await?;
-                let mut repl = crate::repl::ChatRepl::new(transport, conn_info, self.agent)?;
-                repl.run().await
-            }
-            Some(Command::Resume { file }) => {
-                let (transport, conn_info) = connect(self.tcp).await?;
-                if let Some(path) = file {
-                    let mut repl = crate::repl::ChatRepl::new(transport, conn_info, self.agent)?;
-                    repl.resume(std::path::PathBuf::from(path)).await
-                } else {
-                    let cmd = console::Console;
-                    let selected = cmd.run(transport, conn_info.clone()).await?;
-                    if let Some(path) = selected {
-                        let (transport, conn_info) = connect(self.tcp).await?;
-                        let mut repl =
-                            crate::repl::ChatRepl::new(transport, conn_info, self.agent)?;
-                        repl.resume(path).await
-                    } else {
-                        Ok(())
-                    }
-                }
-            }
-            Some(Command::Agent(cmd)) => cmd.run(self.tcp).await,
-            Some(Command::Mcp(cmd)) => cmd.run(self.tcp).await,
-            Some(Command::Auth { action }) => match action {
+            Command::Agent(cmd) => cmd.run(self.tcp).await,
+            Command::Mcp(cmd) => cmd.run(self.tcp).await,
+            Command::Auth { action } => match action {
                 AuthAction::Login => auth::login().await,
                 AuthAction::Logout => auth::logout(),
             },
-            Some(Command::Pkg { action }) => match action {
+            Command::Pkg { action } => match action {
                 PkgAction::Add {
                     name,
                     branch,
@@ -147,7 +116,7 @@ impl Cli {
                     Ok(())
                 }
             },
-            Some(Command::Reload) => reload::run(self.tcp).await,
+            Command::Reload => reload::run(self.tcp).await,
         }
     }
 }
@@ -167,7 +136,7 @@ pub(crate) async fn connect_default() -> Result<(Transport, ConnectionInfo)> {
         let info = ConnectionInfo::Uds(socket_path.to_path_buf());
         let transport = client::connect_from(&info).await.with_context(|| {
             format!(
-                "daemon not running — start with: crabup daemon start\n  (tried {})",
+                "daemon not running — start with: crabtalkd\n  (tried {})",
                 socket_path.display()
             )
         })?;
@@ -194,7 +163,7 @@ pub(crate) async fn connect_tcp() -> Result<(Transport, ConnectionInfo)> {
     let tcp_port_file = &*wcore::paths::TCP_PORT_FILE;
     let port_str = std::fs::read_to_string(tcp_port_file).with_context(|| {
         format!(
-            "daemon not running — start with: crabup daemon start\n  (no port file at {})",
+            "daemon not running — start with: crabtalkd\n  (no port file at {})",
             tcp_port_file.display()
         )
     })?;

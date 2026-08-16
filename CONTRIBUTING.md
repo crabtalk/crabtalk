@@ -24,7 +24,7 @@ Layer 4 ─ Adapters
   ├─ crabtalkd            Daemon CLI: run, setup, reload, events
   ├─ crabup               Package manager for the ecosystem
   ├─ client               Connection, typed RPC sugars, stream adapters
-  ├─ tui                  REPL, config TUI
+  ├─ cli                  Daemon management commands
   └─ harness/             the harnesses (berm guests, RV64 ELFs)
 ```
 
@@ -45,7 +45,7 @@ together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 | Does it adapt a platform or parse bot commands? | client |
 | Does it add a daemon admin command (over the socket)? | crabtalkd |
 | Does it install or update a crabtalk binary? | crabup |
-| Does it add a TUI feature or interactive UI? | tui |
+| Does it add a management subcommand to the `crabtalk` binary? | cli |
 | **If none of these fit, challenge whether the feature should exist.** | |
 
 ## Boundary Contracts
@@ -63,7 +63,7 @@ through the event channel.
 ## Data Flow
 
 ```
-Client (TUI/Telegram/Desktop) → UDS/TCP or in-process → CrabTalk
+Client (CLI/ACP/Desktop) → UDS/TCP or in-process → CrabTalk
   → Agent.step(): config + history + tools → Model.send()/stream()
   → Tool calls dispatched via ToolDispatcher → Env.dispatch_tool()
 ```
