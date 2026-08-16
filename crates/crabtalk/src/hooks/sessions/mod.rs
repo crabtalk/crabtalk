@@ -11,7 +11,7 @@ use wcore::{ToolDispatch, ToolFuture, agent::AsTool, model::Tool};
 
 mod search;
 
-const SESSIONS_PROMPT: &str = include_str!("../../../prompts/sessions.md");
+const SESSIONS_USAGE: &str = include_str!("../../../prompts/sessions.md");
 
 pub struct SessionsHook<P: Provider + 'static, S: Storage> {
     pub(super) runtime: Arc<OnceLock<RuntimeHandle<P, S>>>,
@@ -28,8 +28,8 @@ impl<P: Provider + 'static, S: Storage> Hook for SessionsHook<P, S> {
         vec![SearchSessions::as_tool()]
     }
 
-    fn system_prompt(&self) -> Option<String> {
-        Some(format!("\n\n{SESSIONS_PROMPT}"))
+    fn usage(&self) -> Option<String> {
+        Some(format!("\n\n{SESSIONS_USAGE}"))
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {

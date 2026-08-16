@@ -130,18 +130,14 @@ impl Hook for Hooks {
             .collect()
     }
 
-    fn system_prompt(&self) -> Option<String> {
-        let mut prompt = String::new();
+    fn usage(&self) -> Option<String> {
+        let mut usage = String::new();
         for hook in self.hooks.values() {
-            if let Some(ref s) = hook.system_prompt() {
-                prompt.push_str(s);
+            if let Some(ref declared) = hook.usage() {
+                usage.push_str(declared);
             }
         }
-        if prompt.is_empty() {
-            None
-        } else {
-            Some(prompt)
-        }
+        if usage.is_empty() { None } else { Some(usage) }
     }
 
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
@@ -151,8 +147,8 @@ impl Hook for Hooks {
         if config.system_prompt.is_empty() && !config.description.is_empty() {
             config.system_prompt = format!("You are {}.\n\n{}", config.name, config.description);
         }
-        if let Some(ref prompt) = self.system_prompt() {
-            config.system_prompt.push_str(prompt);
+        if let Some(ref usage) = self.usage() {
+            config.system_prompt.push_str(usage);
         }
         self.apply_scope(&mut config);
         config

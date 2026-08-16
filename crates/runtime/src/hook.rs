@@ -17,8 +17,14 @@ pub trait Hook: Send + Sync {
         vec![]
     }
 
-    /// System prompt fragment appended to agent configs at build time.
-    fn system_prompt(&self) -> Option<String> {
+    /// When to reach for this hook's tools, and how they go together.
+    ///
+    /// A declaration rather than a lifecycle callback: it answers a question
+    /// no single tool's `description` can, because it is about choosing
+    /// between them. It is in context from the first turn — the model has to
+    /// have it *before* it decides — so it is paid on every turn and belongs
+    /// at that altitude. Anything longer than a few lines is a skill.
+    fn usage(&self) -> Option<String> {
         None
     }
 
