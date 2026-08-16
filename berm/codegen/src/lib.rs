@@ -200,6 +200,9 @@ pub fn harness(args: TokenStream, item: TokenStream) -> TokenStream {
 
         /// The ELF entry point. Never called: it exists so `--gc-sections`
         /// keeps the exports, which nothing else in the image references.
+        /// Off the guest's target the C runtime owns `_start`, and defining a
+        /// second one fails the native test link on ELF platforms.
+        #[cfg(target_arch = "riscv64")]
         #[unsafe(no_mangle)]
         pub extern "C" fn _start() {
             static mut ANCHOR: u64 = 0;
