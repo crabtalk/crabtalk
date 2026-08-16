@@ -5,8 +5,8 @@
 //! protocol door end to end — the grant, the decode-time allowlist, and the
 //! redaction — with nothing else in the way.
 //!
-//! It also mirrors real code: `apps/tui/src/repl/delegate.rs` builds the same
-//! list from the same message to tell a model which agents it can delegate to.
+//! Naming the peers is all it does. Reaching one is a turn spent on another
+//! agent's behalf, which is in no group a harness can hold.
 
 #![cfg_attr(target_arch = "riscv64", no_std, no_main)]
 

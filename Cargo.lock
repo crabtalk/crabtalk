@@ -730,6 +730,7 @@ dependencies = [
  "crabtalk-core",
  "crabtalk-runtime",
  "prost",
+ "sha2",
  "tokio",
  "tracing",
 ]

@@ -38,10 +38,10 @@ pub type Dispatch = Arc<
 
 /// What one agent's declaration granted the harness it loaded.
 ///
-/// A harness image is keyed by `(agent, harness)` precisely because the grant
-/// lives in the declaration, so the agent's own limits are known here without
-/// the invocation having to carry them: two agents declaring the same ELF get
-/// two linkers, and this is what differs between them.
+/// The grant lives in the declaration, so the agent's own limits are known
+/// here without the invocation having to carry them. That is also why this is
+/// part of an image's digest: two agents declaring the same ELF under
+/// different scopes are two sandboxes, not one.
 pub struct Scope {
     /// Whether `protocol:read` was granted.
     pub read: bool,
@@ -90,8 +90,8 @@ pub(crate) fn allowed(message: &client_message::Msg, read: bool) -> bool {
 /// Strip what a harness must not see from a reply.
 ///
 /// `name` and `description` are what a caller actually reads off an agent —
-/// `apps/tui/src/repl/delegate.rs` proves it, using exactly those two and
-/// never touching `.config` — so blanking one field costs nothing real.
+/// the `peers` harness uses exactly those two and never touches `.config` —
+/// so blanking one field costs nothing real.
 pub(crate) fn redact(mut reply: ServerMessage) -> ServerMessage {
     match reply.msg.as_mut() {
         Some(server_message::Msg::AgentInfo(info)) => info.config.clear(),

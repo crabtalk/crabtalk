@@ -4,19 +4,22 @@
 //! manifest at load — the per-agent declaration is already the gate, so there
 //! is no meta-tool to go through (RFC 0205).
 //!
-//! Images are keyed by `(agent, harness)` rather than by harness alone,
-//! because the grant lives in the declaration: two agents may install the same
-//! ELF against different roots, and they must not share a linker.
+//! An image is keyed by what determines it — the ELF, the grants it runs
+//! under, and the scope a granted capability closes over — not by the agent
+//! that declared it. The grant still decides: two agents installing the same
+//! ELF against different roots hash differently and get two linkers. But two
+//! that declare it identically share one image, and a rename changes nothing
+//! about the key, because the agent's name was never part of it.
 //!
 //! Entering a guest blocks the thread it runs on, and `exec` can hold it for
 //! the length of a command, so dispatch hands the invocation to the blocking
 //! pool rather than running it on an async worker.
 
-use crate::Dispatch;
+use crate::{Dispatch, Scope};
 use berm::{Capability, Config, Engine, Grants, Harness};
 use crabllm_core::Tool;
 use runtime::Hook;
-
+use sha2::{Digest as _, Sha256};
 use std::{
     collections::BTreeMap,
     sync::{Arc, OnceLock, RwLock},
@@ -26,11 +29,44 @@ use wcore::{
     model::{FunctionDef, ToolType},
 };
 
-/// Every harness image the daemon has loaded.
+/// What names an image: a SHA-256 over the ELF and everything the sandbox is
+/// built with.
+type Digest = [u8; 32];
+
+/// Every harness image the daemon has loaded, and who declared it.
+///
+/// One lock over both maps: the two are only ever read or written together,
+/// and a single guard is one fewer ordering rule to get wrong.
+#[derive(Default)]
+struct Registry {
+    /// Digest to the image it names.
+    images: BTreeMap<Digest, Arc<Harness>>,
+    /// The images each agent's declarations resolved to, in declaration order.
+    agents: BTreeMap<String, Vec<Digest>>,
+}
+
+impl Registry {
+    /// Drop images no declaration points at any more. Called after every
+    /// change to `agents`, so an agent losing a harness loses its tools —
+    /// the registry holds what is declared now, not what once was.
+    fn sweep(&mut self) {
+        let Self { images, agents } = self;
+        images.retain(|digest, _| agents.values().flatten().any(|d| d == digest));
+    }
+
+    /// The images `agent` declared, in order.
+    fn of(&self, agent: &str) -> impl Iterator<Item = &Arc<Harness>> {
+        self.agents
+            .get(agent)
+            .into_iter()
+            .flatten()
+            .filter_map(|digest| self.images.get(digest))
+    }
+}
+
 pub struct HarnessHook {
     engine: Engine,
-    /// `(agent, harness name)` to the image that agent's declaration granted.
-    loaded: RwLock<BTreeMap<(String, String), Arc<Harness>>>,
+    registry: RwLock<Registry>,
     /// The runtime's own door, connected once the daemon that implements it
     /// exists — which is after these images load, since it is built on them.
     protocol: Arc<OnceLock<Dispatch>>,
@@ -47,22 +83,23 @@ impl HarnessHook {
         config.cache_dir(wcore::paths::CONFIG_DIR.join("cache/berm"));
         Ok(Self {
             engine: Engine::new(&config)?,
-            loaded: RwLock::new(BTreeMap::new()),
+            registry: RwLock::new(Registry::default()),
             protocol,
         })
     }
 
-    /// Load what `agent` declared. Failures are logged rather than fatal: one
-    /// unreadable image should cost its own tools, not the daemon's startup.
+    /// Load what `agent` declared, replacing whatever it declared before.
+    /// Failures are logged rather than fatal: one unreadable image should cost
+    /// its own tools, not the daemon's startup.
+    ///
+    /// The registry is held for the whole pass so two agents registering at
+    /// once cannot compile the same image twice.
     pub fn load(&self, agent: &str, config: &AgentConfig) {
+        let mut registry = self.registry.write().expect("harness registry");
+        let mut declared = Vec::new();
         for declaration in &config.harnesses {
-            match self.image(declaration, &config.skills) {
-                Ok(harness) => {
-                    self.loaded.write().expect("harness registry").insert(
-                        (agent.to_owned(), declaration.name.clone()),
-                        Arc::new(harness),
-                    );
-                }
+            match self.image(&mut registry, declaration, &config.skills) {
+                Ok(digest) => declared.push(digest),
                 Err(error) => tracing::warn!(
                     agent,
                     harness = declaration.name,
@@ -70,14 +107,23 @@ impl HarnessHook {
                 ),
             }
         }
+        registry.agents.insert(agent.to_owned(), declared);
+        registry.sweep();
     }
 
-    /// Read one image and grant it what the declaration says.
+    /// Read one image, grant it what the declaration says, and return the
+    /// digest it is keyed by. An image already in the registry under that
+    /// digest is the same sandbox, so it is reused rather than recompiled.
     ///
     /// The daemon does not download code: it loads what is present and errors
     /// if it is not. Fetching because a config named something would be the
     /// daemon making a policy decision with a network connection.
-    fn image(&self, declaration: &HarnessConfig, skills: &[String]) -> anyhow::Result<Harness> {
+    fn image(
+        &self,
+        registry: &mut Registry,
+        declaration: &HarnessConfig,
+        skills: &[String],
+    ) -> anyhow::Result<Digest> {
         let path = wcore::paths::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
         let elf = std::fs::read(&path).map_err(|e| {
             anyhow::anyhow!(
@@ -87,66 +133,92 @@ impl HarnessHook {
         })?;
 
         let granted = |name: &str| declaration.capabilities.iter().any(|c| c == name);
-
+        let grants = Grants {
+            root: declaration.root.clone(),
+            fs: granted("fs"),
+            exec: granted("exec"),
+        };
         // The runtime is not something berm knows about, so it arrives the way
         // any embedder's capability does. The group the declaration granted is
         // captured here and checked on decode.
+        let scope = granted("protocol:read").then(|| Scope {
+            read: true,
+            skills: skills.to_vec(),
+        });
+
+        let digest = digest(&elf, &grants, scope.as_ref());
+        if registry.images.contains_key(&digest) {
+            return Ok(digest);
+        }
+
         let mut extra = Vec::new();
-        if granted("protocol:read") {
+        if let Some(scope) = scope {
             let protocol = self.protocol.clone();
-            let scope = crate::protocol::Scope {
-                read: true,
-                skills: skills.to_vec(),
-            };
             extra.push(Capability {
                 name: crate::protocol::CALL.to_owned(),
                 call: Arc::new(move |request| crate::protocol::call(&protocol, request, &scope)),
             });
         }
 
-        Harness::load(
-            &self.engine,
-            &elf,
-            &Grants {
-                root: declaration.root.clone(),
-                fs: granted("fs"),
-                exec: granted("exec"),
-            },
-            &extra,
-        )
+        let harness = Harness::load(&self.engine, &elf, &grants, &extra)?;
+        registry.images.insert(digest, Arc::new(harness));
+        Ok(digest)
     }
 
     /// The image serving `tool` for `agent`.
     fn owner(&self, agent: &str, tool: &str) -> Option<Arc<Harness>> {
-        self.loaded
+        self.registry
             .read()
             .expect("harness registry")
-            .iter()
-            .find(|((owner, _), harness)| {
-                owner == agent && harness.manifest().tools.iter().any(|t| t.name == tool)
-            })
-            .map(|(_, harness)| harness.clone())
+            .of(agent)
+            .find(|harness| harness.manifest().tools.iter().any(|t| t.name == tool))
+            .cloned()
     }
 
     /// Tool names an agent's declarations bring.
     fn names(&self, agent: &str) -> Vec<String> {
-        self.loaded
+        self.registry
             .read()
             .expect("harness registry")
-            .iter()
-            .filter(|((owner, _), _)| owner == agent)
-            .flat_map(|(_, harness)| harness.manifest().tools.iter().map(|t| t.name.clone()))
+            .of(agent)
+            .flat_map(|harness| harness.manifest().tools.iter().map(|t| t.name.clone()))
             .collect()
     }
+}
+
+/// The digest that names an image: the ELF, the grants it is instantiated
+/// with, and the scope a granted capability closes over. Everything that
+/// changes what the sandbox *is* is in here; nothing else is, so a rename or
+/// a second agent declaring the same thing is not a new image.
+///
+/// `skills` reaches the guest through `scope`, so it must be hashed — two
+/// agents sharing a harness but not a skill list are not the same sandbox.
+fn digest(elf: &[u8], grants: &Grants, scope: Option<&Scope>) -> Digest {
+    let mut hasher = Sha256::new();
+    hasher.update(elf);
+    hasher.update([grants.fs as u8, grants.exec as u8]);
+    if let Some(root) = &grants.root {
+        hasher.update(root.as_os_str().as_encoded_bytes());
+    }
+    hasher.update([0]);
+    if let Some(scope) = scope {
+        hasher.update([1, scope.read as u8]);
+        for skill in &scope.skills {
+            hasher.update(skill.as_bytes());
+            hasher.update([0]);
+        }
+    }
+    hasher.finalize().into()
 }
 
 impl Hook for HarnessHook {
     /// Every harness tool, for the schema catalogue. What an agent may
     /// actually call is [`Hook::scoped_tools`].
     fn schema(&self) -> Vec<Tool> {
-        self.loaded
+        self.registry
             .read()
             .expect("harness registry")
+            .images
             .values()
             .flat_map(|harness| harness.manifest().tools.clone())
             .map(|tool| Tool {
@@ -166,10 +238,9 @@ impl Hook for HarnessHook {
     }
 
     fn on_unregister_agent(&self, name: &str) {
-        self.loaded
-            .write()
-            .expect("harness registry")
-            .retain(|(agent, _), _| agent != name);
+        let mut registry = self.registry.write().expect("harness registry");
+        registry.agents.remove(name);
+        registry.sweep();
     }
 
     fn scoped_tools(&self, config: &AgentConfig) -> (Vec<String>, Option<String>) {
