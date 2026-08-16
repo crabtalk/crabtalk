@@ -43,8 +43,8 @@ crabtalk-berm-proto = { path = "crates/berm/proto", version = "0.0.23" }
 
 # rvtime
 object = "0.40"
-rvtime = "0.0.1"
-rvtime-guest = { version = "0.0.1", default-features = false }
+rvtime = "0.0.2"
+rvtime-guest = { version = "0.0.2", default-features = false }
 linked_list_allocator = "0.10"
 
 # crabllm
@@ -172,16 +172,6 @@ debug = false
 debug-assertions = false
 overflow-checks = false
 strip = true
-
-[patch.crates-io]
-# Until an rvtime release carries it: the published 0.0.1 cannot compile off
-# RISC-V, which is what a harness author needs to test their tools natively.
-rvtime-guest = { git = "https://github.com/crabtalk/rvtime", branch = "dev" }
-# The host half, for the same reason: 0.0.1 rejects the indirect control flow
-# rustc actually emits — function addresses materialised by `auipc`, and jump
-# tables landing inside a function — so no guest that formats or matches runs
-# on it.
-rvtime = { git = "https://github.com/crabtalk/rvtime", branch = "dev" }
 
 [workspace.metadata.conta]
 ignore = []

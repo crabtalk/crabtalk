@@ -613,7 +613,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1792,7 +1792,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1942,7 +1942,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2848,7 +2848,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3288,7 +3288,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4243,7 +4243,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4302,7 +4302,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4340,8 +4340,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime"
-version = "0.0.1"
-source = "git+https://github.com/crabtalk/rvtime?branch=dev#5fe5138a13bf363eb6ce0449a70e5ebcdb30c244"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a17d35c154b6cdb21e5e6f2a67b323a3aa2797a1f4874e08f8bdec0a13483fc9"
 dependencies = [
  "anyhow",
  "libc",
@@ -4353,8 +4354,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-compiler"
-version = "0.0.1"
-source = "git+https://github.com/crabtalk/rvtime?branch=dev#5fe5138a13bf363eb6ce0449a70e5ebcdb30c244"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47211b253075208e07006308d9fa47c60d0155f9c89ebf24cac75ba0f17b57c2"
 dependencies = [
  "anyhow",
  "cc",
@@ -4368,8 +4370,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-core"
-version = "0.0.1"
-source = "git+https://github.com/crabtalk/rvtime?branch=dev#5fe5138a13bf363eb6ce0449a70e5ebcdb30c244"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a49392bdc8598059cc8e89116cccd1e3bb0af96849dcefb5295ac4309bec6e63"
 dependencies = [
  "anyhow",
  "object 0.40.0",
@@ -4378,8 +4381,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-cranelift"
-version = "0.0.1"
-source = "git+https://github.com/crabtalk/rvtime?branch=dev#5fe5138a13bf363eb6ce0449a70e5ebcdb30c244"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15b9e6e29f6338a66c0d131e8a579101787f91b55d6a8d66616f11b29bc6ec67"
 dependencies = [
  "anyhow",
  "cranelift",
@@ -4390,8 +4394,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-guest"
-version = "0.0.1"
-source = "git+https://github.com/crabtalk/rvtime?branch=dev#5fe5138a13bf363eb6ce0449a70e5ebcdb30c244"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4833085316c8d6b8b26c96dcecb64ed16ef6219350d46f942f3d44871d3e906f"
 
 [[package]]
 name = "ryu"
@@ -5164,7 +5169,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5962,7 +5967,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
