@@ -1,0 +1,585 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>0205 - Berm - The Crabtalk RFC Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-e96d0476.css">
+        <link rel="stylesheet" href="../css/chrome-d279d366.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-33600370.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-56997f56.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Crabtalk RFC Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/crabtalk/crabtalk" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/rfcs/0205-berm.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="0205---berm"><a class="header" href="#0205---berm">0205 - Berm</a></h1>
+<ul>
+<li>Feature Name: Berm</li>
+<li>Start Date: 2026-08-15</li>
+<li>Discussion: TBD — related: <a href="https://github.com/crabtalk/crabtalk/issues/197">#197</a>, <a href="https://github.com/crabtalk/crabtalk/issues/150">#150</a></li>
+<li>Crates: berm, core, crabtalk, crabtalk-berm, hooks, crabup</li>
+<li>Supersedes: <a href="0080-cron.html">0080 (Cron)</a></li>
+<li>Updates: <a href="0184-crabup.html">0184 (crabup)</a>, <a href="0189-policy-at-the-edge.html">0189 (Policy at the Edge)</a>, <a href="0203-client-side-orchestration.html">0203 (Client-Side Orchestration)</a></li>
+</ul>
+<h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
+<p>A <strong>harness</strong> is code the daemon schedules: one hash-pinned RV64IMAC ELF, compiled and run in-process by <a href="https://github.com/crabtalk/rvtime">rvtime</a>, confined to its own address space, reaching the world only through numbered host calls it was explicitly granted. A harness never runs of its own accord — the daemon decides when it runs, and while running it may call back in.</p>
+<p><strong>berm</strong> is what runs one. It is the sandbox rather than the agent platform: it loads the ELF, grants capabilities, and invokes, and it knows nothing about agents or the protocol. Crabtalk is one thing that embeds it, and deliberately not the only one — see <a href="#layout">Layout</a>.</p>
+<p>What it calls back into is <strong>the protocol</strong>. <code>ClientMessage</code> is already the daemon’s complete, versioned, externally-facing API, so it is the vocabulary for everything a harness does to the runtime: send to an agent, subscribe to an event, schedule a wake. One capability number carries the whole surface, with a per-harness allowlist over message types.</p>
+<p>Harnesses replace stdio-spawned MCP servers as the way we distribute extensions. <code>harness/search</code> becomes one. <code>harness/cron</code> is deleted outright, because scheduling stops being a service and becomes the harness execution model: every harness invocation — tool call, timed wake, subscribed event — goes through one queue, and a cron entry is the case where the trigger is a time.</p>
+<p>Two things follow that reach past extension code. Where a harness runs is a deployment property rather than a design one, which dissolves the “client tool” category: OS capabilities become a harness placed on whichever machine holds the files, and a client tool narrows to one whose result requires a human. And a harness is a third home for policy — not daemon-core, not client — which is where delegation belongs once sub-agents can reach tools without a client attached.</p>
+<h2 id="motivation"><a class="header" href="#motivation">Motivation</a></h2>
+<p><strong>Spawning a binary is not an extension mechanism.</strong> Today an agent declares an MCP server (RFC 0193) and the daemon runs the named command as a child process with the daemon’s own privileges: full filesystem, full network, full environment. Nothing about that grant is declared, inspectable, or revocable. The tool the model sees is <code>search_web</code>; the thing the operating system sees is an unbounded process. For code we wrote that is a manageable risk. For code a third party wrote it is the whole risk, and it is the reason there is no answer today to “can I install someone else’s tool?”</p>
+<p><strong>Distribution multiplies the problem.</strong> A native binary needs a build per platform — <code>apps/crabup/src/github.rs:15-19</code> enumerates five — so a third-party tool author must produce and maintain five artifacts before anyone can install one. Most will not, and the ones who do become five chances for the artifact to differ from the source.</p>
+<p><strong>The word is already in the repo, meaning two different things.</strong> <code>apps/crabup/src/registry.rs:6</code> defines <code>harness/</code> as “the services you attach to a running system,” installed with <code>crabup add</code>. Two entries carry that label. <code>crabtalk-search</code> answers requests and has no state of its own between them. <code>crabtalk-cron</code> owns a timer, wakes itself, and calls the daemon over the SDK socket. These are not the same kind of thing, and calling both a harness has cost us a definition we could reason with.</p>
+<p><strong>The runtime exists and was built for this.</strong> rvtime compiles a statically linked RV64IMAC ELF to native code with Cranelift, caches the generated code on disk keyed by a hash of the CLIF function plus ISA settings, and lets the host register numbered call-backs. Its own cache module is documented for the case where “a daemon may compile the same plugin from several processes at once.” It is published as <code>rvtime</code> 0.0.1 and we own it.</p>
+<h2 id="design"><a class="header" href="#design">Design</a></h2>
+<h3 id="definition"><a class="header" href="#definition">Definition</a></h3>
+<blockquote>
+<p>A harness never runs of its own accord. The daemon decides when it runs; while running, it may call back in.</p>
+</blockquote>
+<p>The distinction against a client is <strong>initiative, not direction</strong>. A harness calling the protocol is not a client, for the same reason a process making a syscall is not the kernel: it does not own the schedule. This is the load-bearing sentence, and it sorts the existing <code>harness/</code> directory into one of each:</p>
+<ul>
+<li><strong>search</strong> — request in, response out, no lifetime of its own. A harness. It loses its process, its port, its axum server, its <code>mcp.rs</code>, and its service unit.</li>
+<li><strong>cron</strong> — owns a timer and wakes itself. Not a harness under this definition, and not a thing we keep. What replaces it is a harness that <em>asks</em> to be woken, which is the same behaviour with the initiative inverted. See <a href="#migration">Migration</a>.</li>
+</ul>
+<h3 id="the-artifact"><a class="header" href="#the-artifact">The artifact</a></h3>
+<p>One ELF, self-describing. A sidecar manifest would mean two artifacts that can disagree, so the ELF answers for itself through required exports:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Export</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><code>_start()</code></td><td>Anchors the other exports so the linker keeps them; never called</td></tr>
+<tr><td><code>berm_tool_&lt;name&gt;() -&gt; (ptr, len)</code></td><td>One per tool; the result of one invocation</td></tr>
+</tbody>
+</table>
+</div>
+<p>The manifest is not an export. It is an ELF section, <code>.berm.abi</code>, carrying the same JSON — ABI version, tools, capabilities requested — read straight out of the file. <strong>Learning what a harness claims to be must not mean running it</strong>, and a <code>describe()</code> export meant exactly that: compile the image, map an address space, enter untrusted code, all to read a string it could have carried as data. A section is also what makes the manifest extractable by any tool with an ELF reader, so the same bytes can be published to a registry without a runtime.</p>
+<p><strong>A tool is resolved by its symbol, not by an index.</strong> rvtime looks exports up by name (<code>Instance::get_typed_func</code>), so a dispatcher inside the guest would only add an ordinal coupling between the host’s tool list and the guest’s declaration order, in exchange for nothing. Resolving by name also lets the host check <code>Instance::exports()</code> against what the manifest advertises and reject a harness whose description does not match its symbol table. A <code>TypedFunc</code> belongs to the module rather than to a store, so every tool resolves once at load and the handles serve every invocation after it. The prefix exists so a tool named <code>init</code> cannot collide with a reserved export.</p>
+<p>Guest functions return at most two registers (<code>translator::RESULT_REGS</code>), which is exactly <code>(ptr, len)</code>, and take up to eight arguments (<code>rv::REGISTER_ARGS</code>). A <code>repr(C)</code> pair of <code>u64</code>s returns in <code>a0</code> and <code>a1</code> under LP64, which is how a guest hands back a buffer. Arguments travel <em>in</em> by the guest pulling them — <code>arg_len()</code>, then <code>arg_read(ptr, len)</code> — rather than the host writing into the guest’s allocator, so the guest’s heap stays the guest’s business and there is no shared understanding of its layout to get wrong. Any capability returning variable-length data uses the same two-step. One pattern, reused.</p>
+<p><code>_start</code> earns its row the hard way. Nothing inside a harness image references its exports, so <code>--gc-sections</code> discards all of them and the host rejects the result as having no executable <code>.text</code>. An entry point that touches each export address keeps them, which is what rvtime’s own fixtures do. It is pure ceremony from the author’s point of view and therefore belongs to the SDK, not to them.</p>
+<p>The manifest carries <code>abi_version</code>. A host that does not recognise it refuses the harness rather than dispatching into a capability the author did not mean.</p>
+<h3 id="the-export-table-is-the-registration"><a class="header" href="#the-export-table-is-the-registration">The export table is the registration</a></h3>
+<p>rvtime exposes <code>Instance::exports()</code>. A harness that exports <code>on_wake</code> can be scheduled; one that does not, cannot — and the same rule decides whether it is handed a heap. There is no registration call and no participation manifest — the ELF’s symbol table states what it takes part in, which keeps the “one artifact” property true all the way through lifecycle rather than only for tools.</p>
+<h3 id="do-not-mirror-hook"><a class="header" href="#do-not-mirror-hook">Do not mirror <code>Hook</code></a></h3>
+<p><code>Hook</code> (<code>crates/runtime/src/hook.rs</code>) is our internal seam. <code>scoped_schema</code>, <code>on_build_agent</code>, and <code>scoped_tools</code> have the shapes they have because of how the composite hook and per-agent scoping work today. Publishing the trait as a guest ABI freezes it: every later change to <code>Hook</code> breaks every ELF in the field.</p>
+<p>The harness ABI exposes the smallest subset that makes real harnesses possible, and grows an export only when a harness needs one. Internal hooks stay internal Rust. Concretely, the exports are <code>call</code> (a tool was invoked), <code>on_wake</code> (a scheduled instant arrived), and <code>on_notify</code> (a subscribed event fired) — three entry points, none of them a mirror of a trait method.</p>
+<p>The hard case is events, and it wants <strong>subscribing through the protocol</strong>, the way a client does, rather than anything invented for harnesses. Granularity is already right: <code>AgentEvent::TextDelta(String)</code> is per-token and <code>on_event</code> runs inline in the streaming loop (<code>crates/runtime/src/engine/execution.rs:82,139</code>) from sync code on an async path, so a guest invocation per token would be unviable — but no exclusion rule is needed to prevent it, because the per-token stream was never on the event bus. The bus carries semantically meaningful topics, which is precisely what a harness can afford.</p>
+<p><strong>The bus cannot deliver to a harness today, and that is what blocks <code>on_notify</code>.</strong> <code>SubscribeEventMsg</code> is <code>{source, target_agent, once}</code> — a subscription routes an event <em>to an agent</em> — and the client-facing <code>subscribe_events</code> is a stream, which a harness has no lifetime to hold. So there is no <code>protocol:events</code> group in this RFC: naming one would grant a mechanism that does not exist. <code>subscribe_event</code>, <code>unsubscribe_event</code>, and <code>publish_event</code> stay ungrantable until the bus grows a harness as a subscription target, at which point the group is named alongside it. <code>on_notify</code> stays in the ABI because the export table is the registration and a harness that does not export it simply never receives one.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Frequency</th><th>Surface</th><th>Treatment</th></tr>
+</thead>
+<tbody>
+<tr><td>Rare (register, unregister, build)</td><td>lifecycle</td><td>A short blocking call is acceptable</td></tr>
+<tr><td>Once per user message</td><td><code>preprocess</code></td><td>Blocking with a timeout; gated on measurement</td></tr>
+<tr><td>Per subscribed event</td><td><code>on_notify</code></td><td>Enqueued, fire-and-forget; the subscription is the filter</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="memory-is-per-invocation-storage-is-persistent"><a class="header" href="#memory-is-per-invocation-storage-is-persistent">Memory is per-invocation, storage is persistent</a></h3>
+<p>Each invocation gets a fresh <code>Store</code>: instantiate, run, drop. No state survives in guest memory. Persistence is a capability, namespaced per harness, reached through host calls.</p>
+<p>The alternative — one long-lived <code>Store</code> per harness — is the intuitive reading of “joins the runtime’s lifetime” and it is wrong. <code>Store&lt;T&gt;</code> is <code>Send</code> and deliberately not <code>Sync</code>, because entering a guest takes <code>&amp;mut Store</code>. A long-lived harness is therefore a <code>Mutex&lt;Store&gt;</code>, and every call into it serialises: tool dispatch, events, and preprocessing, across every agent and conversation. One harness with a slow event handler becomes a global queue.</p>
+<p>Per-invocation stores buy three things beyond that:</p>
+<ul>
+<li><strong>Reentrancy stops being a memory problem.</strong> A harness calls an agent, the agent emits events, the events come back to the same harness — with a long-lived store that is a familiar class of bug; with fresh stores it is another invocation. Storage-level read-modify-write races remain, which is ordinary concurrency rather than memory corruption.</li>
+<li><strong>Upgrade is a file swap.</strong> State was never in the ELF’s address space.</li>
+<li><strong>A trap costs one invocation.</strong> There is no corrupted long-lived heap to reason about afterwards.</li>
+</ul>
+<p>The cost is measured, not assumed. A spike embedding rvtime — <code>berm/engine</code>, with a guest built by the SDK — puts a complete invocation at a <strong>p50 of ~17µs</strong>: <code>Store::new</code>, instantiate, both argument host calls, the guest’s work, reading the result out of guest memory, and teardown. Compiling the ELF is ~15ms cold and ~3ms against the on-disk code cache, and is paid per image rather than per call.</p>
+<p>Three things fall out of the measurements, and the third was a surprise.</p>
+<p>Against an LLM round trip none of this registers, so per-invocation stores are affordable on the tool path, on <code>preprocess</code>, and on event triggers alike — there is no case for pooling stores or keeping them alive, and the isolation the design wants is free.</p>
+<p>The p50 is flat from 16 MiB to 1 GiB of configured guest memory, confirming the address-space reservation is genuinely lazy: a harness that asks for room does not pay for it on every call.</p>
+<p><strong>Entering the guest is the expensive part, and a host call is nearly free.</strong> A guest entry costs ~13µs; a bare host call costs ~30ns, measured by making a hundred of them inside one invocation. That is a ratio of roughly four hundred, and it decides the shape of the ABI: <em>the host never enters a guest to tell it something.</em></p>
+<p>Handing over the heap is the case that proved it. The obvious design — the host enters the guest with <code>init(start, size)</code> after instantiating — doubled the cost of every invocation, and cost the same whether the region was 64 KiB or 62 MiB, because the work was never the initialization. Declaring a heap so the host could skip that entry was an improvement and still the wrong answer. The right one is that the guest <em>asks</em>: its allocator pulls the bounds through two host calls the first time something allocates, from inside the entry it is already in. A harness that never allocates never asks, so there is nothing to declare, no conditional export, and no branch in the host.</p>
+<p>The same reasoning is why arguments are pulled rather than pushed, and it is the rule to apply to every capability added later.</p>
+<p>Measured on one arm64 machine with a 72 KB guest, a 256-byte payload, and static buffers rather than an allocator — enough to size the boundary, not a claim about what a real harness’s own work will cost.</p>
+<h3 id="capabilities"><a class="header" href="#capabilities">Capabilities</a></h3>
+<p>Host functions are keyed by number, and a number with nothing registered traps as <code>Trap::UnknownHostCall(n)</code>. So the grant is not a check somebody has to write and remember to enforce — <strong>the <code>Linker</code> a harness is instantiated with is its capability set</strong>. Enforcement is the absence of code.</p>
+<p>Not everything numbered is a grant. <code>args.len</code>, <code>args.read</code>, <code>fail</code>, <code>heap.start</code>, <code>heap.size</code>, and <code>log</code> carry the invocation itself — a harness without them cannot receive its arguments, report failure, allocate, or be debugged — so they are unconditionally in the <code>Linker</code> and never appear in a declaration. Logging in particular is deliberately not grantable: it writes host-side only, and an author whose harness a user installed without it has no way to find out why it traps.</p>
+<p>Above that line, two families, and they warrant different postures:</p>
+<ul>
+<li><strong>Host-provided</strong> — one number each; a bad grant leaks data outward. These have no protocol equivalent: per-harness persistence in particular is not a <code>ClientMessage</code>, and inventing one so that everything goes through a single door would be symmetry for its own sake.</li>
+<li><strong>The protocol</strong> — one number, carrying the whole of <code>ClientMessage</code>. A bad grant spends the user’s tokens, reads their conversations, and deletes their agents.</li>
+</ul>
+<p>Two rules that do not bend:</p>
+<ol>
+<li><strong>Names are permanent; numbers are derived.</strong> <code>ecall</code> carries a number in <code>a7</code>, but we do not assign it — it is a hash of the capability’s name, computed at compile time on both sides. So the contract a third party ships against is <code>berm.http.fetch</code>, not <code>16</code>: adding a capability cannot collide with someone else’s allocation, there is no registry of integers to maintain, and the thing we version and deprecate is a name. Solana reaches the same place by hashing syscall symbols; we get it without changing rvtime, whose linker is happy with any <code>u64</code> key.</li>
+<li><strong>Requested is not granted.</strong> The manifest states what a harness <em>wants</em> — documentation, enough for a client to prompt. The declaration states what it <em>gets</em>. The daemon never infers one from the other.</li>
+</ol>
+<p>Every capability we write needs its own timeout. rvtime’s interrupt check covers every case of non-termination in guest code — a guest can only run forever by looping, and unbounded recursion exhausts the native stack and traps — so the remaining way to wedge a worker forever is a host call of ours that never returns.</p>
+<h4 id="the-set"><a class="header" href="#the-set">The set</a></h4>
+<p>Each name is here because a harness on the migration path needs it, and no name is here for a harness we have not written:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Needed by</th><th>Shape</th></tr>
+</thead>
+<tbody>
+<tr><td><code>clock</code></td><td>cron as a harness</td><td>UTC instant plus the host’s local offset — a wall-clock intent is not an instant</td></tr>
+<tr><td><code>http</code></td><td>search; every engine is fetch-then-parse</td><td>Request out, response in, over a declared host allowlist</td></tr>
+<tr><td><code>fs</code></td><td><code>read</code> and <code>edit</code></td><td>File operations bounded by a declared root</td></tr>
+<tr><td><code>exec</code></td><td><code>bash</code></td><td>A command, an environment, a working directory, and a timeout</td></tr>
+<tr><td><code>protocol</code></td><td>everything that touches the runtime</td><td>One number over <code>ClientMessage</code>, allowlisted on decode</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong><code>exec</code> subsumes <code>fs</code>.</strong> Anything <code>fs</code> does, a shell does with <code>cat</code>, <code>tee</code>, and <code>sed</code>, so these are not two rungs of a privilege ladder and a harness holding <code>exec</code> gains nothing from being denied <code>fs</code>. The split earns its keep for harnesses that are not the OS one: reading files without acquiring a shell is the common third-party shape, and <code>fs</code> is what it holds. Within the OS harness the two coexist for implementation reasons rather than containment ones — <code>read</code> built on <code>exec("cat")</code> would lose its size cap and its line windowing and gain shell-quoting bugs.</p>
+<p><strong>A root is not a working directory.</strong> The declaration names a <strong>root</strong>, which is the boundary: a path resolving outside it is refused host-side, and nothing in a call can widen it. The <strong>working directory</strong> is a call parameter defaulting to the root — where inside the boundary this invocation operates. Keeping them separate is what makes the OS harness stateless: the model says where it is working on each call, so there is no cwd to carry between invocations and no conversation state to reconstruct.</p>
+<p><strong><code>exec</code> has no command filtering, and should not grow any.</strong> A deny list guards against a <em>model</em> choosing something destructive; it does nothing against a harness author, who is arbitrary code and simply calls the capability with what they want. Putting one behind <code>exec</code> would move a behaviour guardrail into the capability layer and buy the appearance of containment rather than containment. What actually bounds <code>exec</code> is the grant: a harness that does not hold it cannot reach a shell, and one that does can do anything the user can. Deciding who holds it is an install-time judgement, not a runtime check.</p>
+<p><code>http</code> is the exception, because there the allowlist is not theatre: a harness declares the hosts it reaches, the check is a comparison the guest cannot influence, and the declaration is readable out of the ELF without running it. The grant is <em>those hosts</em>, not the network — the same relationship <code>root</code> has to <code>fs</code> and <code>exec</code>, and the reason both carry an argument in the declaration rather than only a name.</p>
+<p>Excluded deliberately, and why:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Excluded</th><th>Why</th></tr>
+</thead>
+<tbody>
+<tr><td><code>storage</code></td><td>Persistence is a capability (see <a href="#memory-is-per-invocation-storage-is-persistent">Memory is per-invocation</a>) — but the first harness has nothing to persist. Dropping read-before-edit leaves the OS harness stateless, and a stateless harness needs no store. It arrives with the first harness that outlives its own invocation, which is the re-arming one.</td></tr>
+<tr><td><code>random</code></td><td>A guest has no entropy without us, so this is a real gap — but nothing on the path to the first harness needs it. It arrives with the first re-arming harness that wants jittered backoff, and because numbers are hashed from names, adding it then costs nothing it would have saved by being here now.</td></tr>
+<tr><td><code>env</code></td><td>Reading the daemon’s environment is reading the user’s secrets. Whatever a harness needs comes through its declaration.</td></tr>
+<tr><td><code>net</code></td><td>Raw sockets are a bypass of every host <code>http</code> was allowlisted against. <code>http</code> is the network surface.</td></tr>
+<tr><td><code>sleep</code></td><td>A sleeping guest pins a worker. Waiting is <code>protocol:schedule</code> and <code>on_wake</code>.</td></tr>
+<tr><td><code>thread</code></td><td>Concurrency belongs to the queue, which is where the timeout, the rate limit, and the single-in-flight rule already live.</td></tr>
+<tr><td><code>mcp</code></td><td>A harness reaching MCP servers is the daemon’s own privilege laundered through a grant that looks smaller than it is.</td></tr>
+<tr><td><code>memory</code></td><td><code>crates/memory</code> is one global BM25 store, which is the opposite of per-harness namespacing. Its tools are thin wrappers over state a harness cannot own, so they stay an internal hook until there is a reason otherwise.</td></tr>
+<tr><td><code>html</code></td><td>Deferred rather than refused — it is search’s problem and is decided with search, not before it.</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="the-protocol-is-the-syscall-surface"><a class="header" href="#the-protocol-is-the-syscall-surface">The protocol is the syscall surface</a></h3>
+<p>Everything a harness does <em>to the runtime</em> — send to an agent, subscribe to an event, schedule a wake, read history — is already a <code>ClientMessage</code>. There is no reason to invent a second vocabulary for the same operations, and a second vocabulary would drift from the first.</p>
+<p><strong>One capability carries the entire protocol, with a serialized <code>ClientMessage</code> as its payload.</strong> The alternative — a capability per RPC, <code>crabtalk.protocol.send</code> and so on — is workable now that names rather than numbers are the contract, and it is still the wrong shape: <code>ClientMessage</code> is a <code>oneof</code>, so the message type is already a discriminant inside the payload. Spending a second discriminant on the ABI duplicates what protobuf carries, and buys a per-RPC SDK release before any harness can reach a newly added message. One door also means one place to enforce the allowlist, log protocol access, and rate-limit it.</p>
+<p>The grant is therefore two-level:</p>
+<ul>
+<li>The <strong>number</strong> gates the family. Ungranted, it is absent from the <code>Linker</code> and traps — a harness with no protocol grant cannot reach the runtime at all, and that enforcement is still the absence of code.</li>
+<li>An <strong>allowlist</strong> gates which message types pass, checked once on decode.</li>
+</ul>
+<p><strong>The guest speaks the daemon’s own message types</strong>, which the fallback in this RFC’s first draft treated as the likely outcome and the preferred one as unexamined. It is settled: <code>crates/core</code>’s module is not separable — it is <code>std</code> and carries serde derives — so <code>crates/berm/proto</code> generates from the same <code>crabtalk.proto</code> a second time. Two configuration differences make it a guest: <code>btree_map</code> because <code>map</code> fields otherwise reach for <code>std::collections::HashMap</code>, and a crate alias because prost writes <code>::prost::</code> paths and the workspace’s own copy keeps its default features. One schema, two emissions, and no way to drift without the <code>.proto</code> changing.</p>
+<p>Three rules govern what goes in that allowlist:</p>
+<p><strong>The protocol is the vocabulary, not the grant.</strong> <code>ClientMessage</code> is what the user’s own trusted UI may do, and it includes <code>DeleteAgent</code>, <code>UpdateAgent</code>, and <code>Reload</code>. A third-party harness holding those can delete the agents it was installed to help. Default-deny, granted in groups named by intent rather than one flag per message type.</p>
+<p><strong>Authority rides on the invocation, not only the declaration.</strong> A harness invoked during agent X’s tool call and calling <code>send</code> is acting as <em>someone</em>. The invocation carries <code>(agent, conversation, sender)</code>, and protocol calls are scoped to that context unless a broader grant exists. The declaration grants classes of operation; the invocation supplies the instance. It is the difference between handing a process a file descriptor and granting it permission to open any file.</p>
+<p><strong>Filesystem and command capabilities are scoped, not sandboxed.</strong> A harness granted <code>exec</code> can do anything the user can, and no amount of address-space confinement changes that. <code>fs</code> is bounded by a path subtree enforced host-side; <code>exec</code> is bounded by the grant and nothing finer, for the reason given above. Installing OS tools as a harness makes them modular and placeable; it does not make <code>bash</code> safe, and this RFC should not be read as claiming otherwise.</p>
+<h4 id="the-groups"><a class="header" href="#the-groups">The groups</a></h4>
+<p><code>ClientMessage</code> sorts by blast radius rather than by the section of the proto a message happens to sit in:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Group</th><th>Messages</th></tr>
+</thead>
+<tbody>
+<tr><td><code>protocol:read</code></td><td><code>ping</code>, <code>get_stats</code>, <code>list_agents</code>, <code>get_agent</code>, <code>list_skills</code>, <code>list_models</code>, <code>list_subscriptions</code></td></tr>
+<tr><td><code>protocol:history</code></td><td><code>list_conversations</code>, <code>list_active_conversations</code>, <code>get_conversation_history</code></td></tr>
+<tr><td><code>protocol:send</code></td><td><code>send</code>, <code>stream</code>, <code>steer_session</code></td></tr>
+<tr><td><code>protocol:schedule</code></td><td>The wake, its cancellation, and its listing — none of which exist yet</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>steer_session</code> is in <code>protocol:send</code> because injecting content into a live run has the same blast radius as starting one, which the proto’s own grouping obscures by filing it under Steering.</p>
+<p>Everything else is in no group a third party can hold, in three kinds:</p>
+<ul>
+<li><strong>Destructive or configuring</strong> — <code>create_agent</code>, <code>update_agent</code>, <code>delete_agent</code>, <code>rename_agent</code>, <code>delete_conversation</code>, <code>upsert_mcp</code>, <code>delete_mcp</code>, <code>reconnect_mcp</code>, <code>set_active_model</code>, <code>kill</code>, <code>compact</code>, <code>reload</code>, <code>get_config</code>, and <code>extension</code>, which is opaque bytes for downstream products.</li>
+<li><strong>Answering for someone else</strong> — <code>reply_to_ask</code> and <code>reply_to_tool</code>. Both respond to a request routed to a human or a client, and a harness answering one is impersonation rather than capability.</li>
+<li><strong>Credential reads</strong> — <code>list_mcps</code>, whose payload is substantially the credential: <code>McpInfo.auth</code> is documented as the full <code>Authorization</code> header value, and <code>env</code> is the server’s environment.</li>
+</ul>
+<p>Two messages are excluded by shape rather than by policy. <code>subscribe_events</code> and <code>subscribe_mcp_events</code> are streams, and a harness has no lifetime to hold one; there is nothing to decide about them.</p>
+<p><strong>A protocol read is a credential read until one field is dropped.</strong> <code>AgentInfo.config</code> carries the full <code>AgentConfig</code> as JSON, and <code>AgentConfig.mcps</code> holds <code>McpServerConfig</code> by value — <code>env</code> and <code>auth</code> included. So <code>list_agents</code> hands a harness every MCP bearer token the user has, and <code>protocol:read</code> is unshippable as written. The fix is small and the existing consumer proves it is sufficient: <code>apps/tui/src/repl/delegate.rs</code> reads only <code>name</code> and <code>description</code> off <code>AgentInfo</code> and never touches <code>.config</code>, so the protocol door blanks that one field for harnesses. This is the harness boundary paying for a bill RFC 0193 deferred — secrets stored as literal values — and the redaction should be understood as holding the line until that is paid, not as settling it.</p>
+<h3 id="placement"><a class="header" href="#placement">Placement</a></h3>
+<p><strong>Harnesses run in the runtime. The client never executes one.</strong> The daemon’s machine is the workspace, and a client — TUI, web, phone — is a view onto it. Where the files are is not a spectrum to be resolved per deployment: if the work is on machine M, the runtime for that work is on machine M, which is what one-runtime-per-user (RFC 0193) already implies.</p>
+<p>This dissolves the “client tool” category, and the reason to state it as a rule rather than a table is that the table gets the failure direction wrong. Treating client-hosted execution as one valid row among several is how <code>bash</code> ends up somewhere a web client cannot follow: a browser has no filesystem to offer, so a design that puts OS tools in the client hasn’t chosen a deployment, it has decided which clients are permanently second-class. Today’s rule — <code>crates/hooks/src/os/mod.rs:3</code>, “the daemon never executes these” — is exactly that decision, and it inverts here.</p>
+<p>A pleasant consequence of ruling out client-side hosting: the JIT question disappears. Hosting harnesses needs one and iOS forbids one, which would have been a hard ceiling on rich mobile clients. No client hosts, so no client needs a JIT, and a phone is a view for the same reason every other client is.</p>
+<p><strong>A client tool is one whose result requires a human to be present.</strong> <code>ask_user</code> passes that test and stays a forwarded tool; <code>read</code> fails it and becomes a harness capability. The code has already half-found this line, special-casing <code>ask_user</code> out of the generic forward path at <code>crates/sdk/src/stream.rs:82</code>.</p>
+<p>The reason this matters is not tidiness. <code>crates/crabtalk/src/bridge.rs</code> states the current contract: “A client’s tools are exactly what it declares in <code>StreamMsg.tools</code>. There is no default set: the daemon cannot execute a client tool, so advertising one the client never claimed only buys a forward nobody answers — a hang until the timeout, not a fallback.” A run with no client attached therefore has no tools at all. That is tolerable while every run has a human watching it, and this RFC ends that: a scheduled wake, an event-triggered invocation, and a harness calling <code>send</code> all produce agent runs with no client. Tools-in-client does not degrade when scheduling lands — it stops working.</p>
+<p>Forwarding also gets the granularity wrong. A harness invocation crosses the boundary once and makes its fifty filesystem calls locally; forwarding primitives crosses fifty times. The agent still pays the one round trip it can never avoid, because the model is on the far side waiting for a result. What changes is everything else.</p>
+<p>Two consequences worth stating. A thin client — the proto carries a <code>swift_prefix</code> option, so they are already in the picture — gains the same tools as the TUI, because tools no longer live in the client; today it cannot have <code>bash</code> by construction. And approval inverts: with execution in the runtime, prompts cross the wire instead of results, which is the rare path rather than the frequent one.</p>
+<p>What a client keeps is the work that genuinely needs it: rendering the stream, sending input, answering <code>ask_user</code>, and prompting for approvals.</p>
+<h3 id="bounding-invocation-chains"><a class="header" href="#bounding-invocation-chains">Bounding invocation chains</a></h3>
+<p>Making the protocol callable closes a loop that does not exist today: a harness calls <code>send</code>, an agent runs, <code>agent:{name}:done</code> publishes, the subscription wakes the harness, which calls <code>send</code>. The queue will service that forever.</p>
+<p>Every invocation therefore carries a <strong>chain depth</strong>, incremented when work is enqueued as a consequence of a harness call and refused past a limit. A budget over the chain — invocations, or the tokens its agent calls spend — is the same idea with a more useful unit, and is the one place where the contract analogy is load-bearing rather than illustrative: this is gas.</p>
+<p>Bootstrap has a floor. The queue, the due-set’s storage, and protocol dispatch itself cannot be harnesses.</p>
+<h3 id="harnesses-are-the-edge-that-isnt-the-client"><a class="header" href="#harnesses-are-the-edge-that-isnt-the-client">Harnesses are the edge that isn’t the client</a></h3>
+<p>RFC 0189 drew the line as <em>mechanism in the daemon, policy at the edge</em>, and “the edge” has since been read as “the client process” — because at the time it was the only other place available. What 0189 actually objected to was the daemon deciding on the user’s behalf with hardcoded heuristics it could not be argued out of.</p>
+<p>A harness is a third location. Not daemon-core, not client: installable, agent-declared, forkable, replaceable. Policy in a harness satisfies 0189 completely — the daemon still decides nothing — without requiring every client to grow its own implementation of that policy.</p>
+<p>The principle gains a clause rather than losing one: <strong>mechanism in the daemon, policy at the edge, and a harness is edge code that happens to run in the runtime.</strong></p>
+<p>This is what keeps “the client is a thing that calls the daemon” from being in tension with “the daemon does not decide for you.” A client’s job reduces to rendering the stream, sending user input, answering <code>ask_user</code>, and prompting for approvals. What it must not become is the only place a capability exists, because then every client reimplements it and each client’s UI constraints leak into what agents can do.</p>
+<h3 id="delegation-as-a-harness"><a class="header" href="#delegation-as-a-harness">Delegation as a harness</a></h3>
+<p>RFC 0203, landed the same day as this one, moved <code>delegate</code> from a daemon hook to a client tool. Its reasoning holds under its premise, and the premise is the one this RFC changes:</p>
+<blockquote>
+<p>“Sub-agents could think, reach memory, skills, and MCP, and nothing else. Daemon-side orchestration was orchestrating agents with no hands.”</p>
+</blockquote>
+<p>Delegation moved to the client because that is where the hands were. Once tools are harnesses in the runtime, sub-agents have hands wherever they run, and the bridge work 0203 priced out — multiplexing sub-conversation forwards, namespacing <code>call_id</code>s across conversations, propagating cancellation, keeping listener teardown from killing in-flight calls — is not paid by anyone, because nothing is forwarded.</p>
+<p>Two compromises in 0203’s design exist only because the orchestrator is a user interface. Sub-agents are not offered <code>ask_user</code>, since “the REPL’s ask modal is a single slot that two concurrent sub-agents would corrupt” — a rendering constraint bounding agent capability. And they are not offered <code>delegate</code>, since withholding it “caps recursion at one level with no depth counter to maintain” — a counter this design already has, as the chain depth above.</p>
+<p>The decisive argument is reach. Client-side orchestration means every client implements orchestration: the TUI has delegation, telegram does not, a thin client never will, and a scheduled run has no client to have it. As a harness it is installed once and inherited by all of them, including the runs with nobody attached.</p>
+<p>What survives from 0203 is its mechanism, entirely — sub-conversations keyed by a distinct sender, each an ordinary persisted conversation, no protocol change:</p>
+<pre><code>stream(agent="reviewer", sender="delegate:{call_id}:0", tools=[…])
+</code></pre>
+<p>A delegation harness makes exactly those calls over the protocol from inside the runtime. 0203 proved the primitive; only the caller moves. This is a relocation, and specifically not a return to <code>DelegateHook</code>, which had no tools, no depth counter, and no forkability.</p>
+<p><strong>The sequence is forced.</strong> OS capabilities become a harness first, delegation second. Reversed, this rebuilds 0203’s original complaint exactly: an orchestrator in the runtime handing out sub-agents with no hands.</p>
+<h3 id="declaration"><a class="header" href="#declaration">Declaration</a></h3>
+<p>Agents own their harnesses by value, following RFC 0193’s argument for MCP and more strongly: a hash-pinned ELF is more portable than a <code>command</code> + <code>args</code> + <code>env</code> triple that assumes the destination machine already has the binary.</p>
+<pre><code class="language-toml">[[harnesses]]
+name = "search"
+source = "github:crabtalk/search@v0.1.0"
+sha256 = "9f2a…"
+capabilities = ["http", "clock"]
+hosts = ["bing.com", "search.brave.com", "html.duckduckgo.com", "mojeek.com", "*.wikipedia.org"]
+
+[[harnesses]]
+name = "os"
+source = "builtin"
+capabilities = ["fs", "exec"]
+root = "/Users/clearloop/code/crabtalk"
+
+[[harnesses]]
+name = "reminders"
+source = "github:someone/reminders@v2.1.0"
+sha256 = "c40e…"
+capabilities = ["clock", "protocol:schedule", "protocol:send"]
+</code></pre>
+<p><code>AgentConfig.harnesses: Vec&lt;HarnessConfig&gt;</code> sits beside <code>mcps</code>. Tools land in the agent’s tool list under their own names and schemas, read from the manifest at register time — the per-agent declaration is already the gate, so there is no meta-tool indirection to pay for.</p>
+<p>Two capabilities take an argument rather than only a name, and both follow the same rule: the grant is the argument. <code>hosts</code> bounds <code>http</code> and <code>root</code> bounds <code>fs</code> and <code>exec</code>, and either one absent grants nothing — <code>http</code> with no <code>hosts</code> reaches no host, <code>fs</code> with no <code>root</code> reaches no path. A grant that decays to a no-op when under-specified is the right failure direction for the capabilities whose whole point is a boundary.</p>
+<p><strong>One agent is one workspace.</strong> With <code>root</code> on the declaration, working on a second project means a second agent rather than retargeting the first. That follows from agents owning their harnesses by value, and it is a product consequence rather than an implementation detail: it is visible in how someone works across repositories.</p>
+<p><strong>The daemon does not download code.</strong> crabup fetches and verifies; the daemon loads what is present and errors if it is not. A daemon that fetches third-party code because an agent config named a URL is a daemon making a policy decision with a network connection.</p>
+<h3 id="execution-one-queue"><a class="header" href="#execution-one-queue">Execution: one queue</a></h3>
+<p>Every path that can start a guest goes through one queue, with three trigger kinds:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Trigger</th><th>Entry point</th><th>Enqueued as</th><th>Latency</th></tr>
+</thead>
+<tbody>
+<tr><td>Tool call</td><td><code>call</code></td><td>High priority, with a reply channel — a model is waiting</td><td>Critical</td></tr>
+<tr><td>Due instant</td><td><code>on_wake</code></td><td>The scheduled case</td><td>Tolerant</td></tr>
+<tr><td>Subscribed event</td><td><code>on_notify</code></td><td>Fire-and-forget; the subscription is the filter</td><td>Tolerant</td></tr>
+</tbody>
+</table>
+</div>
+<p>Behind all three, one executor: the blocking pool, the per-invocation timeout, the <code>Interrupt</code> handle held by a watchdog, the fresh <code>Store</code>. Guest execution blocks a thread, so it runs under <code>spawn_blocking</code>; capabilities needing async work <code>block_on</code> from inside that thread.</p>
+<p>The queue is the security boundary as much as the scheduling one. Concurrency, timeout, per-harness rate, and single-in-flight all have exactly one place to live, and nothing starts a guest without passing through it.</p>
+<h3 id="scheduling"><a class="header" href="#scheduling">Scheduling</a></h3>
+<p>The due-set understands one thing: <strong>wake harness H at instant T with payload P</strong>. A one-shot is the base case; recurrence is a harness that re-arms itself when it wakes.</p>
+<p>Scheduling is a protocol message, not a bespoke capability, which is what makes the due-set reachable by everyone who needs it: a harness re-arming itself, a client asking for “foo tomorrow at 08:00,” or a model doing so on the user’s behalf all send the same RPC and land in the same heap. The proto once carried <code>CreateCron</code> / <code>DeleteCron</code> / <code>ListCrons</code> at tags 27-29, removed when cron went standalone; the replacement is not those messages returning but a smaller one — an instant, a target, a payload — with recurrence living in the harness.</p>
+<p>This is not a simplification for its own sake — it is strictly more expressive than teaching the host a schedule language. “Every five minutes with backoff after failure,” “the third Tuesday unless it’s a holiday,” “hourly but not overnight” are all re-arm logic, and none of them need a host change. The <code>cron</code> crate moves into the guest SDK, where an author uses it or does not. The host never learns what a cron expression is and never acquires an opinion about DST.</p>
+<p>The data structure is a min-heap of one-shots keyed by instant — <code>(when, harness, id, payload)</code> — owned by the host, persisted, and reloaded at startup without running a single guest. <strong>The host never asks a guest whether it is due</strong>; that would be an instantiation per harness per tick to answer a question the host already knows.</p>
+<p>The payload matters because not everything that schedules is a harness scheduling itself. A person, or a model on their behalf, asks for “foo tomorrow at 08:00” — so the due-set is reachable from outside a guest call, and the wake carries enough for the harness to know which of many pending things is due.</p>
+<p>Consequences that follow:</p>
+<ul>
+<li><strong>Wall-clock intent is not an instant.</strong> “08:00 tomorrow” needs a timezone, so <code>clock</code> exposes the host’s local offset, not only UTC. Because a recurring harness re-resolves local to UTC at every re-arm, DST is handled by construction — where a host-side cron parser would have to be right about it forever, in code no harness author can fix.</li>
+<li><strong>Missed occurrences are policy.</strong> The daemon was off for three hours and thirty schedules came due. Firing all thirty is a thundering herd; dropping them silently is data loss. The wake carries both <code>scheduled_at</code> and <code>now</code>, and the harness decides — a reminder still means something two hours late, a standup post may not.</li>
+<li><strong>Overrun does not overlap.</strong> One in-flight invocation per harness per schedule; the next occurrence skips or defers. Without it the first badly written harness pins the pool.</li>
+<li><strong>Backpressure is visible.</strong> When a drain’s due-set exceeds the worker budget, the remainder spills to the next drain and says so. A queue that grows silently is how this becomes unexplainable at 3am.</li>
+<li><strong>Re-arm before the body.</strong> A harness that traps before re-arming silently stops being scheduled. The ABI cannot enforce ordering; the SDK’s recurring wrapper re-arms first and runs the body second, so a panic costs one occurrence rather than the schedule.</li>
+</ul>
+<h3 id="the-sdk-is-the-contract"><a class="header" href="#the-sdk-is-the-contract">The SDK is the contract</a></h3>
+<p>The SDK here is <code>berm/sdk</code> — a guest library, <code>no_std</code>, compiled for <code>riscv64imac-unknown-none-elf</code>. It is <strong>not</strong> <code>crates/client</code> (published as <code>crabtalk-client</code>, and named <code>crabtalk-sdk</code> before this RFC), which is a std and tokio library for talking to the daemon over a socket. The two can never merge: one lives in a world with sockets and an async runtime, the other in a world with neither.</p>
+<p>They are nonetheless the same kind of thing seen from two sides. Both are protocol clients — <code>crates/client</code> sends a <code>ClientMessage</code> over a socket, a harness sends one through a single ecall — so their surfaces should rhyme wherever they do the same work, even though they cannot share a line of transport code. Whether they can share the generated protocol types is an open question below.</p>
+<p>Third parties should never see a call number, a <code>(ptr, len)</code>, or a register convention. They see a library: declare tools, implement the lifecycle points you care about, call typed capability wrappers. That library decides whether anyone builds a harness at all, and it is where conventions like re-arm-before-body live.</p>
+<p>It also buys room to move: the ABI can be revised as long as the SDK absorbs it — except for ELFs already shipped, which are frozen against the capability names they were compiled with, which is what <code>abi_version</code> is for.</p>
+<p>The SDK also builds for the host, and that is not a curiosity — it is what lets an author <code>cargo test</code> their handlers. Off the guest’s target the exports are ordinary functions and the buffers ordinary memory, so <code>test::call</code> invokes a tool exactly as the host does: the same argument transfer, the same buffer limits, the same failure channel. Capabilities are served by a stand-in host a test can set; one with no stand-in panics naming itself rather than returning a plausible zero. Solana’s programs work this way for the same reason, and it is the difference between finding a mishandled empty string in a second and finding it through a cross-compile and a daemon.</p>
+<p>The SDK’s first obligation is the one the spike tripped over: <strong>generate <code>_start</code>, and make it reference every export.</strong> Omit it and the linker discards the whole image, which surfaces as the host refusing a guest that appears, from the source, to export exactly what it should. Finding that took one failed run with rvtime’s fixtures open alongside; an author without them would lose an afternoon to it. The same class of obligation covers linking with <code>--emit-relocs</code> and building for <code>riscv64imac-unknown-none-elf</code> — all of it belongs in a template and a build profile that an author never edits.</p>
+<p>Beneath that, the SDK builds on <code>rvtime-guest</code> for the ecall wrappers rather than reimplementing them; the spike confirmed the swap is free, producing a byte-identical image. What our SDK owns is everything harness-shaped above that line: the entry anchor, the <code>describe</code>/<code>call</code> scaffolding, and typed capability wrappers.</p>
+<p><strong>What a guest may contain is decided by rvtime’s control-flow integrity, and building the first real harness moved that line twice.</strong> An indirect jump is legal only if the target is both named by a relocation and known as a function entry, which is a real guarantee and worth keeping — but it was reading half the evidence. Two gaps, found by porting the OS tools and fixed in <code>crabtalk/rvtime</code>:</p>
+<ul>
+<li><strong>Address-taken functions were only recognised in data.</strong> <code>indirect_targets</code> accepted <code>R_RISCV_64</code> — a pointer stored in a vtable or a jump table — and ignored <code>R_RISCV_PCREL_HI20</code>, the <code>auipc</code>/<code>addi</code> pair that materialises a function address into a register. That is how <code>core::fmt</code> builds the formatter pointers it calls through, so <em>any</em> guest that formats a non-trivial argument list trapped, along with <code>serde_json::Value</code> and every <code>Box&lt;dyn Trait&gt;</code>. Seventy such targets in the OS guest were invisible.</li>
+<li><strong>Jump tables land inside a function, and the dispatch table cannot express that.</strong> Eighty-four relocation-named addresses in the OS guest point into the middle of a function — LLVM’s lowering for a dense <code>match</code>. The dispatch table maps an entry address to a compiled function, and a CLIF function has one entry, so a mid-function target has no slot it could ever fill. These are now lowered as local branches: the translator compares the computed address against the relocation-named addresses inside the current function and jumps to the matching block, falling through to the ordinary dispatch check when none match. The candidates are the same evidence the dispatch path already trusts, so nothing is widened.</li>
+</ul>
+<p>Both are reachable from a model’s own output rather than exotic: an unknown field in a tool call takes serde into <code>IgnoredAny</code>, and a wrong argument type takes it into <code>peek_invalid_type</code>, and both are jump tables. Untreated they surfaced as a wild jump and a panic rather than an argument error.</p>
+<p>The lesson for the ABI is that guest-side avoidance was never a viable answer. Telling authors not to use <code>dyn</code> or <code>core::fmt</code> is not a contract anyone would build against, and the workaround this design <em>did</em> keep — deserializing tool arguments into structs rather than reading a <code>serde_json::Value</code> — survives only because it is better code anyway.</p>
+<p>One gap to design before the first external author hits it: <strong>when a harness traps, its author currently gets <code>guest memory fault at 0x…</code> and nothing else.</strong> We hold the ELF with relocations and function names in <code>module.program().functions</code>, so mapping a trap address back to a function name is available to us. A <code>log</code> capability plus symbolised traps is plausibly the difference between people building harnesses and people giving up. <code>BadIndirectTarget</code> now at least carries the address it refused — diagnosing the two gaps above took a probe matrix and a hand-written relocation dump because it did not — but an address is not yet a name.</p>
+<h3 id="layout"><a class="header" href="#layout">Layout</a></h3>
+<p><strong>berm is the sandbox; crabtalk is one thing that embeds it.</strong> The engine loads an ELF, grants it capabilities, and invokes it. It does not know what an agent is, what a <code>ClientMessage</code> is, or that a daemon exists — and it must not, because the same sandbox runs in our cloud with no crabtalk around it.</p>
+<pre><code>berm/engine       the sandbox — loader, ABI, grants, fs and exec
+berm/sdk          guest library third parties build against
+berm/codegen      the `#[harness]` macro
+crates/berm       crabtalk's side — the Hook impl, the protocol capability,
+                  and the guest's copy of crabtalk's message types
+harness/*         the harnesses themselves
+</code></pre>
+<p><code>harness/</code> holds every harness regardless of what it asks for — <code>os</code> needs only <code>fs</code> and <code>exec</code> and so runs under any embedder, <code>peers</code> needs <code>crabtalk.protocol.call</code> and cannot run anywhere else — because where a harness lives is about what it <em>is</em>, not who can host it. <code>berm/</code> and <code>harness/</code> leave this repository together when berm does; what a harness needs from its host is settled by its capabilities, which the declaration already states.</p>
+<p>That boundary is enforced rather than intended: <code>berm</code> depends on <code>anyhow</code>, <code>object</code>, <code>rvtime</code>, <code>serde</code>, <code>serde_json</code>, and <code>tracing</code>, and on no crate of ours. It cannot grow one without <code>crabtalk-berm</code> moving back into it, which is a change nobody makes by accident.</p>
+<p>What made the split possible was deleting a special case rather than relocating it. The engine used to register the protocol capability itself, which meant it knew crabtalk’s message type. It now takes a <code>Capability</code> — a name and a closure over bytes — from whoever embeds it, hashed to its call number exactly as <code>fs</code> and <code>exec</code> are, so an embedder’s capability is not a second class of thing. <code>fs</code> and <code>exec</code> stay in the engine because they are about the machine, which every host has; anything about the <em>host</em> is supplied this way. Embedding berm never means patching it.</p>
+<p>The namespace follows the same line, and it is the part that is permanent:</p>
+<pre><code>berm.log  berm.args.*  berm.fail  berm.result.read  berm.heap.*
+berm.fs.read  berm.fs.write  berm.exec.run          ← any embedder implements these
+crabtalk.protocol.call                              ← only crabtalk has one
+</code></pre>
+<p>There is no <code>crates/rvtime</code>. rvtime is published; a crate whose content is a re-export of a published dependency is a file that exists only to drift. What we need is the embedding, and that is <code>berm/engine</code>.</p>
+<h3 id="distribution"><a class="header" href="#distribution">Distribution</a></h3>
+<p>crabup’s verbs already fit — <code>crabup add</code> attaches a harness, <code>crabup remove</code> detaches it. What changes is what gets fetched:</p>
+<ul>
+<li>One <code>.elf</code> per release, no platform matrix. Apps keep theirs.</li>
+<li><code>Entry.label</code> becomes <code>None</code> for harnesses — the field that already means non-serviceable. No launchd or systemd unit, because there is no process.</li>
+<li>The declared <code>sha256</code> is verified on fetch and on load.</li>
+</ul>
+<h3 id="what-this-commits-us-to"><a class="header" href="#what-this-commits-us-to">What this commits us to</a></h3>
+<p>Once the protocol is a syscall surface and harnesses are scheduled, confined, capability-granted units of code, the daemon is a kernel. That is a coherent thing to be and it is where this design points, but it is worth naming as a decision rather than discovering it later.</p>
+<p>The bill: every protocol change now carries ABI weight; the queue acquires the obligations of a scheduler, including fairness and accounting; and third-party authors will expect what OS users expect — stable interfaces, resource limits they can see, and a debugging story better than a fault address. The reserved-tag discipline already visible in the proto is evidence this is a bill we can pay. It should still be paid deliberately.</p>
+<h2 id="migration"><a class="header" href="#migration">Migration</a></h2>
+<p><strong><code>harness/cron</code> is deleted.</strong> Its scheduler loop (<code>harness/cron/src/runner.rs:139-149</code>) already sleeps until the next occurrence inside a <code>KeepAlive</code> launchd process — there is no <code>StartCalendarInterval</code>, so the daemon has to be alive for 08:00 to fire today exactly as it would inside the runtime. Moving the mechanism inward costs one process, one service unit, and one timer task per schedule, and returns a single waiter over a sorted set. RFC 0080 is superseded; the entry leaves the crabup registry. Downstream apps that need scheduling before the harness path lands can do it with the SDK in a few dozen lines, which is the argument for not carrying a service to do it for them.</p>
+<p><strong><code>harness/search</code> becomes a guest.</strong> It loses <code>mcp.rs</code>, its <code>mcp</code> feature, and the rmcp/axum/schemars dependencies with it. Its engines are <code>reqwest</code> and <code>scraper</code>, which are <code>std</code> and cannot cross into a <code>no_std</code> guest as they are — so search is not the first harness we ship. See <a href="#unresolved-questions">Unresolved questions</a>.</p>
+<p><strong><code>crates/hooks/src/os</code> becomes a harness, and it is the first one.</strong> The daemon stops compiling in an opinion about what a filesystem tool is and installs one instead. It goes first rather than fourth because it is the only harness on this list that needs neither the queue nor a protocol grant — it is pure tool calls, no <code>on_wake</code>, no <code>on_notify</code>, no chain depth — and because the seam is already cut: <code>OsHook::execute(name, args) -&gt; Result&lt;String, String&gt;</code> is the harness call signature already, down to the inner <code>Result</code> telling a failed tool from one that returned the word “error”.</p>
+<p>Both pieces of state the hook holds are removed rather than moved.</p>
+<p>The cwd was fixed at construction from the client’s own <code>current_dir</code>. It becomes a call parameter over a declared root — see <a href="#the-set">A root is not a working directory</a>. It does not come back over the wire: <code>SendMsg</code> tag 5 was removed with the note “the daemon does not read the user’s filesystem,” and that field should stay dead, because it carried the <em>client’s</em> directory to a daemon that executed nothing — a different thing from the daemon owning a workspace.</p>
+<p><strong>Read-before-edit is dropped, not relocated.</strong> A <code>Mutex&lt;HashSet&lt;PathBuf&gt;&gt;</code> (<code>crates/hooks/src/os/mod.rs:34</code>) records paths this instance has read, and <code>edit</code> refuses a path missing from it. It is redundant against the tool’s own shape: <code>edit</code> is a find-and-replace requiring <code>old_string</code> to appear <em>exactly once</em> (<code>crates/hooks/src/os/edit.rs:60-68</code>), so an edit cannot be a blind overwrite — naming a unique string means already knowing the file’s current content. Nor does the set catch staleness, since it stores no mtime and no hash; it catches only “you never looked,” which uniqueness already catches wherever it matters. What remains is a guardrail against <em>the model</em> making a mistake, sitting a layer below where behaviour belongs — the same misplacement as a command deny list, and it goes for the same reason.</p>
+<p><code>ask_user</code> stays a forwarded client tool, and so does <code>delegate</code> until it becomes a harness of its own. Everything else the TUI used to declare is gone from <code>StreamMsg.tools</code>, and <code>sub_agent_tools</code> is now empty — not as a restriction but as the reverse: a sub-agent’s hands come from its own agent config, so the orchestrating client no longer has to offer anything for a delegated run to be able to do work. That is the condition RFC 0203 said it was waiting for.</p>
+<p>Images are built by <code>make harness</code> and installed under <code>HARNESSES_DIR</code>, which is derived from the configuration directory rather than written out, so pointing crabtalk elsewhere points harness lookup there too. The daemon reads that directory and never writes to it.</p>
+<p><strong><code>delegate</code> becomes a harness, after the OS one.</strong> RFC 0203’s client-side implementation stands until then; see <a href="#delegation-as-a-harness">Delegation as a harness</a> for why the order is not optional. Its sender-keyed sub-conversation mechanism is unchanged by the move.</p>
+<p><strong>Nothing changes for MCP.</strong> <code>crates/mcp</code> stays as it is. A remote HTTP MCP server is someone else’s process on someone else’s machine and there is nothing to confine. What harnesses displace over time is the stdio case: spawning a local binary with the daemon’s privileges.</p>
+<h2 id="unresolved-questions"><a class="header" href="#unresolved-questions">Unresolved questions</a></h2>
+<ul>
+<li><strong>How a harness becomes an event subscription target.</strong> <code>SubscribeEventMsg</code> routes to an agent, so <code>on_notify</code> has no delivery path and <code>protocol:events</code> has nothing to grant. Whether the target becomes a sum type on the existing subscription or something else is undesigned, and it gates the third trigger kind in the queue.</li>
+<li><strong>Whether <code>http</code> fans out.</strong> <code>harness/search</code>’s aggregator runs five engines concurrently (<code>harness/search/src/aggregator.rs</code>), and a guest is synchronous — a literal port makes search five sequential fetches. Issuing many requests and then collecting them is the same pull shape as <code>arg_len</code>/<code>arg_read</code> and does not change the capability’s name, so it is a shape question that can be answered when search is ported.</li>
+<li><strong>What a real harness’s own work costs.</strong> The boundary is measured at ~12µs; the guest that produced that number has static buffers and no parser. An allocator, JSON, and actual logic are the author’s cost rather than the design’s, but a harness on the <code>preprocess</code> path is worth profiling before it is normal to put one there.</li>
+<li><strong>Schedule granularity.</strong> The finest interval the due-set will honour is a product decision, not a number to pick here.</li>
+<li><strong>A logical epoch counter.</strong> Not needed for correctness with a sorted due-set, but “harness X ran at epoch N” is a coordinate that makes replay, tests, and per-epoch rate limits legible. If we want it, it should be a counter incremented per drain rather than a wall-clock heartbeat.</li>
+<li><strong>Whether one agent is one workspace stays true.</strong> <code>root</code> on the declaration is the simplest thing that works and it means a second project is a second agent. Whether that holds under real use — or wants a way to retarget an agent’s root, which is a different design — is worth revisiting once the OS harness is in hand rather than guessed at now.</li>
+<li><strong>Whether other policy follows delegation.</strong> RFC 0189 handed compaction timing to clients on the same reasoning that handed them delegation, and the same argument — every client reimplements it, and a clientless run has none of it — applies unchanged. Left alone deliberately until a delegation harness exists to learn from.</li>
+<li><strong>Approval.</strong> With execution in the runtime, a capability grant that needs a human turns into a prompt crossing the wire. Where the answer is stored, and whether it is remembered per agent or per invocation, is undesigned.</li>
+<li><strong><code>harness/search</code>’s engines.</strong> Either the host offers HTML querying as a capability (the host keeps <code>scraper</code>) or the guest gains a <code>no_std</code> parser. This is a real rewrite and it should not ride along inside the foundational change.</li>
+</ul>
+<h2 id="alternatives-considered"><a class="header" href="#alternatives-considered">Alternatives considered</a></h2>
+<p><strong>A long-lived <code>Store</code> per harness.</strong> The intuitive reading of “joins the runtime’s lifetime.” Rejected: <code>Store</code> is <code>Send</code>, not <code>Sync</code>, so it becomes a mutex that serialises every call into that harness across the whole runtime, and it re-introduces reentrancy as a memory-safety concern. Per-invocation memory with explicit storage gets the same persistence with none of it.</p>
+<p><strong>Host-side cron expressions.</strong> The host parses a schedule string and re-arms. Rejected: the host acquires a scheduling DSL and a permanent DST obligation, and the result is <em>less</em> expressive than a guest that computes its own next instant. Absolute instants plus guest re-arming is smaller and does more.</p>
+<p><strong>A fixed block time.</strong> A heartbeat that scans for due work each tick. Rejected: blockchains poll on a period because they need consensus on an ordering, and we do not have that problem. The cost is a granularity floor on every schedule — “08:00” becomes “the first tick at or after 08:00” — plus a wakeup every period whether or not anything is due. A sorted due-set with sleep-until-earliest gets the same batching, fires exactly, and idles at zero.</p>
+<p><strong>Mirroring the whole <code>Hook</code> trait.</strong> Rejected: it publishes an internal seam as a public ABI and makes every future <code>Hook</code> change a breaking change for every shipped ELF.</p>
+<p><strong>One capability per protocol RPC.</strong> The literal reading of “the protocol is the capability set,” and genuinely tempting: each RPC gated by the presence of its own closure would make protocol grants enforcement-by-absence like every other capability, with no decode-time allowlist. Rejected on duplication rather than on compatibility — <code>ClientMessage</code> is a <code>oneof</code>, so the message type is already a discriminant in the payload, and putting a second one in the ABI means thirty-six registrations per harness plus an SDK release before a harness can reach any newly added message. The decode-time allowlist is one match statement in one place, and it is also where logging and rate-limiting want to live.</p>
+<p><strong>Keeping OS tools and delegation client-side.</strong> The status quo, and correct while every agent run has a human attached to it. Rejected because this RFC removes that condition: scheduled wakes, subscribed events, and harness-initiated sends all produce runs with no client, and <code>crates/crabtalk/src/bridge.rs</code> is explicit that a run with no client has no tools — an unanswered forward is “a hang until the timeout, not a fallback.” The alternative also leaves each client to reimplement orchestration, which is why telegram has no delegation today.</p>
+<p><strong>A bespoke event-delivery mechanism for harnesses.</strong> An <code>on_event</code> export fed by a hand-picked subset of <code>AgentEvent</code>. Rejected once it was clear the event bus already exists and already carries the right granularity — <code>SubscribeEventMsg</code> and topics like <code>agent:{name}:done</code>. Harnesses subscribe the way clients do, and the per-token stream is excluded by never having been on the bus rather than by a filter we maintain.</p>
+<p><strong>WebAssembly instead of a RISC-V ELF.</strong> The mainstream choice, with a more mature third-party toolchain story and a component model that solves interface description properly. Chosen against because we own rvtime end to end — when a harness needs something the runtime cannot express, that is a PR to <code>crabtalk/rvtime</code> rather than an upstream negotiation — and because its numbered-<code>ecall</code> host interface is already the shape a capability grant wants. The costs are real and stated: <code>no_std</code> plus alloc only, RV64IMAC with soft float, POSIX-only hosts, and <code>--emit-relocs</code> required at link time.</p>
+<p><strong>Keeping search as an in-process Rust <code>Hook</code>.</strong> Simpler than everything above and correct for our own code. Rejected as the general answer because it does not extend to code we did not write, which is the entire problem.</p>
+<h2 id="out-of-scope"><a class="header" href="#out-of-scope">Out of scope</a></h2>
+<ul>
+<li><strong>Remote MCP.</strong> Unchanged, and not a candidate.</li>
+<li><strong>Secrets.</strong> RFC 0193’s line holds: the daemon stores literal values and whatever sits above it resolves them.</li>
+<li><strong>The guest SDK’s API surface.</strong> It deserves its own RFC once the ABI has carried a real harness.</li>
+<li><strong>Windows.</strong> rvtime’s memory and traps are POSIX; harnesses do not run there.</li>
+<li><strong>A registry protocol.</strong> <a href="https://github.com/crabtalk/crabtalk/issues/150">#150</a> covers pluggable sources; this RFC assumes crabup fetching a hash-pinned artifact from a release.</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../rfcs/0204-mcp-peer-lifetime.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../rfcs/superseded.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../rfcs/0204-mcp-peer-lifetime.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../rfcs/superseded.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-09f2665d.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-defcc054.js"></script>
+        <script src="../book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9f3a25a8.js";
+            window.path_to_searchindex_js = "../searchindex-33600370.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-2deb9a6b.js"></script>
+        <script src="../toc-56997f56.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -195,7 +195,7 @@
 <p>The function is defined once in the core <code>Server</code> trait. Any implementor — the daemon, a test harness, a future alternative server — routes client messages the same way.</p>
 <h2 id="no-central-event-loop"><a class="header" href="#no-central-event-loop">No central event loop</a></h2>
 <p>There is no serializing queue, no <code>DaemonEvent</code> enum, and no actor that owns mutation. Operations reach into shared state directly and hold locks for the duration of the critical section.</p>
-<p>Shared state is protected by <code>parking_lot::Mutex</code> or <code>parking_lot::RwLock</code>. Event bus subscriptions, conversation working-directory overrides, pending <code>ask_user</code> replies, and cron state each live behind their own lock. Locks are acquired, the work is done, and the lock is released. Ordering between operations is whatever Tokio’s scheduler produces.</p>
+<p>Shared state is protected by <code>parking_lot::Mutex</code> or <code>parking_lot::RwLock</code>. Event bus subscriptions, conversation working-directory overrides, and pending <code>ask_user</code> replies each live behind their own lock. Locks are acquired, the work is done, and the lock is released. Ordering between operations is whatever Tokio’s scheduler produces.</p>
 <h2 id="ordering-guarantees"><a class="header" href="#ordering-guarantees">Ordering guarantees</a></h2>
 <p>Within a single conversation, message ordering is total: <code>StreamMsg</code> appends to history in the order the daemon receives them. Clients that require strict ordering for a conversation are responsible for serializing their own sends.</p>
 <p>Between conversations, no ordering is guaranteed. Two <code>StreamMsg</code> values addressed to different <code>(agent, sender)</code> pairs may run in either order regardless of arrival time.</p>
