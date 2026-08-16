@@ -17,7 +17,7 @@
 # api_key = "${OPENAI_API_KEY}"
 
 # ---------------------------------------------------------------------------
-# Task executor pool — bounded workers for cron/skill execution.
+# Task executor pool — bounded workers for skill execution.
 # ---------------------------------------------------------------------------
 
 [tasks]

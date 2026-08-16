@@ -1,8 +1,8 @@
 //! Telegram app serve logic.
 
 use crate::config::TelegramConfig;
-use sdk::tools::ask_user::Question;
-use sdk::{
+use client::tools::ask_user::Question;
+use client::{
     COMMAND_HINT, ConnectionInfo, KnownBots, Message, StreamAccumulator, StreamResult,
     attachment_summary, parse_command,
 };
@@ -15,7 +15,7 @@ use wcore::protocol::message::StreamMsg;
 /// Run the Telegram app service.
 pub async fn run(conn_info: ConnectionInfo, config: &TelegramConfig) -> anyhow::Result<()> {
     let agents_dir = wcore::paths::CONFIG_DIR.join(wcore::paths::AGENTS_DIR);
-    let default_agent = sdk::resolve_default_agent(&agents_dir);
+    let default_agent = client::resolve_default_agent(&agents_dir);
     tracing::info!(agent = %default_agent, "telegram app starting");
 
     let known_bots: KnownBots =
@@ -215,7 +215,7 @@ async fn tg_stream(
         // The inline keyboard below answers `ask_user`, and this gateway
         // answers nothing else — anything further would be advertised to
         // the model and then never replied to.
-        tools: vec![sdk::tools::ask_user::schema().into()],
+        tools: vec![client::tools::ask_user::schema().into()],
         ..Default::default()
     };
     let mut event_rx = conn_info.stream(req);
@@ -224,7 +224,7 @@ async fn tg_stream(
     let mut last_sent_len: usize = 0;
     let mut debounce = tokio::time::interval(Duration::from_millis(1500));
     debounce.reset();
-    let mut pending_ask: Option<sdk::stream::PendingAsk> = None;
+    let mut pending_ask: Option<client::stream::PendingAsk> = None;
     let mut multi_select_state: HashMap<usize, Vec<usize>> = HashMap::new();
 
     let typing_bot = bot.clone();

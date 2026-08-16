@@ -1,0 +1,15 @@
+[package]
+name = "crabtalk-berm-proto"
+description = "Protocol types for Crabtalk harness guests — no_std, generated from the same .proto as the host"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+prost_guest.workspace = true
+
+[build-dependencies]
+prost-build.workspace = true

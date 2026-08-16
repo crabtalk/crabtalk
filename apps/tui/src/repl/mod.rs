@@ -8,6 +8,7 @@ use crate::repl::{
     render::MarkdownRenderer,
 };
 use anyhow::Result;
+use client::{ConnectionInfo, OutputChunk, Transport};
 use crossterm::event::{Event, EventStream, KeyCode, KeyModifiers};
 use futures_util::StreamExt;
 use ratatui::{
@@ -16,11 +17,9 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
-use sdk::{ConnectionInfo, OutputChunk, Transport};
 use std::{
     collections::{HashSet, VecDeque},
     path::PathBuf,
-    sync::Arc,
     time::Duration,
 };
 use tokio::sync::mpsc;
@@ -32,6 +31,7 @@ pub mod chat;
 pub mod command;
 pub mod delegate;
 pub mod input;
+mod instructions;
 pub mod render;
 pub mod tools;
 
@@ -94,8 +94,6 @@ impl ChatRepl {
             &self.runner.list_agents().await.unwrap_or_default(),
             &self.agent,
         );
-        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let os_tools = Arc::new(hooks::OsHook::new(cwd));
         let history = std::mem::take(&mut self.history);
         let (progress_tx, progress_rx) = mpsc::unbounded_channel();
         let mut app = App {
@@ -115,7 +113,6 @@ impl ChatRepl {
             ask_state: None,
             ask_conversation_id: None,
             ask_call_id: None,
-            os_tools,
             forwards: Vec::new(),
             progress_tx,
             peers_pending: !peers.is_empty(),
@@ -210,7 +207,6 @@ struct App {
     /// Local OS tools dispatcher — answers forwarded tool calls from the
     /// daemon (bash, read, edit). Shared across stream turns so the
     /// "must read before edit" invariant persists.
-    os_tools: Arc<hooks::OsHook>,
     /// In-flight forwarded tool calls. Held so Ctrl+C can abort them —
     /// a `delegate` call outlives the keystroke otherwise, and its
     /// sub-agents keep running commands against the user's machine.
@@ -506,7 +502,7 @@ fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<
     }
     if let Some(instr) = std::env::current_dir()
         .ok()
-        .and_then(|cwd| hooks::os::discover_instructions(&cwd))
+        .and_then(|cwd| instructions::discover(&cwd))
     {
         prefix.push_str(&format!("<instructions>\n{instr}\n</instructions>\n\n"));
     }
@@ -520,7 +516,7 @@ fn start_stream(app: &mut App, content: &str) -> mpsc::UnboundedReceiver<Result<
     };
     app.streaming = true;
     app.renderer.start_waiting();
-    sdk::spawn_stream(app.conn_info.clone(), req)
+    client::spawn_stream(app.conn_info.clone(), req)
 }
 
 /// Fold a fan-out update into the chat buffer. `Started` seeds the task
@@ -614,14 +610,16 @@ fn handle_chunk(chunk: OutputChunk, app: &mut App) {
             // send the result back on a fresh connection — same shape as
             // the ask-user reply path. `conversation_id` is an opaque
             // routing token; just echo it.
-            let os_tools = app.os_tools.clone();
             let conn_info = app.conn_info.clone();
             let progress_tx = app.progress_tx.clone();
             let handle = tokio::spawn(async move {
+                // Only what this client declares can arrive here. Anything
+                // else is answered rather than dropped: an unanswered forward
+                // is a hang until the timeout, not a fallback.
                 let result = if name == "delegate" {
-                    delegate::execute(&conn_info, os_tools, &arguments, &call_id, progress_tx).await
+                    delegate::execute(&conn_info, &arguments, &call_id, progress_tx).await
                 } else {
-                    os_tools.execute(&name, &arguments).await
+                    Err(format!("{name} is not a tool this client executes"))
                 };
                 let (output, is_error) = match result {
                     Ok(output) => (output, false),

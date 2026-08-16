@@ -5,8 +5,8 @@ pub mod config;
 pub mod markdown;
 pub mod serve;
 
+use client::{Attachment, AttachmentKind, Message};
 use futures_util::StreamExt;
-use sdk::{Attachment, AttachmentKind, Message};
 use teloxide::prelude::*;
 use teloxide::types::{CallbackQuery, ChatKind, UpdateKind};
 use teloxide::update_listeners::{AsUpdateStream, polling_default};

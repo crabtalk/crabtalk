@@ -14,6 +14,7 @@ crabllm-core.workspace = true
 runtime.workspace = true
 wcore.workspace = true
 
+dirs.workspace = true
 parking_lot.workspace = true
 schemars.workspace = true
 serde.workspace = true
@@ -27,10 +28,9 @@ serde_yml = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
 [features]
-default = ["memory", "mcp", "os", "skill", "native-tls"]
+default = ["memory", "mcp", "skill", "native-tls"]
 memory = ["dep:memory", "dep:anyhow"]
 mcp = ["dep:mcp", "dep:tokio"]
-os = ["dep:tokio"]
 skill = ["dep:anyhow", "dep:serde_yml"]
 native-tls = ["mcp?/native-tls"]
 rustls = ["mcp?/rustls"]

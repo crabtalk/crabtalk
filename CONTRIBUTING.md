@@ -24,11 +24,16 @@ Layer 3 ─ Library
 Layer 4 ─ Adapters
   ├─ crabtalkd            Daemon CLI: run, setup, reload, events
   ├─ crabup               Package + service manager for the ecosystem
-  ├─ sdk                  Client: connection, typed RPC sugars, stream adapters
+  ├─ client               Connection, typed RPC sugars, stream adapters
   ├─ tui                  REPL, config TUI
   ├─ apps/                telegram (gateway client)
-  └─ harness/             cron, search (standalone services)
+  └─ harness/             the harnesses (berm guests, RV64 ELFs)
 ```
+
+Beside all of it sits `berm/` — the sandbox harnesses run in, plus its SDK
+and its macro. It depends on no crate of ours, because crabtalk is one thing
+that embeds it and deliberately not the only one; `berm/` and `harness/` leave
+together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 
 ## Where does my feature go?
 
@@ -39,7 +44,7 @@ Layer 4 ─ Adapters
 | Does it add a wire transport? | transport |
 | Does it add a tool the agent can call, a skill, or memory? | runtime |
 | Does it need network I/O, scheduling, or process lifecycle? | crabtalk (system) |
-| Does it adapt a platform or parse bot commands? | sdk |
+| Does it adapt a platform or parse bot commands? | client |
 | Does it add a daemon admin command (over the socket)? | crabtalkd |
 | Does it install, update, or service-manage a crabtalk binary? | crabup |
 | Does it add a TUI feature or interactive UI? | tui |
@@ -50,7 +55,7 @@ Layer 4 ─ Adapters
 - **Runtime** — never initiates I/O. It only responds. No sockets, timers, or listeners.
 - **Runtime owns mechanics, clients own UX.** The runtime exposes session primitives (`new_session`, `append_message`, `list_sessions`, `list_messages`, `get_session_meta`, `search_sessions`) and runs auto-compaction only as a context-window safety net. Discretionary lifecycle — `/clear`, `/new`, `/compact`, session selection, archival browsing, saved searches — is composed in the client from those primitives. See [RFC 0185](docs/src/rfcs/0185-session-search.md).
 - **Crabtalk (library)** — never interprets tool semantics. It only routes. Cron and config are system concerns (process-lifetime, not session-lifetime).
-- **SDK** — no dependency on runtime or model. Adapter-centric, not agent-centric.
+- **Client** — no dependency on runtime or model. Adapter-centric, not agent-centric.
 - **Core** — defines traits and types only. If a core change pulls in runtime or daemon deps, the abstraction is wrong.
 
 `Env` is the seam between the library and the runtime engine. The library

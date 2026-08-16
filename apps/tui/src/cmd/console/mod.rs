@@ -3,6 +3,7 @@
 use crate::tui;
 use anyhow::Result;
 use clap::Args;
+use client::{ConnectionInfo, Transport};
 use conversations::{ConversationView, render_conversation_view};
 use crossterm::event::{KeyCode, KeyModifiers};
 use events::EventEntry;
@@ -13,7 +14,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Tabs},
 };
-use sdk::{ConnectionInfo, Transport};
 use std::collections::VecDeque;
 use tokio::sync::mpsc;
 use wcore::protocol::api::Client as _;

@@ -110,7 +110,7 @@ const VOCABULARY: &[&str] = &[
     "platform",
     "integration",
     "extension",
-    "plugin",
+    "harness",
     "component",
 ];
 

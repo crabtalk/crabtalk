@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use sdk::{ConnectionInfo, Transport};
+use client::{ConnectionInfo, Transport};
 use std::path::PathBuf;
 
 pub mod agent;
@@ -165,7 +165,7 @@ pub(crate) async fn connect_default() -> Result<(Transport, ConnectionInfo)> {
     {
         let socket_path = &*wcore::paths::SOCKET_PATH;
         let info = ConnectionInfo::Uds(socket_path.to_path_buf());
-        let transport = sdk::connect_from(&info).await.with_context(|| {
+        let transport = client::connect_from(&info).await.with_context(|| {
             format!(
                 "daemon not running — start with: crabup daemon start\n  (tried {})",
                 socket_path.display()
@@ -203,7 +203,7 @@ pub(crate) async fn connect_tcp() -> Result<(Transport, ConnectionInfo)> {
         .parse()
         .with_context(|| format!("invalid port in {}", tcp_port_file.display()))?;
     let info = ConnectionInfo::Tcp(port);
-    let transport = sdk::connect_from(&info)
+    let transport = client::connect_from(&info)
         .await
         .with_context(|| format!("failed to connect to crabtalk daemon via TCP on port {port}"))?;
     Ok((transport, info))

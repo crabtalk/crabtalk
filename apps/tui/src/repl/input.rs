@@ -1,6 +1,7 @@
 //! Multi-line input widget for the full-screen REPL.
 
 use crate::tui;
+use client::collect_candidates;
 use crossterm::event;
 use ratatui::{
     layout::Alignment,
@@ -8,7 +9,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
 };
-use sdk::collect_candidates;
 
 const MAX_DROPDOWN_VISIBLE: usize = 5;
 

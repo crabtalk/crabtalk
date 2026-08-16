@@ -1,6 +1,6 @@
 //! Telegram slash-command dispatch.
 
-use sdk::Command;
+use client::Command;
 use teloxide::prelude::*;
 
 /// Execute a slash command on Telegram.

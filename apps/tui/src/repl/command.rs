@@ -1,7 +1,7 @@
-//! TUI dispatch over [`sdk::Command`].
+//! TUI dispatch over [`client::Command`].
 
 use anyhow::Result;
-use sdk::{Command, parse_command};
+use client::{Command, parse_command};
 
 /// Result of handling a slash command in the TUI.
 pub enum SlashResult {

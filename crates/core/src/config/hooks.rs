@@ -1,6 +1,6 @@
-//! Per-agent hook configuration — bash deny rules, memory recall
-//! tuning. Each agent owns its own `HooksConfig` directly on
-//! [`crate::AgentConfig`]; there is no global override.
+//! Per-agent hook configuration — memory recall tuning. Each agent owns
+//! its own `HooksConfig` directly on [`crate::AgentConfig`]; there is no
+//! global override.
 
 use serde::{Deserialize, Serialize};
 
