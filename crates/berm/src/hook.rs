@@ -145,8 +145,12 @@ impl HarnessHook {
             read: true,
             skills: skills.to_vec(),
         });
+        // The hosts are the grant, exactly as the root is: naming the
+        // capability without naming where it may go reaches nothing.
+        let hosts =
+            (granted("http") && !declaration.hosts.is_empty()).then(|| declaration.hosts.clone());
 
-        let digest = digest(&elf, &grants, scope.as_ref());
+        let digest = digest(&elf, &grants, scope.as_ref(), hosts.as_deref());
         if registry.images.contains_key(&digest) {
             return Ok(digest);
         }
@@ -157,6 +161,12 @@ impl HarnessHook {
             extra.push(Capability {
                 name: crate::protocol::CALL.to_owned(),
                 call: Arc::new(move |request| crate::protocol::call(&protocol, request, &scope)),
+            });
+        }
+        if let Some(hosts) = hosts {
+            extra.push(Capability {
+                name: crate::http::FETCH.to_owned(),
+                call: Arc::new(move |request| crate::http::call(&hosts, request)),
             });
         }
 
@@ -193,7 +203,9 @@ impl HarnessHook {
 ///
 /// `skills` reaches the guest through `scope`, so it must be hashed — two
 /// agents sharing a harness but not a skill list are not the same sandbox.
-fn digest(elf: &[u8], grants: &Grants, scope: Option<&Scope>) -> Digest {
+/// `hosts` is here for the same reason, and matters more: it is the whole of
+/// what bounds `http`.
+fn digest(elf: &[u8], grants: &Grants, scope: Option<&Scope>, hosts: Option<&[String]>) -> Digest {
     let mut hasher = Sha256::new();
     hasher.update(elf);
     hasher.update([grants.fs as u8, grants.exec as u8]);
@@ -207,6 +219,11 @@ fn digest(elf: &[u8], grants: &Grants, scope: Option<&Scope>) -> Digest {
             hasher.update(skill.as_bytes());
             hasher.update([0]);
         }
+    }
+    hasher.update([0]);
+    for host in hosts.unwrap_or_default() {
+        hasher.update(host.as_bytes());
+        hasher.update([0]);
     }
     hasher.finalize().into()
 }

@@ -26,6 +26,7 @@ pub fn default_crab(model: impl Into<String>) -> AgentConfig {
         name: "os".to_owned(),
         capabilities: vec!["fs".to_owned(), "exec".to_owned()],
         root: dirs::home_dir(),
+        hosts: Vec::new(),
     }];
     cfg
 }

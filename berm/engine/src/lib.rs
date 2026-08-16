@@ -24,7 +24,7 @@ mod fs;
 mod manifest;
 mod root;
 mod watchdog;
-mod wire;
+pub mod wire;
 
 pub use manifest::{Manifest, ToolSpec};
 // An embedder configures and caches compiled code through these; re-exported

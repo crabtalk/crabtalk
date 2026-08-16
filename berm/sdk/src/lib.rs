@@ -54,6 +54,9 @@ pub mod exec;
 /// Files, bounded by the granted root. Granted as `fs`.
 #[cfg(feature = "alloc")]
 pub mod fs;
+/// Requests, bounded by the granted hosts. Granted as `http`.
+#[cfg(feature = "alloc")]
+pub mod http;
 /// The runtime, over `ClientMessage`. Granted as `protocol:<group>`.
 #[cfg(feature = "protocol")]
 pub mod protocol;

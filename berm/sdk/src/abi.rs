@@ -35,6 +35,9 @@ pub(crate) const HOST_EXEC_RUN: u64 = hash("berm.exec.run");
 /// that only reaches the machine.
 #[cfg(feature = "protocol")]
 pub(crate) const HOST_PROTOCOL_CALL: u64 = hash("crabtalk.protocol.call");
+/// Perform one HTTP request. Both the request and the reply are framed fields.
+#[cfg(feature = "alloc")]
+pub(crate) const HOST_HTTP_FETCH: u64 = hash("crabtalk.http.fetch");
 
 /// Set on the length a capability returns when the staged bytes are an error
 /// message rather than a result. A length never reaches this bit on its own,

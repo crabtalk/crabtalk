@@ -29,4 +29,13 @@ pub struct HarnessConfig {
     /// argument: without a root neither is registered, so an under-specified
     /// declaration reaches nothing rather than everything.
     pub root: Option<PathBuf>,
+
+    /// Hosts `http` may reach, matched exactly and case-insensitively.
+    ///
+    /// What `root` is to `fs`, this is to `http`: the argument the grant
+    /// consists of. An empty list leaves the capability unregistered, so
+    /// `http` without hosts reaches nothing — and since a name is only
+    /// reachable by being written here, the daemon's own port is out of reach
+    /// unless someone names it.
+    pub hosts: Vec<String>,
 }
