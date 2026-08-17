@@ -8,6 +8,8 @@
 
 > **Updated by [0204 (MCP Peer Lifetime)](0204-mcp-peer-lifetime.md) (2026-08-15).** The fingerprint gains `auth`, and registering an MCP no longer spawns a process — a declaration and a peer now have separate lifetimes.
 
+> **Updated by [0207 (Store)](0207-store.md) (2026-08-18).** `FsStorage` and `MemStorage` no longer exist; a store implements `KVStorage` and gets the rest. The decision recorded here — that MCP configs live on the agent rather than in their own storage methods — is unchanged and is why no MCP keys appear in the keyspace.
+
 ## Summary
 
 Agents own their MCP servers by value, not by name reference into a daemon-global registry. `AgentConfig.mcps` becomes `Vec<McpServerConfig>` — every agent carries the full configuration of every MCP it uses. The daemon's job shrinks to "spawn what agents declare, dedup identical processes, route tool calls per agent." `Storage::{list,upsert,delete}_mcp` and `crabtalkd mcp` go away. Forking an agent now means copying one config; the new owner gets a self-contained, runnable artifact.

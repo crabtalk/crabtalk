@@ -6,6 +6,9 @@
 - Crates: core, memory, runtime, crabtalk
 - Supersedes: [0171 (Topic Switching)](0171-topic-switching.md)
 - Updates: [0135 (Agent-First)](0135-agent-first.md), [0150 (Memory Store)](0150-memory-store.md)
+- Superseded by: [0207 (Store)](0207-store.md)
+
+> **Superseded by [0207](0207-store.md) (2026-08-18).** The storage primitives here — a `Storage` trait, `FsStorage`, a resident inverted index rebuilt in the background after startup — are all gone. Search is BM25 over the keyspace, so there is no rebuild and no cold-start window. The hit shape survives unchanged: `SessionHit`, `WindowItem`, and the bounds that keep a window from blowing up a context.
 
 > **Updated by [0189](0189-policy-at-the-edge.md) (2026-04-28).** The "automatic compaction on overflow as a safety net" carve-out and auto-title generation were both removed; clients drive both via `compact_conversation` and a future `generate_title` RPC, gated on the new `AgentEvent::ContextUsage` events. See 0189 for the rationale.
 

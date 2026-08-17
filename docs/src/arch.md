@@ -11,7 +11,7 @@ protocol     clients, over a socket    any language, untrusted
 harness      what shapes an agent      declared per agent, one source, two builds
 capability   what an agent reaches     bounded by its argument
 runtime      lifetime orchestration    turns, conversations, the agent loop
-storage      data                      agents, sessions, config
+store        data                      one key-value primitive, everything above it free
 ```
 
 The line worth getting right is between the middle two.
@@ -32,7 +32,9 @@ holding a client's surface. It stays exported whether or not anything shipped
 here uses it — who *may* write a harness justifies it, not who does.
 
 `runtime` owns the *architecture of lifetime* — turns, conversations, the
-agent loop — and nothing else. `storage` owns the data.
+agent loop — and nothing else. `store` owns the data, and owns it behind a
+single primitive: implement five key-value methods and every interface above
+them — agents, sessions, memory, skills, harnesses, search — comes for free.
 
 ## One source, two builds
 

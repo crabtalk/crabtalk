@@ -5,6 +5,9 @@
 - Discussion: [#38](https://github.com/crabtalk/crabtalk/issues/38)
 - Crates: memory, crabtalk, runtime
 - Supersedes: [0038 (Memory)](0038-memory.md)
+- Superseded by: [0207 (Store)](0207-store.md)
+
+> **Superseded by [0207](0207-store.md) (2026-08-18).** The `crabtalk-memory` crate is deleted. Memory entries are keys in the one store alongside everything else, and recall is BM25 over that keyspace rather than a resident index rebuilt at load. The CRMEM format below survives and is what `lib/crabdb` was built from, generalised from memory entries to opaque keys and values; the crate layout, entry model, persistence strategy and dump/load tree did not.
 
 > **Updated by [0189](0189-policy-at-the-edge.md) (2026-04-28).** Auto-recall (`Memory::before_run`) was removed; `recall` is now strictly model-driven. See 0189 for the rationale.
 
