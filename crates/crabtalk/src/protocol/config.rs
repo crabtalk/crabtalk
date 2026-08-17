@@ -1,21 +1,16 @@
 //! Configuration mutations: active model, MCP, skills.
 
-use crate::llm::Provider;
-use crate::system::CrabTalk;
+use crate::{llm::Provider, system::CrabTalk};
 use anyhow::{Context, Result};
 use hooks::default_crab;
 use mcp::McpServerState;
 use std::collections::BTreeMap;
-use wcore::protocol::message::*;
-use wcore::storage::Storage;
+use wcore::{protocol::message::*, storage::Storage};
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn set_active_model(&self, model: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
         let storage = rt.storage();
-
-        // Validate against the cached model list when non-empty; if the
-        // /v1/models fetch at startup failed, trust the caller.
         let known = rt.list_models().await;
         if !known.is_empty() && !known.iter().any(|m| m.name == model) {
             anyhow::bail!("model '{model}' not advertised by the LLM endpoint");
@@ -44,9 +39,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                 }
             }
             None => {
-                // Union view: every (agent, mcp) pair. Identically-configured
-                // MCPs across agents share one peer (and thus one status
-                // entry in `states`), but the listing surfaces both owners.
                 for cfg in rt.agents() {
                     for mcp_cfg in &cfg.mcps {
                         out.push(mcp_info(mcp_cfg, &cfg.name, &states));
@@ -76,11 +68,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             existing.mcps.push(cfg);
         }
         rt.update_agent(existing).await?;
-
-        // Registration only records the declaration — peers connect on
-        // first use. Connect this one now anyway: a human just typed the
-        // config, and a bad command or a stale token should surface here
-        // rather than inside some later tool call.
         self.mcp
             .ensure_connected(&agent, std::slice::from_ref(&mcp_name))
             .await;
@@ -105,10 +92,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             return Ok(false);
         }
         rt.update_agent(existing).await?;
-        // The runtime's `update_agent` triggers `on_register_agent`,
-        // which diffs the new declarations against the prior set and
-        // calls `unregister_for_agent` for entries that disappeared —
-        // so the bridge peer is released (refcounted) automatically.
         Ok(true)
     }
 
@@ -148,10 +131,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn list_skills(&self) -> Vec<SkillInfo> {
         let dirs = wcore::resolve_dirs(&self.config_dir);
         let local_skills_dir = self.config_dir.join(wcore::paths::SKILLS_DIR);
-
-        // Descriptions come from the parsed frontmatter, which only the
-        // storage scan reads; the walk below is what knows where a skill
-        // came from. Neither has the other's half.
         let described: BTreeMap<String, String> = match self
             .runtime
             .read()
@@ -179,7 +158,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 
         let mut seen = std::collections::BTreeSet::new();
         let mut skills = Vec::new();
-
         for dir in &dirs.skill_dirs {
             let (source, source_kind) = if *dir == local_skills_dir {
                 ("local".to_string(), SourceKind::Local)
@@ -219,8 +197,6 @@ fn mcp_info(
             state.tools.len() as u32,
             state.last_error.clone().unwrap_or_default(),
         ),
-        // Declared by the agent but not yet attempted (e.g., agent
-        // recently registered, connect still scheduled).
         None => (McpStatus::Unknown, 0, String::new()),
     };
     McpInfo {
@@ -234,7 +210,6 @@ fn mcp_info(
             .collect(),
         url: cfg.url.clone().unwrap_or_default(),
         auth: cfg.auth.clone().unwrap_or_default(),
-        // The "source" is now the agent that owns the declaration.
         source: agent.to_string(),
         auto_restart: cfg.auto_restart,
         source_kind: SourceKind::Local.into(),

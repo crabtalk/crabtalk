@@ -45,9 +45,9 @@ rvtime-guest = { version = "0.0.2", default-features = false }
 linked_list_allocator = "0.10"
 
 # crabllm
-crabllm-core = "0.0.23"
-crabllm-sdk = { version = "0.0.23", default-features = false }
-crabllm-provider = { version = "0.0.23", default-features = false }
+crabllm-core = "0.0.24"
+crabllm-sdk = { version = "0.0.24", default-features = false }
+crabllm-provider = { version = "0.0.24", default-features = false }
 
 # bench
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -151,6 +151,12 @@ tracing = "0.1"
 ulid = { version = "1", features = ["serde"] }
 tracing-subscriber = "0.3"
 url = "2"
+
+[patch.crates-io]
+crabllm-core = { path = "../crabllm/crates/core" }
+crabllm-sdk = { path = "../crabllm/crates/sdk" }
+crabllm-provider = { path = "../crabllm/crates/provider" }
+crabllm-http = { path = "../crabllm/crates/http" }
 
 [profile.prod]
 inherits = "release"

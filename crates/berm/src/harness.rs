@@ -255,6 +255,7 @@ impl runtime::Harness for HarnessHook {
                     parameters: Some(tool.parameters),
                 },
                 strict: None,
+                cache_control: None,
             })
             .collect()
     }

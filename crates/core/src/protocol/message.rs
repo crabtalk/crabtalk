@@ -1,32 +1,8 @@
-//! Conversions between protocol message types.
+//! Wire protocol message types — re-exported from the generated protobuf
+//! types, with the conversions into and out of them.
 
 use crate::AgentEvent;
-use crate::agent::AgentConfig;
-use crate::protocol::proto::{
-    AgentEventMsg, AgentInfo, ClientMessage, ContextUsageEvent, ConversationHistory, McpEventMsg,
-    SendMsg, SendResponse, ServerMessage, StreamChunk, StreamEnd, StreamEvent, StreamMsg,
-    StreamThinking, TextEndEvent, TextStartEvent, ThinkingEndEvent, ThinkingStartEvent, TokenUsage,
-    ToolCallInfo, ToolDef, ToolResultEvent, ToolStartEvent, ToolsCompleteEvent, UserSteeredEvent,
-    client_message, server_message, stream_event,
-};
-
-impl From<&AgentConfig> for AgentInfo {
-    fn from(config: &AgentConfig) -> Self {
-        Self {
-            name: config.name.clone(),
-            description: config.description.clone(),
-            config: serde_json::to_string(config).unwrap_or_default(),
-            model: config.model.clone(),
-            max_iterations: config.max_iterations as u32,
-            thinking: config.thinking,
-            skills: config.skills.clone(),
-            mcps: config.mcps.iter().map(|m| m.name.clone()).collect(),
-            compact_tool_max_len: config.compact_tool_max_len as u32,
-        }
-    }
-}
-
-// ── ClientMessage constructors ───────────────────────────────────
+pub use crate::protocol::proto::*;
 
 impl From<SendMsg> for ClientMessage {
     fn from(msg: SendMsg) -> Self {
@@ -43,8 +19,6 @@ impl From<StreamMsg> for ClientMessage {
         }
     }
 }
-
-// ── ServerMessage constructors ───────────────────────────────────
 
 impl From<SendResponse> for ServerMessage {
     fn from(r: SendResponse) -> Self {
@@ -86,14 +60,15 @@ impl From<ConversationHistory> for ServerMessage {
     }
 }
 
-// ── TryFrom<ServerMessage> ───────────────────────────────────────
-
-fn error_or_unexpected(msg: ServerMessage) -> anyhow::Error {
-    match msg.msg {
-        Some(server_message::Msg::Error(e)) => {
-            anyhow::anyhow!("server error ({}): {}", e.code, e.message)
+impl ServerMessage {
+    /// Convert a `ServerMessage` to an `anyhow::Error`.
+    pub fn error_or_unexpected(self) -> anyhow::Error {
+        match self.msg {
+            Some(server_message::Msg::Error(e)) => {
+                anyhow::anyhow!("server error ({}): {}", e.code, e.message)
+            }
+            other => anyhow::anyhow!("unexpected response: {other:?}"),
         }
-        other => anyhow::anyhow!("unexpected response: {other:?}"),
     }
 }
 
@@ -102,7 +77,7 @@ impl TryFrom<ServerMessage> for SendResponse {
     fn try_from(msg: ServerMessage) -> anyhow::Result<Self> {
         match msg.msg {
             Some(server_message::Msg::Response(r)) => Ok(r),
-            _ => Err(error_or_unexpected(msg)),
+            _ => Err(msg.error_or_unexpected()),
         }
     }
 }
@@ -114,7 +89,7 @@ impl TryFrom<ServerMessage> for stream_event::Event {
             Some(server_message::Msg::Stream(e)) => {
                 e.event.ok_or_else(|| anyhow::anyhow!("empty stream event"))
             }
-            _ => Err(error_or_unexpected(msg)),
+            _ => Err(msg.error_or_unexpected()),
         }
     }
 }
@@ -147,6 +122,7 @@ impl From<ToolDef> for crate::model::Tool {
                     .flatten(),
             },
             strict: None,
+            cache_control: None,
         }
     }
 }

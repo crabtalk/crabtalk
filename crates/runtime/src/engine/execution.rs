@@ -271,13 +271,7 @@ impl<C: Config> Runtime<C> {
             let messages: Vec<anthropic::Message> = conversation
                 .history
                 .iter()
-                .map(|e| {
-                    let msg = e.to_wire_message();
-                    anthropic::Message {
-                        role: msg.role.as_str().to_string(),
-                        content: anthropic::Content::Blocks(msg.content),
-                    }
-                })
+                .map(|e| e.to_wire_message())
                 .collect();
 
             let (max_tokens, thinking) = guest_agent.config.token_budget();

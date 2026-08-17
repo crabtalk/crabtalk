@@ -12,8 +12,10 @@ use super::hit::{
 };
 use memory::bm25;
 use std::collections::HashMap;
-use wcore::model::{HistoryEntry, Role};
-use wcore::storage::SessionHandle;
+use wcore::{
+    model::{ContentBlock, HistoryEntry, Role},
+    storage::SessionHandle,
+};
 
 /// Document identity in the session index — one doc per message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -390,9 +392,9 @@ fn extract_indexable_text(entry: &HistoryEntry) -> String {
 fn has_tool_result(entry: &HistoryEntry) -> bool {
     entry
         .message
-        .content
+        .blocks()
         .iter()
-        .any(|b| matches!(b, crabllm_core::ContentBlock::ToolResult { .. }))
+        .any(|b| matches!(b, ContentBlock::ToolResult { .. }))
 }
 
 /// Display text for window items. Unlike indexable text, this returns
@@ -428,12 +430,12 @@ fn make_snippet(entry: &HistoryEntry) -> (String, bool) {
 }
 
 fn extract_tool_name(entry: &HistoryEntry) -> Option<String> {
-    for block in &entry.message.content {
+    for block in entry.message.blocks() {
         match block {
-            crabllm_core::ContentBlock::ToolResult { name: Some(n), .. } if !n.is_empty() => {
+            ContentBlock::ToolResult { name: Some(n), .. } if !n.is_empty() => {
                 return Some(n.clone());
             }
-            crabllm_core::ContentBlock::ToolUse { name, .. } => {
+            ContentBlock::ToolUse { name, .. } => {
                 return Some(name.clone());
             }
             _ => {}

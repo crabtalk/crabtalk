@@ -2,26 +2,23 @@
 //!
 //! Thin re-export layer over `crabllm_core` for the core wire types
 //! (`Message`, `Tool`, `ToolCall`, `Usage`, …) plus crabtalk's own
-//! `HistoryEntry` wrapper and streaming `MessageBuilder`. `Model<P>` is the
-//! single seam between crabtalk and any `crabllm_core::Provider`.
+//! `HistoryEntry` wrapper. `Model<P>` is the single seam between crabtalk
+//! and any `crabllm_core::Provider`.
 
 pub use crabllm_core::{
-    FinishReason, FunctionCall, FunctionDef, Message, Role, Tool, ToolCall, ToolChoice, ToolType,
-    Usage, anthropic,
+    FinishReason, FunctionCall, FunctionDef, Role, Tool, ToolCall, ToolChoice, ToolType, Usage,
+    anthropic,
+    anthropic::{Content, ContentBlock, Message, ToolResultContent},
+    codec::MessageBuilder,
 };
 
 use anyhow::Result;
 use async_stream::try_stream;
-use crabllm_core::{ApiError, Provider};
+use crabllm_core::Provider;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
-
-/// Backstop idle-between-chunks bound for providers whose transport lacks a read timeout.
-const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
-
-// ── HistoryEntry ────────────────────────────────────────────────────
+use std::sync::Arc;
 
 /// A single conversation history entry.
 ///
@@ -53,8 +50,14 @@ pub struct HistoryEntry {
 
 impl HistoryEntry {
     /// Create a new system entry.
+    ///
+    /// Anthropic has no system message role — these are held in history for
+    /// the runtime's own bookkeeping and hoisted into `Request.system`.
     pub fn system(content: impl Into<String>) -> Self {
-        Self::from_message(Message::system(content))
+        Self::from_message(Message {
+            role: Role::System.as_str().to_string(),
+            content: Content::Blocks(vec![ContentBlock::text(content)]),
+        })
     }
 
     /// Create a new user entry.
@@ -75,37 +78,11 @@ impl HistoryEntry {
         reasoning: Option<String>,
         tool_calls: Option<&[ToolCall]>,
     ) -> Self {
-        use crabllm_core::ContentBlock;
-        let mut blocks = Vec::new();
-        if let Some(r) = reasoning.filter(|s| !s.is_empty()) {
-            blocks.push(ContentBlock::Thinking {
-                thinking: r,
-                signature: None,
-            });
-        }
-        let text: String = content.into();
-        if !text.is_empty() || tool_calls.is_none_or(|tcs| tcs.is_empty()) {
-            blocks.push(ContentBlock::Text {
-                text,
-                cache_control: None,
-            });
-        }
-        if let Some(tcs) = tool_calls {
-            for tc in tcs {
-                let input = crabllm_core::json::from_str(&tc.function.arguments)
-                    .unwrap_or(serde_json::Value::Object(Default::default()));
-                blocks.push(ContentBlock::ToolUse {
-                    id: tc.id.clone(),
-                    name: tc.function.name.clone(),
-                    input,
-                    cache_control: None,
-                });
-            }
-        }
-        Self::from_message(Message {
-            role: Role::Assistant,
-            content: blocks,
-        })
+        Self::from_message(Message::assistant_parts(
+            content,
+            reasoning,
+            tool_calls.unwrap_or_default(),
+        ))
     }
 
     /// Create a new tool-result entry.
@@ -117,7 +94,7 @@ impl HistoryEntry {
         Self::from_message(Message::tool(call_id, name, content))
     }
 
-    /// Wrap an existing `crabllm_core::Message`.
+    /// Wrap an existing `anthropic::Message`.
     pub fn from_message(message: Message) -> Self {
         Self {
             agent: String::new(),
@@ -134,13 +111,17 @@ impl HistoryEntry {
     }
 
     /// The role of the underlying message.
-    pub fn role(&self) -> &Role {
-        &self.message.role
+    pub fn role(&self) -> Role {
+        match self.message.role.as_str() {
+            "assistant" => Role::Assistant,
+            "system" => Role::System,
+            _ => Role::User,
+        }
     }
 
-    /// The text content of the message, or `""` if absent / empty / non-string.
+    /// The text content of the message, or `""` if absent / empty.
     pub fn text(&self) -> &str {
-        self.message.content_str().unwrap_or("")
+        self.message.text().unwrap_or("")
     }
 
     /// The reasoning/thinking content, or empty if absent.
@@ -150,182 +131,43 @@ impl HistoryEntry {
 
     /// The tool calls on this entry as ToolCall structs.
     pub fn tool_calls(&self) -> Vec<ToolCall> {
-        self.message
-            .content
-            .iter()
-            .filter_map(|b| {
-                if let crabllm_core::ContentBlock::ToolUse {
-                    id, name, input, ..
-                } = b
-                {
-                    Some(ToolCall {
-                        index: None,
-                        id: id.clone(),
-                        kind: crabllm_core::ToolType::Function,
-                        function: crabllm_core::FunctionCall {
-                            name: name.clone(),
-                            arguments: crabllm_core::json::to_string(input).unwrap_or_default(),
-                        },
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect()
+        self.message.tool_calls()
     }
 
     /// The tool_use_id from the first ToolResult block, or empty.
     pub fn tool_call_id(&self) -> &str {
-        for block in &self.message.content {
-            if let crabllm_core::ContentBlock::ToolResult { tool_use_id, .. } = block {
-                return tool_use_id.as_str();
-            }
-        }
-        ""
+        self.message
+            .blocks()
+            .iter()
+            .find_map(|b| match b {
+                ContentBlock::ToolResult { tool_use_id, .. } => Some(tool_use_id.as_str()),
+                _ => None,
+            })
+            .unwrap_or("")
     }
 
-    /// Project to a `crabllm_core::Message` for sending to a provider.
+    /// Project to a `Message` for sending to a provider.
     ///
     /// If this is a guest assistant message (`agent` non-empty and role is
     /// Assistant), wraps the text content in `<from agent="...">` tags so other
     /// agents can distinguish speakers in multi-agent conversations.
     pub fn to_wire_message(&self) -> Message {
-        if self.message.role != Role::Assistant || self.agent.is_empty() {
+        if self.role() != Role::Assistant || self.agent.is_empty() {
             return self.message.clone();
         }
-        let mut blocks = self.message.content.clone();
-        for block in &mut blocks {
-            if let crabllm_core::ContentBlock::Text { text, .. } = block {
-                *text = format!("<from agent=\"{}\">\n{}\n</from>", self.agent, text);
-            }
-        }
-        Message {
-            role: Role::Assistant,
-            content: blocks,
-        }
-    }
-}
-
-// ── MessageBuilder ──────────────────────────────────────────────────
-
-/// Accumulating builder for streaming assistant messages.
-pub struct MessageBuilder {
-    role: Role,
-    content: String,
-    reasoning: String,
-    tool_blocks: BTreeMap<u32, (String, String, String)>,
-}
-
-impl MessageBuilder {
-    pub fn new(role: Role) -> Self {
-        Self {
-            role,
-            content: String::new(),
-            reasoning: String::new(),
-            tool_blocks: BTreeMap::new(),
-        }
-    }
-
-    pub fn accept(&mut self, event: &anthropic::StreamEvent) {
-        match event {
-            anthropic::StreamEvent::ContentBlockStart {
-                index,
-                content_block: crabllm_core::anthropic::ContentBlock::ToolUse { id, name, .. },
-            } => {
-                self.tool_blocks
-                    .insert(*index, (id.clone(), name.clone(), String::new()));
-            }
-            anthropic::StreamEvent::ContentBlockDelta { index, delta } => match delta {
-                anthropic::BlockDelta::Text { text } => self.content.push_str(text),
-                anthropic::BlockDelta::Thinking { thinking } => self.reasoning.push_str(thinking),
-                anthropic::BlockDelta::InputJson { partial_json } => {
-                    if let Some((_, _, args)) = self.tool_blocks.get_mut(index) {
-                        args.push_str(partial_json);
-                    }
+        let mut message = self.message.clone();
+        if let Some(blocks) = message.blocks_mut() {
+            for block in blocks {
+                if let ContentBlock::Text { text, .. } = block {
+                    *text = format!("<from agent=\"{}\">\n{}\n</from>", self.agent, text);
                 }
-            },
-            _ => {}
+            }
         }
-    }
-
-    /// Argument text exactly as it arrived — `build()`'s parsed `Value` turns a
-    /// half-streamed one into `{}`. Filtered like `build()`, so both agree.
-    pub fn peek_tool_calls(&self) -> Vec<ToolCall> {
-        self.tool_blocks
-            .iter()
-            .filter(|(_, (id, name, _))| !id.is_empty() && !name.is_empty())
-            .map(|(idx, (id, name, args))| ToolCall {
-                index: Some(*idx),
-                id: id.clone(),
-                kind: ToolType::Function,
-                function: FunctionCall {
-                    name: name.clone(),
-                    arguments: args.clone(),
-                },
-            })
-            .collect()
-    }
-
-    /// Names of the tool calls whose accumulated arguments aren't valid JSON.
-    pub fn malformed_tool_calls(&self) -> Vec<&str> {
-        self.tool_blocks
-            .values()
-            .filter(|(id, name, _)| !id.is_empty() && !name.is_empty())
-            .filter(|(_, _, args)| crabllm_core::json::from_str::<serde_json::Value>(args).is_err())
-            .map(|(_, name, _)| name.as_str())
-            .collect()
-    }
-
-    pub fn build(self) -> Message {
-        use crabllm_core::ContentBlock;
-
-        let mut blocks = Vec::new();
-
-        if !self.reasoning.is_empty() {
-            blocks.push(ContentBlock::Thinking {
-                thinking: self.reasoning,
-                signature: None,
-            });
-        }
-
-        let tool_calls: Vec<_> = self
-            .tool_blocks
-            .into_values()
-            .filter(|(id, name, _)| !id.is_empty() && !name.is_empty())
-            .collect();
-        let has_tool_calls = !tool_calls.is_empty();
-
-        if !self.content.is_empty() || !has_tool_calls {
-            blocks.push(ContentBlock::Text {
-                text: self.content,
-                cache_control: None,
-            });
-        }
-
-        for (id, name, args) in tool_calls {
-            let input = crabllm_core::json::from_str(&args)
-                .unwrap_or(serde_json::Value::Object(Default::default()));
-            blocks.push(ContentBlock::ToolUse {
-                id,
-                name,
-                input,
-                cache_control: None,
-            });
-        }
-
-        Message {
-            role: self.role,
-            content: blocks,
-        }
+        message
     }
 }
 
-// ── Model<P> ────────────────────────────────────────────────────────
-
-/// A wcore-typed view over a `crabllm_core::Provider`.
-///
-/// Holds an `Arc<P>` so cloning is cheap. The `'static` bound on `P`
-/// flows from the streaming path.
+/// A wrapper around a `crabllm_core::Provider` that provides a core-typed view.
 pub struct Model<P: Provider + 'static> {
     inner: Arc<P>,
 }
@@ -348,7 +190,7 @@ impl<P: Provider + 'static> Model<P> {
         let model = request.model.clone();
         self.inner.anthropic_messages(&request).await.map_err(|e| {
             tracing::warn!(model = %model, op = "send", error = %e, "provider request failed");
-            provider_error(e)
+            anyhow::anyhow!(e.message())
         })
     }
 
@@ -367,20 +209,12 @@ impl<P: Provider + 'static> Model<P> {
                 .await
                 .map_err(|e| {
                     tracing::warn!(model = %model, op = "stream open", error = %e, "provider request failed");
-                    provider_error(e)
+                    anyhow::anyhow!(e.message())
                 })?;
-            loop {
-                let chunk = match tokio::time::timeout(STREAM_IDLE_TIMEOUT, stream.next()).await {
-                    Ok(Some(chunk)) => chunk,
-                    Ok(None) => break,
-                    Err(_) => {
-                        tracing::warn!(model = %model, op = "stream idle", "provider stream stalled");
-                        Err(anyhow::anyhow!("provider stream idle timeout"))?
-                    }
-                };
+            while let Some(chunk) = stream.next().await {
                 yield chunk.map_err(|e| {
                     tracing::warn!(model = %model, op = "stream chunk", error = %e, "provider stream failed");
-                    provider_error(e)
+                    anyhow::anyhow!(e.message())
                 })?;
             }
         }
@@ -399,65 +233,4 @@ impl<P: Provider + 'static> std::fmt::Debug for Model<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Model").finish()
     }
-}
-
-/// Reduce a provider error to the clean leaf message for the client: unwrap a
-/// `Provider` body to its bare message, propagate every other variant as-is.
-fn provider_error(e: crabllm_core::Error) -> anyhow::Error {
-    match e {
-        crabllm_core::Error::Provider { body, .. } => {
-            let msg = serde_json::from_str::<ApiError>(&body)
-                .map(|api_err| api_err.error.message)
-                .unwrap_or(body);
-            anyhow::anyhow!(msg)
-        }
-        other => anyhow::Error::new(other),
-    }
-}
-
-pub fn map_stop_reason(stop_reason: &Option<String>) -> Option<FinishReason> {
-    stop_reason.as_deref().map(map_stop_reason_str)
-}
-
-pub fn map_stop_reason_str(r: &str) -> FinishReason {
-    match r {
-        "end_turn" => FinishReason::Stop,
-        "max_tokens" => FinishReason::Length,
-        "tool_use" => FinishReason::ToolCalls,
-        other => FinishReason::Custom(other.to_string()),
-    }
-}
-
-// ── Context limits ──────────────────────────────────────────────────
-
-/// Returns the default context limit (in tokens) for a known model ID.
-///
-/// Uses prefix matching against known model families. Unknown models
-/// return 8192 as a conservative default.
-pub fn default_context_limit(model_id: &str) -> usize {
-    if model_id.starts_with("claude-") {
-        return 200_000;
-    }
-    if model_id.starts_with("gpt-4o") || model_id.starts_with("gpt-4-turbo") {
-        return 128_000;
-    }
-    if model_id.starts_with("gpt-4") {
-        return 8_192;
-    }
-    if model_id.starts_with("gpt-3.5") {
-        return 16_385;
-    }
-    if model_id.starts_with("o1") || model_id.starts_with("o3") || model_id.starts_with("o4") {
-        return 200_000;
-    }
-    if model_id.starts_with("grok-") {
-        return 131_072;
-    }
-    if model_id.starts_with("qwen-") || model_id.starts_with("qwq-") {
-        return 32_768;
-    }
-    if model_id.starts_with("kimi-") || model_id.starts_with("moonshot-") {
-        return 128_000;
-    }
-    8_192
 }

@@ -7,7 +7,7 @@
 //! - [`AgentStopReason`]: why the agent stopped.
 
 use crate::model::HistoryEntry;
-use crabllm_core::{FinishReason, Message, ToolCall, Usage};
+use crabllm_core::{FinishReason, ToolCall, Usage, anthropic::Message};
 
 /// A fine-grained event emitted during agent execution.
 ///

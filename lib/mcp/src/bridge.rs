@@ -172,6 +172,7 @@ fn convert_tool(mcp_tool: &client::McpTool) -> Tool {
             parameters: mcp_tool.input_schema.clone(),
         },
         strict: None,
+        cache_control: None,
     }
 }
 

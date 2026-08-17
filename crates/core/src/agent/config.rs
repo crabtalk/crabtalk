@@ -3,7 +3,7 @@
 //! [`AgentConfig`] is a serializable struct holding all agent parameters.
 //! Used by [`super::AgentBuilder`] to construct an [`super::Agent`].
 
-use crate::{AgentId, config::hooks::HooksConfig, model::ToolChoice};
+use crate::{AgentId, config::hooks::HooksConfig, model::ToolChoice, protocol::proto::AgentInfo};
 use crabllm_core::anthropic;
 use serde::{Deserialize, Serialize};
 
@@ -161,5 +161,22 @@ impl AgentConfig {
         });
         let max_tokens = self.max_tokens + thinking.as_ref().map_or(0, |_| self.thinking_budget);
         (max_tokens, thinking)
+    }
+}
+
+impl From<AgentConfig> for AgentInfo {
+    fn from(config: AgentConfig) -> Self {
+        let conf = serde_json::to_string(&config).unwrap_or_default();
+        Self {
+            name: config.name,
+            description: config.description,
+            config: conf,
+            model: config.model,
+            max_iterations: config.max_iterations as u32,
+            thinking: config.thinking,
+            skills: config.skills,
+            mcps: config.mcps.iter().map(|m| m.name.clone()).collect(),
+            compact_tool_max_len: config.compact_tool_max_len as u32,
+        }
     }
 }

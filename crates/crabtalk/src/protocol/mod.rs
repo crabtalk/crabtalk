@@ -99,7 +99,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
 
     async fn list_agents(&self) -> Result<Vec<AgentInfo>> {
         let rt = self.runtime.read().await.clone();
-        Ok(rt.agents().iter().map(AgentInfo::from).collect())
+        Ok(rt.agents().iter().map(|a| a.clone().into()).collect())
     }
 
     async fn get_agent(&self, name: String) -> Result<AgentInfo> {
@@ -107,7 +107,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
         let config = rt
             .agent(&name)
             .ok_or_else(|| anyhow::anyhow!("agent '{name}' not found"))?;
-        Ok(AgentInfo::from(&config))
+        Ok(config.into())
     }
 
     async fn create_agent(&self, req: CreateAgentMsg) -> Result<AgentInfo> {
@@ -116,7 +116,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
         config.name = req.name;
         let rt = self.runtime.read().await.clone();
         let registered = rt.create_agent(config).await?;
-        Ok(AgentInfo::from(&registered))
+        Ok(registered.into())
     }
 
     async fn update_agent(&self, req: UpdateAgentMsg) -> Result<AgentInfo> {
@@ -130,7 +130,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
             .map_err(|e| anyhow::anyhow!("invalid AgentConfig JSON: {e}"))?;
         config.name = req.name;
         let registered = rt.update_agent(config).await?;
-        Ok(AgentInfo::from(&registered))
+        Ok(registered.into())
     }
 
     async fn delete_agent(&self, name: String) -> Result<bool> {
@@ -141,7 +141,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
     async fn rename_agent(&self, old_name: String, new_name: String) -> Result<AgentInfo> {
         let rt = self.runtime.read().await.clone();
         let registered = rt.rename_agent(&old_name, &new_name).await?;
-        Ok(AgentInfo::from(&registered))
+        Ok(registered.into())
     }
 
     async fn list_conversations(

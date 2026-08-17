@@ -170,6 +170,7 @@ impl<T: JsonSchema> AsTool for T {
                 parameters: Some(serde_json::to_value(&schema).unwrap_or_default()),
             },
             strict: None,
+            cache_control: None,
         }
     }
 }

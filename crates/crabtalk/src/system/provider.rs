@@ -2,9 +2,10 @@
 
 use crabllm_core::{
     BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Error,
-    ModelList, Provider, ProviderConfig, anthropic, gemini,
+    ModelList, Provider, ProviderConfig, Retrying, anthropic, gemini,
 };
 use crabllm_provider::{RemoteProvider, make_client};
+use std::time::Duration;
 use wcore::LlmConfig;
 
 /// Two variants, not one. `Gateway` is a crabllm proxy: it reads the dialect
@@ -15,7 +16,7 @@ use wcore::LlmConfig;
 #[derive(Debug, Clone)]
 pub enum DefaultProvider {
     Gateway(crabllm_sdk::Client),
-    Direct(RemoteProvider),
+    Direct(Retrying<RemoteProvider>),
 }
 
 impl From<&LlmConfig> for DefaultProvider {
@@ -33,7 +34,14 @@ impl From<&LlmConfig> for DefaultProvider {
             base_url: (!llm.base_url.is_empty()).then(|| llm.base_url.clone()),
             ..Default::default()
         };
-        Self::Direct(RemoteProvider::new(kind.as_str(), &config, make_client()))
+        // Wrapped only for the stream idle bound — a silent upstream must not
+        // hang a turn forever. Retries and the per-attempt timeout stay off:
+        // a direct upstream had neither, and a 30s cap would cut off a long
+        // non-streaming completion.
+        let direct = Retrying::new(RemoteProvider::new(kind.as_str(), &config, make_client()))
+            .max_retries(0)
+            .timeout(Duration::ZERO);
+        Self::Direct(direct)
     }
 }
 

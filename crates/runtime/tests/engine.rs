@@ -93,6 +93,7 @@ async fn register_and_unregister_tool() {
             parameters: None,
         },
         strict: None,
+        cache_control: None,
     };
     runtime.tools.insert(tool);
     assert!(runtime.tools.remove("bash"));

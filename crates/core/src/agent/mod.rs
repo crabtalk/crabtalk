@@ -13,7 +13,7 @@ use async_stream::stream;
 pub use builder::AgentBuilder;
 pub use config::AgentConfig;
 use crabllm_core::{
-    ContentBlock, FinishReason, Provider, Role, Tool, ToolCall, ToolChoice, Usage,
+    FinishReason, Provider, Role, Tool, ToolCall, ToolChoice, Usage,
     anthropic::{self, Messages},
 };
 use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
@@ -31,32 +31,12 @@ pub mod event;
 mod id;
 pub mod tool;
 
-fn extract_tool_calls(blocks: &[ContentBlock]) -> Vec<ToolCall> {
-    blocks
-        .iter()
-        .filter_map(|b| match b {
-            ContentBlock::ToolUse {
-                id, name, input, ..
-            } => Some(ToolCall {
-                index: None,
-                id: id.clone(),
-                kind: crabllm_core::ToolType::Function,
-                function: crabllm_core::FunctionCall {
-                    name: name.clone(),
-                    arguments: crabllm_core::json::to_string(input).unwrap_or_default(),
-                },
-            }),
-            _ => None,
-        })
-        .collect()
-}
-
 /// Extract sender from the last user entry in history.
 fn last_sender(history: &[HistoryEntry]) -> String {
     history
         .iter()
         .rev()
-        .find(|e| *e.role() == Role::User)
+        .find(|e| e.role() == Role::User)
         .map(|e| e.sender.clone())
         .unwrap_or_default()
 }
@@ -142,26 +122,20 @@ impl<P: Provider + 'static> Agent<P> {
     ) -> anthropic::Request {
         let model_name = self.model_name();
 
-        let mut messages: Vec<anthropic::Message> = history
-            .iter()
-            .map(|e| {
-                let msg = e.to_wire_message();
-                anthropic::Message {
-                    role: msg.role.as_str().to_string(),
-                    content: anthropic::Content::Blocks(msg.content),
-                }
-            })
-            .collect();
+        let mut messages: Vec<anthropic::Message> =
+            history.iter().map(|e| e.to_wire_message()).collect();
         messages.coalesce_tool_results();
         messages.ensure_tool_pairing();
 
         let system = if self.config.description.is_empty() {
             None
         } else {
-            Some(anthropic::System::Blocks(vec![ContentBlock::Text {
-                text: self.config.description.clone(),
-                cache_control: Some(serde_json::json!({"type": "ephemeral"})),
-            }]))
+            Some(anthropic::System::Blocks(vec![
+                anthropic::ContentBlock::Text {
+                    text: self.config.description.clone(),
+                    cache_control: Some(serde_json::json!({"type": "ephemeral"})),
+                },
+            ]))
         };
 
         let tool_choice = tool_choice_override
@@ -209,18 +183,19 @@ impl<P: Provider + 'static> Agent<P> {
         history: &mut Vec<HistoryEntry>,
         conversation_id: Option<u64>,
     ) -> Result<AgentStep> {
-        use crate::model::map_stop_reason;
-
         let request = self.build_request(history, None);
         let response = self.model.send(request).await?;
-        let tool_calls: Vec<ToolCall> = extract_tool_calls(&response.content);
-        let finish_reason = map_stop_reason(&response.stop_reason);
+        let finish_reason = response
+            .stop_reason
+            .as_deref()
+            .map(anthropic::finish_reason);
         let usage = Usage::from(&response.usage);
 
-        let message = crabllm_core::Message {
-            role: Role::Assistant,
-            content: response.content,
+        let message = anthropic::Message {
+            role: Role::Assistant.as_str().to_string(),
+            content: anthropic::Content::Blocks(response.content),
         };
+        let tool_calls = message.tool_calls();
 
         let assistant_entry = HistoryEntry::from_message(message.clone());
 
@@ -294,7 +269,7 @@ impl<P: Provider + 'static> Agent<P> {
 
     /// Determine the stop reason for a step with no tool calls.
     fn stop_reason(step: &AgentStep) -> AgentStopReason {
-        if step.message.content_str().is_some() {
+        if step.message.text().is_some() {
             AgentStopReason::TextResponse
         } else {
             AgentStopReason::NoAction
@@ -362,7 +337,7 @@ impl<P: Provider + 'static> Agent<P> {
 
                 let request = self.build_request(history, tool_choice.as_ref());
 
-                let mut builder = MessageBuilder::new(Role::Assistant);
+                let mut builder = MessageBuilder::new();
                 let mut finish_reason = None;
                 let mut last_usage: Option<Usage> = None;
                 let mut stream_error = None;
@@ -373,7 +348,6 @@ impl<P: Provider + 'static> Agent<P> {
                 let mut open = OpenSegment::None;
 
                 {
-                    use crate::model::map_stop_reason_str;
 
 
                     let mut event_stream = std::pin::pin!(self.model.stream(request));
@@ -409,14 +383,14 @@ impl<P: Provider + 'static> Agent<P> {
                                         }
                                     }
                                     anthropic::StreamEvent::MessageDelta { delta, usage } => {
-                                        finish_reason = delta.stop_reason.as_deref().map(map_stop_reason_str);
+                                        finish_reason = delta.stop_reason.as_deref().map(anthropic::finish_reason);
                                         last_usage = Some(Usage::from(usage));
                                     }
                                     _ => {}
                                 }
                                 builder.accept(event);
                                 if !tool_begin_emitted {
-                                    let calls = builder.peek_tool_calls();
+                                    let calls = builder.tool_calls();
                                     if !calls.is_empty() {
                                         tool_begin_emitted = true;
                                         yield AgentEvent::ToolCallsBegin(calls);
@@ -469,9 +443,9 @@ impl<P: Provider + 'static> Agent<P> {
                     }
                 }
 
-                let tool_calls: Vec<ToolCall> = builder.peek_tool_calls();
+                let tool_calls: Vec<ToolCall> = builder.tool_calls();
                 let message = builder.build();
-                let content = message.content_str().map(|s| s.to_owned());
+                let content = message.text().map(|s| s.to_owned());
                 let usage = last_usage.unwrap_or_default();
                 let has_tool_calls = !tool_calls.is_empty();
 
@@ -604,7 +578,7 @@ impl<P: Provider + 'static> Agent<P> {
 
             let final_response = steps
                 .last()
-                .and_then(|s| s.message.content_str())
+                .and_then(|s| s.message.text())
                 .map(|s| s.to_owned());
             yield AgentEvent::Done(AgentResponse {
                 final_response,

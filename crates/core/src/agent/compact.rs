@@ -1,7 +1,10 @@
 //! Context compaction — summarize conversation history and replace it.
 
 use crate::model::HistoryEntry;
-use crabllm_core::{ContentBlock, Provider, ToolResultContent, anthropic};
+use crabllm_core::{
+    Provider,
+    anthropic::{self, ContentBlock, ToolResultContent},
+};
 
 pub(crate) const COMPACT_PROMPT: &str = include_str!("../../prompts/compact.md");
 
@@ -28,7 +31,7 @@ impl<P: Provider + 'static> super::Agent<P> {
         let max_len = self.config.compact_tool_max_len;
         for entry in history {
             let mut msg = entry.to_wire_message();
-            for block in &mut msg.content {
+            for block in msg.blocks_mut().into_iter().flatten() {
                 if let ContentBlock::ToolResult {
                     content: ToolResultContent::Text(text),
                     ..
@@ -39,10 +42,7 @@ impl<P: Provider + 'static> super::Agent<P> {
                     text.push_str("... [truncated]");
                 }
             }
-            messages.push(anthropic::Message {
-                role: msg.role.as_str().to_string(),
-                content: anthropic::Content::Blocks(msg.content),
-            });
+            messages.push(msg);
         }
 
         let request = anthropic::Request {
