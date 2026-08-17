@@ -1,4 +1,4 @@
-//! One turn of a conversation, as persisted.
+//! One turn of a session, as persisted.
 //!
 //! The inner `message` is the wire shape sent to providers; the rest is
 //! runtime state the session file keeps so a reload can reconstruct it.
@@ -9,7 +9,7 @@ use crabllm_core::{
 };
 use serde::{Deserialize, Serialize};
 
-/// A single conversation history entry.
+/// A single session history entry.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct HistoryEntry {
     /// Which agent produced this assistant message.
@@ -129,7 +129,7 @@ impl HistoryEntry {
     ///
     /// If this is a guest assistant message (`agent` non-empty and role is
     /// Assistant), wraps the text content in `<from agent="...">` tags so other
-    /// agents can distinguish speakers in multi-agent conversations.
+    /// agents can distinguish speakers in multi-agent sessions.
     pub fn to_wire_message(&self) -> Message {
         if self.role() != Role::Assistant || self.agent.is_empty() {
             return self.message.clone();

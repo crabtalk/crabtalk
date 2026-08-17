@@ -61,7 +61,7 @@ pub trait Harness: Send + Sync {
     fn on_unregister_agent(&self, _name: &str) {}
 
     /// Called by Runtime after each agent step during execution.
-    fn on_event(&self, _agent: &str, _conversation_id: u64, _event: &AgentEvent) {}
+    fn on_event(&self, _agent: &str, _session_id: u64, _event: &AgentEvent) {}
 
     /// Preprocess user content before it becomes a message.
     /// Return `Some(modified)` to transform, `None` to pass through.
@@ -243,9 +243,9 @@ impl Harness for Hooks {
         }
     }
 
-    fn on_event(&self, agent: &str, conversation_id: u64, event: &AgentEvent) {
+    fn on_event(&self, agent: &str, session_id: u64, event: &AgentEvent) {
         for hook in self.hooks.values() {
-            hook.on_event(agent, conversation_id, event);
+            hook.on_event(agent, session_id, event);
         }
 
         if let AgentEvent::Done(response) = event

@@ -13,7 +13,7 @@ use mcp::McpHandler;
 use proto::server::Server;
 use runtime::agent::Model;
 use runtime::harness::{EventSink, Hooks, McpHook, Memory, MemoryHook};
-use runtime::{Harness, Runtime};
+use runtime::{Harness, Runtime, Sessions};
 use std::{
     collections::BTreeMap,
     path::Path,
@@ -58,31 +58,27 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .set(shared_runtime.clone())
             .unwrap_or_else(|_| panic!("runtime already initialized"));
 
+        let sessions = Arc::new(Sessions::default());
+
         let fire_runtime = shared_runtime.clone();
+        let fire_sessions = sessions.clone();
         let fire: event::FireCallback = Arc::new(move |sub, payload| {
             let runtime = fire_runtime.clone();
+            let sessions = fire_sessions.clone();
             let target_agent = sub.target_agent.clone();
             let source = sub.source.clone();
             let payload = payload.to_owned();
             tokio::spawn(async move {
                 let rt = runtime.read().await.clone();
                 let sender = format!("event:{source}");
-                let conversation_id = match rt
-                    .get_or_create_conversation(&target_agent, &sender)
-                    .await
-                {
-                    Ok(id) => id,
+                let session = match sessions.get_or_create(&rt, &target_agent, &sender).await {
+                    Ok((_, session)) => session,
                     Err(e) => {
-                        tracing::warn!(
-                            "event fire: get_or_create_conversation(agent='{target_agent}'): {e}"
-                        );
+                        tracing::warn!("event fire: session(agent='{target_agent}'): {e}");
                         return;
                     }
                 };
-                if let Err(e) = rt
-                    .send_to(conversation_id, &payload, &sender, None, vec![])
-                    .await
-                {
+                if let Err(e) = rt.send_to(&session, &payload, &sender, None, vec![]).await {
                     tracing::warn!("event fire: send_to(agent='{target_agent}'): {e}");
                 }
             });
@@ -107,6 +103,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             build_provider,
             mcp,
             bridge,
+            sessions,
         };
         Self::connect_protocol(&protocol, daemon.clone());
         Ok(daemon)
@@ -125,7 +122,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let storage = self.runtime.read().await.storage().clone();
 
         let protocol: Arc<OnceLock<crabtalk_berm::Dispatch>> = Arc::new(OnceLock::new());
-        let (mut new_runtime, _mcp, new_hook, _bridge) = Self::build_all(
+        let (new_runtime, _mcp, new_hook, _bridge) = Self::build_all(
             &config,
             &self.config_dir,
             storage,
@@ -135,10 +132,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         )
         .await?;
         Self::connect_protocol(&protocol, self.clone());
-        {
-            let old_runtime = self.runtime.read().await;
-            (**old_runtime).transfer_to(&mut new_runtime).await;
-        }
         {
             let events_for_sink = self.events.clone();
             let sink: EventSink = Arc::new(move |source: &str, payload: &str| {

@@ -4,7 +4,7 @@
 use crate::backend::sqlite::{SqliteStorage, convert, schema::BEGIN_IMMEDIATE};
 use crate::{
     HistoryEntry,
-    storage::{ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary},
+    storage::{EventLine, SessionHandle, SessionMeta, SessionSnapshot, SessionSummary},
 };
 use anyhow::Result;
 use sqlx::Row;
@@ -80,7 +80,7 @@ impl SqliteStorage {
         .await?;
 
         // Rows that survive a compact are the turns since it, so the
-        // archive plus what's left is the whole conversation.
+        // archive plus what's left is the whole session.
         let mut history = Vec::with_capacity(entry_jsons.len());
         for json in &entry_jsons {
             match serde_json::from_str::<HistoryEntry>(json) {
@@ -260,7 +260,7 @@ impl SqliteStorage {
     pub(super) async fn update_session_meta(
         &self,
         handle: &SessionHandle,
-        meta: &ConversationMeta,
+        meta: &SessionMeta,
     ) -> Result<()> {
         sqlx::query(
             "UPDATE sessions

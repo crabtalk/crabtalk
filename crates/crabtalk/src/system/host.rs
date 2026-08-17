@@ -29,13 +29,7 @@ impl Env for SystemEnv {
         &self.hook
     }
 
-    fn on_agent_event(
-        &self,
-        agent: &str,
-        conversation_id: u64,
-        ephemeral: bool,
-        event: &AgentEvent,
-    ) {
+    fn on_agent_event(&self, agent: &str, session_id: u64, ephemeral: bool, event: &AgentEvent) {
         struct Payload {
             kind: AgentEventKind,
             content: String,
@@ -134,7 +128,7 @@ impl Env for SystemEnv {
         };
         let _ = self.events_tx.send(AgentEventMsg {
             agent: agent.to_string(),
-            sender: conversation_id.to_string(),
+            sender: session_id.to_string(),
             kind: p.kind.into(),
             content: p.content,
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -157,14 +151,14 @@ impl runtime::ToolDispatcher for SystemEnv {
         args: &'a str,
         agent: &'a str,
         sender: &'a str,
-        conversation_id: Option<u64>,
+        session_id: Option<u64>,
         call_id: &'a str,
     ) -> runtime::ToolFuture<'a> {
         let call = ToolDispatch {
             args: args.to_owned(),
             agent: agent.to_owned(),
             sender: sender.to_owned(),
-            conversation_id,
+            session_id,
             call_id: call_id.to_owned(),
         };
 

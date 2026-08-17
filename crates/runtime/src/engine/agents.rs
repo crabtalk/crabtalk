@@ -111,7 +111,7 @@ impl<C: Config> Runtime<C> {
             self.remove_agent(name);
             // Sessions outlive the registry entry unless they are cascaded: they
             // are found by `meta.agent`, so the next agent created under this
-            // name would resume a stranger's conversation.
+            // name would resume a stranger's session.
             let purged = self.drop_sessions_of(name).await?;
             if purged > 0 {
                 tracing::info!("purged {purged} session(s) of deleted agent '{name}'");

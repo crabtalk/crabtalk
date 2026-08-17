@@ -1,4 +1,4 @@
-//! Conversation history queries — list, load, delete persisted sessions.
+//! Session history queries — list, load, delete persisted sessions.
 
 use super::Runtime;
 use crate::Config;
@@ -9,12 +9,12 @@ use std::collections::HashMap;
 use storage::{SessionHandle, SessionSummary, Storage};
 
 impl<C: Config> Runtime<C> {
-    /// List persisted conversations, optionally filtered by agent and sender.
+    /// List persisted sessions, optionally filtered by agent and sender.
     pub async fn list_conversations(&self, agent: &str, sender: &str) -> Vec<ConversationInfo> {
         scan_sessions(self.storage().as_ref(), agent, sender).await
     }
 
-    /// Load a persisted conversation by slug, prepending the compacted archive
+    /// Load a persisted session by slug, prepending the compacted archive
     /// (if any) so the UI sees the same pre-compact context the model does on
     /// resume.
     pub async fn load_conversation_history(&self, slug: &str) -> Result<ConversationHistory> {
@@ -23,7 +23,7 @@ impl<C: Config> Runtime<C> {
             .storage()
             .load_session(&handle)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("conversation not found: {slug}"))?;
+            .ok_or_else(|| anyhow::anyhow!("session not found: {slug}"))?;
         let meta = snapshot.meta;
         let mut messages = snapshot.history;
         if let Some(name) = snapshot.archive {
@@ -49,12 +49,12 @@ impl<C: Config> Runtime<C> {
         })
     }
 
-    /// Delete a persisted conversation by slug.
+    /// Delete a persisted session by slug.
     pub async fn delete_conversation(&self, slug: &str) -> Result<()> {
         let handle = SessionHandle::new(slug);
         let deleted = self.storage().delete_session(&handle).await?;
         if !deleted {
-            anyhow::bail!("conversation not found: {slug}");
+            anyhow::bail!("session not found: {slug}");
         }
         Ok(())
     }
@@ -74,7 +74,7 @@ async fn scan_sessions(storage: &impl Storage, agent: &str, sender: &str) -> Vec
         .filter(|s| sender.is_empty() || s.meta.created_by == sender)
         .collect();
 
-    // `seq` is the nth conversation of an (agent, sender) pair. It used to be
+    // `seq` is the nth session of an (agent, sender) pair. It used to be
     // read out of the path; it is derived here instead, by creation order within
     // the pair, so nothing has to store it.
     matched.sort_by(|a, b| {

@@ -76,7 +76,7 @@ pub trait Storage: Send + Sync + 'static {
     ) -> impl Future<Output = Result<()>> + Send;
 
     /// Rewind a session's post-compact history to its first `keep`
-    /// entries, dropping the rest — a conversation edit. The compacted
+    /// entries, dropping the rest — a session edit. The compacted
     /// prefix (stored as the `archive` pointer, never a message row) is
     /// preserved; only the live tail is trimmed. `keep` counts entries
     /// after the last compaction, matching `SessionSnapshot::history`.
@@ -90,7 +90,7 @@ pub trait Storage: Send + Sync + 'static {
     fn update_session_meta(
         &self,
         handle: &SessionHandle,
-        meta: &ConversationMeta,
+        meta: &SessionMeta,
     ) -> impl Future<Output = Result<()>> + Send;
 
     /// Delete a session entirely.
@@ -98,7 +98,7 @@ pub trait Storage: Send + Sync + 'static {
 
     // ── Session search ─────────────────────────────────────────────
 
-    /// Search conversation messages. Best hit per session, up to
+    /// Search session messages. Best hit per session, up to
     /// `opts.limit`, each with a windowed excerpt.
     ///
     /// How a backend makes this fast is its own business — a resident
@@ -190,7 +190,7 @@ impl SessionHandle {
 /// working-context history, already replayed past the last compact
 /// marker.
 pub struct SessionSnapshot {
-    pub meta: ConversationMeta,
+    pub meta: SessionMeta,
     pub history: Vec<HistoryEntry>,
     pub archive: Option<String>,
 }
@@ -198,12 +198,12 @@ pub struct SessionSnapshot {
 /// Summary returned by [`Storage::list_sessions`] for enumeration.
 pub struct SessionSummary {
     pub handle: SessionHandle,
-    pub meta: ConversationMeta,
+    pub meta: SessionMeta,
 }
 
-/// Conversation metadata persisted alongside the session.
+/// Metadata persisted alongside a session's messages.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationMeta {
+pub struct SessionMeta {
     pub agent: String,
     pub created_by: String,
     pub created_at: String,

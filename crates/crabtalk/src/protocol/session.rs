@@ -1,4 +1,4 @@
-//! Conversation operations: send/stream, kill, and ask/tool reply
+//! Session operations: send/stream, kill, and ask/tool reply
 //! routing. Pure-runtime ops live on `Runtime<C>` directly.
 
 use crate::llm::Provider;
@@ -6,13 +6,13 @@ use crate::system::CrabTalk;
 use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
 use proto::*;
-use runtime::AgentEvent;
+use runtime::{AgentEvent, Sessions};
 use std::sync::Arc;
 use storage::SearchOptions;
 use storage::Storage;
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
-    /// Ranked excerpts from past conversations.
+    /// Ranked excerpts from past sessions.
     ///
     /// The index is the runtime's; this converts the request into its
     /// options and its hits back onto the wire. Defaults live in
@@ -66,21 +66,16 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
         let created_by = if sender.is_empty() { "user" } else { sender };
-        let conversation_id = rt
-            .get_or_create_conversation(&req.agent, created_by)
+        let (session_id, session) = self
+            .sessions
+            .get_or_create(&rt, &req.agent, created_by)
             .await?;
         let tool_choice = req
             .tool_choice
             .map(|s| crabllm_core::ToolChoice::from(s.as_str()));
-        let client_tools = resolve_client_tools(&self.bridge, conversation_id, req.tools);
+        let client_tools = resolve_client_tools(&self.bridge, session_id, req.tools);
         let response = rt
-            .send_to(
-                conversation_id,
-                &req.content,
-                sender,
-                tool_choice,
-                client_tools,
-            )
+            .send_to(&session, &req.content, sender, tool_choice, client_tools)
             .await?;
         let usage = Some(response.usage());
         Ok(SendResponse {
@@ -97,6 +92,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     ) -> impl futures_core::Stream<Item = Result<StreamEvent>> + Send + 'a {
         let runtime = self.runtime.clone();
         let bridge = self.bridge.clone();
+        let sessions = self.sessions.clone();
         let agent = req.agent;
         let content = req.content;
         let sender = req.sender.unwrap_or_default();
@@ -110,7 +106,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         async_stream::try_stream! {
             let rt: Arc<_> = runtime.read().await.clone();
 
-            // Anonymous, unpersisted turn: no conversation, no bridge
+            // Anonymous, unpersisted turn: no session, no bridge
             // listener, no storage. Client round-trip tools are
             // unsupported here, so only the agent's own (daemon-side)
             // tools run.
@@ -130,23 +126,30 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             }
 
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
-            let conversation_id = rt.get_or_create_conversation(&agent, created_by.as_str()).await?;
-            // Register this conversation as having a stream listener so the
-            // bridge will forward dispatches here. The guard
-            // unregisters on any exit path — stream end, early return on
-            // Done, or consumer dropping the stream — and fails any
-            // pending forwarded calls so they don't sit until timeout.
-            bridge.register_listener(conversation_id);
-            let _listener_guard = ListenerGuard::new(bridge.clone(), conversation_id);
-            let client_tools = resolve_client_tools(&bridge, conversation_id, req_tools);
+            let (session_id, session) =
+                sessions.get_or_create(&rt, &agent, created_by.as_str()).await?;
+            // Register this session as having a stream listener so the
+            // bridge will forward dispatches here, and open its steering
+            // channel. The guard tears both down on any exit path — stream
+            // end, early return on Done, or consumer dropping the stream —
+            // failing any pending forwarded calls so they don't sit until
+            // timeout, and closing the steering channel so a later steer
+            // reports "no active stream" instead of being swallowed.
+            bridge.register_listener(session_id);
+            let _listener_guard =
+                ListenerGuard::new(bridge.clone(), sessions.clone(), session_id);
+            let client_tools = resolve_client_tools(&bridge, session_id, req_tools);
 
             let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
             yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.clone() })) };
 
             let stream: std::pin::Pin<Box<dyn futures_core::Stream<Item = runtime::AgentEvent> + Send + '_>> = if guest.is_empty() {
-                Box::pin(rt.stream_to(conversation_id, &content, &sender, tool_choice, client_tools))
+                // Only this path reads a steer. Opening the channel for a
+                // guest turn too would accept a steer nobody delivers.
+                let steer = sessions.begin_stream(session_id);
+                Box::pin(rt.stream_to(session, &content, &sender, tool_choice, client_tools, steer))
             } else {
-                Box::pin(rt.guest_stream_to(conversation_id, &content, &sender, &guest))
+                Box::pin(rt.guest_stream_to(session, &content, &sender, &guest))
             };
             pin_mut!(stream);
             while let Some(event) = stream.next().await {
@@ -155,12 +158,13 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                 let forwards: Vec<ToolCallForwardEvent> = if let AgentEvent::ToolCallsStart(ref calls) = event {
                     calls
                         .iter()
-                        .filter(|c| bridge.is_client_tool(conversation_id, &c.function.name))
+                        .filter(|c| bridge.is_client_tool(session_id, &c.function.name))
                         .map(|c| ToolCallForwardEvent {
                             call_id: c.id.to_string(),
                             name: c.function.name.to_string(),
                             arguments: c.function.arguments.clone(),
-                            conversation_id,
+                            // The wire still says "conversation".
+                            conversation_id: session_id,
                         })
                         .collect()
                 } else {
@@ -183,16 +187,19 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 
     pub(crate) async fn kill_conversation(&self, agent: &str, sender: &str) -> Result<bool> {
-        let rt = self.runtime.read().await.clone();
-        let Some(conversation_id) = rt.conversation_id(agent, sender).await else {
+        let Some((session_id, _)) = self.sessions.find(agent, sender) else {
             return Ok(false);
         };
-        Ok(rt.close(conversation_id).await)
+        // The session's client-tool state is keyed by the same id and
+        // outlives it otherwise: a kill mid-stream would leave forwarded
+        // calls parked until their 300s timeout.
+        self.bridge.unregister_listener(session_id);
+        Ok(self.sessions.close(session_id))
     }
 
     pub(crate) async fn reply_to_tool(
         &self,
-        conversation_id: u64,
+        session_id: u64,
         call_id: &str,
         output: String,
         is_error: bool,
@@ -203,7 +210,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         // the bridge rather than via sleep-and-pray here.
         if self
             .bridge
-            .try_resolve(conversation_id, call_id, output, is_error)
+            .try_resolve(session_id, call_id, output, is_error)
         {
             Ok(())
         } else {
@@ -212,33 +219,44 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 }
 
-/// RAII guard that synchronously unregisters a stream's client-tool
-/// listener and drains pending forwarded calls on drop.
+/// RAII guard that synchronously tears down everything keyed to a
+/// stream: the client-tool listener and its pending forwarded calls, and
+/// the session's steering channel.
 struct ListenerGuard {
     bridge: Arc<crate::bridge::ClientBridge>,
+    sessions: Arc<Sessions>,
     conv_id: u64,
 }
 
 impl ListenerGuard {
-    fn new(bridge: Arc<crate::bridge::ClientBridge>, conv_id: u64) -> Self {
-        Self { bridge, conv_id }
+    fn new(
+        bridge: Arc<crate::bridge::ClientBridge>,
+        sessions: Arc<Sessions>,
+        conv_id: u64,
+    ) -> Self {
+        Self {
+            bridge,
+            sessions,
+            conv_id,
+        }
     }
 }
 
 impl Drop for ListenerGuard {
     fn drop(&mut self) {
         self.bridge.unregister_listener(self.conv_id);
+        self.sessions.end_stream(self.conv_id);
     }
 }
 
 fn resolve_client_tools(
     bridge: &crate::bridge::ClientBridge,
-    conversation_id: u64,
+    session_id: u64,
     proto_tools: Vec<ToolDef>,
 ) -> Vec<crate::llm::Tool> {
     let tools: Vec<crate::llm::Tool> = proto_tools.into_iter().map(Into::into).collect();
     // Registered even when empty: a client that declares nothing has no
     // client tools, which is a different thing from having not been asked.
-    bridge.register_tools(conversation_id, &tools);
+    bridge.register_tools(session_id, &tools);
     tools
 }

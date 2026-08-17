@@ -20,12 +20,12 @@ pub use agent::{
 pub use engine::{Runtime, SharedMemory};
 pub use env::Env;
 pub use harness::Harness;
-pub use session::Conversation;
+pub use session::{Session, Sessions, SharedSession};
 
-/// Opaque persistent handle to a conversation. Re-exported from the
-/// storage trait so runtime callers don't need to speak the storage
-/// layer's "session" vocabulary.
-pub type ConversationHandle = storage::SessionHandle;
+/// A session's persistent identity, re-exported so callers get it
+/// without depending on `storage` directly. No longer aliased to a
+/// runtime-local name — both layers say "session" now.
+pub use storage::SessionHandle;
 
 use crabllm_core::Provider;
 use storage::Storage;

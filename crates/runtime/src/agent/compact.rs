@@ -1,4 +1,4 @@
-//! Context compaction — summarize conversation history and replace it.
+//! Context compaction — summarize session history and replace it.
 
 use crabllm_core::{
     Provider,
@@ -9,7 +9,7 @@ use storage::HistoryEntry;
 pub(crate) const COMPACT_PROMPT: &str = include_str!("../../prompts/compact.md");
 
 impl<P: Provider + 'static> super::Agent<P> {
-    /// Summarize the conversation history using the LLM.
+    /// Summarize the session history using the LLM.
     ///
     /// Builds the base compact prompt, lets the `compact_hook` (if any) enrich
     /// it, then sends the history with the enriched prompt as system message.

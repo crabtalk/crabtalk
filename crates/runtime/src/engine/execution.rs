@@ -2,7 +2,7 @@
 
 use super::Runtime;
 use crate::{AgentEvent, AgentResponse, AgentStopReason};
-use crate::{Config, Conversation, Env, Harness};
+use crate::{Config, Env, Harness, Session, SharedSession};
 use anyhow::Result;
 use async_stream::stream;
 use crabllm_core::{ToolChoice, anthropic};
@@ -12,116 +12,95 @@ use storage::HistoryEntry;
 use tokio::sync::{mpsc, watch};
 
 impl<C: Config> Runtime<C> {
-    fn prepare_history(
-        &self,
-        conversation: &mut Conversation,
-        agent: &str,
-        content: &str,
-        sender: &str,
-    ) {
+    fn prepare_history(&self, session: &mut Session, content: &str, sender: &str) {
         let content = self
             .env
             .hook()
-            .preprocess(agent, content)
+            .preprocess(&session.agent, content)
             .unwrap_or_else(|| content.to_owned());
         if sender.is_empty() {
-            conversation.history.push(HistoryEntry::user(&content));
+            session.history.push(HistoryEntry::user(&content));
         } else {
-            conversation
+            session
                 .history
                 .push(HistoryEntry::user_with_sender(&content, sender));
         }
 
-        conversation.history.retain(|e| !e.auto_injected);
+        session.history.retain(|e| !e.auto_injected);
 
         // Guest agent framing — auto-injected so it refreshes per turn.
         // Local instructions (e.g. `Crab.md`) used to be injected here
         // too but moved client-side: clients render them into `content`
         // before sending.
-        if conversation.history.iter().any(|e| !e.agent.is_empty()) {
+        if session.history.iter().any(|e| !e.agent.is_empty()) {
             let framing = HistoryEntry::user(
                 "Messages wrapped in <from agent=\"...\"> tags are from guest agents \
-                 who were consulted in this conversation. Continue responding as yourself."
+                 who were consulted in this session. Continue responding as yourself."
                     .to_string(),
             )
             .auto_injected();
-            let insert_pos = conversation.history.len().saturating_sub(1);
-            conversation.history.insert(insert_pos, framing);
+            let insert_pos = session.history.len().saturating_sub(1);
+            session.history.insert(insert_pos, framing);
         }
     }
 
     pub async fn send_to(
         &self,
-        conversation_id: u64,
+        session: &SharedSession,
         content: &str,
         sender: &str,
         tool_choice: Option<ToolChoice>,
         extra_tools: Vec<crabllm_core::Tool>,
     ) -> Result<AgentResponse> {
-        let (agent_name, created_by, conversation_mutex) = self
-            .acquire_slot(conversation_id)
-            .await
-            .ok_or_else(|| anyhow::anyhow!("conversation {conversation_id} not found"))?;
-
-        let mut conversation = conversation_mutex.lock().await;
-        let pre_run_len = conversation.history.len();
-        self.prepare_history(&mut conversation, &agent_name, content, sender);
+        let mut session = session.lock().await;
+        let agent_name = session.agent.clone();
+        let session_id = session.id;
+        let pre_run_len = session.history.len();
+        self.prepare_history(&mut session, content, sender);
         let mut agent = self
             .resolve_agent(&agent_name)
             .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", agent_name))?;
         agent.extend_tools(extra_tools);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let response = agent
-            .run(&mut conversation.history, tx, None, tool_choice)
-            .await;
+        let response = agent.run(&mut session.history, tx, None, tool_choice).await;
 
         let mut event_trace: Vec<storage::EventLine> = Vec::new();
         while let Ok(event) = rx.try_recv() {
+            self.env.hook().on_event(&agent_name, session_id, &event);
             self.env
-                .hook()
-                .on_event(&agent_name, conversation_id, &event);
-            self.env
-                .on_agent_event(&agent_name, conversation_id, false, &event);
+                .on_agent_event(&agent_name, session_id, false, &event);
             if let Some(line) = event.to_event_line() {
                 event_trace.push(line);
             }
         }
 
-        self.finalize_run(
-            &mut conversation,
-            &agent_name,
-            &created_by,
-            pre_run_len,
-            &event_trace,
-        )
-        .await;
+        self.finalize_run(&mut session, pre_run_len, &event_trace)
+            .await;
         Ok(response)
     }
 
+    /// Stream a turn. `steer` is the receiving half of the session's
+    /// steering channel — its sender belongs to whoever registered this
+    /// stream, so a steer that arrives after the stream is gone has
+    /// nowhere to land rather than resolving against a stale session.
     pub fn stream_to(
         &self,
-        conversation_id: u64,
+        session: SharedSession,
         content: &str,
         sender: &str,
         tool_choice: Option<ToolChoice>,
         extra_tools: Vec<crabllm_core::Tool>,
+        steer: Option<watch::Receiver<Option<String>>>,
     ) -> impl Stream<Item = AgentEvent> + '_ {
         let content = content.to_owned();
         let sender = sender.to_owned();
         stream! {
-            let Some((agent_name, created_by, conversation_mutex)) =
-                self.acquire_slot(conversation_id).await
-            else {
-                yield AgentEvent::Done(AgentResponse::error(
-                    format!("conversation {conversation_id} not found"),
-                ));
-                return;
-            };
-
-            let mut conversation = conversation_mutex.lock().await;
-            let pre_run_len = conversation.history.len();
-            self.prepare_history(&mut conversation, &agent_name, &content, &sender);
+            let mut session = session.lock().await;
+            let agent_name = session.agent.clone();
+            let session_id = session.id;
+            let pre_run_len = session.history.len();
+            self.prepare_history(&mut session, &content, &sender);
             let Some(mut agent) = self.resolve_agent(&agent_name) else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("agent '{}' not registered", agent_name),
@@ -130,15 +109,13 @@ impl<C: Config> Runtime<C> {
             };
             agent.extend_tools(extra_tools);
 
-            let (steer_tx, steer_rx) = watch::channel(None::<String>);
-            self.steering.write().await.insert(conversation_id, steer_tx);
             let mut done_event: Option<AgentEvent> = None;
             let mut event_trace: Vec<storage::EventLine> = Vec::new();
             {
-                let mut event_stream = std::pin::pin!(agent.run_stream(&mut conversation.history, Some(conversation_id), Some(steer_rx), tool_choice));
+                let mut event_stream = std::pin::pin!(agent.run_stream(&mut session.history, Some(session_id), steer, tool_choice));
                 while let Some(event) = event_stream.next().await {
-                    self.env.hook().on_event(&agent_name, conversation_id, &event);
-                    self.env.on_agent_event(&agent_name, conversation_id, false, &event);
+                    self.env.hook().on_event(&agent_name, session_id, &event);
+                    self.env.on_agent_event(&agent_name, session_id, false, &event);
                     if let Some(line) = event.to_event_line() {
                         event_trace.push(line);
                     }
@@ -149,32 +126,25 @@ impl<C: Config> Runtime<C> {
                     }
                 }
             }
-            self.steering.write().await.remove(&conversation_id);
-            self.finalize_run(
-                &mut conversation,
-                &agent_name,
-                &created_by,
-                pre_run_len,
-                &event_trace,
-            )
-            .await;
+            self.finalize_run(&mut session, pre_run_len, &event_trace)
+                .await;
             if let Some(event) = done_event {
                 yield event;
             }
         }
     }
 
-    /// Run a single agent turn with no conversation and no persistence.
+    /// Run a single agent turn with no session and no persistence.
     ///
-    /// Unlike [`Self::stream_to`], this acquires no slot, writes nothing
-    /// to storage or the search index, and never fires the subscription
-    /// hook — so there is nothing to clean up afterward. The full agent
-    /// loop still runs (multi-step tool calls included), and each event is
+    /// Unlike [`Self::stream_to`], this touches no session, writes
+    /// nothing to storage, and never fires the subscription hook — so
+    /// there is nothing to clean up afterward. The full agent loop still
+    /// runs (multi-step tool calls included), and each event is
     /// broadcast via [`Env::on_agent_event`] tagged `ephemeral` with the
     /// caller-supplied `correlation_id`, so observers can show live
     /// progress without mistaking it for a chat session.
     ///
-    /// The loop's tool dispatch runs with no conversation id, so
+    /// The loop's tool dispatch runs with no session id, so
     /// `extra_tools` must be self-contained daemon-side tools — client
     /// round-trip tools have no listener to reply through.
     pub fn ephemeral_stream<'a>(
@@ -208,7 +178,7 @@ impl<C: Config> Runtime<C> {
 
     pub fn guest_stream_to(
         &self,
-        conversation_id: u64,
+        session: SharedSession,
         content: &str,
         sender: &str,
         guest: &str,
@@ -224,17 +194,9 @@ impl<C: Config> Runtime<C> {
                 return;
             };
 
-            let Some((agent_name, created_by, conversation_mutex)) =
-                self.acquire_slot(conversation_id).await
-            else {
-                yield AgentEvent::Done(AgentResponse::error(
-                    format!("conversation {conversation_id} not found"),
-                ));
-                return;
-            };
-
-            let mut conversation = conversation_mutex.lock().await;
-            let pre_run_len = conversation.history.len();
+            let mut session = session.lock().await;
+            let agent_name = session.agent.clone();
+            let pre_run_len = session.history.len();
 
             let content = self
                 .env
@@ -242,24 +204,24 @@ impl<C: Config> Runtime<C> {
                 .preprocess(&agent_name, &content)
                 .unwrap_or_else(|| content.clone());
             if sender.is_empty() {
-                conversation.history.push(HistoryEntry::user(&content));
+                session.history.push(HistoryEntry::user(&content));
             } else {
-                conversation
+                session
                     .history
                     .push(HistoryEntry::user_with_sender(&content, &sender));
             }
 
-            conversation.history.retain(|e| !e.auto_injected);
+            session.history.retain(|e| !e.auto_injected);
 
             let framing = HistoryEntry::system(format!(
-                "You are joining a conversation as a guest. The primary agent is '{}'. \
+                "You are joining a session as a guest. The primary agent is '{}'. \
                  Messages wrapped in <from agent=\"...\"> tags are from other agents. \
                  Respond as yourself to the user's latest message.",
                 agent_name
             ))
             .auto_injected();
-            let insert_pos = conversation.history.len().saturating_sub(1);
-            conversation.history.insert(insert_pos, framing);
+            let insert_pos = session.history.len().saturating_sub(1);
+            session.history.insert(insert_pos, framing);
 
             let model_name = guest_agent.config.model.clone();
 
@@ -269,7 +231,7 @@ impl<C: Config> Runtime<C> {
                 Some(anthropic::System::Text(guest_agent.config.description.clone()))
             };
 
-            let messages: Vec<anthropic::Message> = conversation
+            let messages: Vec<anthropic::Message> = session
                 .history
                 .iter()
                 .map(|e| e.to_wire_message())
@@ -347,16 +309,10 @@ impl<C: Config> Runtime<C> {
             };
             let mut response_entry = HistoryEntry::assistant(&response_text, reasoning, None);
             response_entry.agent = guest.clone();
-            conversation.history.push(response_entry);
+            session.history.push(response_entry);
 
-            self.finalize_run(
-                &mut conversation,
-                &agent_name,
-                &created_by,
-                pre_run_len,
-                &[],
-            )
-            .await;
+            self.finalize_run(&mut session, pre_run_len, &[])
+                .await;
 
             yield AgentEvent::Done(AgentResponse {
                 final_response: Some(response_text),

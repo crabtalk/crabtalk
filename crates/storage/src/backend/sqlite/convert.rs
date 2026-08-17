@@ -1,17 +1,17 @@
 //! Row and payload conversions.
 //!
 //! These can't be `From` impls: `SqliteRow` belongs to sqlx and
-//! `ConversationMeta` to core, so neither is local here. Grouping them in
+//! `SessionMeta` to core, so neither is local here. Grouping them in
 //! one module named for what they produce is the next best thing —
 //! `convert::meta(&row)` reads like the trait would.
 
-use crate::{ConversationMeta, EventLine};
+use crate::{EventLine, SessionMeta};
 use anyhow::Result;
 use sqlx::{Row, sqlite::SqliteRow};
 
 /// A session row's metadata.
-pub(super) fn meta(row: &SqliteRow) -> Result<ConversationMeta> {
-    Ok(ConversationMeta {
+pub(super) fn meta(row: &SqliteRow) -> Result<SessionMeta> {
+    Ok(SessionMeta {
         agent: row.try_get("agent")?,
         created_by: row.try_get("created_by")?,
         created_at: row.try_get("created_at")?,

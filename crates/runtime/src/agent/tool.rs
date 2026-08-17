@@ -26,7 +26,7 @@ pub trait ToolDispatcher: Send + Sync + 'static {
         args: &'a str,
         agent: &'a str,
         sender: &'a str,
-        conversation_id: Option<u64>,
+        session_id: Option<u64>,
         call_id: &'a str,
     ) -> ToolFuture<'a>;
 }
@@ -38,10 +38,10 @@ pub struct ToolDispatch {
     pub args: String,
     /// Name of the agent making this call.
     pub agent: String,
-    /// Sender identity (empty for local/owner conversations).
+    /// Sender identity (empty for local/owner sessions).
     pub sender: String,
-    /// Conversation ID, if running within a conversation.
-    pub conversation_id: Option<u64>,
+    /// Session ID, if running within a session.
+    pub session_id: Option<u64>,
     /// LLM-assigned tool call identifier. Used by hooks that need to
     /// correlate dispatches with out-of-band replies (e.g. client-tool
     /// forwarding).
@@ -182,7 +182,7 @@ impl ToolDispatcher for () {
         _args: &'a str,
         _agent: &'a str,
         _sender: &'a str,
-        _conversation_id: Option<u64>,
+        _session_id: Option<u64>,
         _call_id: &'a str,
     ) -> ToolFuture<'a> {
         Box::pin(async move { Err(format!("tool not registered: {name}")) })

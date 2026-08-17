@@ -10,7 +10,7 @@ use storage::Storage;
 
 mod admin;
 mod config;
-mod conversation;
+mod session;
 
 impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
@@ -26,7 +26,12 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
 
     async fn compact_conversation(&self, agent: String, sender: String) -> Result<String> {
         let rt = self.runtime.read().await.clone();
-        rt.compact_conversation(&agent, &sender).await
+        let (_, session) = self.sessions.find(&agent, &sender).ok_or_else(|| {
+            anyhow::anyhow!("session not found for agent='{agent}' sender='{sender}'")
+        })?;
+        rt.compact(&session)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("compact failed for agent='{agent}' sender='{sender}'"))
     }
 
     async fn ping(&self) -> Result<()> {
@@ -34,8 +39,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
     }
 
     async fn list_conversations_active(&self) -> Result<Vec<ActiveConversationInfo>> {
-        let rt = self.runtime.read().await.clone();
-        Ok(rt.list_active().await)
+        Ok(self.sessions.list_active().await)
     }
 
     async fn kill_conversation(&self, agent: String, sender: String) -> Result<bool> {
@@ -77,24 +81,28 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
 
     async fn reply_to_tool(
         &self,
-        conversation_id: u64,
+        session_id: u64,
         call_id: String,
         output: String,
         is_error: bool,
     ) -> Result<()> {
-        self.reply_to_tool(conversation_id, &call_id, output, is_error)
+        self.reply_to_tool(session_id, &call_id, output, is_error)
             .await
     }
 
     async fn steer_session(&self, req: SteerSessionMsg) -> Result<()> {
-        let rt = self.runtime.read().await.clone();
         let sender = if req.sender.is_empty() {
             "user".to_owned()
         } else {
             req.sender
         };
-        rt.steer_conversation(&req.agent, &sender, req.content)
-            .await
+        let (id, _) = self.sessions.find(&req.agent, &sender).ok_or_else(|| {
+            anyhow::anyhow!(
+                "session not found for agent='{}' sender='{sender}'",
+                req.agent
+            )
+        })?;
+        self.sessions.steer(id, req.content)
     }
 
     async fn list_agents(&self) -> Result<Vec<AgentInfo>> {

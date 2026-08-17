@@ -1,47 +1,27 @@
-//! Runtime — agent registry, conversation management, and hook orchestration.
+//! Runtime — agent registry and agent execution.
 //!
-//! [`Runtime`] holds agents as immutable definitions and conversations as
-//! per-conversation `Arc<Mutex<Conversation>>` containers. Tool schemas and
-//! handlers are registered by the caller at construction. Execution methods
-//! (`send_to`, `stream_to`) take a conversation ID, lock the conversation,
-//! clone the agent, and run with the conversation's history.
+//! [`Runtime`] holds agents as immutable definitions. Tool schemas and
+//! handlers are registered by the caller at construction. Execution
+//! methods (`send_to`, `stream_to`) are handed the session to run
+//! against; which sessions are live, and under what id, is the
+//! caller's bookkeeping — the runtime is rebuilt on every config reload
+//! and a session outlives that.
 
 use crate::{Agent, ToolRegistry, agent::Model};
-use crate::{Config, Conversation, Env, Harness};
+use crate::{Config, Env, Harness};
 use memory::Memory;
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, atomic::AtomicU64},
-};
-use tokio::sync::{Mutex, RwLock, watch};
+use std::{collections::BTreeMap, sync::Arc};
 
 mod agents;
 mod config;
-mod conversation;
 mod execution;
 mod history;
+mod session;
 
 /// Shared handle to the standalone memory store. Used by compaction to
 /// write Archive entries and by session resume to pull their content
 /// back as the replayed prefix.
 pub type SharedMemory = Arc<parking_lot::RwLock<Memory>>;
-
-#[derive(Clone)]
-pub(super) struct ConvSlot {
-    pub(super) agent: String,
-    pub(super) created_by: String,
-    pub(super) inner: Arc<Mutex<Conversation>>,
-}
-
-impl ConvSlot {
-    pub(super) fn parts(&self) -> (String, String, Arc<Mutex<Conversation>>) {
-        (
-            self.agent.clone(),
-            self.created_by.clone(),
-            self.inner.clone(),
-        )
-    }
-}
 
 /// The crabtalk runtime.
 pub struct Runtime<C: Config> {
@@ -50,10 +30,7 @@ pub struct Runtime<C: Config> {
     storage: Arc<C::Storage>,
     memory: SharedMemory,
     agents: parking_lot::RwLock<BTreeMap<String, Agent<C::Provider>>>,
-    conversations: RwLock<BTreeMap<u64, ConvSlot>>,
-    next_conversation_id: AtomicU64,
     pub tools: ToolRegistry,
-    steering: RwLock<BTreeMap<u64, watch::Sender<Option<String>>>>,
     /// Model names advertised by the LLM endpoint — populated by the
     /// daemon builder from a `/v1/models` fetch at startup / reload.
     pub(super) models: parking_lot::RwLock<Vec<String>>,
@@ -74,10 +51,7 @@ impl<C: Config> Runtime<C> {
             storage,
             memory,
             agents: parking_lot::RwLock::new(BTreeMap::new()),
-            conversations: RwLock::new(BTreeMap::new()),
-            next_conversation_id: AtomicU64::new(1),
             tools,
-            steering: RwLock::new(BTreeMap::new()),
             models: parking_lot::RwLock::new(Vec::new()),
         }
     }

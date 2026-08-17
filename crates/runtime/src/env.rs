@@ -23,12 +23,12 @@ pub trait Env: Send + Sync + 'static {
     /// Called when an agent event occurs. Default: no-op.
     ///
     /// `ephemeral` marks events from an anonymous, unpersisted turn —
-    /// `conversation_id` is then a caller-supplied correlation id, not a
+    /// `session_id` is then a caller-supplied correlation id, not a
     /// real session.
     fn on_agent_event(
         &self,
         _agent: &str,
-        _conversation_id: u64,
+        _session_id: u64,
         _ephemeral: bool,
         _event: &AgentEvent,
     ) {
@@ -49,14 +49,14 @@ pub fn dispatch_tool<'a, E: Env>(
     args: &'a str,
     agent: &'a str,
     sender: &'a str,
-    conversation_id: Option<u64>,
+    session_id: Option<u64>,
     call_id: &'a str,
 ) -> ToolFuture<'a> {
     let call = ToolDispatch {
         args: args.to_owned(),
         agent: agent.to_owned(),
         sender: sender.to_owned(),
-        conversation_id,
+        session_id,
         call_id: call_id.to_owned(),
     };
 

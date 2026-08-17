@@ -10,7 +10,7 @@ use crate::{
     AgentConfig, AgentId, Config, HistoryEntry,
     session::{SearchOptions, SessionHit},
     storage::{
-        ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage,
+        EventLine, SessionHandle, SessionMeta, SessionSnapshot, SessionSummary, Skill, Storage,
     },
 };
 use anyhow::Result;
@@ -78,11 +78,7 @@ impl Storage for SqliteStorage {
         self.truncate_session_messages(handle, keep).await
     }
 
-    async fn update_session_meta(
-        &self,
-        handle: &SessionHandle,
-        meta: &ConversationMeta,
-    ) -> Result<()> {
+    async fn update_session_meta(&self, handle: &SessionHandle, meta: &SessionMeta) -> Result<()> {
         self.update_session_meta(handle, meta).await
     }
 

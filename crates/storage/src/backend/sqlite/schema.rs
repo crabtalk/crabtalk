@@ -8,7 +8,7 @@
 pub(super) const BEGIN_IMMEDIATE: &str = "BEGIN IMMEDIATE";
 
 pub(super) const DDL: &[&str] = &[
-    // One row per conversation thread. `archive` names the memory entry
+    // One row per session thread. `archive` names the memory entry
     // holding the compacted prefix; null until the first compact.
     "CREATE TABLE IF NOT EXISTS sessions (
         handle        TEXT    PRIMARY KEY,
@@ -24,7 +24,7 @@ pub(super) const DDL: &[&str] = &[
     // Serves `find_latest_session`, which is on the path of every resume.
     "CREATE INDEX IF NOT EXISTS sessions_agent_creator
         ON sessions(agent, created_by, created_at DESC)",
-    // The conversation's HistoryEntry stream, one entry per row.
+    // The session's HistoryEntry stream, one entry per row.
     "CREATE TABLE IF NOT EXISTS session_messages (
         session_handle TEXT    NOT NULL REFERENCES sessions(handle) ON DELETE CASCADE,
         idx            INTEGER NOT NULL,

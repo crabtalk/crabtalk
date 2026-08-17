@@ -1,7 +1,7 @@
 //! Immutable agent definition and execution methods.
 //!
 //! [`Agent`] owns its configuration, model, tool schemas, and an optional
-//! [`ToolDispatcher`] handle for executing tool calls. Conversation
+//! [`ToolDispatcher`] handle for executing tool calls. Session
 //! history is passed in externally — the agent itself is stateless.
 //! It drives LLM execution through [`Agent::step`], [`Agent::run`], and
 //! [`Agent::run_stream`]. `run_stream()` is the canonical step loop —
@@ -56,7 +56,7 @@ fn tool_output_text(result: &Result<String, String>) -> &str {
 ///
 /// Generic over `P: crabllm_core::Provider` — holds a `Model<P>` wrapper
 /// alongside config, tool schemas, and an optional sender for tool
-/// dispatch. Conversation history is owned externally and passed into
+/// dispatch. Session history is owned externally and passed into
 /// execution methods. Callers drive execution via `step()` (single LLM
 /// round), `run()` (loop to completion), or `run_stream()` (yields events
 /// as a stream).
@@ -84,7 +84,7 @@ impl<P: Provider + 'static> Clone for Agent<P> {
 
 impl<P: Provider + 'static> Agent<P> {
     /// Append additional tool schemas (e.g. client-provided tools for a
-    /// specific conversation). Call on a cloned agent before running.
+    /// specific session). Call on a cloned agent before running.
     ///
     /// A client offers what it can execute; `config.tools` decides what this
     /// agent may see. Without the filter a scoped agent is advertised tools
@@ -181,7 +181,7 @@ impl<P: Provider + 'static> Agent<P> {
     pub async fn step(
         &self,
         history: &mut Vec<HistoryEntry>,
-        conversation_id: Option<u64>,
+        session_id: Option<u64>,
     ) -> Result<AgentStep> {
         let request = self.build_request(history, None);
         let response = self.model.send(request).await?;
@@ -207,7 +207,7 @@ impl<P: Provider + 'static> Agent<P> {
                     &tc.function.name,
                     &tc.function.arguments,
                     &sender,
-                    conversation_id,
+                    session_id,
                     &tc.id,
                 )
             }))
@@ -247,7 +247,7 @@ impl<P: Provider + 'static> Agent<P> {
         name: &str,
         args: &str,
         sender: &str,
-        conversation_id: Option<u64>,
+        session_id: Option<u64>,
         call_id: &str,
     ) -> Result<String, String> {
         let Some(dispatcher) = &self.dispatcher else {
@@ -256,14 +256,7 @@ impl<P: Provider + 'static> Agent<P> {
             ));
         };
         dispatcher
-            .dispatch(
-                name,
-                args,
-                &self.config.name,
-                sender,
-                conversation_id,
-                call_id,
-            )
+            .dispatch(name, args, &self.config.name, sender, session_id, call_id)
             .await
     }
 
@@ -284,11 +277,10 @@ impl<P: Provider + 'static> Agent<P> {
         &self,
         history: &mut Vec<HistoryEntry>,
         events: mpsc::UnboundedSender<AgentEvent>,
-        conversation_id: Option<u64>,
+        session_id: Option<u64>,
         tool_choice: Option<ToolChoice>,
     ) -> AgentResponse {
-        let mut stream =
-            std::pin::pin!(self.run_stream(history, conversation_id, None, tool_choice));
+        let mut stream = std::pin::pin!(self.run_stream(history, session_id, None, tool_choice));
         let mut response = None;
         while let Some(event) = stream.next().await {
             if let AgentEvent::Done(ref resp) = event {
@@ -314,7 +306,7 @@ impl<P: Provider + 'static> Agent<P> {
     pub fn run_stream<'a>(
         &'a self,
         history: &'a mut Vec<HistoryEntry>,
-        conversation_id: Option<u64>,
+        session_id: Option<u64>,
         mut steer_rx: Option<watch::Receiver<Option<String>>>,
         tool_choice: Option<ToolChoice>,
     ) -> impl Stream<Item = AgentEvent> + 'a {
@@ -496,7 +488,7 @@ impl<P: Provider + 'static> Agent<P> {
                                 &tc.function.name,
                                 &tc.function.arguments,
                                 &sender,
-                                conversation_id,
+                                session_id,
                                 &tc.id,
                             );
                             // `start` is captured inside the async block so

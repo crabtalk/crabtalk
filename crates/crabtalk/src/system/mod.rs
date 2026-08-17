@@ -3,7 +3,7 @@
 use crate::bridge::ClientBridge;
 use crate::llm::Provider;
 use anyhow::Result;
-use runtime::Runtime;
+use runtime::{Runtime, Sessions};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -56,6 +56,9 @@ pub struct CrabTalk<P: Provider + 'static, S: Storage> {
     pub(crate) mcp: Arc<mcp::McpHandler>,
     /// Forwards client-tool dispatches to the connected client.
     pub(crate) bridge: Arc<ClientBridge>,
+    /// Live sessions. Owned here, not by the runtime, because
+    /// `reload()` replaces the runtime and sessions survive it.
+    pub(crate) sessions: Arc<Sessions>,
 }
 
 impl<P: Provider + 'static, S: Storage> Clone for CrabTalk<P, S> {
@@ -69,6 +72,7 @@ impl<P: Provider + 'static, S: Storage> Clone for CrabTalk<P, S> {
             build_provider: Arc::clone(&self.build_provider),
             mcp: self.mcp.clone(),
             bridge: self.bridge.clone(),
+            sessions: self.sessions.clone(),
         }
     }
 }

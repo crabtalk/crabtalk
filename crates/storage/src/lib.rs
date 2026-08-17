@@ -20,8 +20,8 @@ pub use config::{
 };
 pub use session::history::HistoryEntry;
 pub use storage::{
-    ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary, Storage,
-    ToolCallTrace, sender_slug, validate_table_name,
+    EventLine, SessionHandle, SessionMeta, SessionSnapshot, SessionSummary, Storage, ToolCallTrace,
+    sender_slug, validate_table_name,
 };
 
 pub use session::{

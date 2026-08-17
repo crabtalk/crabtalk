@@ -15,7 +15,7 @@ use tokio::sync::broadcast::error::RecvError;
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn get_stats(&self) -> Result<Stats> {
         let rt = self.runtime.read().await.clone();
-        let active = rt.conversation_count().await;
+        let active = self.sessions.count();
         let agents = rt.agents().len() as u32;
         let uptime = self.started_at.elapsed().as_secs();
         let active_model = rt.active_model().await;
