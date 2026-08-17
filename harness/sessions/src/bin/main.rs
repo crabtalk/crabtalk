@@ -1,19 +1,14 @@
 //! Session search as a harness.
 //!
-//! This was a `Hook` compiled into the daemon, which meant the daemon owned
-//! both the index *and* how a hit is worded to a model. The index is properly
-//! its own — sessions are its state, and it already keeps them ranked — but
-//! the wording is policy, and policy belongs somewhere it can be forked.
-//!
-//! So the split is: the daemon answers `SearchSessions` over the protocol,
-//! where any client can ask it too, and this formats the answer. It holds no
-//! storage grant and never sees a session file. Asking is narrower than
-//! reading, and the daemon keeps the query shape, the caps, and the redaction.
+//! The daemon answers `SearchSessions` over the protocol, where any client can
+//! ask it too, and this formats the answer. It holds no storage grant and
+//! never sees a session file. Asking is narrower than reading, and the daemon
+//! keeps the query shape, the caps, and the redaction.
 //!
 //! Which conversations it may ask about is not this harness's decision: the
 //! host overwrites the agent filter with whoever declared it.
 
-// `no_std` and `no_main` are the guest's shape. Off its target this is an
+// `no_std` and `no_main` are the harness's shape. Off its target this is an
 // ordinary binary so `cargo test` can run the tools below natively.
 #![cfg_attr(target_arch = "riscv64", no_std, no_main)]
 

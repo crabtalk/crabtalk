@@ -72,7 +72,7 @@ publish:
 # CRABTALK_HOME follows the configuration directory rather than being written
 # out, so pointing crabtalk somewhere else points this there too.
 #
-# Needs the guest target: rustup target add riscv64imac-unknown-none-elf
+# Needs the harness target: rustup target add riscv64imac-unknown-none-elf
 CRABTALK_HOME ?= $(HOME)/.crabtalk
 HARNESS_TARGET = riscv64imac-unknown-none-elf
 HARNESS_DIR = $(CRABTALK_HOME)/harnesses

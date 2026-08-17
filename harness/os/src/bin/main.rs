@@ -11,10 +11,10 @@
 //!
 //! Arguments are deserialized into structs rather than read off a
 //! `serde_json::Value`. That is not a style preference: `Value` reaches the
-//! guest's only unsupported construct, dynamic dispatch, and traps. See
+//! sandbox's only unsupported construct, dynamic dispatch, and traps. See
 //! `docs/src/rfcs/0205-berm.md`.
 
-// `no_std` and `no_main` are the guest's shape. Off its target this is an
+// `no_std` and `no_main` are the harness's shape. Off its target this is an
 // ordinary binary so `cargo test` can run the tools below natively.
 #![cfg_attr(target_arch = "riscv64", no_std, no_main)]
 
@@ -47,7 +47,7 @@ mod tools {
 
         // The capability returns the JSON the model has always read for this
         // tool, so it goes back untouched rather than being parsed to be
-        // printed again — which the guest could not do anyway.
+        // printed again — which this harness could not do anyway.
         let result = capability(
             exec::run(
                 &input.command,

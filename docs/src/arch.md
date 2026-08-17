@@ -7,29 +7,54 @@ turn out to be arguments about which one someone means.
 ## The layers
 
 ```
-protocol   clients, over a socket           any language, untrusted
-harness    third parties, in a sandbox      any language → RV64, declared grants
-hook       embedders, in-process            Rust, total trust
-runtime    lifetime orchestration           the thing that eats hooks
-storage    data                             agents, sessions, config
+protocol     clients, over a socket    any language, untrusted
+harness      what shapes an agent      declared per agent, one source, two builds
+capability   what an agent reaches     bounded by its argument
+runtime      lifetime orchestration    turns, conversations, the agent loop
+storage      data                      agents, sessions, config
 ```
 
-They are not five ways to do the same thing. Read top to bottom, the first
-three are **extension points graded by trust**, and the grading explains each
-one's shape rather than merely describing it:
+The line worth getting right is between the middle two.
 
-- A **harness** declares its grants because nobody trusts it. It reaches the
-  world only through capabilities named in the agent's declaration, and the
-  absence of a capability from its linker *is* the enforcement.
-- A **hook** declares nothing because whoever compiles it in already owns the
-  binary. `Hook` is public API at the runtime layer: an embedder implements it,
-  registers it, and gets tools in their own process without a daemon.
-- The **protocol** has capability groups because clients are outside the
-  process entirely, and because a harness reaching back through
-  `crabtalk.protocol.call` is a third party holding a client's surface.
+A **harness** shapes an agent: what it remembers, what skills it can load, what
+it knows of its own past conversations, the tools it habitually reaches for.
+Change them and it is a different agent. That is why they are declared per
+agent — an agent *is* its harnesses.
+
+A **capability** is a mechanism for reaching something that is not the agent:
+`fs` and `exec` for the machine, `http` for the network, MCP for other
+software. Calling another program is not shaping an agent, which is why MCP is
+a capability and never a harness.
+
+The **protocol** has capability groups because clients are outside the process
+entirely, and a harness reaching back through `crabtalk.protocol.call` is
+holding a client's surface. It stays exported whether or not anything shipped
+here uses it — who *may* write a harness justifies it, not who does.
 
 `runtime` owns the *architecture of lifetime* — turns, conversations, the
 agent loop — and nothing else. `storage` owns the data.
+
+## One source, two builds
+
+A harness is one crate compiled two ways. Built `no_std` for RV64 it is a
+sandboxed ELF the daemon schedules, reaching the world only through
+capabilities its agent declared — the absence of a capability from its linker
+*is* the enforcement. Built with `std` it is compiled into the host and reaches
+those things directly.
+
+So compiled-in versus sandboxed is a build target, not an architecture, and
+`Harness` is the one name for both. What differs is confinement: as an ELF the
+declaration's grants bound it; compiled in there is no linker to omit from, and
+the same grants are documentation. That follows from compiling something in
+being total trust — but it is one source under two security models, which is
+worth knowing before choosing a build.
+
+`no_std` is the shared denominator rather than a floor. The compiled-in build
+inherits the sandbox's constraints instead of escaping them: sync, allocating
+through `alloc`. Anything that must keep state alive between invocations cannot
+make the trip, because a harness gets a fresh heap every call and persists
+through `fs` like anything else. MCP holds live connections, so MCP is compiled
+in and only compiled in — the same test, not a second one.
 
 ## Where does a thing go?
 
@@ -39,24 +64,17 @@ than one answer.
 **1. Does the daemon own the state?** If not, it cannot be protocol — there is
 no question a client could ask that the daemon knows the answer to. Web search
 is the clean example: everyone has it, but the daemon holds no search state, so
-it is a harness or a hook and never a message.
+it is a harness and never a message.
 
-**2. Who is the consumer — clients, or embedders?** The protocol makes the
-*client* portable: anything on the socket gets the feature. A hook makes the
-*implementation* portable: anything embedding the library gets it. A chat UI
-cannot function without enumerating and searching conversations, so sessions
-are on the wire. An embedder wants memory tools without running a daemon, so
-memory is a hook.
+**2. Does it shape the agent, or reach past it?** What an agent remembers,
+loads, and knows of its own history shapes it — that is a harness, declared by
+the agents that want it. A mechanism for touching something outside is a
+capability, granted and bounded by its argument.
 
-**3. Should the wording be replaceable?** Anything that decides how a result is
-phrased to a model is policy, and policy belongs where it can be forked. That
-is the harness. The daemon answers `SearchSessions`; a harness decides what a
-hit reads like.
-
-A hook is also what you have when none of these has been decided yet. That is
-not a criticism — it is where things start — but a hook that only ever serves
-the daemon's own clients was probably a protocol message, and one that only
-ever formats output was probably a harness.
+**3. Does it hold anything alive between calls?** If yes it can only be
+compiled in, because the sandboxed build gets a fresh heap per invocation.
+Persisting through `fs` does not count — a file outlives the call. A live
+connection does not.
 
 ## Declarations, not inference
 
@@ -76,7 +94,7 @@ declaration reaches *nothing* rather than everything.
 
 And it is why a harness never chooses its own scope: `SearchSessions` carries
 an `agent` filter, and the host **overwrites** it with whoever declared the
-harness. Refusing a wrong value would only teach the guest to send the right
+harness. Refusing a wrong value would only teach the harness to send the right
 one.
 
 ## berm is not a crabtalk feature

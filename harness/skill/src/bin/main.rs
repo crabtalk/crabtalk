@@ -1,11 +1,5 @@
 //! Skills as a harness: discovery, matching, and loading.
 //!
-//! These were a `Hook` compiled into the daemon, which meant the daemon held
-//! an opinion about how a skill is matched and how the catalogue is worded —
-//! policy nobody could argue it out of. As a harness the same policy is
-//! installable, forkable, and replaceable, which is what RFC 0189 asked for
-//! and RFC 0205 made possible.
-//!
 //! It reaches the runtime and never the machine. Where skill files live is the
 //! daemon's business — packages install them, and `resolve_dirs` walks them —
 //! so this harness asks over the protocol rather than holding a read grant
@@ -15,7 +9,7 @@
 //! call when the model wants one, rather than a tax on every request that
 //! grows with the number of skills installed.
 
-// `no_std` and `no_main` are the guest's shape. Off its target this is an
+// `no_std` and `no_main` are the harness's shape. Off its target this is an
 // ordinary binary so `cargo test` can run the tools below natively.
 #![cfg_attr(target_arch = "riscv64", no_std, no_main)]
 

@@ -5,15 +5,20 @@ and run in-process, confined to its own address space, reaching the world only
 through host calls it was granted. It never runs of its own accord — the daemon
 decides when, and while running it may call back in.
 
-Harnesses are how third-party code extends an agent. They are also how the
-daemon stops shipping opinions: `bash`, `read` and `edit` are a harness an
-agent declares, not tools every agent gets.
+A harness is what shapes an agent — what it remembers, what it can load, what
+it knows of its own past, the tools it habitually reaches for. An agent *is*
+its harnesses, which is why each one is declared per agent rather than shipped
+to everybody.
+
+This chapter describes the sandboxed build. The same source compiled with `std`
+is the same harness reaching the host directly; see
+[Architecture](../arch.md).
 
 ## The grant is the linker
 
 Host functions are keyed by number, and a number with nothing registered traps.
 So a capability the declaration did not grant is not *checked for* — it is
-absent from the linker the guest was instantiated with. **Enforcement is the
+absent from the linker the harness was instantiated with. **Enforcement is the
 absence of code.** There is no check to write and none to forget.
 
 Two capabilities ship with the sandbox because they are about the machine,
@@ -75,7 +80,7 @@ them. Anything a harness needs to persist belongs in a capability, not in its
 heap. The boundary costs roughly 17µs; compiling an image is ~15ms cold and
 ~3ms against the on-disk code cache, paid per image rather than per call.
 
-Entering a guest blocks the thread it runs on, and `exec` can hold it for the
+Entering a harness blocks the thread it runs on, and `exec` can hold it for the
 length of a command, so dispatch hands the invocation to the blocking pool. A
-watchdog bounds how long a guest may run, set to outlast the longest host call
+watchdog bounds how long a harness may run, set to outlast the longest host call
 a capability may make.

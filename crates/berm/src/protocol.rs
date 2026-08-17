@@ -22,7 +22,7 @@ use std::{
 };
 use wcore::protocol::message::{ClientMessage, ServerMessage, client_message, server_message};
 
-/// What the guest calls to reach the runtime. Named `crabtalk.` rather than
+/// What the harness calls to reach the runtime. Named `crabtalk.` rather than
 /// `berm.` because only crabtalk implements it — a different embedder has its
 /// own API and would name a capability after that.
 pub(crate) const CALL: &str = "crabtalk.protocol.call";
@@ -139,7 +139,7 @@ pub fn call(protocol: &OnceLock<Dispatch>, request: &[u8], scope: &Scope) -> Res
         bail!("skill not available: {}", msg.name);
     }
 
-    // Overwritten rather than checked: the agent filter is not the guest's to
+    // Overwritten rather than checked: the agent filter is not the harness's to
     // choose, and refusing a wrong one would only teach it to send the right
     // one. `sender` stays free — an agent's own conversations span every
     // partner it has, and it can already resume any of them.

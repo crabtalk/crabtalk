@@ -1,6 +1,6 @@
 # Protocol
 
-The protocol is the daemon's surface for everything outside its process. Clients speak it over a socket; a harness holding a `protocol:*` capability speaks the same one from inside a sandbox. There is no second vocabulary for guests.
+The protocol is the daemon's surface for everything outside its process. Clients speak it over a socket; a harness holding a `protocol:*` capability speaks the same one from inside a sandbox. There is no second vocabulary for harnesses.
 
 ## Addressing
 
@@ -31,7 +31,7 @@ A harness reaches this surface through `crabtalk.protocol.call`, and what it may
 - `protocol:read` — the catalogue, and nothing that spends tokens.
 - `protocol:sessions` — ranked excerpts of the declaring agent's own past conversations.
 
-Anything destructive, anything that answers on someone else's behalf, and anything whose payload is substantially a credential belongs to no group a third party can hold. Where a request carries a scope the guest should not choose — `SearchSessions.agent` — the host **overwrites** it rather than validating it. Refusing a wrong value would only teach the guest to send the right one.
+Anything destructive, anything that answers on someone else's behalf, and anything whose payload is substantially a credential belongs to no group a third party can hold. Where a request carries a scope the harness should not choose — `SearchSessions.agent` — the host **overwrites** it rather than validating it. Refusing a wrong value would only teach the harness to send the right one.
 
 ## Transports
 
@@ -47,7 +47,7 @@ Concurrency is unbounded at this layer: nothing throttles or serializes incoming
 
 `Server::dispatch(ClientMessage) -> Stream<ServerMessage>` is the single entry into the daemon's operations. It inspects the `ClientMessage` variant and routes to the corresponding method on the `Server` trait.
 
-It is also the door a harness comes back through. A guest granted a `protocol:*` capability sends the same `ClientMessage` a client would and receives the same reply — one vocabulary, not two. What it is *allowed* to send is checked on decode against the group its declaration granted, and default-deny: a message named in no group reaches nothing.
+It is also the door a harness comes back through. A harness granted a `protocol:*` capability sends the same `ClientMessage` a client would and receives the same reply — one vocabulary, not two. What it is *allowed* to send is checked on decode against the group its declaration granted, and default-deny: a message named in no group reaches nothing.
 
 - Request-response operations (`ping`, `kill_conversation`, `compact_conversation`, administrative calls) yield exactly one `ServerMessage`.
 - Streaming operations (`stream`, `subscribe_events`) yield many `ServerMessage` values over time.

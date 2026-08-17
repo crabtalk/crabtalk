@@ -31,7 +31,7 @@ pub fn default_crab(model: impl Into<String>) -> AgentConfig {
         // Memory of its own past work, which every agent had while session
         // search was a hook. Declaring it keeps that true; the grant reaches
         // this agent's conversations and no one else's, because the host
-        // overwrites the filter rather than trusting the guest.
+        // overwrites the filter rather than trusting the harness.
         wcore::HarnessConfig {
             name: "sessions".to_owned(),
             capabilities: vec!["protocol:sessions".to_owned()],

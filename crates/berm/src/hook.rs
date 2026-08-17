@@ -11,7 +11,7 @@
 //! that declare it identically share one image, and a rename changes nothing
 //! about the key, because the agent's name was never part of it.
 //!
-//! Entering a guest blocks the thread it runs on, and `exec` can hold it for
+//! Entering a harness blocks the thread it runs on, and `exec` can hold it for
 //! the length of a command, so dispatch hands the invocation to the blocking
 //! pool rather than running it on an async worker.
 
@@ -206,7 +206,7 @@ impl HarnessHook {
 /// changes what the sandbox *is* is in here; nothing else is, so a rename or
 /// a second agent declaring the same thing is not a new image.
 ///
-/// `skills` reaches the guest through `scope`, so it must be hashed — two
+/// `skills` reaches the harness through `scope`, so it must be hashed — two
 /// agents sharing a harness but not a skill list are not the same sandbox.
 /// `hosts` is here for the same reason, and matters more: it is the whole of
 /// what bounds `http`.

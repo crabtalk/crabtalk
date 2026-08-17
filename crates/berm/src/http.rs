@@ -8,7 +8,7 @@
 //! The allowlist is the whole of the confinement, and it is checked per
 //! request rather than per connection. hyper's client does not follow
 //! redirects, which makes that sufficient instead of merely likely: a 3xx
-//! comes back to the guest as a 3xx, and following it means another `fetch`
+//! comes back to the harness as a 3xx, and following it means another `fetch`
 //! that is checked exactly like the first. There is no path where the host
 //! chases a `Location` to somewhere the declaration never named.
 //!
@@ -27,7 +27,7 @@ use hyper_util::{
 };
 use std::{sync::LazyLock, time::Duration};
 
-/// What the guest calls it. `crabtalk.` rather than `berm.` for the reason
+/// What the harness calls it. `crabtalk.` rather than `berm.` for the reason
 /// [`crate::protocol::CALL`] is: the name says who implements it.
 pub(crate) const FETCH: &str = "crabtalk.http.fetch";
 
@@ -36,7 +36,7 @@ pub(crate) const FETCH: &str = "crabtalk.http.fetch";
 /// reason `berm`'s `fs` refuses an oversized file.
 const MAX_BODY: usize = 16 * 1024 * 1024;
 
-/// Total round trip. A guest blocked in a host call cannot notice an
+/// Total round trip. A harness blocked in a host call cannot notice an
 /// interrupt until the call returns, so berm's watchdog is set to outlast the
 /// longest one — this stays within that bound rather than moving it.
 const TIMEOUT: Duration = Duration::from_secs(30);
