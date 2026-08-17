@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-33600370.js";
+            window.path_to_searchindex_js = "../searchindex-0b35cd07.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-56997f56.js"></script>
+        <script src="../toc-27a33c77.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -214,7 +214,7 @@
 <p>All methods have default no-op implementations. <code>()</code> implements <code>Hook</code>.</p>
 <h3 id="lifecycle-points"><a class="header" href="#lifecycle-points">Lifecycle points</a></h3>
 <p><strong><code>schema</code></strong> — the tools this hook owns. The composite hook unions every sub-hook’s <code>schema()</code> to expose the runtime-wide tool set. There is no shared <code>ToolRegistry</code> — each hook is the source of truth for its tools.</p>
-<p><strong><code>system_prompt</code></strong> — optional fragment appended to agent system prompts at build time. Used by hooks that always inject standing instructions (e.g. memory’s behavioural guidance).</p>
+<p><strong><code>usage</code></strong> — what this hook’s tools are for: when to reach for them and how they go together. Renamed from <code>system_prompt</code> (2026-08-16), which named the destination rather than the thing and invited unbounded content. A declaration, not a lifecycle callback. <code>HarnessHook</code> supplies its own per-agent through <code>on_build_agent</code>, since the trait method has no agent in its signature and would put every harness’s text in front of every agent.</p>
 <p><strong><code>on_build_agent</code></strong> — called when an agent is registered. Receives the agent config, returns a possibly-modified config. The composite implementation chains: environment block (OS, shell, platform), per-hook <code>system_prompt()</code> fragments, resource hints (available MCP servers, available skills), and a <code>&lt;scope&gt;</code> block when the agent restricts its tools/skills.</p>
 <p><strong><code>on_register_agent</code> / <code>on_unregister_agent</code></strong> — called when an agent is added to or removed from the runtime registry. Hooks that track per-agent state (scopes, descriptions, MCP fingerprint refcounts) record and clean up here. Symmetric: by the time <code>Runtime::agent()</code> returns the new agent, hook state is in place; by the time the agent is invisible, hook state has been dropped.</p>
 <p><strong><code>preprocess</code></strong> — called before a user message enters the conversation. Returns <code>Some(modified)</code> to transform, <code>None</code> to pass through. Slash-command resolution (<code>/skill-name args</code> → wrapped <code>&lt;skill&gt;</code> body) lives here.</p>
@@ -247,7 +247,7 @@ invocation)?</li>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../rfcs/0043-component.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../rfcs/0027-model.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
@@ -261,7 +261,7 @@ invocation)?</li>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../rfcs/0043-component.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../rfcs/0027-model.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 

@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-33600370.js";
+            window.path_to_searchindex_js = "../searchindex-0b35cd07.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-56997f56.js"></script>
+        <script src="../toc-27a33c77.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -191,6 +191,9 @@
 </ul>
 <blockquote>
 <p><strong>Updated by <a href="0189-policy-at-the-edge.html">0189</a> (2026-04-28).</strong> The “automatic compaction on overflow as a safety net” carve-out and auto-title generation were both removed; clients drive both via <code>compact_conversation</code> and a future <code>generate_title</code> RPC, gated on the new <code>AgentEvent::ContextUsage</code> events. See 0189 for the rationale.</p>
+</blockquote>
+<blockquote>
+<p><strong>Updated (2026-08-17).</strong> The index design stands; the <em>surface</em> moved. <code>search_sessions</code> is no longer a daemon hook — the daemon answers a <code>SearchSessions</code> protocol message, so any client can search history, and a harness holding <code>protocol:sessions</code> formats hits for a model. The harness never touches session storage: asking is narrower than reading, and the host overwrites the request’s <code>agent</code> filter with whoever declared it.</p>
 </blockquote>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <p>Collapse the topic subsystem. Sessions persist unconditionally and carry a small runtime-managed meta blob. Recall gains a second BM25 index — this one over conversation messages — returning windowed excerpts with bounded size. The runtime exposes narrow session primitives and two search tools; client UX owns <code>/clear</code>, <code>/new</code>, <code>/compact</code>, titling, and session routing. The “topic” concept dissolves: content-derived session search (BM25) replaces tag-based grouping, and any curated grouping that survives is a client concern.</p>

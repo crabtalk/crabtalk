@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-33600370.js";
+            window.path_to_searchindex_js = "../searchindex-0b35cd07.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-56997f56.js"></script>
+        <script src="../toc-27a33c77.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -195,7 +195,7 @@
 </ul>
 <p>The runtime does not interpret provider-specific errors. <code>ApiError</code> is surfaced to the client as a protocol error; the provider is responsible for mapping backend failures into <code>ApiError</code> values.</p>
 <h2 id="tools-across-the-boundary"><a class="header" href="#tools-across-the-boundary">Tools across the boundary</a></h2>
-<p>Tool schemas are declared in <code>crabllm-core::Tool</code>. The runtime collects schemas from the composite hook, attaches them to the request, and lets the provider format them for the backend. Tool calls returned by the provider arrive as <code>ToolCall</code> values; the runtime dispatches each call through <code>Env::hook().dispatch</code>.</p>
+<p>Tool schemas are declared in <code>crabllm-core::Tool</code>. The runtime collects schemas from the composite hook, attaches them to the request, and lets the provider format them for the backend. A harness’s schemas are read out of its ELF’s manifest section rather than by running it, so a tool list costs no execution. Tool calls returned by the provider arrive as <code>ToolCall</code> values; the runtime dispatches each call through <code>Env::hook().dispatch</code>.</p>
 <p>The shape of tool schemas is fixed by <code>crabllm-core</code>. A tool that cannot be expressed in that shape is not expressible to crabtalk.</p>
 <h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
 <p>Provider configuration is read from the node’s <code>config.toml</code> and passed to <code>ProviderRegistry</code>. The daemon does not inspect provider-specific configuration; it forwards the relevant sections to the registry and accepts the resulting <code>Provider</code>.</p>

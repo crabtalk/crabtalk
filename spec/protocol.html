@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Memory - The Crabtalk RFC Book</title>
+        <title>Protocol - The Crabtalk RFC Book</title>
 
 
         <!-- Custom HTML head -->
@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-33600370.js";
+            window.path_to_searchindex_js = "../searchindex-0b35cd07.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-56997f56.js"></script>
+        <script src="../toc-27a33c77.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -146,7 +146,7 @@
                         <a href="https://github.com/crabtalk/crabtalk" title="Git repository" aria-label="Git repository">
                             <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
                         </a>
-                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/spec/memory.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/spec/protocol.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
                         </a>
 
@@ -180,66 +180,75 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="memory"><a class="header" href="#memory">Memory</a></h1>
-<p>Memory is a single-file entry store, shared by an agent across its conversations. It holds two kinds of content: notes that the agent writes deliberately, and archives that accumulate as conversations are compacted. Search is lexical (BM25); there are no embeddings.</p>
-<h2 id="entries"><a class="header" href="#entries">Entries</a></h2>
-<p>An entry has:</p>
+                        <h1 id="protocol"><a class="header" href="#protocol">Protocol</a></h1>
+<p>The protocol is the daemon’s surface for everything outside its process. Clients speak it over a socket; a harness holding a <code>protocol:*</code> capability speaks the same one from inside a sandbox. There is no second vocabulary for harnesses.</p>
+<h2 id="addressing"><a class="header" href="#addressing">Addressing</a></h2>
+<p>A conversation is addressed by the pair <code>(agent, sender)</code>.</p>
 <ul>
-<li><code>id</code> — monotonic integer, assigned on insert.</li>
-<li><code>name</code> — the entry’s primary identifier. Unique within the memory.</li>
-<li><code>aliases</code> — alternative names that resolve to the same entry.</li>
-<li><code>content</code> — the entry’s text.</li>
-<li><code>kind</code> — <code>Note</code> or <code>Archive</code>.</li>
-<li><code>created_at</code> — creation timestamp.</li>
+<li><code>agent</code> names an agent registered in the daemon.</li>
+<li><code>sender</code> is a client-provided string identifying the counterparty — <code>"user"</code>, <code>"event:deploy.done"</code>, a delegate id. Clients choose their own convention.</li>
 </ul>
-<p>Entries are addressed by <code>name</code> or by any of their <code>aliases</code>. A name is rebindable through aliasing; the canonical <code>name</code> is whatever the agent most recently chose.</p>
-<h2 id="kinds"><a class="header" href="#kinds">Kinds</a></h2>
-<p><code>Note</code> entries are the agent’s long-term store. The agent adds, renames, aliases, and rewrites them through memory operations.</p>
-<p><code>Archive</code> entries are produced by compaction. Their <code>content</code> is the summary of a compacted conversation prefix. Archive entries are not rewritten after creation.</p>
-<p>Both kinds share the same index and search path. A search over memory returns both, ranked by relevance.</p>
-<h2 id="compaction"><a class="header" href="#compaction">Compaction</a></h2>
-<p>Compaction compresses a prefix of a conversation’s history into a summary and records a boundary in the history at the point of compression.</p>
-<p>When a conversation is compacted:</p>
-<ol>
-<li>The daemon summarizes the history prefix.</li>
-<li>The summary is written to the memory as an <code>Archive</code> entry with a generated <code>name</code>.</li>
-<li>A compact marker is appended to the conversation’s history, carrying the <code>archive_name</code> and <code>archived_at</code> timestamp.</li>
-</ol>
-<p>On the next run, the history is replayed from the latest compact marker. Entries before the marker are dropped from the working context; the archive remains available through memory search and by explicit name.</p>
-<p>A conversation can be compacted any number of times. Each compaction leaves one additional marker and one additional archive entry.</p>
-<h2 id="persistence"><a class="header" href="#persistence">Persistence</a></h2>
-<p>The memory is a single file. The file holds all entries, all aliases, and the search index snapshot. A write operation mutates memory in RAM and writes an atomic snapshot of the file on each successful apply.</p>
-<p>Opening an existing path reads the snapshot into RAM. Opening a non-existent path creates an empty memory; the file is written on the first successful apply.</p>
-<h2 id="search"><a class="header" href="#search">Search</a></h2>
-<p>Search is BM25 over the tokenized content and name of each entry. Results include the entry and its score. The caller chooses the cutoff — the store does not filter by relevance.</p>
-<p>The token set is the union of tokens from <code>content</code> and <code>name</code>; aliases do not contribute tokens. Aliases are resolution, not search.</p>
-<h2 id="operations"><a class="header" href="#operations">Operations</a></h2>
-<p>Memory exposes a closed set of write operations:</p>
+<p>The pair is a conversation’s only externally addressable name. <strong>The wire carries no conversation identifier.</strong> The <code>u64</code> the runtime keys its live map by is internal and never leaves the process.</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Operation</th><th>Effect</th></tr>
+<tr><th>Message</th><th>Effect</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Add</code></td><td>Create a new entry with a given name, content, and kind.</td></tr>
-<tr><td><code>Rename</code></td><td>Change an entry’s canonical name.</td></tr>
-<tr><td><code>Alias</code></td><td>Bind an additional name to an existing entry.</td></tr>
-<tr><td><code>Write</code></td><td>Replace an entry’s content.</td></tr>
-<tr><td><code>Remove</code></td><td>Delete an entry and all its aliases.</td></tr>
+<tr><td><code>StreamMsg</code></td><td>Append user content, run the agent, stream the response.</td></tr>
+<tr><td><code>SendMsg</code></td><td>The same, returning one complete response rather than a stream.</td></tr>
+<tr><td><code>KillMsg</code></td><td>Cancel the in-flight run, if any.</td></tr>
+<tr><td><code>CompactMsg</code></td><td>Compact the current history into an archive.</td></tr>
+<tr><td><code>SteerSessionMsg</code></td><td>Inject user content into a run already in flight.</td></tr>
+<tr><td><code>ReplyToTool</code></td><td>Supply the result of a forwarded client-side tool call.</td></tr>
 </tbody>
 </table>
 </div>
-<p>Operations on <code>Archive</code> entries are permitted but not expected; the agent works with <code>Note</code> entries.</p>
+<p><code>StreamMsg.sender</code> is optional; when omitted the daemon resolves a default determined by the transport. <code>StreamMsg.guest</code> selects who speaks on this turn without changing whose conversation it is.</p>
+<p>There is no working directory on the wire. <code>StreamMsg.cwd</code> was removed: the daemon does not read the user’s filesystem, and a client that wants local context renders it into <code>content</code> itself.</p>
+<h2 id="capability-groups"><a class="header" href="#capability-groups">Capability groups</a></h2>
+<p>A harness reaches this surface through <code>crabtalk.protocol.call</code>, and what it may send is checked on decode against the group its declaration granted. The check is <strong>default-deny</strong>: a message type in no group reaches nothing, and a group the harness was not granted is the same.</p>
+<ul>
+<li><code>protocol:read</code> — the catalogue, and nothing that spends tokens.</li>
+<li><code>protocol:sessions</code> — ranked excerpts of the declaring agent’s own past conversations.</li>
+</ul>
+<p>Anything destructive, anything that answers on someone else’s behalf, and anything whose payload is substantially a credential belongs to no group a third party can hold. Where a request carries a scope the harness should not choose — <code>SearchSessions.agent</code> — the host <strong>overwrites</strong> it rather than validating it. Refusing a wrong value would only teach the harness to send the right one.</p>
+<h2 id="transports"><a class="header" href="#transports">Transports</a></h2>
+<p>The daemon accepts client messages on its transports and produces a stream of server messages in response. Each message is handled independently, with no central event loop mediating between the transport and the operations.</p>
+<h2 id="entry-point"><a class="header" href="#entry-point">Entry point</a></h2>
+<p>Every transport (UDS, TCP, future additions) feeds <code>ClientMessage</code> values into the same dispatch callback. The callback spawns a Tokio task per message and polls the resulting stream, forwarding each <code>ServerMessage</code> back to the transport’s reply channel. When the stream ends or the reply channel closes, the task terminates.</p>
+<p>Concurrency is unbounded at this layer: nothing throttles or serializes incoming messages before they reach their handler.</p>
+<h2 id="dispatch-function"><a class="header" href="#dispatch-function">Dispatch function</a></h2>
+<p><code>Server::dispatch(ClientMessage) -&gt; Stream&lt;ServerMessage&gt;</code> is the single entry into the daemon’s operations. It inspects the <code>ClientMessage</code> variant and routes to the corresponding method on the <code>Server</code> trait.</p>
+<p>It is also the door a harness comes back through. A harness granted a <code>protocol:*</code> capability sends the same <code>ClientMessage</code> a client would and receives the same reply — one vocabulary, not two. What it is <em>allowed</em> to send is checked on decode against the group its declaration granted, and default-deny: a message named in no group reaches nothing.</p>
+<ul>
+<li>Request-response operations (<code>ping</code>, <code>kill_conversation</code>, <code>compact_conversation</code>, administrative calls) yield exactly one <code>ServerMessage</code>.</li>
+<li>Streaming operations (<code>stream</code>, <code>subscribe_events</code>) yield many <code>ServerMessage</code> values over time.</li>
+<li>Unknown or empty messages yield a single error response.</li>
+</ul>
+<p>The function is defined once in the core <code>Server</code> trait. Any implementor — the daemon, a test harness, a future alternative server — routes client messages the same way.</p>
+<h2 id="no-central-event-loop"><a class="header" href="#no-central-event-loop">No central event loop</a></h2>
+<p>There is no serializing queue, no <code>DaemonEvent</code> enum, and no actor that owns mutation. Operations reach into shared state directly and hold locks for the duration of the critical section.</p>
+<p>Shared state is protected by <code>parking_lot::Mutex</code> or <code>parking_lot::RwLock</code>. Event bus subscriptions, conversation working-directory overrides, and pending <code>ask_user</code> replies each live behind their own lock. Locks are acquired, the work is done, and the lock is released. Ordering between operations is whatever Tokio’s scheduler produces.</p>
+<h2 id="ordering-guarantees"><a class="header" href="#ordering-guarantees">Ordering guarantees</a></h2>
+<p>Within a single conversation, message ordering is total: <code>StreamMsg</code> appends to history in the order the daemon receives them. Clients that require strict ordering for a conversation are responsible for serializing their own sends.</p>
+<p>Between conversations, no ordering is guaranteed. Two <code>StreamMsg</code> values addressed to different <code>(agent, sender)</code> pairs may run in either order regardless of arrival time.</p>
+<h2 id="cancellation"><a class="header" href="#cancellation">Cancellation</a></h2>
+<p><code>KillMsg</code> cancels the in-flight run for its <code>(agent, sender)</code> pair. Cancellation propagates through the runtime to the active agent step, interrupting tool calls and LLM requests at the next await point. Already-emitted <code>ServerMessage</code> values are not retracted.</p>
+<p>A cancelled conversation remains valid. The next <code>StreamMsg</code> for the same pair resumes against the history as it existed at the point of cancellation.</p>
+<h2 id="event-bus"><a class="header" href="#event-bus">Event bus</a></h2>
+<p>The event bus is a subscription table, not a router. <code>publish(source, payload)</code> iterates subscriptions, invokes the <code>fire</code> callback for each match inline, and removes any subscription marked <code>once</code>. The callback fires under the bus’s lock; implementations must not reacquire it.</p>
+<p>The bus has no queue and no scheduler. Fan-out is as fast as the callback runs for each matching subscription.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../spec/multi-agent.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../arch.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../spec/runtime.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../spec/storage.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -249,11 +258,11 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../spec/multi-agent.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../arch.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../spec/runtime.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../spec/storage.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

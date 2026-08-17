@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-33600370.js";
+            window.path_to_searchindex_js = "searchindex-0b35cd07.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-56997f56.js"></script>
+        <script src="toc-27a33c77.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -186,8 +186,7 @@ the design decisions that govern its evolution.</p>
 <a href="https://crabtalk.ai">crabtalk.ai</a>.</p>
 <h2 id="how-this-book-is-organized"><a class="header" href="#how-this-book-is-organized">How this book is organized</a></h2>
 <ul>
-<li><strong><a href="#manifesto">Manifesto</a></strong> — What crabtalk is and what it stands for.</li>
-<li><strong><a href="arch.html">The workspace</a></strong> — Every crate and app drawn to scale, the dependency graph between them, and one message traced end to end.</li>
+<li><strong><a href="#architecture">Architecture</a></strong> — How the system is shaped: the layers, and how to decide which one a thing belongs to. The pages under it specify each part.</li>
 <li><strong>RFCs</strong> — Design decisions and features.</li>
 </ul>
 <h2 id="rfcs"><a class="header" href="#rfcs">RFCs</a></h2>
@@ -218,53 +217,111 @@ contracts, or interfaces that others need to know about before building.</p>
 RFCs are written <em>after</em> implementation, not before — they record decisions that
 were made, not proposals for decisions to come.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="manifesto"><a class="header" href="#manifesto">Manifesto</a></h1>
-<p>Ownership is necessary for an open agent ecosystem.</p>
-<p>Ownership is not configuration. A configured agent is one where you picked from
-someone else’s menu. An owned agent is one where you decided what’s on the menu.
-Ownership is the power to compose your own stack.</p>
-<p>Every agent application today rebuilds session management, command dispatch, and
-event streaming from scratch — then bundles it alongside search, browser
-automation, PDF parsing, TTS, image processing, and dozens of tools you didn’t
-ask for into one process. If you want a Telegram bot with search, you carry
-nineteen other channels and every integration. If you want a coding agent, you
-carry TTS and image generation. The process is theirs. The choices are theirs.
-You run it.</p>
-<p>This happens because the daemon layer is missing. Without it, every application
-must become the daemon. And a daemon that is also an application ships its
-opinion of what your agent should be.</p>
-<p>CrabTalk is that daemon layer. It manages sessions, dispatches commands, and
-streams the full execution lifecycle to your client. It does not bundle search.
-It does not bundle gateways. It does not bundle tools. You put what you need on
-your PATH. They connect as clients. They crash alone. They swap without
-restarts. The daemon never loads them.</p>
-<p>An agent daemon is not an agent application. An agent daemon empowers you to
-build the application you want — and only the application you want. This is the
-essence of ownership.</p>
-<p>We cannot expect agent platforms to give us ownership out of their beneficence.
-It is to their advantage to bundle, to lock in, to ship their choices as yours.
-We should expect that they will bundle. The only way to preserve choice is to
-never take it away in the first place.</p>
-<p>We don’t much care if you prefer a batteries-included experience. You could
-build an OpenClaw-like assistant or a Hermes-like agent on top of CrabTalk. You
-can’t build a CrabTalk underneath them. The daemon must come first. The
-architecture must be right. Everything else follows.</p>
-<p>Let us proceed.</p>
+<h1 id="architecture"><a class="header" href="#architecture">Architecture</a></h1>
+<p>Crabtalk is a daemon, a library, and a sandbox. Which of the three you are
+using decides what you can extend and how — and most design arguments here
+turn out to be arguments about which one someone means.</p>
+<h2 id="the-layers"><a class="header" href="#the-layers">The layers</a></h2>
+<pre><code>protocol     clients, over a socket    any language, untrusted
+harness      what shapes an agent      declared per agent, one source, two builds
+capability   what an agent reaches     bounded by its argument
+runtime      lifetime orchestration    turns, conversations, the agent loop
+storage      data                      agents, sessions, config
+</code></pre>
+<p>The line worth getting right is between the middle two.</p>
+<p>A <strong>harness</strong> shapes an agent: what it remembers, what skills it can load, what
+it knows of its own past conversations, the tools it habitually reaches for.
+Change them and it is a different agent. That is why they are declared per
+agent — an agent <em>is</em> its harnesses.</p>
+<p>A <strong>capability</strong> is a mechanism for reaching something that is not the agent:
+<code>fs</code> and <code>exec</code> for the machine, <code>http</code> for the network, MCP for other
+software. Calling another program is not shaping an agent, which is why MCP is
+a capability and never a harness.</p>
+<p>The <strong>protocol</strong> has capability groups because clients are outside the process
+entirely, and a harness reaching back through <code>crabtalk.protocol.call</code> is
+holding a client’s surface. It stays exported whether or not anything shipped
+here uses it — who <em>may</em> write a harness justifies it, not who does.</p>
+<p><code>runtime</code> owns the <em>architecture of lifetime</em> — turns, conversations, the
+agent loop — and nothing else. <code>storage</code> owns the data.</p>
+<h2 id="one-source-two-builds"><a class="header" href="#one-source-two-builds">One source, two builds</a></h2>
+<p>A harness is one crate compiled two ways. Built <code>no_std</code> for RV64 it is a
+sandboxed ELF the daemon schedules, reaching the world only through
+capabilities its agent declared — the absence of a capability from its linker
+<em>is</em> the enforcement. Built with <code>std</code> it is compiled into the host and reaches
+those things directly.</p>
+<p>So compiled-in versus sandboxed is a build target, not an architecture, and
+<code>Harness</code> is the one name for both. What differs is confinement: as an ELF the
+declaration’s grants bound it; compiled in there is no linker to omit from, and
+the same grants are documentation. That follows from compiling something in
+being total trust — but it is one source under two security models, which is
+worth knowing before choosing a build.</p>
+<p><code>no_std</code> is the shared denominator rather than a floor. The compiled-in build
+inherits the sandbox’s constraints instead of escaping them: sync, allocating
+through <code>alloc</code>. Anything that must keep state alive between invocations cannot
+make the trip, because a harness gets a fresh heap every call and persists
+through <code>fs</code> like anything else. MCP holds live connections, so MCP is compiled
+in and only compiled in — the same test, not a second one.</p>
+<h2 id="where-does-a-thing-go"><a class="header" href="#where-does-a-thing-go">Where does a thing go?</a></h2>
+<p>Three questions, in order. They are independent, and a feature can want more
+than one answer.</p>
+<p><strong>1. Does the daemon own the state?</strong> If not, it cannot be protocol — there is
+no question a client could ask that the daemon knows the answer to. Web search
+is the clean example: everyone has it, but the daemon holds no search state, so
+it is a harness and never a message.</p>
+<p><strong>2. Does it shape the agent, or reach past it?</strong> What an agent remembers,
+loads, and knows of its own history shapes it — that is a harness, declared by
+the agents that want it. A mechanism for touching something outside is a
+capability, granted and bounded by its argument.</p>
+<p><strong>3. Does it hold anything alive between calls?</strong> If yes it can only be
+compiled in, because the sandboxed build gets a fresh heap per invocation.
+Persisting through <code>fs</code> does not count — a file outlives the call. A live
+connection does not.</p>
+<h2 id="declarations-not-inference"><a class="header" href="#declarations-not-inference">Declarations, not inference</a></h2>
+<p>The recurring rule, and the one worth defending hardest:</p>
+<blockquote>
+<p><strong>The declaration is the grant. The daemon never infers one from the other.</strong></p>
+</blockquote>
+<p>A harness’s manifest says what it <em>wants</em>; the agent’s <code>HarnessConfig</code> says
+what it <em>gets</em>. A manifest that could grant itself anything would make “what
+can this agent reach?” a question you answer by reading every image instead of
+one config file.</p>
+<p>The same rule explains why grants take arguments rather than booleans. <code>root</code>
+is the argument to <code>fs</code> and <code>exec</code>; <code>hosts</code> is the argument to <code>http</code>. Without
+the argument the capability is not registered at all, so an under-specified
+declaration reaches <em>nothing</em> rather than everything.</p>
+<p>And it is why a harness never chooses its own scope: <code>SearchSessions</code> carries
+an <code>agent</code> filter, and the host <strong>overwrites</strong> it with whoever declared the
+harness. Refusing a wrong value would only teach the harness to send the right
+one.</p>
+<h2 id="berm-is-not-a-crabtalk-feature"><a class="header" href="#berm-is-not-a-crabtalk-feature">berm is not a crabtalk feature</a></h2>
+<p><code>berm/engine</code>, <code>berm/sdk</code> and <code>berm/codegen</code> have no crabtalk crate in their
+dependency lists and cannot grow one without <code>crates/berm/src/lib.rs</code> moving.
+That split is compiler-checked rather than promised, and it is why the sandbox
+can leave this repository whenever it needs to.</p>
+<p><code>crates/berm</code> is crabtalk’s <em>side</em>: what surfaces sandboxed tools, and
+the <code>crabtalk.*</code> capabilities. Anything host-specific belongs there. <code>http</code>
+lives there rather than in the engine because hyper needs a reactor and the
+engine is sync and has none — keeping the engine dep-light is keeping it
+portable.</p>
+<h2 id="prose"><a class="header" href="#prose">Prose</a></h2>
+<p>The daemon supplies none. An agent’s <code>description</code> <em>is</em> its system message,
+used verbatim; there is no default prompt and no framing wrapped around it.</p>
+<p>What a model needs in order to reach for a tool is the tool’s own
+<code>description</code>, or the <code>usage</code> its harness declares — a few lines about when to
+reach for these tools and how they go together, which is the question no single
+tool description can answer because it is about choosing between them. Usage is
+declared in <code>.berm.abi</code> and injected only into agents that declared the
+harness. Anything longer than a few lines is a skill, not usage.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="conversations"><a class="header" href="#conversations">Conversations</a></h1>
-<p>A conversation is the unit of agent interaction. It holds the message history an agent uses as working context, together with the state associated with that history.</p>
-<h2 id="identity"><a class="header" href="#identity">Identity</a></h2>
-<p>A conversation is identified by the pair <code>(agent, sender)</code>.</p>
-<ul>
-<li><code>agent</code> is the name of an agent configured in the daemon.</li>
-<li><code>sender</code> is a client-provided string identifying the counterparty. Clients choose their own convention, such as <code>"user"</code>, <code>"tg:12345"</code>, or <code>"delegate:42"</code>.</li>
-</ul>
-<p>The pair is the conversation’s only externally addressable name. The wire protocol carries no conversation identifier.</p>
-<h2 id="lifetime"><a class="header" href="#lifetime">Lifetime</a></h2>
-<p>A conversation is created on first reference to a pair <code>(agent, sender)</code> that does not yet exist, and persists across daemon restarts. Persistence is delegated to the configured <code>Storage</code> backend.</p>
-<p>At most one conversation exists for any given <code>(agent, sender)</code> pair.</p>
+<h1 id="protocol"><a class="header" href="#protocol">Protocol</a></h1>
+<p>The protocol is the daemon’s surface for everything outside its process. Clients speak it over a socket; a harness holding a <code>protocol:*</code> capability speaks the same one from inside a sandbox. There is no second vocabulary for harnesses.</p>
 <h2 id="addressing"><a class="header" href="#addressing">Addressing</a></h2>
-<p>Protocol messages that operate on a conversation carry <code>agent</code> and <code>sender</code> fields. The pair resolves to the conversation on which the operation acts.</p>
+<p>A conversation is addressed by the pair <code>(agent, sender)</code>.</p>
+<ul>
+<li><code>agent</code> names an agent registered in the daemon.</li>
+<li><code>sender</code> is a client-provided string identifying the counterparty — <code>"user"</code>, <code>"event:deploy.done"</code>, a delegate id. Clients choose their own convention.</li>
+</ul>
+<p>The pair is a conversation’s only externally addressable name. <strong>The wire carries no conversation identifier.</strong> The <code>u64</code> the runtime keys its live map by is internal and never leaves the process.</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -272,39 +329,31 @@ architecture must be right. Everything else follows.</p>
 </thead>
 <tbody>
 <tr><td><code>StreamMsg</code></td><td>Append user content, run the agent, stream the response.</td></tr>
+<tr><td><code>SendMsg</code></td><td>The same, returning one complete response rather than a stream.</td></tr>
 <tr><td><code>KillMsg</code></td><td>Cancel the in-flight run, if any.</td></tr>
-<tr><td><code>CompactMsg</code></td><td>Compact the current history into an archive (see Memory).</td></tr>
-<tr><td><code>ReplyToAsk</code></td><td>Supply content for a pending <code>ask_user</code> call.</td></tr>
+<tr><td><code>CompactMsg</code></td><td>Compact the current history into an archive.</td></tr>
+<tr><td><code>SteerSessionMsg</code></td><td>Inject user content into a run already in flight.</td></tr>
+<tr><td><code>ReplyToTool</code></td><td>Supply the result of a forwarded client-side tool call.</td></tr>
 </tbody>
 </table>
 </div>
-<p><code>StreamMsg.sender</code> is optional. When omitted, the daemon resolves a default sender determined by the transport.</p>
-<h2 id="state"><a class="header" href="#state">State</a></h2>
-<p>A conversation holds:</p>
+<p><code>StreamMsg.sender</code> is optional; when omitted the daemon resolves a default determined by the transport. <code>StreamMsg.guest</code> selects who speaks on this turn without changing whose conversation it is.</p>
+<p>There is no working directory on the wire. <code>StreamMsg.cwd</code> was removed: the daemon does not read the user’s filesystem, and a client that wants local context renders it into <code>content</code> itself.</p>
+<h2 id="capability-groups"><a class="header" href="#capability-groups">Capability groups</a></h2>
+<p>A harness reaches this surface through <code>crabtalk.protocol.call</code>, and what it may send is checked on decode against the group its declaration granted. The check is <strong>default-deny</strong>: a message type in no group reaches nothing, and a group the harness was not granted is the same.</p>
 <ul>
-<li><strong>History</strong> — an ordered sequence of history entries.</li>
-<li><strong>Title</strong> — a short human-readable label assigned by the <code>set_title</code> tool.</li>
-<li><strong>Working directory</strong> — the filesystem path used by OS-level tools during a run.</li>
-<li><strong>Archives</strong> — compacted prefixes of the history (see Memory).</li>
+<li><code>protocol:read</code> — the catalogue, and nothing that spends tokens.</li>
+<li><code>protocol:sessions</code> — ranked excerpts of the declaring agent’s own past conversations.</li>
 </ul>
-<p>History ordering is total. New entries are appended; no entry is reordered or removed except through compaction.</p>
-<h2 id="working-directory"><a class="header" href="#working-directory">Working directory</a></h2>
-<p>Each conversation has a default working directory. <code>StreamMsg.cwd</code>, when set, overrides the default for the duration of the resulting run. The override does not modify the conversation’s default.</p>
-<h2 id="message-attribution"><a class="header" href="#message-attribution">Message attribution</a></h2>
-<p>Each assistant message in the history carries an <code>agent</code> field.</p>
-<ul>
-<li>An empty <code>agent</code> field denotes a message produced by the conversation’s primary agent, the one named by the conversation’s identity.</li>
-<li>A non-empty <code>agent</code> field denotes a guest turn (see Multi-agent).</li>
-</ul>
-<p>Messages produced by the daemon for protocol framing are marked as auto-injected and stripped from the history before each run.</p>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="dispatch"><a class="header" href="#dispatch">Dispatch</a></h1>
+<p>Anything destructive, anything that answers on someone else’s behalf, and anything whose payload is substantially a credential belongs to no group a third party can hold. Where a request carries a scope the harness should not choose — <code>SearchSessions.agent</code> — the host <strong>overwrites</strong> it rather than validating it. Refusing a wrong value would only teach the harness to send the right one.</p>
+<h2 id="transports"><a class="header" href="#transports">Transports</a></h2>
 <p>The daemon accepts client messages on its transports and produces a stream of server messages in response. Each message is handled independently, with no central event loop mediating between the transport and the operations.</p>
 <h2 id="entry-point"><a class="header" href="#entry-point">Entry point</a></h2>
 <p>Every transport (UDS, TCP, future additions) feeds <code>ClientMessage</code> values into the same dispatch callback. The callback spawns a Tokio task per message and polls the resulting stream, forwarding each <code>ServerMessage</code> back to the transport’s reply channel. When the stream ends or the reply channel closes, the task terminates.</p>
 <p>Concurrency is unbounded at this layer: nothing throttles or serializes incoming messages before they reach their handler.</p>
 <h2 id="dispatch-function"><a class="header" href="#dispatch-function">Dispatch function</a></h2>
 <p><code>Server::dispatch(ClientMessage) -&gt; Stream&lt;ServerMessage&gt;</code> is the single entry into the daemon’s operations. It inspects the <code>ClientMessage</code> variant and routes to the corresponding method on the <code>Server</code> trait.</p>
+<p>It is also the door a harness comes back through. A harness granted a <code>protocol:*</code> capability sends the same <code>ClientMessage</code> a client would and receives the same reply — one vocabulary, not two. What it is <em>allowed</em> to send is checked on decode against the group its declaration granted, and default-deny: a message named in no group reaches nothing.</p>
 <ul>
 <li>Request-response operations (<code>ping</code>, <code>kill_conversation</code>, <code>compact_conversation</code>, administrative calls) yield exactly one <code>ServerMessage</code>.</li>
 <li>Streaming operations (<code>stream</code>, <code>subscribe_events</code>) yield many <code>ServerMessage</code> values over time.</li>
@@ -324,46 +373,52 @@ architecture must be right. Everything else follows.</p>
 <p>The event bus is a subscription table, not a router. <code>publish(source, payload)</code> iterates subscriptions, invokes the <code>fire</code> callback for each match inline, and removes any subscription marked <code>once</code>. The callback fires under the bus’s lock; implementations must not reacquire it.</p>
 <p>The bus has no queue and no scheduler. Fan-out is as fast as the callback runs for each matching subscription.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="multi-agent"><a class="header" href="#multi-agent">Multi-agent</a></h1>
-<p>Multi-agent conversations let a second agent speak into an existing conversation as a guest. A guest turn is a first-class message from the guest agent; it is not a tool call, a delegation, or a paraphrase.</p>
-<h2 id="guest-turns"><a class="header" href="#guest-turns">Guest turns</a></h2>
-<p>A guest turn runs a named guest agent against the primary conversation’s history and appends the guest’s response to that history. The primary agent of the conversation is unchanged.</p>
-<p>A guest turn is requested by setting <code>StreamMsg.guest</code> to the name of the guest agent. The conversation is still addressed by the primary’s <code>(agent, sender)</code> pair; <code>guest</code> selects who speaks on this turn, not whose conversation it is.</p>
-<h2 id="flow"><a class="header" href="#flow">Flow</a></h2>
-<p>When <code>StreamMsg { agent: A, sender: S, guest: G, content: C }</code> is dispatched:</p>
-<ol>
-<li>The conversation <code>(A, S)</code> is resolved, creating it if necessary.</li>
-<li>The user content <code>C</code> is appended to the history.</li>
-<li>The daemon runs agent <code>G</code> against the history using <code>G</code>’s system prompt and instructions.</li>
-<li>The response is appended to the history, tagged with <code>agent: G</code>.</li>
-</ol>
-<p>The primary agent is not invoked on a guest turn. A subsequent <code>StreamMsg</code> without <code>guest</code> resumes normal operation with the primary agent against the updated history.</p>
-<h2 id="tools-on-guest-turns"><a class="header" href="#tools-on-guest-turns">Tools on guest turns</a></h2>
-<p>A guest turn is text-only. The guest agent’s tool schemas are not attached to the request, and any tool call emitted by the guest is rejected.</p>
-<p>Tool-using work belongs to the primary agent. A guest is a voice in the conversation, not a worker.</p>
-<h2 id="attribution"><a class="header" href="#attribution">Attribution</a></h2>
-<p>Each message in the history carries an <code>agent</code> field.</p>
+<h1 id="storage"><a class="header" href="#storage">Storage</a></h1>
+<p>The daemon persists through two mechanisms. The <code>Storage</code> trait covers agents,
+sessions, and configuration; a binary picks a backend, and the runtime holds it
+behind <code>Config::Storage</code> without learning which one it got. Two backends ship —
+SQLite and a filesystem tree — chosen at startup and not reconsidered on reload.</p>
+<p>The memory store is the other, and it is not a <code>Storage</code> backend: a single file
+of its own, written by the memory hook. Both are in this chapter because the
+line between them is currently in the wrong place, and that is easier to see
+with both on the page.</p>
+<h2 id="config-whole"><a class="header" href="#config-whole">Config, whole</a></h2>
+<p>An agent is stored as its <code>AgentConfig</code>, serialized whole, with <code>name</code> as a
+column because lookup by name is a trait method.</p>
+<p>Nothing queries <em>inside</em> a config, so a column per field would buy no index and
+cost a migration every time the struct gains one — and it does gain them
+(<code>mcps</code> went from <code>Vec&lt;String&gt;</code> to full configs; <code>harnesses</code> arrived later).
+The one exception to that rule used to be <code>system_prompt</code>, which had a column of
+its own and a matching <code>prompt</code> parameter threaded through every write. It is
+gone: an agent’s <code>description</code> <strong>is</strong> its system message, and it serializes with
+everything else.</p>
+<h2 id="sessions"><a class="header" href="#sessions">Sessions</a></h2>
+<p>A session is a conversation’s persistent form, addressed by a <code>SessionHandle</code>
+derived from <code>(agent, sender)</code>. It holds:</p>
 <ul>
-<li><code>agent</code> empty — the message originates from the conversation’s primary agent.</li>
-<li><code>agent</code> non-empty — the message originates from a guest. The value is the guest agent’s name.</li>
+<li><strong>Messages</strong> — the <code>HistoryEntry</code> stream, one row per entry, appended.</li>
+<li><strong>Events</strong> — the <code>EventLine</code> trace, indexed by kind so a rollup like
+“total token usage for this session” is a query rather than a scan.</li>
+<li><strong>Meta</strong> — title, timestamps, message count, summary, and the archive pointer.</li>
 </ul>
-<p>Attribution survives compaction: archive entries preserve the <code>agent</code> field of each archived message.</p>
-<h2 id="framing"><a class="header" href="#framing">Framing</a></h2>
-<p>When building a request, the runtime auto-injects framing messages that are not persisted between runs. Two framings exist:</p>
-<ul>
-<li><strong>Guest framing.</strong> Injected when a guest is running. It tells the guest that it is joining a conversation and explains the <code>&lt;from agent="..."&gt;</code> tag convention.</li>
-<li><strong>Primary framing.</strong> Injected when the primary is running and the history contains at least one message with a non-empty <code>agent</code>. It tells the primary that some messages are from guest agents and it should continue responding as itself.</li>
-</ul>
-<p>Framing messages are marked auto-injected. They are stripped from the history at the start of each run and re-injected for that run only. The history on disk never contains framing messages.</p>
-<h2 id="tagging"><a class="header" href="#tagging">Tagging</a></h2>
-<p>Assistant messages with a non-empty <code>agent</code> field are prefixed with <code>&lt;from agent="{name}"&gt;</code> when they appear in an LLM request. The prefix makes the speaker visible to whichever agent is currently reading the history.</p>
-<p>A message without an <code>agent</code> field carries no prefix.</p>
-<h2 id="cancellation-1"><a class="header" href="#cancellation-1">Cancellation</a></h2>
-<p><code>KillMsg</code> addresses the conversation by <code>(agent, sender)</code>. It cancels whichever run is in flight, whether that run is the primary or a guest. A cancelled guest turn leaves the user’s content appended to the history; the guest’s partial response is discarded.</p>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="memory"><a class="header" href="#memory">Memory</a></h1>
-<p>Memory is a single-file entry store, shared by an agent across its conversations. It holds two kinds of content: notes that the agent writes deliberately, and archives that accumulate as conversations are compacted. Search is lexical (BM25); there are no embeddings.</p>
-<h2 id="entries"><a class="header" href="#entries">Entries</a></h2>
+<p>Writes are appends. <code>truncate_session_messages</code> exists for compaction, which is
+the only operation that removes history, and <code>append_session_compact</code> records
+the boundary.</p>
+<h2 id="migrations"><a class="header" href="#migrations">Migrations</a></h2>
+<p>There is no migration table. Every DDL statement is <code>IF NOT EXISTS</code>, so opening
+an existing database is a no-op and there is nothing to keep in step.</p>
+<p>That works for adding tables and indexes and does not work for renaming or
+dropping a column — which is a real constraint on schema changes, not an
+oversight to route around. A change that needs one either restructures to avoid
+it (folding a column into the config blob, so old databases keep a vestigial
+column nobody writes) or brings a migration mechanism with it.</p>
+<h2 id="scaffold"><a class="header" href="#scaffold">Scaffold</a></h2>
+<p><code>scaffold</code> creates the layout and seeds a default agent on first run, so a
+fresh install has something to talk to. It is the only write the daemon makes
+that the user did not ask for.</p>
+<h2 id="the-memory-store"><a class="header" href="#the-memory-store">The memory store</a></h2>
+<p>Memory is a single-file entry store, shared by an agent across its conversations. It holds what an agent deliberately wrote down. Search is lexical (BM25); there are no embeddings.</p>
+<h3 id="entries"><a class="header" href="#entries">Entries</a></h3>
 <p>An entry has:</p>
 <ul>
 <li><code>id</code> — monotonic integer, assigned on insert.</li>
@@ -374,11 +429,11 @@ architecture must be right. Everything else follows.</p>
 <li><code>created_at</code> — creation timestamp.</li>
 </ul>
 <p>Entries are addressed by <code>name</code> or by any of their <code>aliases</code>. A name is rebindable through aliasing; the canonical <code>name</code> is whatever the agent most recently chose.</p>
-<h2 id="kinds"><a class="header" href="#kinds">Kinds</a></h2>
+<h3 id="kinds"><a class="header" href="#kinds">Kinds</a></h3>
 <p><code>Note</code> entries are the agent’s long-term store. The agent adds, renames, aliases, and rewrites them through memory operations.</p>
 <p><code>Archive</code> entries are produced by compaction. Their <code>content</code> is the summary of a compacted conversation prefix. Archive entries are not rewritten after creation.</p>
 <p>Both kinds share the same index and search path. A search over memory returns both, ranked by relevance.</p>
-<h2 id="compaction"><a class="header" href="#compaction">Compaction</a></h2>
+<h3 id="compaction"><a class="header" href="#compaction">Compaction</a></h3>
 <p>Compaction compresses a prefix of a conversation’s history into a summary and records a boundary in the history at the point of compression.</p>
 <p>When a conversation is compacted:</p>
 <ol>
@@ -388,13 +443,13 @@ architecture must be right. Everything else follows.</p>
 </ol>
 <p>On the next run, the history is replayed from the latest compact marker. Entries before the marker are dropped from the working context; the archive remains available through memory search and by explicit name.</p>
 <p>A conversation can be compacted any number of times. Each compaction leaves one additional marker and one additional archive entry.</p>
-<h2 id="persistence"><a class="header" href="#persistence">Persistence</a></h2>
+<h3 id="persistence"><a class="header" href="#persistence">Persistence</a></h3>
 <p>The memory is a single file. The file holds all entries, all aliases, and the search index snapshot. A write operation mutates memory in RAM and writes an atomic snapshot of the file on each successful apply.</p>
 <p>Opening an existing path reads the snapshot into RAM. Opening a non-existent path creates an empty memory; the file is written on the first successful apply.</p>
-<h2 id="search"><a class="header" href="#search">Search</a></h2>
+<h3 id="search"><a class="header" href="#search">Search</a></h3>
 <p>Search is BM25 over the tokenized content and name of each entry. Results include the entry and its score. The caller chooses the cutoff — the store does not filter by relevance.</p>
 <p>The token set is the union of tokens from <code>content</code> and <code>name</code>; aliases do not contribute tokens. Aliases are resolution, not search.</p>
-<h2 id="operations"><a class="header" href="#operations">Operations</a></h2>
+<h3 id="operations"><a class="header" href="#operations">Operations</a></h3>
 <p>Memory exposes a closed set of write operations:</p>
 <div class="table-wrapper">
 <table>
@@ -411,9 +466,25 @@ architecture must be right. Everything else follows.</p>
 </table>
 </div>
 <p>Operations on <code>Archive</code> entries are permitted but not expected; the agent works with <code>Note</code> entries.</p>
+<h3 id="surface"><a class="header" href="#surface">Surface</a></h3>
+<p>The store is a feature, not lifecycle state, so its tools reach agents through a
+hook rather than through the runtime. That also makes them available to anyone
+embedding the runtime as a library, which a protocol message would not.</p>
+<h2 id="archives-are-on-the-wrong-side"><a class="header" href="#archives-are-on-the-wrong-side">Archives are on the wrong side</a></h2>
+<p>A compaction summary is written to the memory store as an <code>Archive</code> entry, and
+the sessions table holds a pointer to it by name. That is the coupling that
+forces <code>Runtime</code> to carry a memory handle: compaction and resume are lifetime
+operations, so if archives live in memory, the lifetime engine must hold the
+store.</p>
+<p>They should be session rows. Nothing <em>chose</em> to remember a compacted prefix —
+it is the conversation, compressed, and it is unreachable except through the
+session that points at it. Moving it leaves the memory store holding only what
+an agent deliberately wrote down, which is what it is for, and lets memory be
+an ordinary hook.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="runtime"><a class="header" href="#runtime">Runtime</a></h1>
-<p>The runtime is the engine that drives agents. It owns conversations in memory, runs agent steps, dispatches tool calls, and applies compaction. It does not open sockets, accept connections, or schedule time. Capabilities that require I/O are provided to the runtime by its environment.</p>
+<p>The runtime owns the architecture of <em>lifetime</em>: it holds live conversations, runs agent steps, dispatches tool calls, and applies compaction. It does not open sockets, accept connections, or schedule time. Capabilities that require I/O are provided to the runtime by its environment.</p>
+<p>It is also the thing that eats harnesses. Features do not belong here — a feature that ends up as a runtime field is a feature that leaked into the lifecycle engine.</p>
 <h2 id="composition"><a class="header" href="#composition">Composition</a></h2>
 <p>A runtime is parameterized by a <code>Config</code> that names three associated types:</p>
 <div class="table-wrapper">
@@ -422,13 +493,13 @@ architecture must be right. Everything else follows.</p>
 <tr><th>Type</th><th>Responsibility</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Storage</code></td><td>Persistence of conversations, skills, and memory.</td></tr>
+<tr><td><code>Storage</code></td><td>Persistence: agents, conversations, and config.</td></tr>
 <tr><td><code>Provider</code></td><td>LLM request and streaming.</td></tr>
 <tr><td><code>Env</code></td><td>Node-specific capabilities and tool dispatch.</td></tr>
 </tbody>
 </table>
 </div>
-<p>A binary supplies one <code>Config</code>. The daemon’s <code>Config</code> wires filesystem storage, a configured provider, and a node environment that owns hooks and event broadcasting. Tests supply a <code>Config</code> with in-memory storage, a stub provider, and <code>()</code> as the environment.</p>
+<p>A binary supplies one <code>Config</code>. The daemon’s <code>Config</code> wires filesystem storage, a configured provider, and a node environment that owns harnesses and event broadcasting. Tests supply a <code>Config</code> with in-memory storage, a stub provider, and <code>()</code> as the environment.</p>
 <h2 id="responsibilities"><a class="header" href="#responsibilities">Responsibilities</a></h2>
 <p>The runtime handles:</p>
 <ul>
@@ -439,6 +510,53 @@ architecture must be right. Everything else follows.</p>
 <li>Emitting <code>AgentEvent</code> values for each step, tool call, and compaction.</li>
 <li>Producing compaction summaries and appending archive markers.</li>
 </ul>
+<h2 id="conversations"><a class="header" href="#conversations">Conversations</a></h2>
+<p>A conversation is the unit of agent interaction: the message history an agent
+uses as working context, plus the state that travels with it. The runtime holds
+live conversations; the protocol addresses them by <code>(agent, sender)</code>.</p>
+<h3 id="lifetime"><a class="header" href="#lifetime">Lifetime</a></h3>
+<p>A conversation is created on first reference to a pair <code>(agent, sender)</code> that does not yet exist, and persists across daemon restarts. Persistence is delegated to the configured <code>Storage</code> backend.</p>
+<p>At most one conversation exists for any given <code>(agent, sender)</code> pair.</p>
+<h3 id="state"><a class="header" href="#state">State</a></h3>
+<p>A conversation holds:</p>
+<ul>
+<li><strong>History</strong> — an ordered sequence of history entries.</li>
+<li><strong>Title</strong> — a short human-readable label.</li>
+<li><strong>Archive</strong> — a pointer to the compacted prefix of the history, if the conversation has been compacted (see Memory).</li>
+</ul>
+<p>History ordering is total. New entries are appended; no entry is reordered or removed except through compaction.</p>
+<h3 id="message-attribution"><a class="header" href="#message-attribution">Message attribution</a></h3>
+<p>Each assistant message in the history carries an <code>agent</code> field.</p>
+<ul>
+<li>An empty <code>agent</code> field denotes a message produced by the conversation’s primary agent, the one named by the conversation’s identity.</li>
+<li>A non-empty <code>agent</code> field denotes a guest turn (see Multi-agent).</li>
+</ul>
+<p>Messages produced by the daemon for protocol framing are marked as auto-injected and stripped from the history before each run.</p>
+<h3 id="guest-turns"><a class="header" href="#guest-turns">Guest turns</a></h3>
+<p>A guest turn runs a named guest agent against the primary conversation’s history and appends the guest’s response to that history. The primary agent of the conversation is unchanged.</p>
+<p>A guest turn is requested by setting <code>StreamMsg.guest</code> to the name of the guest agent. The conversation is still addressed by the primary’s <code>(agent, sender)</code> pair; <code>guest</code> selects who speaks on this turn, not whose conversation it is.</p>
+<h4 id="flow"><a class="header" href="#flow">Flow</a></h4>
+<p>When <code>StreamMsg { agent: A, sender: S, guest: G, content: C }</code> is dispatched:</p>
+<ol>
+<li>The conversation <code>(A, S)</code> is resolved, creating it if necessary.</li>
+<li>The user content <code>C</code> is appended to the history.</li>
+<li>The daemon runs agent <code>G</code> against the history using <code>G</code>’s own description, which is its system message.</li>
+<li>The response is appended to the history, tagged with <code>agent: G</code>.</li>
+</ol>
+<p>The primary agent is not invoked on a guest turn. A subsequent <code>StreamMsg</code> without <code>guest</code> resumes normal operation with the primary agent against the updated history.</p>
+<h4 id="tools-on-guest-turns"><a class="header" href="#tools-on-guest-turns">Tools on guest turns</a></h4>
+<p>A guest turn is text-only. The guest agent’s tool schemas are not attached to the request, and any tool call emitted by the guest is rejected.</p>
+<p>Tool-using work belongs to the primary agent. A guest is a voice in the conversation, not a worker.</p>
+<h4 id="framing"><a class="header" href="#framing">Framing</a></h4>
+<p>When building a request, the runtime auto-injects framing messages that are not persisted between runs. Two framings exist:</p>
+<ul>
+<li><strong>Guest framing.</strong> Injected when a guest is running. It tells the guest that it is joining a conversation and explains the <code>&lt;from agent="..."&gt;</code> tag convention.</li>
+<li><strong>Primary framing.</strong> Injected when the primary is running and the history contains at least one message with a non-empty <code>agent</code>. It tells the primary that some messages are from guest agents and it should continue responding as itself.</li>
+</ul>
+<p>Framing messages are marked auto-injected. They are stripped from the history at the start of each run and re-injected for that run only. The history on disk never contains framing messages.</p>
+<h4 id="tagging"><a class="header" href="#tagging">Tagging</a></h4>
+<p>Assistant messages with a non-empty <code>agent</code> field are prefixed with <code>&lt;from agent="{name}"&gt;</code> when they appear in an LLM request. The prefix makes the speaker visible to whichever agent is currently reading the history.</p>
+<p>A message without an <code>agent</code> field carries no prefix.</p>
 <h2 id="boundary"><a class="header" href="#boundary">Boundary</a></h2>
 <p>The runtime does not:</p>
 <ul>
@@ -452,24 +570,119 @@ architecture must be right. Everything else follows.</p>
 <h2 id="env"><a class="header" href="#env">Env</a></h2>
 <p><code>Env</code> is the runtime’s only outward-facing capability surface. It provides:</p>
 <ul>
-<li><code>hook()</code> — the composite <code>Hook</code> that exposes tool schemas, dispatches tool calls, and participates in lifecycle events.</li>
+<li><code>hook()</code> — the composite <code>Harness</code> that exposes tool schemas, dispatches tool calls, and participates in lifecycle events.</li>
 <li><code>on_agent_event(agent, conversation_id, event)</code> — hook point for side effects, such as event broadcasting or persistence of step traces.</li>
-<li><code>subscribe_events()</code> — optional subscription to a cross-conversation event stream, for servers that expose agent events to external clients.</li>
-<li><code>discover_instructions(cwd)</code> — collect instruction files applicable to a working directory.</li>
-<li><code>effective_cwd(conversation_id)</code> — resolve the working directory for a run, honoring any per-conversation override.</li>
+<li><code>subscribe_events()</code> — optional subscription to a cross-conversation event stream, for servers that expose agent events to external clients.
+Methods that the runtime does not need in a given context have default implementations. An <code>Env</code> implementation may leave event broadcasting at its default.</li>
 </ul>
-<p>Methods that the runtime does not need in a given context have default implementations. An <code>Env</code> implementation may leave event broadcasting, instruction discovery, or CWD management at their defaults.</p>
-<h2 id="hook"><a class="header" href="#hook">Hook</a></h2>
-<p><code>Hook</code> is the single point through which the runtime reaches node-specific tools. A hook:</p>
+<p>Instruction discovery and working-directory resolution are not here. The daemon does not read the user’s filesystem — a client renders local instructions into the message it sends, and a harness reaches files through the root its declaration grants.</p>
+<h2 id="harness"><a class="header" href="#harness">Harness</a></h2>
+<p>A harness is a way to serve a tool call the daemon does not implement itself.</p>
+<p><code>Harness</code> is public API at the runtime layer, and that is the point: an embedder
+using crabtalk as a library implements it, registers it through the composite,
+and gets tools in their own process without running a daemon. That is a
+consumer the protocol cannot serve — a client on a socket and a crate in your
+binary want different things.</p>
+<p><code>Harness</code> is the single point through which the runtime reaches node-specific tools. A harness:</p>
 <ul>
 <li>Advertises tool schemas for the LLM request.</li>
 <li>Dispatches tool calls by name, returning a future that yields the tool’s result.</li>
 <li>Participates in step lifecycle, observing starts, completions, and errors.</li>
 </ul>
-<p>A hook is composite: the daemon’s hook owns sub-hooks (OS tools, <code>ask_user</code>, delegation, event subscription, memory). Order of sub-hooks is fixed by the composite; the runtime sees a single <code>Hook</code>.</p>
+<p>It is composite: the daemon’s owns sub-harnesses, and the runtime sees a single <code>Harness</code>. Order is fixed by the composite.</p>
+<p><code>usage</code> is the one declaration worth calling out — what these tools are for, when to reach for them, and how they go together. It is the question no single tool’s <code>description</code> answers, because it is about choosing between them.</p>
+<h3 id="why-two-ship"><a class="header" href="#why-two-ship">Why two ship</a></h3>
+<p><code>dispatch</code> is the only method on the trait that genuinely requires it —
+<code>schema</code> and <code>usage</code> are declarations, and the rest is lifecycle bookkeeping.
+So the question “how many implementations are there” is really “how many ways
+can a tool call be served that the daemon does not implement”, and there are
+two: <strong>inside a sandbox</strong> or <strong>over the network</strong> (MCP). A third would need a
+third execution substrate.</p>
+<p>An embedder adding their own is not a violation of that count. It is the seam
+working.</p>
 <h2 id="tool-dispatch"><a class="header" href="#tool-dispatch">Tool dispatch</a></h2>
-<p>A tool call from the agent carries the tool name, arguments, the originating agent and sender, and the conversation id. The runtime invokes <code>Env::hook().dispatch(name, call)</code>. If no sub-hook claims the name, the dispatch yields an error result; the agent receives the error as the tool’s output.</p>
+<p>A tool call from the agent carries the tool name, arguments, the originating agent and sender, and the conversation id. The runtime invokes <code>Env::hook().dispatch(name, call)</code>. If no sub-harness claims the name, the dispatch yields an error result; the agent receives the error as the tool’s output.</p>
 <p>Dispatch is asynchronous. The runtime awaits the tool future at the next step boundary and applies the result to the conversation before the following step.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="harnesses"><a class="header" href="#harnesses">Harnesses</a></h1>
+<p>A harness is code the daemon schedules: one hash-pinned RV64IMAC ELF, compiled
+and run in-process, confined to its own address space, reaching the world only
+through host calls it was granted. It never runs of its own accord — the daemon
+decides when, and while running it may call back in.</p>
+<p>A harness is what shapes an agent — what it remembers, what it can load, what
+it knows of its own past, the tools it habitually reaches for. An agent <em>is</em>
+its harnesses, which is why each one is declared per agent rather than shipped
+to everybody.</p>
+<p>This chapter describes the sandboxed build. The same source compiled with <code>std</code>
+is the same harness reaching the host directly; see
+<a href="#architecture">Architecture</a>.</p>
+<h2 id="the-grant-is-the-linker"><a class="header" href="#the-grant-is-the-linker">The grant is the linker</a></h2>
+<p>Host functions are keyed by number, and a number with nothing registered traps.
+So a capability the declaration did not grant is not <em>checked for</em> — it is
+absent from the linker the harness was instantiated with. <strong>Enforcement is the
+absence of code.</strong> There is no check to write and none to forget.</p>
+<p>Two capabilities ship with the sandbox because they are about the machine,
+which every host has:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Capability</th><th>Reaches</th><th>Bounded by</th></tr>
+</thead>
+<tbody>
+<tr><td><code>fs</code></td><td>Files</td><td><code>root</code></td></tr>
+<tr><td><code>exec</code></td><td>Commands</td><td><code>root</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Anything about the <em>host</em> arrives as an embedder-supplied capability. Crabtalk
+supplies two:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Capability</th><th>Reaches</th><th>Bounded by</th></tr>
+</thead>
+<tbody>
+<tr><td><code>protocol:*</code></td><td>The daemon’s own API</td><td>the granted group, and the declaring agent</td></tr>
+<tr><td><code>http</code></td><td>The network</td><td><code>hosts</code></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="the-argument-is-the-grant"><a class="header" href="#the-argument-is-the-grant">The argument is the grant</a></h2>
+<p>Every capability takes an argument, and the argument is not optional decoration
+— it <em>is</em> the grant. <code>root</code> bounds <code>fs</code> and <code>exec</code>; <code>hosts</code> bounds <code>http</code>.
+Without the argument the capability is never registered, so an under-specified
+declaration reaches <strong>nothing</strong> rather than everything.</p>
+<p>That is also why the daemon’s own port is not a side door: <code>http</code> can only
+reach a name written in <code>hosts</code>, so <code>localhost</code> is unreachable unless somebody
+put it there.</p>
+<h2 id="manifest-not-inference"><a class="header" href="#manifest-not-inference">Manifest, not inference</a></h2>
+<p>A harness carries <code>.berm.abi</code>, an ELF section holding its ABI version, tools,
+requested capabilities, and <code>usage</code>. A section rather than an export, because
+<strong>learning what a harness claims to be must not mean running it</strong> — the daemon
+reads a tool list, a schema, and usage text out of the file without compiling
+anything.</p>
+<p>What the manifest asks for is documentation. What the agent’s <code>HarnessConfig</code>
+grants is what it gets, and the daemon never infers one from the other. If a
+manifest could grant itself anything, “what can this agent reach?” would be a
+question you answer by reading every image instead of one config.</p>
+<h2 id="images-are-content-addressed"><a class="header" href="#images-are-content-addressed">Images are content-addressed</a></h2>
+<p>An image is keyed by a digest of what determines it: the ELF, its <code>Grants</code>, the
+<code>Scope</code> its capabilities close over, and the granted hosts. Not by the agent
+that declared it.</p>
+<p>Two agents that declare the same ELF against different roots hash differently
+and get two linkers. Two that declare it identically share one image. A rename
+changes nothing, because the agent’s name was never part of the key — but a
+per-agent narrowing <em>is</em> part of it, so two agents holding <code>protocol:sessions</code>
+deliberately get two images rather than sharing one narrowing.</p>
+<h2 id="invocation"><a class="header" href="#invocation">Invocation</a></h2>
+<p>Memory is per-invocation: a fresh store each call, nothing surviving between
+them. Anything a harness needs to persist belongs in a capability, not in its
+heap. The boundary costs roughly 17µs; compiling an image is ~15ms cold and
+~3ms against the on-disk code cache, paid per image rather than per call.</p>
+<p>Entering a harness blocks the thread it runs on, and <code>exec</code> can hold it for the
+length of a command, so dispatch hands the invocation to the blocking pool. A
+watchdog bounds how long a harness may run, set to outlast the longest host call
+a capability may make.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="daemon"><a class="header" href="#daemon">Daemon</a></h1>
 <p>The daemon is the long-lived process that hosts the runtime, owns transports, and persists state. Clients are transient; the daemon is not. A single daemon process serves all configured agents, all active conversations, and all connected clients.</p>
@@ -478,12 +691,14 @@ architecture must be right. Everything else follows.</p>
 <ul>
 <li><strong>Transports</strong> — UDS and TCP listeners. Listening endpoints belong to the daemon, not to individual clients or agents.</li>
 <li><strong>Runtime</strong> — a single shared runtime instance behind <code>RwLock</code>. Agents share the runtime; the runtime is never cloned per conversation.</li>
-<li><strong>Hooks</strong> — the composite <code>Hook</code> assembled from sub-hooks (OS tools, <code>ask_user</code>, delegation, event subscription, memory).</li>
+<li><strong>Harnesses</strong> — the composite <code>Harness</code>. Two ship today: the one surfacing the tools of each agent’s declared harnesses, and MCP. <code>Harness</code> is public API at the runtime layer, so an embedder registers their own.</li>
 <li><strong>Event bus</strong> — subscription table and fire callback. File-backed by <code>events/subscriptions.toml</code> under the config directory.</li>
 <li><strong>MCP handler</strong> — connections to external MCP servers and routing to the tools they advertise.</li>
+<li><strong>Harness images</strong> — compiled RV64 ELFs, keyed by a content digest of the ELF, its grants, and the scope its capabilities close over.</li>
 <li><strong>Configuration</strong> — current <code>DaemonConfig</code>, reloaded in place on explicit reload.</li>
 </ul>
-<p>The daemon does not interpret tool semantics. Tool dispatch is the runtime’s responsibility, routed through the composite hook.</p>
+<p>The daemon does not interpret tool semantics. Tool dispatch is the runtime’s responsibility, routed through the composite.</p>
+<p>The daemon owns no tools of its own. <code>bash</code>, <code>read</code> and <code>edit</code> are a harness an agent declares; <code>ask_user</code> is a client tool the daemon forwards and never answers. What the daemon supplies is the socket, the runtime, and the state — not a set of capabilities it decided every agent should have.</p>
 <h2 id="process-model"><a class="header" href="#process-model">Process model</a></h2>
 <p>The daemon runs as a single OS process. All work happens on a single Tokio runtime. There is one listener task per configured transport, one reply task per connected client, and one task per in-flight dispatch. Shutdown is initiated by a broadcast channel; every long-lived task subscribes and exits when the channel fires.</p>
 <p>A daemon process owns at most one configuration directory and at most one set of transport endpoints.</p>
@@ -506,7 +721,7 @@ architecture must be right. Everything else follows.</p>
 </div>
 <p>All paths are resolved relative to the configuration directory. The daemon writes nothing outside this directory.</p>
 <h2 id="lifecycle-1"><a class="header" href="#lifecycle-1">Lifecycle</a></h2>
-<p><strong>Startup.</strong> The daemon reads <code>config.toml</code>, constructs the provider, assembles hooks, opens storage, builds the shared runtime, loads event subscriptions from disk, binds transports, and begins accepting client messages.</p>
+<p><strong>Startup.</strong> The daemon reads <code>config.toml</code>, constructs the provider, assembles harnesses, opens storage, builds the shared runtime, loads event subscriptions from disk, binds transports, and begins accepting client messages.</p>
 <p><strong>Runtime.</strong> The daemon serves the <code>Server</code> trait. Each client message is dispatched into a spawned task that produces a stream of server messages.</p>
 <p><strong>Reload.</strong> A <code>ReloadMsg</code> causes the daemon to re-read <code>config.toml</code> and rebuild the shared runtime in place. Existing in-flight dispatches complete against the previous runtime; new dispatches see the reloaded runtime. Transports are not re-bound.</p>
 <p><strong>Shutdown.</strong> The daemon broadcasts a shutdown signal. Transport listeners stop accepting new connections. Active dispatches complete or cancel at the next await point. The daemon writes no final state on shutdown; state is persisted on each mutating operation, not at exit.</p>
@@ -531,7 +746,7 @@ architecture must be right. Everything else follows.</p>
 </ul>
 <p>The runtime does not interpret provider-specific errors. <code>ApiError</code> is surfaced to the client as a protocol error; the provider is responsible for mapping backend failures into <code>ApiError</code> values.</p>
 <h2 id="tools-across-the-boundary"><a class="header" href="#tools-across-the-boundary">Tools across the boundary</a></h2>
-<p>Tool schemas are declared in <code>crabllm-core::Tool</code>. The runtime collects schemas from the composite hook, attaches them to the request, and lets the provider format them for the backend. Tool calls returned by the provider arrive as <code>ToolCall</code> values; the runtime dispatches each call through <code>Env::hook().dispatch</code>.</p>
+<p>Tool schemas are declared in <code>crabllm-core::Tool</code>. The runtime collects schemas from the composite hook, attaches them to the request, and lets the provider format them for the backend. A harness’s schemas are read out of its ELF’s manifest section rather than by running it, so a tool list costs no execution. Tool calls returned by the provider arrive as <code>ToolCall</code> values; the runtime dispatches each call through <code>Env::hook().dispatch</code>.</p>
 <p>The shape of tool schemas is fixed by <code>crabllm-core</code>. A tool that cannot be expressed in that shape is not expressible to crabtalk.</p>
 <h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
 <p>Provider configuration is read from the node’s <code>config.toml</code> and passed to <code>ProviderRegistry</code>. The daemon does not inspect provider-specific configuration; it forwards the relevant sections to the registry and accepts the resulting <code>Provider</code>.</p>
@@ -882,182 +1097,6 @@ concrete <code>Provider</code> enum. Rejected because <code>Model</code> has gen
 <li>Should streaming requests retry on connection failures before the first chunk?</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="0036---skill-loading"><a class="header" href="#0036---skill-loading">0036 - Skill Loading</a></h1>
-<ul>
-<li>Feature Name: Skill Loading</li>
-<li>Start Date: 2026-03-27</li>
-<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/36">#36</a></li>
-<li>Crates: runtime</li>
-</ul>
-<h2 id="summary-3"><a class="header" href="#summary-3">Summary</a></h2>
-<p>How crabtalk discovers, loads, dispatches, hot-reloads, and scopes skills. The
-skill format follows the <a href="https://agentskills.io">agentskills.io</a> convention —
-this RFC covers the loading mechanism, not the format.</p>
-<h2 id="motivation-3"><a class="header" href="#motivation-3">Motivation</a></h2>
-<p>Agents need extensible behavior without recompilation. Skills are the simplest
-unit that works: a markdown file with a name, description, and a prompt body.
-No code generation, no plugin API, no runtime linking.</p>
-<p>The format is defined by <a href="https://agentskills.io">agentskills.io</a>. What crabtalk
-needs to decide is how skills are found on disk, how they’re resolved at
-runtime, how they stay current without restarts, and how agents are restricted
-to subsets of available skills.</p>
-<h2 id="design-3"><a class="header" href="#design-3">Design</a></h2>
-<h3 id="format-1"><a class="header" href="#format-1">Format</a></h3>
-<p>SKILL.md follows the <a href="https://agentskills.io">agentskills.io</a> convention.
-Required fields: <code>name</code>, <code>description</code>. Optional: <code>allowed-tools</code>. The markdown
-body is the skill prompt.</p>
-<h3 id="discovery"><a class="header" href="#discovery">Discovery</a></h3>
-<p><code>SkillHandler::load(dirs)</code> scans a list of directories (in config-defined order)
-recursively for <code>SKILL.md</code> files. Each skill lives in its own directory:</p>
-<pre><code>skills/
-  check-feeds/
-    SKILL.md
-  summarize/
-    SKILL.md
-</code></pre>
-<p>Nested organization is supported (<code>skills/category/my-skill/SKILL.md</code>). Hidden
-directories (<code>.</code>-prefixed) are skipped. Duplicate names across directories are
-detected and skipped with a warning — first-loaded wins, in config-defined
-directory order.</p>
-<h3 id="registry"><a class="header" href="#registry">Registry</a></h3>
-<p>A <code>Vec&lt;Skill&gt;</code> wrapped in <code>Mutex</code> inside <code>SkillHandler</code>. Linear scan — the
-registry is small enough that indexing is unnecessary. Supports <code>add</code>, <code>upsert</code>
-(replace by name), <code>contains</code>, and <code>skills</code> (list all).</p>
-<h3 id="dispatch-1"><a class="header" href="#dispatch-1">Dispatch</a></h3>
-<p>Exposed as a tool the agent can call. Input: <code>{ name: string }</code>.</p>
-<p>Resolution order:</p>
-<ol>
-<li><strong>Scope check</strong> — if the agent has a skill scope and the name is not in it,
-reject.</li>
-<li><strong>Path traversal guard</strong> — reject names containing <code>..</code>, <code>/</code>, or <code>\</code>.</li>
-<li><strong>Exact load from disk</strong> — for each skill directory, check
-<code>{dir}/{name}/SKILL.md</code>. If found, parse it, upsert into the registry,
-return the body.</li>
-<li><strong>Fuzzy fallback</strong> — if no exact match, substring search the registry by
-name and description. If input is empty, list all available skills
-(respecting scope).</li>
-</ol>
-<h3 id="hot-reload"><a class="header" href="#hot-reload">Hot reload</a></h3>
-<p>The upsert on exact load (step 3) is the hot-reload mechanism. When a skill is
-invoked, it’s always loaded fresh from disk and upserted into the registry.
-Skills can be updated on disk and picked up on next invocation without daemon
-restart.</p>
-<h3 id="slash-command-resolution"><a class="header" href="#slash-command-resolution">Slash command resolution</a></h3>
-<p>Before a message reaches the agent, <code>preprocess</code> resolves leading <code>/skill-name</code>
-commands. For each skill directory, it checks <code>{dir}/{name}/SKILL.md</code>. If found,
-the skill body is wrapped in a <code>&lt;skill&gt;</code> tag and injected into the message. This
-happens before tool dispatch — it’s prompt injection, not a tool call.</p>
-<h3 id="scoping"><a class="header" href="#scoping">Scoping</a></h3>
-<p>Agents can be restricted to a subset of skills via <code>AgentScope.skills</code>. If
-non-empty, only listed skills are available. Empty means unrestricted. Scoping
-applies to both exact load, fuzzy listing, and slash resolution.</p>
-<h2 id="alternatives-3"><a class="header" href="#alternatives-3">Alternatives</a></h2>
-<p><strong>Code-based plugins (dylib / WASM).</strong> Far more powerful but far more complex.
-Skills are prompt injection, not code execution. The simplicity of markdown
-files is the point.</p>
-<p><strong>Database-backed registry.</strong> Adds persistence complexity for a registry that
-rebuilds in milliseconds from disk. Not needed.</p>
-<h2 id="unresolved-questions-3"><a class="header" href="#unresolved-questions-3">Unresolved Questions</a></h2>
-<ul>
-<li>Should skills support arguments beyond the skill name (parameterized prompts)?</li>
-<li>Should <code>allowed-tools</code> be enforced at the runtime level? Currently it is not
-enforced — it exists in the format but has no runtime effect.</li>
-</ul>
-<div style="break-before: page; page-break-before: always;"></div>
-<h1 id="0043---component-system"><a class="header" href="#0043---component-system">0043 - Component System</a></h1>
-<ul>
-<li>Feature Name: Component System</li>
-<li>Start Date: 2026-02-15</li>
-<li>Discussion: <a href="https://github.com/crabtalk/crabtalk/issues/43">#43</a></li>
-<li>Crates: command</li>
-</ul>
-<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
-<p>Crabtalk components are independent binaries that install as system services and
-connect to the daemon via auto-discovery. They crash alone, swap without
-restarts, and the daemon never loads them. This is the manifesto’s composition
-model made concrete.</p>
-<h2 id="motivation-4"><a class="header" href="#motivation-4">Motivation</a></h2>
-<p>The manifesto says: “You put what you need on your PATH. They connect as
-clients. They crash alone. They swap without restarts.”</p>
-<p>This requires a system where components — search, gateways, tool servers — are
-not subprocesses of the daemon. They’re independent programs that run as system
-services. The daemon discovers them at runtime. A broken component cannot take
-the daemon down.</p>
-<p>Other projects spawn MCP servers as child processes. If the child hangs or
-crashes, it can take the daemon with it: zombie processes, leaked file
-descriptors, blocked event loops. The subprocess model creates shared fate.
-The component model eliminates it.</p>
-<h2 id="design-4"><a class="header" href="#design-4">Design</a></h2>
-<h3 id="the-contract"><a class="header" href="#the-contract">The contract</a></h3>
-<p>A component is a binary that:</p>
-<ol>
-<li>Installs itself as a system service (launchd, systemd, or schtasks).</li>
-<li>Writes a port file to <code>~/.crabtalk/run/{name}.port</code> on startup.</li>
-<li>Serves an HTTP API (MCP protocol) on that port.</li>
-</ol>
-<p>The daemon scans <code>~/.crabtalk/run/*.port</code> at startup and discovers components
-automatically. No configuration needed — drop a component on PATH, install it,
-and the daemon finds it.</p>
-<h3 id="service-trait"><a class="header" href="#service-trait">Service trait</a></h3>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub trait Service {
-    fn name(&amp;self) -&gt; &amp;str;        // "search"
-    fn description(&amp;self) -&gt; &amp;str; // human readable
-    fn label(&amp;self) -&gt; &amp;str;       // "ai.crabtalk.search"
-}
-<span class="boring">}</span></code></pre>
-<p>The trait provides default <code>start</code>, <code>stop</code>, and <code>logs</code> methods:</p>
-<ul>
-<li><strong>start</strong> — renders a platform-specific service template, installs and
-launches.</li>
-<li><strong>stop</strong> — uninstalls the service and removes the port file.</li>
-<li><strong>logs</strong> — tails <code>~/.crabtalk/logs/{name}.log</code>.</li>
-</ul>
-<h3 id="mcp-service"><a class="header" href="#mcp-service">MCP service</a></h3>
-<p>Components that expose tools to agents extend <code>McpService</code>:</p>
-<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
-</span><span class="boring">fn main() {
-</span>pub trait McpService: Service {
-    fn router(&amp;self) -&gt; axum::Router;
-}
-<span class="boring">}</span></code></pre>
-<p><code>run_mcp</code> binds a TCP listener on <code>127.0.0.1:0</code>, writes the port to the
-run directory, and serves the router. The daemon discovers it on next scan.</p>
-<h3 id="platform-support"><a class="header" href="#platform-support">Platform support</a></h3>
-<p>Service templates are platform-specific:</p>
-<ul>
-<li><strong>macOS</strong> — launchd plist (<code>~/Library/LaunchAgents/</code>)</li>
-<li><strong>Linux</strong> — systemd user unit</li>
-<li><strong>Windows</strong> — schtasks with XML task definition</li>
-</ul>
-<h3 id="auto-discovery"><a class="header" href="#auto-discovery">Auto-discovery</a></h3>
-<p>The daemon scans <code>~/.crabtalk/run/*.port</code> for port files not already connected.
-Each file contains a port number. The daemon connects via
-<code>http://127.0.0.1:{port}/mcp</code>. No subprocess management, no shared fate.</p>
-<p>Crash? The daemon doesn’t care — it was never the component’s parent process.
-Restart? New port file, the daemon picks it up on next reload. Update a
-component? Install the new version, restart the service — the daemon sees the
-new port on next scan.</p>
-<h3 id="entry-point-1"><a class="header" href="#entry-point-1">Entry point</a></h3>
-<p>The <code>run()</code> function handles tracing init and tokio bootstrap for all component
-binaries.</p>
-<h2 id="alternatives-4"><a class="header" href="#alternatives-4">Alternatives</a></h2>
-<p><strong>Subprocess management.</strong> The daemon spawns and manages components as child
-processes. Rejected because shared fate — a broken child can break the daemon.
-This is the approach we explicitly designed against.</p>
-<p><strong>Docker / containerization.</strong> Run components in containers. Rejected because
-crabtalk is local-first. System services are the right abstraction for a
-personal daemon on your machine.</p>
-<p><strong>Shell scripts for service management.</strong> Works on Unix, breaks on Windows,
-drifts across components. A shared Rust crate is portable and stays consistent.</p>
-<h2 id="unresolved-questions-4"><a class="header" href="#unresolved-questions-4">Unresolved Questions</a></h2>
-<ul>
-<li>Should the Service trait support health checks?</li>
-<li>Should the daemon watch the run directory for new port files instead of
-scanning only at startup/reload?</li>
-</ul>
-<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="0075---hook"><a class="header" href="#0075---hook">0075 - Hook</a></h1>
 <ul>
 <li>Feature Name: Hook Lifecycle</li>
@@ -1068,12 +1107,12 @@ scanning only at startup/reload?</li>
 <blockquote>
 <p><strong>Updated by <a href="https://github.com/crabtalk/crabtalk/pull/162">0162 (Hook-as-plugin)</a> and <a href="#0189---policy-at-the-edge">0189 (Policy at the Edge)</a>.</strong> Hooks now own their tools (per-hook <code>schema()</code> + <code>dispatch()</code>) rather than registering through a shared <code>ToolRegistry</code>. <code>on_before_run</code> was removed and replaced by <code>on_register_agent</code> / <code>on_unregister_agent</code> for state tracking. <code>preprocess</code> returns <code>Option&lt;String&gt;</code> (None = pass through).</p>
 </blockquote>
-<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
+<h2 id="summary-3"><a class="header" href="#summary-3">Summary</a></h2>
 <p>The Hook trait is the central extensibility point for agent lifecycle. Each subsystem (skills, memory, MCP, scoping, OS tools) implements <code>Hook</code> to provide schemas, dispatch tool calls, contribute system-prompt fragments, observe events, preprocess messages, and track per-agent state. The runtime composes hooks behind a single facade and never reaches into a subsystem directly.</p>
-<h2 id="motivation-5"><a class="header" href="#motivation-5">Motivation</a></h2>
+<h2 id="motivation-3"><a class="header" href="#motivation-3">Motivation</a></h2>
 <p>When the runtime was split out of the daemon (#75), a clean interface was needed between the runtime (which executes agents) and the hook implementations (which customize them). The runtime must not know about skills, memory, MCP, or daemon infrastructure. It only knows it has a <code>Hook</code> and calls its methods at the right times.</p>
 <p>This separation enables two modes: the daemon (full hook with skills, MCP, memory, event broadcasting) and embedded use (no hook, or a minimal one).</p>
-<h2 id="design-5"><a class="header" href="#design-5">Design</a></h2>
+<h2 id="design-3"><a class="header" href="#design-3">Design</a></h2>
 <h3 id="the-trait"><a class="header" href="#the-trait">The trait</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1092,7 +1131,7 @@ scanning only at startup/reload?</li>
 <p>All methods have default no-op implementations. <code>()</code> implements <code>Hook</code>.</p>
 <h3 id="lifecycle-points"><a class="header" href="#lifecycle-points">Lifecycle points</a></h3>
 <p><strong><code>schema</code></strong> — the tools this hook owns. The composite hook unions every sub-hook’s <code>schema()</code> to expose the runtime-wide tool set. There is no shared <code>ToolRegistry</code> — each hook is the source of truth for its tools.</p>
-<p><strong><code>system_prompt</code></strong> — optional fragment appended to agent system prompts at build time. Used by hooks that always inject standing instructions (e.g. memory’s behavioural guidance).</p>
+<p><strong><code>usage</code></strong> — what this hook’s tools are for: when to reach for them and how they go together. Renamed from <code>system_prompt</code> (2026-08-16), which named the destination rather than the thing and invited unbounded content. A declaration, not a lifecycle callback. <code>HarnessHook</code> supplies its own per-agent through <code>on_build_agent</code>, since the trait method has no agent in its signature and would put every harness’s text in front of every agent.</p>
 <p><strong><code>on_build_agent</code></strong> — called when an agent is registered. Receives the agent config, returns a possibly-modified config. The composite implementation chains: environment block (OS, shell, platform), per-hook <code>system_prompt()</code> fragments, resource hints (available MCP servers, available skills), and a <code>&lt;scope&gt;</code> block when the agent restricts its tools/skills.</p>
 <p><strong><code>on_register_agent</code> / <code>on_unregister_agent</code></strong> — called when an agent is added to or removed from the runtime registry. Hooks that track per-agent state (scopes, descriptions, MCP fingerprint refcounts) record and clean up here. Symmetric: by the time <code>Runtime::agent()</code> returns the new agent, hook state is in place; by the time the agent is invisible, hook state has been dropped.</p>
 <p><strong><code>preprocess</code></strong> — called before a user message enters the conversation. Returns <code>Some(modified)</code> to transform, <code>None</code> to pass through. Slash-command resolution (<code>/skill-name args</code> → wrapped <code>&lt;skill&gt;</code> body) lives here.</p>
@@ -1106,14 +1145,14 @@ scanning only at startup/reload?</li>
 <p>Dispatch is part of the <code>Hook</code> trait. When an agent produces a tool call, the runtime walks the composite hook and calls <code>dispatch(name, call)</code> until one returns <code>Some(future)</code>. Each hook owns the tools it declared via <code>schema()</code>; nothing else can claim them. Scope enforcement happens at the composite layer before walking sub-hooks.</p>
 <p>Dispatch returns <code>Result&lt;String, String&gt;</code>. <code>Ok</code> carries normal tool output; <code>Err</code> carries a handler-reported failure (invalid args, not found, scope rejection, operation error) or a dispatch-level failure (no tool sender, tool channel closed, reply dropped). The same convention applies to server-specific tools owned by the daemon (ask_user, delegate). The distinction propagates to the <code>AgentEvent::ToolResult.output</code> field and to the wire protocol’s <code>is_error</code> flag so UIs can render errors distinctly and agents can make retry decisions without string-matching error messages. <code>HistoryEntry::tool</code> still stores the inner string regardless of the arm — the LLM wire format has no <code>is_error</code> field, so the model sees the text either way.</p>
 <p>When an agent step produces multiple tool calls, the runtime dispatches them concurrently via <code>FuturesUnordered</code>; tool results are appended to history in the original call order (positional pairing with tool_calls is load-bearing for providers that correlate by index), but the <code>ToolResult</code> events fire in completion order so UIs show fast tools immediately without waiting on slow siblings.</p>
-<h2 id="alternatives-5"><a class="header" href="#alternatives-5">Alternatives</a></h2>
+<h2 id="alternatives-3"><a class="header" href="#alternatives-3">Alternatives</a></h2>
 <p><strong>Separate traits per concern.</strong> One trait for prompt building, one for tools,
 one for events. Rejected because they always compose together and the single
 trait is simpler to implement and reason about.</p>
 <p><strong>Closure-based hooks.</strong> Pass lambdas instead of a trait. Rejected because the
 hook needs shared state (skill registry, MCP connections, memory) that closures
 make awkward.</p>
-<h2 id="unresolved-questions-5"><a class="header" href="#unresolved-questions-5">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-3"><a class="header" href="#unresolved-questions-3">Unresolved Questions</a></h2>
 <ul>
 <li>Should <code>on_build_agent</code> be async to support hooks that need I/O during agent
 construction?</li>
@@ -1134,20 +1173,20 @@ invocation)?</li>
 <blockquote>
 <p><strong>Updated by <a href="#0203---client-side-orchestration">0203 (Client-Side Orchestration)</a> (2026-08-15).</strong> The tool whitelist now applies to client-provided tools at advertisement as well as at dispatch. <code>delegate</code> moved to the client, so it is no longer unconditionally available; “Delegate CWD isolation” describes a <code>DelegateTask.cwd</code> field that was never implemented.</p>
 </blockquote>
-<h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
+<h2 id="summary-4"><a class="header" href="#summary-4">Summary</a></h2>
 <p>A whitelist-based scoping system that restricts what an agent can access: tools and skills. Enforced at dispatch time and advertised in the system prompt. This is a security boundary, not a hint. MCP scoping is no longer part of <code>AgentScope</code> — see <a href="#0193---agent-owned-mcp">0193</a> for the replacement model.</p>
 <p>Delegation is <strong>not</strong> scoped: crabtalk is a single-user runtime, and any
 registered agent can delegate to any other. Multi-tenant identity-based access
 control, if ever needed, belongs in a wrapper above the runtime, not inside
 <code>AgentConfig</code>.</p>
-<h2 id="motivation-6"><a class="header" href="#motivation-6">Motivation</a></h2>
+<h2 id="motivation-4"><a class="header" href="#motivation-4">Motivation</a></h2>
 <p>In multi-agent setups, a delegated sub-agent should not have the same
 capabilities as the primary agent. A research agent doesn’t need bash. Without
 scoping, every agent has access to everything — which means a misbehaving or
 confused agent can call tools it was never intended to use.</p>
 <p>Scoping solves this by letting agent configs declare exactly what resources are
 available. The runtime enforces it.</p>
-<h2 id="design-6"><a class="header" href="#design-6">Design</a></h2>
+<h2 id="design-4"><a class="header" href="#design-4">Design</a></h2>
 <h3 id="agentscope"><a class="header" href="#agentscope">AgentScope</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1201,7 +1240,7 @@ edit fails — optimistic concurrency without locks.</p>
 <h3 id="default-agent"><a class="header" href="#default-agent">Default agent</a></h3>
 <p>The default agent (primary) has no scope restrictions — empty lists on all
 three dimensions. Scoping is for sub-agents that need constrained access.</p>
-<h2 id="alternatives-6"><a class="header" href="#alternatives-6">Alternatives</a></h2>
+<h2 id="alternatives-4"><a class="header" href="#alternatives-4">Alternatives</a></h2>
 <p><strong>Denylist instead of whitelist.</strong> List what’s forbidden instead of what’s
 allowed. Rejected because allowlists are safer by default — a new tool or
 server is inaccessible until explicitly granted. Denylists require updating
@@ -1210,7 +1249,7 @@ every time a new resource is added.</p>
 don’t enforce at dispatch. Rejected because LLMs don’t reliably follow
 instructions — a determined or confused model will call tools it was told not
 to. Enforcement must be at the dispatch layer.</p>
-<h2 id="unresolved-questions-6"><a class="header" href="#unresolved-questions-6">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-4"><a class="header" href="#unresolved-questions-4">Unresolved Questions</a></h2>
 <ul>
 <li>Should scoping support wildcard patterns (e.g. <code>mcp: search-*</code>)?</li>
 <li>Should scope violations be logged as security events for monitoring?</li>
@@ -1227,11 +1266,11 @@ to. Enforcement must be at the dispatch layer.</p>
 <blockquote>
 <p><strong>Updated by <a href="#0203---client-side-orchestration">0203 (Client-Side Orchestration)</a> (2026-08-15).</strong> “Non-blocking delegation” is removed with the daemon-side <code>delegate</code> hook: the <code>background</code> field returned task IDs nothing consumed. Client-side fan-out is synchronous. Detached work that outlives the client is still unsolved and belongs to a daemon jobs API.</p>
 </blockquote>
-<h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
+<h2 id="summary-5"><a class="header" href="#summary-5">Summary</a></h2>
 <p>A daemon-level event bus that routes named events to target agents via
 exact-match subscriptions. Agent completion is the first built-in event source.
 The bus also enables non-blocking delegation and ad-hoc worker agents.</p>
-<h2 id="motivation-7"><a class="header" href="#motivation-7">Motivation</a></h2>
+<h2 id="motivation-5"><a class="header" href="#motivation-5">Motivation</a></h2>
 <p>The daemon can trigger agents on a schedule (cron) and run agents on user
 request (protocol). But there’s no way for one agent’s completion to trigger
 another agent. The Signal pipeline (crabtalk/app#59) needs exactly this:</p>
@@ -1243,7 +1282,7 @@ re-sending. The daemon should own this.</p>
 <p>Separately, <code>delegate</code> blocks the parent agent until all tasks complete. For
 background research or parallel work, this is a limitation. If the daemon can
 route agent completion events, non-blocking delegation falls out for free.</p>
-<h2 id="design-7"><a class="header" href="#design-7">Design</a></h2>
+<h2 id="design-5"><a class="header" href="#design-5">Design</a></h2>
 <h3 id="event-bus-1"><a class="header" href="#event-bus-1">Event bus</a></h3>
 <p>An in-memory subscription table that matches events by exact source string and
 fires target agents with the event payload as message content.</p>
@@ -1285,7 +1324,7 @@ that’s a separate concern (#117).</p>
 <p>Fired agents receive the payload as message content with sender
 <code>"event:{source}"</code>. This follows the established convention
 (<code>"delegate:{id}"</code>, <code>"cron"</code>) for non-user senders.</p>
-<h3 id="protocol"><a class="header" href="#protocol">Protocol</a></h3>
+<h3 id="protocol-1"><a class="header" href="#protocol-1">Protocol</a></h3>
 <p>Four new operations on the <code>Server</code> trait:</p>
 <pre><code class="language-protobuf">message SubscribeEventMsg {
   string source = 1;
@@ -1347,7 +1386,7 @@ results inline. Events are asynchronous and deliver results out-of-band.
 daemon event channel — this is unchanged. A future iteration may refactor cron
 as an event source adapter, emitting <code>cron:{id}:fired</code> events into the bus, but
 this is not in scope. The event bus is additive, not a cron replacement.</p>
-<h2 id="alternatives-7"><a class="header" href="#alternatives-7">Alternatives</a></h2>
+<h2 id="alternatives-5"><a class="header" href="#alternatives-5">Alternatives</a></h2>
 <p><strong>Agent completion triggers (no bus).</strong> A simpler design where completion of
 agent X directly triggers agent Y, without a general subscription mechanism.
 Rejected because the Signal pipeline needs external events (RSS fetch results)
@@ -1359,7 +1398,7 @@ current use cases. Glob matching can be added when a real consumer needs it.</p>
 interpolation in a <code>prompt_template</code> field. Rejected — agents are the template
 engine. The payload goes in as-is; the agent’s instructions handle
 interpretation.</p>
-<h2 id="unresolved-questions-7"><a class="header" href="#unresolved-questions-7">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-5"><a class="header" href="#unresolved-questions-5">Unresolved Questions</a></h2>
 <ul>
 <li>Should there be a max subscription count?</li>
 <li>Should the bus detect infinite loops (agent A triggers B triggers A)?
@@ -1376,11 +1415,11 @@ chains of spawned tasks.</li>
 <li>Supersedes: <a href="rfcs/0064-session.html">0064 (Session)</a>, <a href="rfcs/0078-compact-session.html">0078 (Compact Session)</a></li>
 <li>Updates: <a href="#0018---protocol">0018 (Protocol)</a>, <a href="rfcs/0038-memory.html">0038 (Memory)</a></li>
 </ul>
-<h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
+<h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
 <p>Replace session-centric protocol addressing with agent-centric addressing.
 Users talk to agents, not sessions. Introduce guest turns for multi-agent
 conversations and compaction archives as the agent’s long-term memory.</p>
-<h2 id="motivation-8"><a class="header" href="#motivation-8">Motivation</a></h2>
+<h2 id="motivation-6"><a class="header" href="#motivation-6">Motivation</a></h2>
 <p>The original protocol was session-centric: clients managed session IDs to kill,
 reply, compact, and route messages. This leaked an implementation detail (the
 session ID) into every client and forced multi-agent interaction into either
@@ -1403,7 +1442,7 @@ transport state) with agent memory (message history, compaction). These are
 different lifecycles — connections are ephemeral, conversations persist.</p>
 </li>
 </ol>
-<h2 id="design-8"><a class="header" href="#design-8">Design</a></h2>
+<h2 id="design-6"><a class="header" href="#design-6">Design</a></h2>
 <h3 id="core-model"><a class="header" href="#core-model">Core model</a></h3>
 <p>Each agent has <strong>one continuous conversation</strong> per user. Conversations are
 keyed by <code>(agent, sender)</code> — no session IDs in the protocol.</p>
@@ -1552,9 +1591,12 @@ the pluggable memory provider aligned with this model.</p>
 <blockquote>
 <p><strong>Updated by <a href="#0189---policy-at-the-edge">0189</a> (2026-04-28).</strong> Auto-recall (<code>Memory::before_run</code>) was removed; <code>recall</code> is now strictly model-driven. See 0189 for the rationale.</p>
 </blockquote>
-<h2 id="summary-9"><a class="header" href="#summary-9">Summary</a></h2>
+<blockquote>
+<p><strong>Updated (2026-08-17).</strong> Two things here did not survive. The system prompt no longer lives in <code>Crab.md</code> — that injection moved client-side, and an agent’s <code>description</code> <em>is</em> its system message, with no daemon-supplied default. And storing compaction output as an <code>Archive</code> entry in this store is the coupling that forces <code>Runtime</code> to hold a memory handle: a compacted prefix is session data, not something an agent chose to remember. Archives belong in <code>Storage</code> beside the session, after which memory is a tool surface and nothing more.</p>
+</blockquote>
+<h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
 <p>A standalone <code>crabtalk-memory</code> crate backing agent memory with a single binary db file, atomic persistence, and BM25 recall. The markdown tree is a human-facing export — not the primary store. Entries come in two kinds: <code>Note</code> (agent-written via <code>remember</code>/<code>forget</code>) and <code>Archive</code> (compaction output). The agent’s system prompt is human-managed via <code>Crab.md</code> (existing layered-instructions mechanism) — the memory store has no opinion on it.</p>
-<h2 id="motivation-9"><a class="header" href="#motivation-9">Motivation</a></h2>
+<h2 id="motivation-7"><a class="header" href="#motivation-7">Motivation</a></h2>
 <p>RFC 0038 bet on file-per-entry markdown as the primary store. In practice that premise did not hold:</p>
 <ul>
 <li><strong>Atomic writes don’t compose across many files.</strong> Every remember/forget touched an entry file plus a sidecar index; a crash mid-op left the tree inconsistent. A single-file db is atomic by rename+fsync.</li>
@@ -1566,7 +1608,7 @@ the pluggable memory provider aligned with this model.</p>
 <ul>
 <li><strong>The system prompt is not memory.</strong> 0038 carried a <code>MEMORY.md</code> curated overview that the agent could rewrite via a dedicated <code>memory</code> tool. That conflated two different things: persistent recall (the agent’s notes) and instructions (the human’s prompt). It also gave the agent a footgun — overwriting the whole thing in a single tool call with no diff. Killed: the <code>memory</code> tool, the <code>Prompt</code> entry kind, and the reserved <code>global</code> name. The system prompt now lives in <code>Crab.md</code> (already a file, already layered, already human-edited). If a human wants the agent to edit it, they grant that in prose inside <code>Crab.md</code> and the agent uses the standard file-edit tools.</li>
 </ul>
-<h2 id="design-9"><a class="header" href="#design-9">Design</a></h2>
+<h2 id="design-7"><a class="header" href="#design-7">Design</a></h2>
 <h3 id="crate-layout"><a class="header" href="#crate-layout">Crate layout</a></h3>
 <p><code>crabtalk-memory</code> is a standalone crate. The <code>crabtalk</code> hooks own one <code>Memory</code> handle and expose a <code>SharedStore = Arc&lt;RwLock&lt;Memory&gt;&gt;</code> to the runtime so compaction can write archives and session resume can read them.</p>
 <h3 id="binary-file-format-crmem-v1"><a class="header" href="#binary-file-format-crmem-v1">Binary file format (CRMEM v1)</a></h3>
@@ -1680,11 +1722,11 @@ prod rollout steps ...
 </code></pre>
 <p>Chosen for mdbook: <code>&lt;dl&gt;</code> / <code>&lt;dt&gt;</code> / <code>&lt;dd&gt;</code> is the semantic HTML for key-value metadata, renders as a labeled info card, and doesn’t pollute mdbook’s heading tree. <code>&lt;time datetime="..."&gt;</code> round-trips the exact unix timestamp. A file that doesn’t start with <code>&lt;div id="meta"&gt;</code> is treated as pure content with no metadata.</p>
 <p><code>Memory::load(dir)</code> reads the tree and <em>replaces</em> the db. It validates fully before mutating — a mid-load error leaves the current state untouched. Each kind’s subdirectory is cleared on <code>dump</code> so renames and deletes don’t leave orphan files behind; anything else in <code>dir</code> (e.g. a customized <code>book.toml</code>, a <code>theme/</code> directory) is left alone.</p>
-<h2 id="alternatives-8"><a class="header" href="#alternatives-8">Alternatives</a></h2>
+<h2 id="alternatives-6"><a class="header" href="#alternatives-6">Alternatives</a></h2>
 <p><strong>Stay with file-per-entry (0038).</strong> Rejected — compaction archives need a real store, and atomic multi-file writes would require WAL anyway. A single file gets atomicity for free.</p>
 <p><strong>SQLite.</strong> Overkill for 10²–10³ entries, adds a dependency and schema migrations. A 200-line hand-rolled format is simpler and easier to inspect with <code>xxd</code>.</p>
 <p><strong>Embedding-based search.</strong> Still rejected for the same reasons as 0038: requires a vector store and embedding model. BM25 is fast, dependency-free, and works well at the entry sizes agents produce.</p>
-<h2 id="unresolved-questions-8"><a class="header" href="#unresolved-questions-8">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-6"><a class="header" href="#unresolved-questions-6">Unresolved Questions</a></h2>
 <ul>
 <li>WAL for crash safety in the window between the RAM mutation and the atomic flush.</li>
 <li>Should <code>load()</code> merge instead of replace?</li>
@@ -1697,22 +1739,22 @@ prod rollout steps ...
 <li>Start Date: 2026-04-24</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/pull/184">#184</a></li>
 <li>Crates: new <code>crabup</code> binary; consumes <code>command</code>; shrinks <code>crabtalkd</code></li>
-<li>Updates: <a href="#0043---component-system">0043 (Component System)</a></li>
+<li>Updates: <a href="rfcs/0043-component.html">0043 (Component System)</a></li>
 </ul>
 <blockquote>
 <p><strong>Note (2026-08-15).</strong> The verbs below are superseded. <code>pull</code> / <code>rm</code> shipped as <code>install</code> / <code>uninstall</code>, and the <code>pkg add</code> / <code>pkg remove</code> surface never shipped at all — so <code>add</code> / <code>remove</code> were free, and now pair with <code>install</code> / <code>uninstall</code> to split binaries by role, following <code>rustup</code>. Apps (daemon, cli, telegram) and any crate by name are <code>install</code> / <code>uninstall</code>; harness services (cron, search), which live under <code>harness/</code> in the workspace, are <code>add</code> / <code>remove</code>. Naming one to the wrong verb is an error that names the right one. Pass-through is unchanged but belongs to the app verbs, since an unknown crate cannot be shown to be harness. This RFC’s rejection of “a <code>component add</code> vs <code>pull</code> split” stands on its own terms: that split was about install <em>mechanism</em>, and there is still only one — this one is about what a binary is to the user. The <code>wechat</code> row is gone from the resolution table along with the gateway.</p>
 </blockquote>
-<h2 id="summary-10"><a class="header" href="#summary-10">Summary</a></h2>
+<h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
 <p><code>crabup</code> is a thin wrapper over <code>cargo install</code> that also owns <code>launchd</code>/<code>systemd</code>/<code>schtasks</code> lifecycle for every crabtalk binary. <code>crabup install crabtalkd</code> spawns <code>cargo install crabtalkd</code>. The value add is service management — the one thing <code>cargo install</code> doesn’t do — not distribution, not version coordination, not a registry.</p>
-<h2 id="motivation-10"><a class="header" href="#motivation-10">Motivation</a></h2>
+<h2 id="motivation-8"><a class="header" href="#motivation-8">Motivation</a></h2>
 <p>Two real problems today, both about service management, not about distribution:</p>
 <ol>
 <li><strong>The daemon is its own installer.</strong> <code>crabtalkd start</code> generates and loads a platform unit for itself via the <code>command</code> crate; every other binary (<code>crabtalk-telegram</code>, <code>crabtalk-wechat</code>, …) does the same thing with the same code. A daemon shouldn’t install itself, and the install path shouldn’t live in three places.</li>
 <li><strong>No one-stop service surface.</strong> <code>ps</code>, <code>logs</code>, <code>start</code>, <code>stop</code> are duplicated per binary and absent for most. Users need a single tool that knows about all crabtalk services on the machine, not one subcommand per binary.</li>
 </ol>
 <p>Distribution is already handled: every crabtalk crate publishes to crates.io with <code>version.workspace = true</code>, so <code>cargo install crabtalkd</code> is the install story today. It will remain the install story under crabup — crabup just renames the command and wraps service management around it.</p>
-<p>RFC <a href="#0043---component-system">0043</a> defined <em>how</em> components talk to the daemon (port-file discovery, MCP contract). This RFC defines <em>how they get installed and stay alive</em>.</p>
-<h2 id="design-10"><a class="header" href="#design-10">Design</a></h2>
+<p>RFC <a href="rfcs/0043-component.html">0043</a> defined <em>how</em> components talk to the daemon (port-file discovery, MCP contract). This RFC defines <em>how they get installed and stay alive</em>.</p>
+<h2 id="design-8"><a class="header" href="#design-8">Design</a></h2>
 <h3 id="command-surface"><a class="header" href="#command-surface">Command surface</a></h3>
 <pre><code>crabup pull &lt;name&gt; [--version X]      # cargo install crabtalk-&lt;name&gt; (or crabtalkd)
 crabup rm &lt;name&gt;                      # cargo uninstall
@@ -1788,12 +1830,12 @@ crabup &lt;name&gt; logs [-f]
 </table>
 </div>
 <p>After this, <code>crabtalkd</code>’s CLI is <code>run</code> (the long-running process the service unit invokes, equivalent to today’s <code>--foreground</code>), <code>reload</code>, and <code>events</code>. Package install/uninstall live in crabup as <code>pkg add</code>/<code>pkg remove</code>, not in the daemon CLI.</p>
-<h2 id="alternatives-9"><a class="header" href="#alternatives-9">Alternatives</a></h2>
+<h2 id="alternatives-7"><a class="header" href="#alternatives-7">Alternatives</a></h2>
 <p><strong>Plain <code>cargo install</code>, no crabup.</strong> Installs are one command, but users hand-write <code>launchd</code>/<code>systemd</code> units per binary, and <code>ps</code>/<code>logs</code> across services don’t exist. The service-management gap is the whole reason crabup is a separate tool.</p>
 <p><strong>A real package manager with its own manifest, signed pre-built binaries, version coordination, atomic-set installs.</strong> Previously drafted; cut. Infrastructure we don’t need — crates.io is the registry, workspace-version inheritance is the coordination, and the non-developer audience that would need pre-built binaries doesn’t exist yet. If that audience materializes, pre-built becomes a second <code>crabup pull</code> backend alongside the <code>cargo install</code> path.</p>
 <p><strong>Keep each binary’s <code>start/stop/logs</code> subcommand, just delete the cross-binary dispatcher.</strong> Leaves three copies of the same install code and no one-stop service view. Cuts nothing meaningful.</p>
 <p><strong>Dynamic plugin loading (shared objects).</strong> Rejected by RFC 0043 — shared fate with the daemon is the exact thing the component model avoids.</p>
-<h2 id="unresolved-questions-9"><a class="header" href="#unresolved-questions-9">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-7"><a class="header" href="#unresolved-questions-7">Unresolved Questions</a></h2>
 <ul>
 <li><strong>Windows service layer.</strong> <code>schtasks</code> is weaker than <code>launchd</code>/<code>systemd</code> (no restart-on-failure, limited log routing). Acceptable for v1, or not?</li>
 <li><strong><code>rm</code> scope.</strong> Should <code>crabup rm daemon</code> also remove <code>~/.crabtalk/config/</code>? Leaning no (<code>rm</code> is binary-only; data stays); confirm.</li>
@@ -1812,12 +1854,15 @@ crabup &lt;name&gt; logs [-f]
 <blockquote>
 <p><strong>Updated by <a href="#0189---policy-at-the-edge">0189</a> (2026-04-28).</strong> The “automatic compaction on overflow as a safety net” carve-out and auto-title generation were both removed; clients drive both via <code>compact_conversation</code> and a future <code>generate_title</code> RPC, gated on the new <code>AgentEvent::ContextUsage</code> events. See 0189 for the rationale.</p>
 </blockquote>
-<h2 id="summary-11"><a class="header" href="#summary-11">Summary</a></h2>
+<blockquote>
+<p><strong>Updated (2026-08-17).</strong> The index design stands; the <em>surface</em> moved. <code>search_sessions</code> is no longer a daemon hook — the daemon answers a <code>SearchSessions</code> protocol message, so any client can search history, and a harness holding <code>protocol:sessions</code> formats hits for a model. The harness never touches session storage: asking is narrower than reading, and the host overwrites the request’s <code>agent</code> filter with whoever declared it.</p>
+</blockquote>
+<h2 id="summary-9"><a class="header" href="#summary-9">Summary</a></h2>
 <p>Collapse the topic subsystem. Sessions persist unconditionally and carry a small runtime-managed meta blob. Recall gains a second BM25 index — this one over conversation messages — returning windowed excerpts with bounded size. The runtime exposes narrow session primitives and two search tools; client UX owns <code>/clear</code>, <code>/new</code>, <code>/compact</code>, titling, and session routing. The “topic” concept dissolves: content-derived session search (BM25) replaces tag-based grouping, and any curated grouping that survives is a client concern.</p>
-<h2 id="motivation-11"><a class="header" href="#motivation-11">Motivation</a></h2>
+<h2 id="motivation-9"><a class="header" href="#motivation-9">Motivation</a></h2>
 <p>RFC 0171 introduced topic switching to partition a single <code>(agent, sender)</code> pair into N parallel threads keyed by title, with tmp chats that skip persistence until the agent “promotes” them by entering a topic. In practice it conflated four independent concerns into one knot — routing (“which conversation does this message land in?”), persistence policy (“should this session hit storage?”), recall indexing (“how do we find related past work?”), and lifecycle UX (“when does a chat end and a new one begin?”). Each wanted a different home, and riding one mechanism for all of them produced the <code>TopicRouter</code> reservation/rollback dance, the tmp/promote split, and agent-upfront title commitment on what should have been retrospective categorization.</p>
 <p>The reframe driving this RFC: <em>a topic is not a thing</em>. It was a name trying to be a routing key, a memory kind, a session tag, and a recall index simultaneously. With BM25 over session messages, content-derived recall eats the tag’s lunch — the agent searches “cron refactor” and gets back the conversations that actually discussed it, without any of them ever being classified upfront. What remains worth keeping is a <code>summary</code> field that boosts search ranking when one happens to exist (piggybacking on work the runtime already does during overflow compaction).</p>
-<h2 id="design-11"><a class="header" href="#design-11">Design</a></h2>
+<h2 id="design-9"><a class="header" href="#design-9">Design</a></h2>
 <h3 id="layering-runtime-vs-client"><a class="header" href="#layering-runtime-vs-client">Layering: runtime vs. client</a></h3>
 <p>The runtime’s job is to provide mechanical primitives. UX and policy decisions — when to clear, when to compact, when to title, when to recall, which session to route a message to, how to surface archival browsing — belong one layer up in the client. RFC 0189 finished the move: the runtime no longer auto-compacts on overflow, no longer spawns title generation, no longer auto-recalls. Clients drive <code>compact_conversation</code>, future <code>generate_title</code>, and explicit memory search themselves, gated on <code>AgentEvent::ContextUsage</code> events.</p>
 <p>Runtime primitives (policy-free):</p>
@@ -1928,7 +1973,7 @@ pub struct WindowItem {
 <h3 id="auto-compaction-as-safety-net"><a class="header" href="#auto-compaction-as-safety-net">Auto-compaction as safety net</a></h3>
 <p>Overflow compaction stays, because context-window overflow is a hard constraint the client layer can’t enforce. Two changes versus today: (a) compaction additionally populates <code>ConversationMeta.summary</code> so session search can boost it, and (b) compaction is no longer per-topic (there are no topics) — it fires per session, which is what a client would expect anyway.</p>
 <p>The existing <code>AgentConfig::compact_threshold</code> continues to fire on token-budget pressure, not overflow-only; “overflow safety net” here is shorthand for “context-pressure-driven, not user-driven.” Discretionary compaction (“I want to clean up this old chat”) is a client concern — the runtime optionally exposes a <code>compact(session_id)</code> helper in a follow-up RFC if clients converge on needing one. Not required to ship this one.</p>
-<h2 id="alternatives-10"><a class="header" href="#alternatives-10">Alternatives</a></h2>
+<h2 id="alternatives-8"><a class="header" href="#alternatives-8">Alternatives</a></h2>
 <p><strong>Semantic retrieval via embeddings.</strong> Deferred. Lexical BM25 covers the 80% case at zero new deps and microsecond query time. A vector index adds an embedding model or API dependency, hundreds of MB of index storage, and a hybrid-search ranking story. Revisit when lexical recall demonstrably misses on a labeled test set — not before.</p>
 <p><strong>Keep topic as a tag.</strong> Rejected. With BM25 over messages, tag-based filtering is redundant with query-based retrieval at the cost of requiring disciplined agent tagging and introducing tag-name drift (“cron refactor” vs “cron cleanup”). The tag was the join key between memory and sessions; BM25 is the join key now.</p>
 <p><strong>Single unified <code>recall()</code> tool that queries memory and sessions together.</strong> Rejected. Two explicit tools are cheaper for the agent to reason about — it knows what it is paying for in each call, and the two stores have different payload-sizing rules (memory entries are small and returned whole; session hits are bounded excerpts). Composition in prompt-space is the right layer.</p>
@@ -1962,9 +2007,9 @@ pub struct WindowItem {
 <blockquote>
 <p><strong>Updated by <a href="#0203---client-side-orchestration">0203 (Client-Side Orchestration)</a> (2026-08-15).</strong> The peer-agents <code>&lt;agents&gt;</code> block this RFC moved into <code>on_build_agent</code> now leaves the daemon entirely — naming delegation targets is policy, and it belongs with the client that offers the tool.</p>
 </blockquote>
-<h2 id="summary-12"><a class="header" href="#summary-12">Summary</a></h2>
+<h2 id="summary-10"><a class="header" href="#summary-10">Summary</a></h2>
 <p>Mechanism belongs in the daemon; policy belongs at the edge. The daemon stops making decisions on the user’s behalf — it no longer auto-compacts on a token-count heuristic, no longer spawns title-generation calls in the background, no longer BM25-searches memory and injects synthetic <code>&lt;recall&gt;</code> user turns. Each of these is now an explicit RPC the client calls when (and if) it wants the behavior. A new <code>AgentEvent::ContextUsage { usage }</code> carries real per-step token counts so clients can pick their own pressure threshold. The <code>Hook::on_before_run</code> lifecycle method is removed.</p>
-<h2 id="motivation-12"><a class="header" href="#motivation-12">Motivation</a></h2>
+<h2 id="motivation-10"><a class="header" href="#motivation-10">Motivation</a></h2>
 <p>Three independent features had drifted toward the same anti-pattern: the daemon making policy decisions using its own heuristics, then mutating conversation state on the user’s behalf without being asked. RFC 0000 codified auto-compaction at a <code>chars/4</code>-derived threshold. RFC 0038 (then 0150) codified auto-recall as a per-turn before-run injection. The runtime grew a quiet <code>spawn_title_generation</code> call inside <code>finalize_run</code>. Each was useful in isolation. Together they shaped a daemon that thought it knew best.</p>
 <p>The cost of that posture:</p>
 <ul>
@@ -1974,7 +2019,7 @@ pub struct WindowItem {
 <li><strong>Race with the explicit API.</strong> All three behaviors had explicit-API counterparts (<code>compact_conversation</code>, the <code>recall</code> tool, a clearly-named title RPC if the client wanted one). The daemon was racing the client to call its own API.</li>
 </ul>
 <p>RFC 0185 already drew the right line for sessions: “the runtime’s job is to provide mechanical primitives. UX decisions belong one layer up in the client.” This RFC carries that all the way through.</p>
-<h2 id="design-12"><a class="header" href="#design-12">Design</a></h2>
+<h2 id="design-10"><a class="header" href="#design-10">Design</a></h2>
 <h3 id="principle"><a class="header" href="#principle">Principle</a></h3>
 <p>Mechanism in the daemon, policy at the edge. Concretely:</p>
 <ul>
@@ -2031,15 +2076,15 @@ pub struct WindowItem {
 <blockquote>
 <p><strong>Updated by <a href="#0204---mcp-peer-lifetime">0204 (MCP Peer Lifetime)</a> (2026-08-15).</strong> The fingerprint gains <code>auth</code>, and registering an MCP no longer spawns a process — a declaration and a peer now have separate lifetimes.</p>
 </blockquote>
-<h2 id="summary-13"><a class="header" href="#summary-13">Summary</a></h2>
+<h2 id="summary-11"><a class="header" href="#summary-11">Summary</a></h2>
 <p>Agents own their MCP servers by value, not by name reference into a daemon-global registry. <code>AgentConfig.mcps</code> becomes <code>Vec&lt;McpServerConfig&gt;</code> — every agent carries the full configuration of every MCP it uses. The daemon’s job shrinks to “spawn what agents declare, dedup identical processes, route tool calls per agent.” <code>Storage::{list,upsert,delete}_mcp</code> and <code>crabtalkd mcp</code> go away. Forking an agent now means copying one config; the new owner gets a self-contained, runnable artifact.</p>
-<h2 id="motivation-13"><a class="header" href="#motivation-13">Motivation</a></h2>
+<h2 id="motivation-11"><a class="header" href="#motivation-11">Motivation</a></h2>
 <p>The current model treats MCPs as a daemon-level resource that agents reference by name. That made sense when crabtalk was a single-user CLI managing a fixed fleet of tools. It doesn’t fit where the runtime is going.</p>
 <p><strong>Forkability is broken.</strong> RFC 0135 framed agents as the unit users see and share — sessions are plumbing, agents are the artifact. Cloud workflows extend that: an agent should be a forkable thing, like a GitHub repo. Today, forking an agent’s TOML doesn’t fork its MCPs; the fork lands on a daemon that may or may not have a server registered under the same name, with the same args, with the same env. The agent reference is a dangling pointer until someone manually re-registers the missing pieces.</p>
 <p><strong>Namespace pollution is artificial.</strong> Two agents that want the same logical MCP with different env (e.g., one read-only token, one admin token) must register two differently-named entries in a global flat namespace. The bridge’s <code>tool_cache: BTreeMap&lt;String, Tool&gt;</code> then logs-and-skips conflicts when both expose <code>web_search</code>. None of that pollution is intrinsic to MCP; it’s a consequence of the registry shape.</p>
 <p><strong>The allowlist is a workaround for ownership.</strong> <code>AgentConfig.mcps: Vec&lt;String&gt;</code> (RFC 0082) gates which global entries an agent may dispatch to. It exists because the registry is shared. If agents own their MCPs, allowlists become tautological — the agent only dispatches to what it declared.</p>
 <p>The cloud target makes this acute. Cloud will import <code>crabtalk</code> as a library and host one agent per tenant (or per agent instance). A daemon-global registry on a multi-tenant host either leaks configurations across tenants or forces the cloud layer to maintain its own per-tenant overlay on top of the registry. Either way the global registry is wrong — the right shape is “agent has its MCPs,” and the cloud’s secret/canonical layer can compose forkable templates above that.</p>
-<h2 id="design-13"><a class="header" href="#design-13">Design</a></h2>
+<h2 id="design-11"><a class="header" href="#design-11">Design</a></h2>
 <h3 id="data-model"><a class="header" href="#data-model">Data model</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -2099,15 +2144,15 @@ pub struct WindowItem {
 <li>Crates: tui, core, crabtalk, runtime, hooks, sdk</li>
 <li>Updates: <a href="#0082---scoping">0082 (Scoping)</a>, <a href="#0121---event-bus">0121 (Event Bus)</a>, <a href="#0189---policy-at-the-edge">0189 (Policy at the Edge)</a></li>
 </ul>
-<h2 id="summary-14"><a class="header" href="#summary-14">Summary</a></h2>
+<h2 id="summary-12"><a class="header" href="#summary-12">Summary</a></h2>
 <p><code>delegate</code> stops being a daemon-side hook and becomes a client tool, declared in <code>StreamMsg.tools</code> like <code>bash</code>. Fan-out is then just more streams on the same socket: a conversation is keyed by <code>(agent, sender)</code>, so a distinct sender buys each sub-agent its own conversation, its own bridge listener, and its own tool set. The daemon no longer knows the tool exists — it forwards an opaque call and receives a reply. No protocol change.</p>
 <p>Two consequences follow. Sub-agents gain the client’s OS tools, which they never had. And client-provided tools now pass through the agent’s <code>config.tools</code> whitelist when they are advertised, not only when they are dispatched.</p>
-<h2 id="motivation-14"><a class="header" href="#motivation-14">Motivation</a></h2>
+<h2 id="motivation-12"><a class="header" href="#motivation-12">Motivation</a></h2>
 <p>The seam between daemon and client was already drawn, and orchestration was on the wrong side of it. The daemon owns the model loop and sessions; the client owns the environment. <code>bash</code>, <code>read</code>, <code>edit</code>, and <code>ask_user</code> execute in the client, and <code>hooks::os::discover_instructions</code> states the rule outright: the daemon does not read the user’s filesystem.</p>
 <p>Against that, look at what a delegated sub-agent actually got. <code>DelegateHook</code> called <code>send_to(conversation_id, &amp;message, &amp;sender, None, vec![])</code> — an empty <code>extra_tools</code>, so no client tools at all. And had it passed them, <code>ClientBridge::dispatch</code> refuses any conversation with no registered listener, and the only thing that registers one is a client’s own stream. Sub-agents could think, reach memory, skills, and MCP, and nothing else. Daemon-side orchestration was orchestrating agents with no hands.</p>
 <p>Fixing that in the daemon is not a small change. It means multiplexing sub-conversation forwards onto the parent’s listener, namespacing <code>call_id</code>s across conversations, teaching the client to answer for conversations it never opened, propagating cancellation through the tree, and stopping listener teardown from killing in-flight sub-agent calls when the parent stream ends. That is a second dimension on the bridge protocol, bought to reach a capability the client already has.</p>
 <p>In the client it is arithmetic. The bridge is already keyed per conversation with its own tool set and listener — precisely the primitive parallel orchestration needs. This is also what the boundary contract already says: the runtime owns mechanics, clients own UX, and discretionary lifecycle is composed in the client from runtime primitives. Delegation is discretionary composition.</p>
-<h2 id="design-14"><a class="header" href="#design-14">Design</a></h2>
+<h2 id="design-12"><a class="header" href="#design-12">Design</a></h2>
 <h3 id="delegate-as-a-client-tool"><a class="header" href="#delegate-as-a-client-tool">Delegate as a client tool</a></h3>
 <p>The client declares <code>delegate</code> alongside its OS tools at stream time. The daemon advertises the schema to the model, and when the model calls it, <code>ClientBridge</code> forwards it back like any other client tool. The schema and executor live entirely in the client; nothing about delegation appears in the protocol, in <code>crabtalk</code>, or in <code>runtime</code>.</p>
 <pre><code>TUI ──stream(sender="user", tools=[bash,read,edit,ask_user,delegate])──▶ daemon
@@ -2149,11 +2194,11 @@ pub struct WindowItem {
 <h3 id="0121---event-bus-1"><a class="header" href="#0121---event-bus-1">0121 - Event Bus</a></h3>
 <p><code>Delegate.background</code> is removed. The field returned <code>{"task_id": "delegate:N"}</code> to the model, and no consumer for those IDs was ever built — the model could not await them and no client surfaced them. Client-side fan-out is synchronous by construction: the executor holds the parent’s tool call open until every task settles.</p>
 <p>This does not remove the underlying need. Work that must outlive the client process is real, and it belongs to the daemon — but as a jobs API with addressable handles, not a boolean on a tool. The event bus remains the right substrate for delivering its results out-of-band.</p>
-<h2 id="alternatives-11"><a class="header" href="#alternatives-11">Alternatives</a></h2>
+<h2 id="alternatives-9"><a class="header" href="#alternatives-9">Alternatives</a></h2>
 <p><strong>Multiplex sub-conversation forwards onto the parent listener.</strong> Keep delegation in the daemon and extend the bridge so a sub-agent’s tool calls ride the parent’s stream. Rejected in the Motivation: it is a protocol expansion whose payoff is a capability the client already has, and it puts cancellation and permission prompts on the side of the wire that has neither the user nor the filesystem.</p>
 <p><strong>Make the sub-agent tool set client-configurable.</strong> Rejected because per-agent capability already has an enforced home in <code>AgentConfig.tools</code>. Two sources of truth for “what can this agent do” is how an agent ends up scoped in config and unscoped in practice.</p>
 <p><strong>Keep a daemon-side delegate for headless clients.</strong> Rejected: it cannot coexist with the client tool under one name, and headless clients are served by the same executor without it.</p>
-<h2 id="unresolved-questions-10"><a class="header" href="#unresolved-questions-10">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-8"><a class="header" href="#unresolved-questions-8">Unresolved Questions</a></h2>
 <ul>
 <li><code>ClientBridge::FORWARD_TIMEOUT</code> is 300s and now bounds an entire fan-out rather than a single <code>bash</code>. It is only a backstop for a connected-but-silent client, since <code>unregister_listener</code> already fails pending calls when a stream drops — so raising it is low-risk, but the right ceiling has not been measured.</li>
 <li>Should a sub-agent be able to delegate? Depth is capped at one by withholding the tool, which costs nothing and is trivially reversible, but a real nested use case would want a depth counter rather than an omission.</li>
@@ -2167,14 +2212,14 @@ pub struct WindowItem {
 <li>Crates: mcp, core, crabtalk, tui</li>
 <li>Updates: <a href="#0193---agent-owned-mcp">0193 (Agent-Owned MCP)</a></li>
 </ul>
-<h2 id="summary-15"><a class="header" href="#summary-15">Summary</a></h2>
+<h2 id="summary-13"><a class="header" href="#summary-13">Summary</a></h2>
 <p>An MCP peer is a process, and this RFC gives it a lifetime of its own rather than borrowing the declaration’s. Credentials join the dedup fingerprint, so a peer is never shared across a trust boundary. A peer that stops answering now says so instead of reporting <code>Connected</code> forever. <code>ReconnectMcp</code> brings one back on request. And a peer starts on an agent’s first MCP tool call and stops once it goes idle, instead of existing for as long as some agent has the config in its TOML.</p>
-<h2 id="motivation-15"><a class="header" href="#motivation-15">Motivation</a></h2>
+<h2 id="motivation-13"><a class="header" href="#motivation-13">Motivation</a></h2>
 <p>RFC 0193 made MCPs agent-owned and deduped identical configs down to one process. Both decisions hold. What did not survive contact with a multi-tenant host is the assumption underneath them: that a declaration and a process are the same thing, and that structural identity is <code>(command, args, env, url)</code>.</p>
 <p><strong>Credentials were not part of identity.</strong> <code>fingerprint</code> hashed <code>env</code> precisely because it carries a stdio server’s secrets — but <code>auth</code>, the HTTP transport’s equivalent, was left out. Two agents naming the same URL with different bearer tokens hashed identically, so the second refcount-bumped onto the first one’s peer and its tool calls went out under the first agent’s header. On a single-user install that is invisible. On a shared host it is a credential leak, and it is the one config that dedup must never collapse.</p>
 <p><strong>Peers were tied to registration.</strong> <code>register_for_agent</code> spawned on first reference and only the last <code>unregister_for_agent</code> tore down. For a CLI with a handful of agents that is fine — everything is warm and nothing is wasted. Host ten thousand tenants and it means a child process for every MCP any of them ever mentioned, alive from boot, whether or not a model ever called one. Dedup does not rescue this: the interesting servers are per-tenant credentialed, and with credentials now correctly part of identity, those are exactly the configs that <em>cannot</em> share a peer. The process count scales with tenants, not with distinct tools.</p>
 <p><strong>Failure was invisible.</strong> Nothing wrote back to peer state after the initial connect. An expired token or a dead child surfaced as an error string handed to the model; <code>states()</code> kept reporting <code>Connected</code> and <code>McpEventKind::Failed</code> never fired again. A client watching the lifecycle stream was blind to the single condition it would want to act on, which also made “let the client decide whether to retry” — 0193’s stated position — unimplementable in practice.</p>
-<h2 id="design-15"><a class="header" href="#design-15">Design</a></h2>
+<h2 id="design-13"><a class="header" href="#design-13">Design</a></h2>
 <h3 id="credentials-are-identity"><a class="header" href="#credentials-are-identity">Credentials are identity</a></h3>
 <p><code>fingerprint</code> hashes <code>(command, args, env, url, auth)</code>. One peer sends one <code>Authorization</code> header on behalf of every agent sharing it, so agents holding different tokens get different peers.</p>
 <p>This has a second effect worth naming: rotating a token is now a real reconnect through the existing surface. A new token is a new fingerprint, so <code>UpsertMcp</code> with fresh credentials tears the old peer down and stands a new one up. Before, the rotated config hashed to the same fingerprint, took the refcount fast path, and left the peer running with the expired header while the daemon reported success.</p>
@@ -2210,12 +2255,12 @@ idle_timeout = 1800
 <p>“<code>register_for_agent(agent, cfg)</code> increments the refcount, spawning if first” no longer holds; it records only. The <strong>Lifecycle interactions</strong> section reads the same way throughout — agent create, update, daemon startup, and daemon reload all describe new fingerprints spawning. They now register declarations, and the first dispatch spawns. Agent delete and rename are unchanged.</p>
 <p><strong>Out of scope</strong> ruled that “whether a client retries is a client decision.” That intent survives and is finally actionable: the daemon still never auto-restarts, but a failed peer is now visible on the lifecycle stream and in <code>ListMcps</code>, and <code>ReconnectMcp</code> gives the client something to call. The reaper ages <code>Failed</code> back to <code>Disconnected</code>, which makes the following dispatch a natural retry — a bound on retry frequency, not an auto-restart policy.</p>
 <p>The <strong>Migration</strong> section’s one-shot inlining of the global <code>[mcps]</code> registry has been removed, as that section itself anticipated (“the migration code path is dead and gets removed in a follow-up cleanup commit”).</p>
-<h2 id="alternatives-12"><a class="header" href="#alternatives-12">Alternatives</a></h2>
+<h2 id="alternatives-10"><a class="header" href="#alternatives-10">Alternatives</a></h2>
 <p><strong>Sweep for idle peers during dispatch instead of running a reaper.</strong> No background task, no tick interval. Rejected because it inverts the case that matters: a host with thousands of idle tenants is precisely one where nothing dispatches, so nothing would ever sweep. Eviction has to be driven by time passing, not by traffic.</p>
 <p><strong>Retry failed peers automatically with backoff.</strong> Rejected as machinery for a bound the design already has. The idle timeout is a retry interval for free, and it is a number the operator already chose.</p>
 <p><strong>Per-agent idle timeout.</strong> Rejected because a peer is shared. Two agents with different timeouts on one process leaves no honest answer to whose wins, and the tie-break would be invisible to both.</p>
 <p><strong>Keep the config out of <code>PeerEntry</code> and pass it to reconnect.</strong> Rejected: the effective config is the handler’s own product, not the caller’s, and reproducing it at the call site means duplicating the env-overlay rule wherever a reconnect is triggered.</p>
-<h2 id="unresolved-questions-11"><a class="header" href="#unresolved-questions-11">Unresolved Questions</a></h2>
+<h2 id="unresolved-questions-9"><a class="header" href="#unresolved-questions-9">Unresolved Questions</a></h2>
 <ul>
 <li>None of this has been exercised against a live daemon. The reaper’s timing, the per-peer gate under real concurrency, and the <code>Failed</code> → <code>Disconnected</code> → retry cycle are reasoned through rather than observed.</li>
 <li>The first call after an eviction pays a connect, bounded by the existing 30s <code>MCP_CONNECT_TIMEOUT</code>. What that actually costs a conversation has not been measured, and it is the number that would justify moving <code>idle_timeout</code>’s default.</li>
@@ -2231,18 +2276,21 @@ idle_timeout = 1800
 <li>Supersedes: <a href="rfcs/0080-cron.html">0080 (Cron)</a></li>
 <li>Updates: <a href="#0184---crabup">0184 (crabup)</a>, <a href="#0189---policy-at-the-edge">0189 (Policy at the Edge)</a>, <a href="#0203---client-side-orchestration">0203 (Client-Side Orchestration)</a></li>
 </ul>
-<h2 id="summary-16"><a class="header" href="#summary-16">Summary</a></h2>
+<blockquote>
+<p><strong>Updated (2026-08-17).</strong> Three changes since this landed. Images are keyed by a content digest — the ELF, its <code>Grants</code>, the capability <code>Scope</code>, and the granted hosts — rather than by <code>(agent, harness)</code>, so identical declarations share one image and a rename is not an event. An <code>http</code> capability exists, bounded by a <code>hosts</code> allowlist on the declaration exactly as <code>root</code> bounds <code>fs</code>; it lives in <code>crates/berm</code> rather than the engine because hyper needs a reactor the sandbox deliberately lacks. And <code>.berm.abi</code> carries a <code>usage</code> string — what the tools are for — read off the ELF without running it and injected only into agents that declared the harness.</p>
+</blockquote>
+<h2 id="summary-14"><a class="header" href="#summary-14">Summary</a></h2>
 <p>A <strong>harness</strong> is code the daemon schedules: one hash-pinned RV64IMAC ELF, compiled and run in-process by <a href="https://github.com/crabtalk/rvtime">rvtime</a>, confined to its own address space, reaching the world only through numbered host calls it was explicitly granted. A harness never runs of its own accord — the daemon decides when it runs, and while running it may call back in.</p>
 <p><strong>berm</strong> is what runs one. It is the sandbox rather than the agent platform: it loads the ELF, grants capabilities, and invokes, and it knows nothing about agents or the protocol. Crabtalk is one thing that embeds it, and deliberately not the only one — see <a href="#layout">Layout</a>.</p>
 <p>What it calls back into is <strong>the protocol</strong>. <code>ClientMessage</code> is already the daemon’s complete, versioned, externally-facing API, so it is the vocabulary for everything a harness does to the runtime: send to an agent, subscribe to an event, schedule a wake. One capability number carries the whole surface, with a per-harness allowlist over message types.</p>
 <p>Harnesses replace stdio-spawned MCP servers as the way we distribute extensions. <code>harness/search</code> becomes one. <code>harness/cron</code> is deleted outright, because scheduling stops being a service and becomes the harness execution model: every harness invocation — tool call, timed wake, subscribed event — goes through one queue, and a cron entry is the case where the trigger is a time.</p>
 <p>Two things follow that reach past extension code. Where a harness runs is a deployment property rather than a design one, which dissolves the “client tool” category: OS capabilities become a harness placed on whichever machine holds the files, and a client tool narrows to one whose result requires a human. And a harness is a third home for policy — not daemon-core, not client — which is where delegation belongs once sub-agents can reach tools without a client attached.</p>
-<h2 id="motivation-16"><a class="header" href="#motivation-16">Motivation</a></h2>
+<h2 id="motivation-14"><a class="header" href="#motivation-14">Motivation</a></h2>
 <p><strong>Spawning a binary is not an extension mechanism.</strong> Today an agent declares an MCP server (RFC 0193) and the daemon runs the named command as a child process with the daemon’s own privileges: full filesystem, full network, full environment. Nothing about that grant is declared, inspectable, or revocable. The tool the model sees is <code>search_web</code>; the thing the operating system sees is an unbounded process. For code we wrote that is a manageable risk. For code a third party wrote it is the whole risk, and it is the reason there is no answer today to “can I install someone else’s tool?”</p>
 <p><strong>Distribution multiplies the problem.</strong> A native binary needs a build per platform — <code>apps/crabup/src/github.rs:15-19</code> enumerates five — so a third-party tool author must produce and maintain five artifacts before anyone can install one. Most will not, and the ones who do become five chances for the artifact to differ from the source.</p>
 <p><strong>The word is already in the repo, meaning two different things.</strong> <code>apps/crabup/src/registry.rs:6</code> defines <code>harness/</code> as “the services you attach to a running system,” installed with <code>crabup add</code>. Two entries carry that label. <code>crabtalk-search</code> answers requests and has no state of its own between them. <code>crabtalk-cron</code> owns a timer, wakes itself, and calls the daemon over the SDK socket. These are not the same kind of thing, and calling both a harness has cost us a definition we could reason with.</p>
 <p><strong>The runtime exists and was built for this.</strong> rvtime compiles a statically linked RV64IMAC ELF to native code with Cranelift, caches the generated code on disk keyed by a hash of the CLIF function plus ISA settings, and lets the host register numbered call-backs. Its own cache module is documented for the case where “a daemon may compile the same plugin from several processes at once.” It is published as <code>rvtime</code> 0.0.1 and we own it.</p>
-<h2 id="design-16"><a class="header" href="#design-16">Design</a></h2>
+<h2 id="design-14"><a class="header" href="#design-14">Design</a></h2>
 <h3 id="definition"><a class="header" href="#definition">Definition</a></h3>
 <blockquote>
 <p>A harness never runs of its own accord. The daemon decides when it runs; while running, it may call back in.</p>
@@ -2528,7 +2576,7 @@ crabtalk.protocol.call                              ← only crabtalk has one
 <p>The bill: every protocol change now carries ABI weight; the queue acquires the obligations of a scheduler, including fairness and accounting; and third-party authors will expect what OS users expect — stable interfaces, resource limits they can see, and a debugging story better than a fault address. The reserved-tag discipline already visible in the proto is evidence this is a bill we can pay. It should still be paid deliberately.</p>
 <h2 id="migration-3"><a class="header" href="#migration-3">Migration</a></h2>
 <p><strong><code>harness/cron</code> is deleted.</strong> Its scheduler loop (<code>harness/cron/src/runner.rs:139-149</code>) already sleeps until the next occurrence inside a <code>KeepAlive</code> launchd process — there is no <code>StartCalendarInterval</code>, so the daemon has to be alive for 08:00 to fire today exactly as it would inside the runtime. Moving the mechanism inward costs one process, one service unit, and one timer task per schedule, and returns a single waiter over a sorted set. RFC 0080 is superseded; the entry leaves the crabup registry. Downstream apps that need scheduling before the harness path lands can do it with the SDK in a few dozen lines, which is the argument for not carrying a service to do it for them.</p>
-<p><strong><code>harness/search</code> becomes a guest.</strong> It loses <code>mcp.rs</code>, its <code>mcp</code> feature, and the rmcp/axum/schemars dependencies with it. Its engines are <code>reqwest</code> and <code>scraper</code>, which are <code>std</code> and cannot cross into a <code>no_std</code> guest as they are — so search is not the first harness we ship. See <a href="#unresolved-questions-12">Unresolved questions</a>.</p>
+<p><strong><code>harness/search</code> becomes a guest.</strong> It loses <code>mcp.rs</code>, its <code>mcp</code> feature, and the rmcp/axum/schemars dependencies with it. Its engines are <code>reqwest</code> and <code>scraper</code>, which are <code>std</code> and cannot cross into a <code>no_std</code> guest as they are — so search is not the first harness we ship. See <a href="#unresolved-questions-10">Unresolved questions</a>.</p>
 <p><strong><code>crates/hooks/src/os</code> becomes a harness, and it is the first one.</strong> The daemon stops compiling in an opinion about what a filesystem tool is and installs one instead. It goes first rather than fourth because it is the only harness on this list that needs neither the queue nor a protocol grant — it is pure tool calls, no <code>on_wake</code>, no <code>on_notify</code>, no chain depth — and because the seam is already cut: <code>OsHook::execute(name, args) -&gt; Result&lt;String, String&gt;</code> is the harness call signature already, down to the inner <code>Result</code> telling a failed tool from one that returned the word “error”.</p>
 <p>Both pieces of state the hook holds are removed rather than moved.</p>
 <p>The cwd was fixed at construction from the client’s own <code>current_dir</code>. It becomes a call parameter over a declared root — see <a href="#the-set">A root is not a working directory</a>. It does not come back over the wire: <code>SendMsg</code> tag 5 was removed with the note “the daemon does not read the user’s filesystem,” and that field should stay dead, because it carried the <em>client’s</em> directory to a daemon that executed nothing — a different thing from the daemon owning a workspace.</p>
@@ -2537,7 +2585,7 @@ crabtalk.protocol.call                              ← only crabtalk has one
 <p>Images are built by <code>make harness</code> and installed under <code>HARNESSES_DIR</code>, which is derived from the configuration directory rather than written out, so pointing crabtalk elsewhere points harness lookup there too. The daemon reads that directory and never writes to it.</p>
 <p><strong><code>delegate</code> becomes a harness, after the OS one.</strong> RFC 0203’s client-side implementation stands until then; see <a href="#delegation-as-a-harness">Delegation as a harness</a> for why the order is not optional. Its sender-keyed sub-conversation mechanism is unchanged by the move.</p>
 <p><strong>Nothing changes for MCP.</strong> <code>crates/mcp</code> stays as it is. A remote HTTP MCP server is someone else’s process on someone else’s machine and there is nothing to confine. What harnesses displace over time is the stdio case: spawning a local binary with the daemon’s privileges.</p>
-<h2 id="unresolved-questions-12"><a class="header" href="#unresolved-questions-12">Unresolved questions</a></h2>
+<h2 id="unresolved-questions-10"><a class="header" href="#unresolved-questions-10">Unresolved questions</a></h2>
 <ul>
 <li><strong>How a harness becomes an event subscription target.</strong> <code>SubscribeEventMsg</code> routes to an agent, so <code>on_notify</code> has no delivery path and <code>protocol:events</code> has nothing to grant. Whether the target becomes a sum type on the existing subscription or something else is undesigned, and it gates the third trigger kind in the queue.</li>
 <li><strong>Whether <code>http</code> fans out.</strong> <code>harness/search</code>’s aggregator runs five engines concurrently (<code>harness/search/src/aggregator.rs</code>), and a guest is synchronous — a literal port makes search five sequential fetches. Issuing many requests and then collecting them is the same pull shape as <code>arg_len</code>/<code>arg_read</code> and does not change the capability’s name, so it is a shape question that can be answered when search is ported.</li>
@@ -2581,6 +2629,8 @@ crabtalk.protocol.call                              ← only crabtalk has one
 <tr><td><a href="rfcs/0064-session.html">0064</a></td><td>Session</td><td><a href="#0135---agent-first-protocol">0135 - Agent-First Protocol</a></td></tr>
 <tr><td><a href="rfcs/0078-compact-session.html">0078</a></td><td>Compact Session</td><td><a href="#0135---agent-first-protocol">0135 - Agent-First Protocol</a></td></tr>
 <tr><td><a href="rfcs/0080-cron.html">0080</a></td><td>Cron</td><td><a href="#0205---berm">0205 - Berm</a></td></tr>
+<tr><td><a href="rfcs/0036-skill.html">0036</a></td><td>Skill Loading</td><td><a href="#0205---berm">0205 - Berm</a></td></tr>
+<tr><td><a href="rfcs/0043-component.html">0043</a></td><td>Component System</td><td><a href="#0205---berm">0205 - Berm</a></td></tr>
 <tr><td><a href="rfcs/0171-topic-switching.html">0171</a></td><td>Topic Switching</td><td><a href="#0185---session-search-and-storage-primitives">0185 - Session Search and Storage Primitives</a></td></tr>
 </tbody>
 </table>

@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-33600370.js";
+            window.path_to_searchindex_js = "../searchindex-0b35cd07.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-56997f56.js"></script>
+        <script src="../toc-27a33c77.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -189,6 +189,9 @@
 <li>Supersedes: <a href="0080-cron.html">0080 (Cron)</a></li>
 <li>Updates: <a href="0184-crabup.html">0184 (crabup)</a>, <a href="0189-policy-at-the-edge.html">0189 (Policy at the Edge)</a>, <a href="0203-client-side-orchestration.html">0203 (Client-Side Orchestration)</a></li>
 </ul>
+<blockquote>
+<p><strong>Updated (2026-08-17).</strong> Three changes since this landed. Images are keyed by a content digest — the ELF, its <code>Grants</code>, the capability <code>Scope</code>, and the granted hosts — rather than by <code>(agent, harness)</code>, so identical declarations share one image and a rename is not an event. An <code>http</code> capability exists, bounded by a <code>hosts</code> allowlist on the declaration exactly as <code>root</code> bounds <code>fs</code>; it lives in <code>crates/berm</code> rather than the engine because hyper needs a reactor the sandbox deliberately lacks. And <code>.berm.abi</code> carries a <code>usage</code> string — what the tools are for — read off the ELF without running it and injected only into agents that declared the harness.</p>
+</blockquote>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <p>A <strong>harness</strong> is code the daemon schedules: one hash-pinned RV64IMAC ELF, compiled and run in-process by <a href="https://github.com/crabtalk/rvtime">rvtime</a>, confined to its own address space, reaching the world only through numbered host calls it was explicitly granted. A harness never runs of its own accord — the daemon decides when it runs, and while running it may call back in.</p>
 <p><strong>berm</strong> is what runs one. It is the sandbox rather than the agent platform: it loads the ELF, grants capabilities, and invokes, and it knows nothing about agents or the protocol. Crabtalk is one thing that embeds it, and deliberately not the only one — see <a href="#layout">Layout</a>.</p>

@@ -1,982 +1,335 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>crabtalk — the workspace</title>
-<style>
-  :root {
-    --bg:    #c9c3a1;
-    --ink:   #16160e;
-    --ink-2: rgba(22,22,14,.62);
-    --ink-3: rgba(22,22,14,.34);
-    --rule:  rgba(22,22,14,.30);
-    --mono:  ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body {
-    background: var(--bg);
-    color: var(--ink);
-    font-family: var(--mono);
-    font-size: 12px;
-    -webkit-font-smoothing: antialiased;
-    overflow: hidden;
-  }
-  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Overview - The Crabtalk RFC Book</title>
 
-  .cap { text-transform: uppercase; letter-spacing: .10em; }
-  .hl  { background: var(--ink); color: var(--bg); padding: 0 .28em; }
 
-  /* ---------- shell ---------- */
-  #shell {
-    display: grid;
-    grid-template-columns: 208px minmax(0,1fr) 428px;
-    grid-template-rows: 46px minmax(0,1fr);
-    height: 100%;
-  }
-  #topbar { grid-column: 1 / -1; display: flex; align-items: stretch; border-bottom: 1px solid var(--ink); overflow: hidden; }
-  #stats { display: flex; align-items: stretch; min-width: 0; overflow: hidden; }
-  #side   { border-right: 1px solid var(--ink); overflow-y: auto; }
-  #stage  { position: relative; overflow: hidden; }
-  #panel  { border-left: 1px solid var(--ink); display: flex; flex-direction: column; min-height: 0; }
+        <!-- Custom HTML head -->
 
-  /* ---------- topbar ---------- */
-  #title {
-    display: flex; align-items: center; gap: .6em;
-    padding: 0 14px; min-width: 208px;
-    border-right: 1px solid var(--ink);
-    font-size: 13px; letter-spacing: .01em;
-  }
-  #title b { font-weight: 600; }
-  #title span { color: var(--ink-2); }
-  .stat {
-    padding: 0 14px; border-right: 1px solid var(--ink);
-    display: flex; flex-direction: column; justify-content: center; white-space: nowrap; flex: none;
-  }
-  .stat i { font-style: normal; font-size: 9px; letter-spacing: .12em; color: var(--ink-2); text-transform: uppercase; }
-  .stat b { font-weight: 400; font-size: 13px; margin-top: 1px; }
-  #controls { margin-left: auto; display: flex; }
-  #controls button {
-    padding: 0 15px; border-left: 1px solid var(--ink);
-    font-size: 10px; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap;
-  }
-  #controls button:hover { background: rgba(22,22,14,.10); }
-  #controls button.on { background: var(--ink); color: var(--bg); }
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
 
-  /* ---------- sidebar ---------- */
-  .grp { font-size: 9px; letter-spacing: .14em; color: var(--ink-2); padding: 13px 10px 5px; text-transform: uppercase; }
-  .row {
-    display: grid; grid-template-columns: 26px 1fr auto; align-items: start; gap: 5px;
-    padding: 5px 8px 5px 6px; margin: 0 6px 2px;
-    border: 1px solid transparent; cursor: pointer; line-height: 1.28;
-  }
-  .row:hover { border-color: var(--ink); }
-  .row.sel   { border-color: var(--ink); background: var(--ink); color: var(--bg); }
-  .row .k { font-size: 9px; color: var(--ink-2); padding-top: 1px; letter-spacing: .06em; }
-  .row.sel .k, .row.sel .n { color: var(--bg); }
-  .row .t { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; }
-  .row .n { font-size: 9px; color: var(--ink-2); padding-top: 1px; }
-  .row.mute .t { color: var(--ink-2); }
-  .row.mute.sel .t { color: var(--bg); }
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
 
-  /* ---------- stage ---------- */
-  #svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
-  #svg.drag { cursor: grabbing; }
-  #zoom { position: absolute; top: 10px; right: 12px; display: flex; flex-direction: column; gap: 5px; }
-  #zoom button { width: 22px; height: 22px; border: 1px solid var(--ink); line-height: 1; font-size: 13px; }
-  #zoom button:hover { background: var(--ink); color: var(--bg); }
-  #hint {
-    position: absolute; left: 14px; bottom: 10px; right: 14px;
-    font-size: 9.5px; letter-spacing: .11em; color: var(--ink-2); text-transform: uppercase;
-    pointer-events: none;
-  }
-  #crumb { position: absolute; left: 14px; top: 12px; font-size: 10px; letter-spacing: .08em; }
-  #crumb button { border-bottom: 1px solid var(--ink); padding-bottom: 1px; text-transform: uppercase; letter-spacing: .11em; }
-  #crumb .sep { color: var(--ink-3); padding: 0 .5em; }
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
 
-  .lbl { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; pointer-events: none; }
-  .lbl-sub { font-size: 8px; letter-spacing: .06em; fill: var(--ink-2); pointer-events: none; }
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
 
-  /* ---------- panel ---------- */
-  #tabs { display: flex; border-bottom: 1px solid var(--ink); flex: none; }
-  #tabs button {
-    flex: 1; padding: 10px 0; font-size: 10px; letter-spacing: .13em; text-transform: uppercase;
-    border-right: 1px solid var(--ink);
-  }
-  #tabs button:last-child { border-right: 0; }
-  #tabs button.on { background: var(--ink); color: var(--bg); }
-  #body { overflow-y: auto; padding: 18px 22px 40px; min-height: 0; }
-  #body h1 { font-size: 20px; font-weight: 500; letter-spacing: -.01em; margin: 2px 0 6px; line-height: 1.2; }
-  #body .eyebrow { font-size: 9px; letter-spacing: .16em; color: var(--ink-2); text-transform: uppercase; }
-  #body .dek { color: var(--ink-2); font-size: 11.5px; line-height: 1.55; margin-bottom: 20px; }
-  #body h2 {
-    font-size: 9px; letter-spacing: .16em; color: var(--ink-2); text-transform: uppercase;
-    font-weight: 400; margin: 24px 0 9px; padding-bottom: 5px; border-bottom: 1px solid var(--rule);
-  }
-  #body p { font-size: 12.5px; line-height: 1.68; margin: 0 0 13px; }
-  #body code { background: rgba(22,22,14,.12); padding: 0 .3em; font-size: 11.5px; }
-  #body .meta { display: grid; grid-template-columns: auto 1fr; gap: 3px 16px; font-size: 11px; margin: 0 0 4px; }
-  #body .meta dt { color: var(--ink-2); text-transform: uppercase; font-size: 9px; letter-spacing: .1em; padding-top: 2px; }
-  #body .meta dd { margin: 0; }
-  #body ul { margin: 0 0 13px; padding: 0; list-style: none; }
-  #body li { font-size: 11.5px; line-height: 1.5; padding: 6px 0; border-bottom: 1px dotted var(--rule); display: grid; grid-template-columns: 1fr auto; gap: 12px; }
-  #body li b { font-weight: 400; }
-  #body li i { font-style: normal; color: var(--ink-2); font-size: 10px; white-space: nowrap; }
-  #body li span { display: block; color: var(--ink-2); font-size: 10.5px; line-height: 1.45; grid-column: 1 / -1; margin-top: 2px; }
-  #body li.on { background: var(--ink); color: var(--bg); margin: 0 -8px; padding: 6px 8px; }
-  #body li.on i, #body li.on span { color: var(--bg); }
-  #body .warn { border: 1px solid var(--ink); padding: 10px 12px; font-size: 11.5px; line-height: 1.55; margin: 0 0 13px; }
-  #body .warn i { font-style: normal; display: block; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 5px; }
-  .step { display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding: 7px 0; border-bottom: 1px dotted var(--rule); font-size: 11.5px; line-height: 1.5; }
-  .step.on { background: var(--ink); color: var(--bg); margin: 0 -8px; padding: 7px 8px; }
-  .step.on em, .step.on u { color: var(--bg); }
-  .step .i { color: var(--ink-2); font-size: 9.5px; padding-top: 2px; }
-  .step.on .i { color: var(--bg); }
-  .step em { font-style: normal; color: var(--ink-2); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: 2px; }
-  .step u { text-decoration: none; color: var(--ink-2); font-size: 10px; display: block; margin-top: 3px; }
+        <!-- Custom theme stylesheets -->
 
-  @media (max-width: 1100px) {
-    #shell { grid-template-columns: 168px minmax(0,1fr) 320px; }
-  }
-</style>
-</head>
-<body>
-<div id="shell">
-  <div id="topbar">
-    <div id="title"><b>crabtalk</b><span>· v0.0.23</span></div>
-    <div id="stats"></div>
-    <div id="controls">
-      <button id="btn-play">▶ Run a turn</button>
-      <button id="btn-step">Step forward</button>
-      <button id="btn-reset">Reset view</button>
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-0b35cd07.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-27a33c77.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
     </div>
-  </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
 
-  <div id="side"></div>
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
 
-  <div id="stage">
-    <svg id="svg"><g id="world"></g></svg>
-    <div id="crumb"></div>
-    <div id="zoom"><button id="z-in">+</button><button id="z-out">−</button></div>
-    <div id="hint">→ go inside · ← come back out · ↑↓ move · hover to read · drag to pan · scroll to zoom</div>
-  </div>
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
 
-  <div id="panel">
-    <div id="tabs">
-      <button data-tab="what" class="on">What it does</button>
-      <button data-tab="how">How it's built</button>
-      <button data-tab="turn">A turn</button>
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Crabtalk RFC Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/crabtalk/crabtalk" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/crabtalk/crabtalk/edit/main/docs/src/src/arch.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="architecture"><a class="header" href="#architecture">Architecture</a></h1>
+<p>Crabtalk is a daemon, a library, and a sandbox. Which of the three you are
+using decides what you can extend and how — and most design arguments here
+turn out to be arguments about which one someone means.</p>
+<h2 id="the-layers"><a class="header" href="#the-layers">The layers</a></h2>
+<pre><code>protocol     clients, over a socket    any language, untrusted
+harness      what shapes an agent      declared per agent, one source, two builds
+capability   what an agent reaches     bounded by its argument
+runtime      lifetime orchestration    turns, conversations, the agent loop
+storage      data                      agents, sessions, config
+</code></pre>
+<p>The line worth getting right is between the middle two.</p>
+<p>A <strong>harness</strong> shapes an agent: what it remembers, what skills it can load, what
+it knows of its own past conversations, the tools it habitually reaches for.
+Change them and it is a different agent. That is why they are declared per
+agent — an agent <em>is</em> its harnesses.</p>
+<p>A <strong>capability</strong> is a mechanism for reaching something that is not the agent:
+<code>fs</code> and <code>exec</code> for the machine, <code>http</code> for the network, MCP for other
+software. Calling another program is not shaping an agent, which is why MCP is
+a capability and never a harness.</p>
+<p>The <strong>protocol</strong> has capability groups because clients are outside the process
+entirely, and a harness reaching back through <code>crabtalk.protocol.call</code> is
+holding a client’s surface. It stays exported whether or not anything shipped
+here uses it — who <em>may</em> write a harness justifies it, not who does.</p>
+<p><code>runtime</code> owns the <em>architecture of lifetime</em> — turns, conversations, the
+agent loop — and nothing else. <code>storage</code> owns the data.</p>
+<h2 id="one-source-two-builds"><a class="header" href="#one-source-two-builds">One source, two builds</a></h2>
+<p>A harness is one crate compiled two ways. Built <code>no_std</code> for RV64 it is a
+sandboxed ELF the daemon schedules, reaching the world only through
+capabilities its agent declared — the absence of a capability from its linker
+<em>is</em> the enforcement. Built with <code>std</code> it is compiled into the host and reaches
+those things directly.</p>
+<p>So compiled-in versus sandboxed is a build target, not an architecture, and
+<code>Harness</code> is the one name for both. What differs is confinement: as an ELF the
+declaration’s grants bound it; compiled in there is no linker to omit from, and
+the same grants are documentation. That follows from compiling something in
+being total trust — but it is one source under two security models, which is
+worth knowing before choosing a build.</p>
+<p><code>no_std</code> is the shared denominator rather than a floor. The compiled-in build
+inherits the sandbox’s constraints instead of escaping them: sync, allocating
+through <code>alloc</code>. Anything that must keep state alive between invocations cannot
+make the trip, because a harness gets a fresh heap every call and persists
+through <code>fs</code> like anything else. MCP holds live connections, so MCP is compiled
+in and only compiled in — the same test, not a second one.</p>
+<h2 id="where-does-a-thing-go"><a class="header" href="#where-does-a-thing-go">Where does a thing go?</a></h2>
+<p>Three questions, in order. They are independent, and a feature can want more
+than one answer.</p>
+<p><strong>1. Does the daemon own the state?</strong> If not, it cannot be protocol — there is
+no question a client could ask that the daemon knows the answer to. Web search
+is the clean example: everyone has it, but the daemon holds no search state, so
+it is a harness and never a message.</p>
+<p><strong>2. Does it shape the agent, or reach past it?</strong> What an agent remembers,
+loads, and knows of its own history shapes it — that is a harness, declared by
+the agents that want it. A mechanism for touching something outside is a
+capability, granted and bounded by its argument.</p>
+<p><strong>3. Does it hold anything alive between calls?</strong> If yes it can only be
+compiled in, because the sandboxed build gets a fresh heap per invocation.
+Persisting through <code>fs</code> does not count — a file outlives the call. A live
+connection does not.</p>
+<h2 id="declarations-not-inference"><a class="header" href="#declarations-not-inference">Declarations, not inference</a></h2>
+<p>The recurring rule, and the one worth defending hardest:</p>
+<blockquote>
+<p><strong>The declaration is the grant. The daemon never infers one from the other.</strong></p>
+</blockquote>
+<p>A harness’s manifest says what it <em>wants</em>; the agent’s <code>HarnessConfig</code> says
+what it <em>gets</em>. A manifest that could grant itself anything would make “what
+can this agent reach?” a question you answer by reading every image instead of
+one config file.</p>
+<p>The same rule explains why grants take arguments rather than booleans. <code>root</code>
+is the argument to <code>fs</code> and <code>exec</code>; <code>hosts</code> is the argument to <code>http</code>. Without
+the argument the capability is not registered at all, so an under-specified
+declaration reaches <em>nothing</em> rather than everything.</p>
+<p>And it is why a harness never chooses its own scope: <code>SearchSessions</code> carries
+an <code>agent</code> filter, and the host <strong>overwrites</strong> it with whoever declared the
+harness. Refusing a wrong value would only teach the harness to send the right
+one.</p>
+<h2 id="berm-is-not-a-crabtalk-feature"><a class="header" href="#berm-is-not-a-crabtalk-feature">berm is not a crabtalk feature</a></h2>
+<p><code>berm/engine</code>, <code>berm/sdk</code> and <code>berm/codegen</code> have no crabtalk crate in their
+dependency lists and cannot grow one without <code>crates/berm/src/lib.rs</code> moving.
+That split is compiler-checked rather than promised, and it is why the sandbox
+can leave this repository whenever it needs to.</p>
+<p><code>crates/berm</code> is crabtalk’s <em>side</em>: what surfaces sandboxed tools, and
+the <code>crabtalk.*</code> capabilities. Anything host-specific belongs there. <code>http</code>
+lives there rather than in the engine because hyper needs a reactor and the
+engine is sync and has none — keeping the engine dep-light is keeping it
+portable.</p>
+<h2 id="prose"><a class="header" href="#prose">Prose</a></h2>
+<p>The daemon supplies none. An agent’s <code>description</code> <em>is</em> its system message,
+used verbatim; there is no default prompt and no framing wrapped around it.</p>
+<p>What a model needs in order to reach for a tool is the tool’s own
+<code>description</code>, or the <code>usage</code> its harness declares — a few lines about when to
+reach for these tools and how they go together, which is the question no single
+tool description can answer because it is about choosing between them. Usage is
+declared in <code>.berm.abi</code> and injected only into agents that declared the
+harness. Anything longer than a few lines is a skill, not usage.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="introduction.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="spec/protocol.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="introduction.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="spec/protocol.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-defcc054.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
     </div>
-    <div id="body"></div>
-  </div>
-</div>
-
-<script>
-"use strict";
-
-/* ══════════════════════════════════════════════════════════════════════
-   DATA — measured from the workspace at v0.0.23.
-   LOC and file counts are line/file counts under each member's src/.
-   Edges are the internal dependency graph reported by `cargo metadata`.
-   ══════════════════════════════════════════════════════════════════════ */
-
-const STATS = [
-  ["Workspace members", "19"],
-  ["Crates · apps · harness", "13 · 4 · 2"],
-  ["Rust in src/",      "25,412 lines"],
-  ["Agent tools",       "7 built-in + MCP"],
-  ["Transports",        "2 — UDS, TCP"],
-  ["Not wired in",      "2 — embed, bench"],
-];
-
-const GROUPS = [
-  ["foundation", "The foundation"],
-  ["engine",     "The engine"],
-  ["library",    "The library"],
-  ["edges",      "The edges"],
-  ["service",    "Service plumbing"],
-  ["unwired",    "Not wired in"],
-];
-
-const NODES = [
-  {
-    id: "core", code: "C", name: "Core", pkg: "crabtalk-core", path: "crates/core",
-    loc: 5014, files: 30, col: 2, row: 2, group: "foundation",
-    what: "Every other member of the workspace points here, and this one points nowhere. Core holds the types and traits the rest of the system agrees on: <code>Agent</code>, the wire protocol, the <code>Storage</code> trait, config shapes, and the model wrapper. It is the only member with no internal dependencies at all.",
-    how: "<code>Agent&lt;P: Provider&gt;</code> is an immutable definition plus three execution entry points — <code>step</code>, <code>run</code>, <code>run_stream</code>. <code>step</code> is the whole loop in one function: build the request from system prompt + history + tool schemas, call the model, pull tool calls out of the response, dispatch them through a <code>ToolDispatcher</code>, and append results. <code>Storage</code> is a trait of <code>fn -&gt; impl Future + Send</code> rather than <code>async fn</code>, deliberately, so callers can spawn storage work onto a multi-thread runtime.",
-    note: "The assistant message and its tool results are pushed to history with no <code>await</code> between them. Cancel the step mid-flight and neither lands — the tool_use/tool_result pairing the API requires can never be broken by a partial step.",
-    inside: [
-      { n: "protocol/", loc: 1541, f: 8, note: "ClientMessage / ServerMessage over protobuf. codec.rs frames it as [u32 BE length][payload]." },
-      { n: "agent/", loc: 1321, f: 7, note: "The agent itself — builder, config, step/run/run_stream, events, ids, compaction." },
-      { n: "testing/", loc: 672, f: 3, note: "In-memory storage and a stub provider, behind the `testing` feature." },
-      { n: "config/", loc: 521, f: 7, note: "Config shapes: crabtalk, llm, mcp, hooks, manifest, system." },
-      { n: "model.rs", loc: 464, f: 1, note: "Thin re-export layer over crabllm_core plus the Model<P> wrapper." },
-      { n: "storage.rs", loc: 372, f: 1, note: "The Storage trait — sessions, agents, skills, config — plus table-name validation." },
-      { n: "paths.rs", loc: 59, f: 1, note: "Where things live on disk." },
-      { n: "utils.rs", loc: 29, f: 1, note: "Small shared helpers." },
-    ],
-  },
-  {
-    id: "memory", code: "M", name: "Memory", pkg: "crabtalk-memory", path: "crates/memory",
-    loc: 1051, files: 8, col: 2, row: 3, group: "foundation",
-    what: "A standalone single-file memory store. Agents write to it through the <code>remember</code>, <code>recall</code> and <code>forget</code> tools; retrieval is BM25 over an inverted index, not a vector search.",
-    how: "The BM25 implementation is generic over the document id type, so the same code backs two different things: memory-entry recall keyed by <code>EntryId</code>, and session-message search keyed by <code>MessageRef</code> over in the runtime crate. One index implementation, two callers, no shared state between them.",
-    note: "Depends on nothing inside the workspace — it is usable on its own, and that is the point of it being its own crate.",
-    inside: [
-      { n: "memory.rs", loc: 314, f: 1, note: "The store: open, write, query." },
-      { n: "dump.rs", loc: 265, f: 1, note: "Serialising the store to and from its single file." },
-      { n: "file.rs", loc: 218, f: 1, note: "File-level layout and I/O." },
-      { n: "bm25.rs", loc: 173, f: 1, note: "Inverted-index BM25, generic over the document id type." },
-      { n: "op.rs", loc: 26, f: 1, note: "The write operations." },
-      { n: "entry.rs", loc: 18, f: 1, note: "What one memory entry is." },
-      { n: "error.rs", loc: 17, f: 1, note: "Error type." },
-    ],
-  },
-  {
-    id: "runtime", code: "R", name: "Runtime", pkg: "crabtalk-runtime", path: "crates/runtime",
-    loc: 2284, files: 15, col: 3, row: 2, group: "engine",
-    what: "The execution engine. It owns agents, sessions, conversation history and tool dispatch — everything that happens between a message arriving and a reply going out.",
-    how: "Two traits define the seam. <code>Hook</code> is a pluggable subsystem: it contributes tool schemas, a system-prompt fragment, lifecycle callbacks, and a <code>dispatch</code> that returns <code>None</code> when the hook doesn't own the named tool. <code>Env</code> is what the engine talks to — one implementation per binary, bundling the composite hook with event broadcasting. <code>dispatch_tool</code> is 20 lines: build a <code>ToolDispatch</code>, ask the hook, and turn a miss into <code>tool not registered</code>.",
-    note: "Boundary contract: the runtime never initiates I/O. No sockets, no timers, no listeners — it only responds. Auto-compaction runs here only as a context-window safety net; discretionary lifecycle (<code>/clear</code>, <code>/compact</code>, session selection) is composed in the client from the primitives this crate exposes.",
-    inside: [
-      { n: "engine/", loc: 1491, f: 8, note: "Agents, config, conversation, execution, history, programs, session search." },
-      { n: "sessions/", loc: 539, f: 3, note: "BM25 session index keyed by (session_id, msg_idx); per-role weighting applied at search time." },
-      { n: "hook.rs", loc: 80, f: 1, note: "The Hook trait — every method has a no-op default, so subsystems override only what they need." },
-      { n: "env.rs", loc: 75, f: 1, note: "The Env trait and dispatch_tool, the whole seam in one file." },
-      { n: "conversation.rs", loc: 64, f: 1, note: "Conversation-level types." },
-    ],
-  },
-  {
-    id: "hooks", code: "H", name: "Hooks", pkg: "crabtalk-hooks", path: "crates/hooks",
-    loc: 1246, files: 14, col: 1, row: 3, group: "engine",
-    what: "The built-in tools, each written as a <code>Hook</code> and composed into one. Seven of them: <code>bash</code>, <code>read</code>, <code>edit</code>, <code>skill</code>, <code>recall</code>, <code>remember</code>, <code>forget</code> — plus the bridge that folds MCP servers' tools into the same list.",
-    how: "The composite indexes every hook's schema by tool name at build time, so dispatch is a map lookup rather than a walk down a chain. <code>scoped_tools</code> lets a hook gate which of its tools appear in a given agent's whitelist and add a line to that agent's scope prompt — which is how one agent can see skills another can't.",
-    inside: [
-      { n: "os/", loc: 376, f: 5, note: "bash, read and edit — the filesystem and shell tools." },
-      { n: "skill/", loc: 244, f: 3, note: "Skill loader and the skill tool handler." },
-      { n: "memory/", loc: 242, f: 4, note: "recall, remember, forget — over the memory crate." },
-      { n: "mcp.rs", loc: 133, f: 1, note: "Folds an MCP peer's tools into the composite as if they were local." },
-    ],
-  },
-  {
-    id: "mcp", code: "X", name: "MCP", pkg: "crabtalk-mcp", path: "crates/mcp",
-    loc: 1184, files: 11, col: 0, row: 3, group: "engine",
-    what: "The Model Context Protocol client and bridge. It connects out to MCP servers and routes tool calls to them, so an agent can call a tool that lives in another process — or on another machine — without knowing the difference.",
-    how: "Peers are keyed by an opaque <code>peer_id</code> chosen by the caller rather than by server name, so two agents can hold connections to the same server without colliding.",
-    inside: [
-      { n: "client/", loc: 536, f: 7, note: "Transport and session handling for talking to a server." },
-      { n: "handler.rs", loc: 376, f: 1, note: "Request handling." },
-      { n: "bridge.rs", loc: 166, f: 1, note: "Connects to servers and routes tool calls; peers keyed by opaque peer_id." },
-      { n: "dispatch.rs", loc: 71, f: 1, note: "Turning a tool call into an MCP request." },
-    ],
-  },
-  {
-    id: "crabtalk", code: "K", name: "Crabtalk", pkg: "crabtalk", path: "crates/crabtalk",
-    loc: 2267, files: 15, col: 1, row: 2, group: "library",
-    what: "The product. This is the crate that assembles everything else into a running system: hooks composed, a storage backend wired in, the protocol served, agents built. Everything else in the workspace either powers this or connects to it.",
-    how: "<code>bridge.rs</code> is the join — it takes a decoded protocol message and drives the runtime with it. <code>SystemEnv</code> in <code>system/host.rs</code> is this crate's <code>Env</code> implementation, wiring the composite hook to event broadcasting. Persistence moved out to <code>storage</code>; what stays is the choice of backend, one line of <code>SystemCfg</code>.",
-    note: "Boundary contract: this crate never interprets tool semantics, it only routes. Cron and config are treated as system concerns — process-lifetime, not session-lifetime.",
-    inside: [
-      { n: "system/", loc: 1012, f: 6, note: "The builder, SystemEnv, event broadcast, transport wiring, default provider." },
-      { n: "protocol/", loc: 884, f: 4, note: "Serving the protocol: admin, config and conversation handlers." },
-      { n: "bridge.rs", loc: 201, f: 1, note: "Routes a decoded protocol message into the runtime." },
-      { n: "hooks/", loc: 156, f: 3, note: "Session search, as a hook." },
-    ],
-  },
-  {
-    id: "storage", code: "ST", name: "Storage", pkg: "crabtalk-storage", path: "crates/storage",
-    loc: 1650, files: 15, col: 4, row: 3, group: "library",
-    what: "Implementations of core's <code>Storage</code> trait, and the first-run scaffolding that lays out <code>~/.crabtalk/</code>. Core declares the trait; this crate is where a backend actually touches a disk. Two of them: a directory tree, and a database file.",
-    how: "Which backend a host uses is the <code>Storage</code> associated type on <code>runtime::Config</code>, decided when the binary is compiled — so this crate is a menu, not a switch. The <code>sqlite</code> feature only keeps <code>sqlx</code> out of builds that want the filesystem; it never changes which backend runs.",
-    note: "Lifted out of the daemon library so a desktop app or a cloud tenant can implement <code>runtime::Config</code> against a backend without depending on <code>crabtalk</code>. Skills stay filesystem-backed under both, through one shared scan — a skill is content, not state.",
-    inside: [
-      { n: "fs/", loc: 829, f: 7, note: "FsStorage: agents, sessions, skills, config, scaffold, and the config-dir loader — one impl block per file." },
-      { n: "sqlite/", loc: 732, f: 6, note: "SqliteStorage over sqlx: schema, sessions, agents, config." },
-      { n: "skills.rs", loc: 70, f: 1, note: "The SKILL.md scan both backends share." },
-      { n: "lib.rs", loc: 19, f: 1, note: "What the crate offers." },
-    ],
-  },
-  {
-    id: "transport", code: "T", name: "Transport", pkg: "crabtalk-transport", path: "crates/transport",
-    loc: 526, files: 8, col: 0, row: 2, group: "library",
-    what: "How a client reaches the daemon: a Unix domain socket, or TCP. Callers hold a <code>Transport</code> and never match on which one it is.",
-    how: "The enum has two variants and a <code>dispatch!</code> macro that forwards every <code>Client</code> method to whichever is inside, so adding a third transport means adding a variant and nothing else. UDS is compiled out entirely on non-Unix. A third variant, <code>mem</code>, exists for in-process connections without a socket.",
-    inside: [
-      { n: "tcp/", loc: 200, f: 3, note: "TCP listener and connection." },
-      { n: "uds/", loc: 177, f: 3, note: "Unix domain socket listener and connection, `#[cfg(unix)]`." },
-      { n: "mem.rs", loc: 83, f: 1, note: "In-process connection — no socket at all." },
-    ],
-  },
-  {
-    id: "sdk", code: "S", name: "SDK", pkg: "crabtalk-sdk", path: "crates/sdk",
-    loc: 742, files: 7, col: 1, row: 1, group: "library",
-    what: "The client library the gateways are built on: connect, make typed calls, adapt the reply stream. Telegram and cron both talk to the daemon through this.",
-    how: "It depends on core and transport and nothing else — deliberately no dependency on the runtime or on any provider. Boundary contract: the SDK is adapter-centric, not agent-centric. It knows how to carry a conversation over a socket; it does not know what an agent is beyond the protocol types.",
-    inside: [
-      { n: "stream.rs", loc: 269, f: 1, note: "Adapting the server's event stream for a client." },
-      { n: "conn.rs", loc: 198, f: 1, note: "The connection itself." },
-      { n: "message.rs", loc: 94, f: 1, note: "Message helpers." },
-      { n: "command.rs", loc: 70, f: 1, note: "Command sugar over the protocol." },
-      { n: "tools/", loc: 62, f: 2, note: "Client-side tool helpers." },
-    ],
-  },
-  {
-    id: "crabtalkd", code: "D", name: "Daemon", pkg: "crabtalkd", path: "apps/daemon",
-    loc: 65, files: 3, col: 2, row: 1, group: "edges",
-    what: "The long-running process. It listens, accepts connections, and hands them to the library.",
-    how: "65 lines across three files. That number is the interesting part: the daemon is a shell. Everything a daemon does — serving the protocol, owning storage, running agents — lives in the <code>crabtalk</code> library, which means the same system can be embedded in-process by a client with no daemon at all.",
-    inside: [
-      { n: "foreground.rs", loc: 37, f: 1, note: "Run in the foreground." },
-      { n: "bin/", loc: 8, f: 1, note: "The entry point." },
-    ],
-  },
-  {
-    id: "tui", code: "U", name: "TUI · CLI", pkg: "crabtalk-cli", path: "apps/tui",
-    loc: 4500, files: 19, col: 0, row: 1, group: "edges",
-    what: "The terminal client: an interactive REPL plus the management commands — agent, auth, mcp, package, reload, and a console for conversations and events.",
-    how: "The second-largest member of the workspace, and <code>repl/</code> alone is 2,482 lines of it. That weight is the boundary contract showing up in the shape of the code: the runtime deliberately exposes only session primitives, so everything discretionary — <code>/clear</code>, <code>/new</code>, <code>/compact</code>, picking a session, browsing the archive — is composed here instead.",
-    inside: [
-      { n: "repl/", loc: 2482, f: 6, note: "The interactive loop: ask, chat, commands, input, render." },
-      { n: "cmd/", loc: 1790, f: 10, note: "agent, auth, mcp, package, reload, and the conversations/events console." },
-      { n: "tui.rs", loc: 189, f: 1, note: "Terminal setup and teardown." },
-      { n: "bin/", loc: 32, f: 1, note: "The entry point." },
-    ],
-  },
-  {
-    id: "telegram", code: "TG", name: "Telegram", pkg: "crabtalk-telegram", path: "apps/telegram",
-    loc: 834, files: 6, col: 1, row: 0, group: "edges",
-    what: "A gateway: it turns Telegram messages into protocol messages and streams replies back.",
-    how: "Almost all of it is one file — <code>serve.rs</code>, 488 lines — because a gateway is mostly one long match on inbound updates. The <code>markdown.rs</code> beside it exists because Telegram's markdown dialect is not the one models write in.",
-    inside: [
-      { n: "serve.rs", loc: 488, f: 1, note: "The gateway loop." },
-      { n: "bin/", loc: 108, f: 1, note: "The entry point." },
-      { n: "markdown.rs", loc: 74, f: 1, note: "Translating model markdown into Telegram's dialect." },
-      { n: "config.rs", loc: 37, f: 1, note: "Gateway config." },
-      { n: "command.rs", loc: 13, f: 1, note: "Bot command parsing." },
-    ],
-  },
-  {
-    id: "cron", code: "CR", name: "Cron", pkg: "crabtalk-cron", path: "harness/cron",
-    loc: 387, files: 5, col: 2, row: 0, group: "edges",
-    what: "Fires skills into agents on a schedule. It is a client of the daemon like any other, not a part of it.",
-    how: "It goes through the SDK over a socket rather than reaching into the runtime, which is what keeps scheduling a system concern instead of a session one — a scheduled turn arrives by the same door as a typed one.",
-    inside: [
-      { n: "runner.rs", loc: 222, f: 1, note: "The scheduler loop." },
-      { n: "store.rs", loc: 74, f: 1, note: "Persisted schedule entries." },
-      { n: "entry.rs", loc: 53, f: 1, note: "What one scheduled entry is." },
-      { n: "bin/", loc: 24, f: 1, note: "The entry point." },
-    ],
-  },
-  {
-    id: "search", code: "SE", name: "Search", pkg: "crabtalk-search", path: "harness/search",
-    loc: 1963, files: 23, col: 3, row: 0, group: "edges",
-    what: "A meta search engine that aggregates results from several backends, usable as a CLI and exposed over MCP.",
-    how: "The only member whose single internal dependency is <code>command</code> — it takes the service-management layer and nothing else. That is what makes it a standalone service rather than a part of the agent: it never links the runtime, and reaches agents the same way any MCP server does.",
-    inside: [
-      { n: "engine/", loc: 813, f: 6, note: "The search backends." },
-      { n: "browser/", loc: 324, f: 4, note: "Browser-driven fetching." },
-      { n: "cmd/", loc: 224, f: 5, note: "The CLI surface." },
-      { n: "aggregator.rs", loc: 209, f: 1, note: "Merging results across backends." },
-      { n: "config.rs", loc: 121, f: 1, note: "Backend configuration." },
-      { n: "cache.rs", loc: 105, f: 1, note: "Result cache." },
-      { n: "mcp.rs", loc: 77, f: 1, note: "Exposing search as an MCP server." },
-      { n: "error.rs", loc: 45, f: 1, note: "Error type." },
-      { n: "result.rs", loc: 27, f: 1, note: "The result shape." },
-      { n: "bin/", loc: 7, f: 1, note: "The entry point." },
-    ],
-  },
-  {
-    id: "crabup", code: "UP", name: "Crabup", pkg: "crabup", path: "apps/crabup",
-    loc: 672, files: 7, col: 0, row: 0, group: "edges",
-    what: "The version manager for the ecosystem: install, update and service-manage the crabtalk binaries.",
-    how: "Depends on core alone, for the config and path types. It has to run before anything else is installed, so it cannot afford to link the thing it installs.",
-    inside: [
-      { n: "github.rs", loc: 136, f: 1, note: "Fetching releases." },
-      { n: "list.rs", loc: 129, f: 1, note: "Listing what's installed and available." },
-      { n: "registry.rs", loc: 112, f: 1, note: "The package registry." },
-      { n: "manifest.rs", loc: 56, f: 1, note: "Package manifests." },
-      { n: "cargo.rs", loc: 43, f: 1, note: "Installing via cargo." },
-      { n: "bin/", loc: 11, f: 1, note: "The entry point." },
-    ],
-  },
-  {
-    id: "command", code: "CM", name: "Command", pkg: "crabtalk-command", path: "crates/command",
-    loc: 490, files: 6, col: 3, row: 1, group: "service",
-    what: "Service management — installing, starting and stopping a binary as a systemd or launchd service. Every long-running app in the workspace uses it.",
-    how: "Almost all of it is <code>service/</code>. The interesting half is next door in the codegen crate: the command surface is derived from a proc macro rather than written out per app.",
-    inside: [
-      { n: "service/", loc: 433, f: 5, note: "systemd and launchd service management." },
-    ],
-  },
-  {
-    id: "codegen", code: "CG", name: "Command codegen", pkg: "crabtalk-command-codegen", path: "crates/command/codegen",
-    loc: 157, files: 1, col: 4, row: 1, group: "service",
-    what: "A proc macro that generates the service command surface, so each app declares its commands instead of writing them.",
-    how: "157 lines, one file, zero dependencies inside the workspace — a proc macro crate can't have any, since it runs at compile time in the compiler's own process.",
-    inside: [],
-  },
-  {
-    id: "embed", code: "EB", name: "Embed", pkg: "crabtalk-embed", path: "crates/embed",
-    loc: 245, files: 2, col: 3, row: 3, group: "unwired",
-    what: "A shared 384-dimension MiniLM text embedder — all-MiniLM-L6-v2 running on Candle. Its stated reason to exist is that cloud and desktop embed with identical code, so the vectors they produce are comparable.",
-    how: "A Candle <code>BertModel</code> plus a tokenizer, mean-pooled into one vector per input. 245 lines across two files.",
-    note: "Nothing in the workspace depends on it. It is published and it compiles, but no member links it — retrieval today is BM25 in the memory crate, not vectors. This is the one finished-and-not-switched-on part of the tree.",
-    inside: [
-      { n: "model.rs", loc: 105, f: 1, note: "A Candle BertModel + tokenizer, mean-pooled into one vector per input." },
-    ],
-  },
-  {
-    id: "bench", code: "BN", name: "Bench", pkg: "crabtalk-bench", path: "crates/bench",
-    loc: 135, files: 1, col: 4, row: 2, group: "unwired",
-    what: "Criterion benchmarks for the parts where speed is measurable: BM25, the protocol codec, conversation handling, the agent, and session search.",
-    how: "<code>publish = false</code>, five benchmark targets, all with <code>harness = false</code>. It depends on half the workspace but nothing depends on it — the arrows only point in.",
-    inside: [],
-  },
-];
-
-/* Internal dependency edges — `cargo metadata`, normal dependencies only. */
-const EDGES = [
-  ["crabtalk","core"],["crabtalk","hooks"],["crabtalk","mcp"],["crabtalk","runtime"],["crabtalk","sdk"],["crabtalk","storage"],["crabtalk","transport"],
-  ["storage","core"],["storage","hooks"],
-  ["bench","crabtalk"],["bench","core"],["bench","memory"],["bench","runtime"],
-  ["tui","core"],["tui","hooks"],["tui","sdk"],["tui","transport"],
-  ["command","codegen"],["command","core"],
-  ["cron","command"],["cron","core"],["cron","sdk"],
-  ["hooks","core"],["hooks","mcp"],["hooks","memory"],["hooks","runtime"],
-  ["mcp","core"],
-  ["runtime","core"],["runtime","memory"],
-  ["sdk","core"],["sdk","transport"],
-  ["search","command"],
-  ["telegram","command"],["telegram","core"],["telegram","sdk"],["telegram","transport"],
-  ["transport","core"],
-  ["crabtalkd","crabtalk"],["crabtalkd","command"],["crabtalkd","core"],
-  ["crabup","core"],
-];
-
-/* One turn, in the order the code actually runs it. */
-const TURN = [
-  { at:"tui",       t:"You type a line. The REPL wraps it as a <code>ClientMessage</code>.", src:"apps/tui/src/repl" },
-  { at:"transport", t:"It goes over a Unix socket to the daemon — or TCP, if that's how this client connects.", src:"crates/transport" },
-  { at:"core",      t:"The codec reads the frame: <code>[u32 BE length][protobuf payload]</code>, and decodes it.", src:"crates/core/src/protocol/codec.rs" },
-  { at:"crabtalkd", t:"The daemon accepts the connection and hands it to the library. That is nearly all it does.", src:"apps/daemon" },
-  { at:"crabtalk",  t:"<code>bridge.rs</code> routes the decoded message into the runtime.", src:"crates/crabtalk/src/bridge.rs" },
-  { at:"crabtalk",  t:"Storage loads the session, or creates one if this is a new conversation.", src:"crates/crabtalk/src/storage/fs/sessions.rs" },
-  { at:"runtime",   t:"The engine prepares the history and calls into the agent.", src:"crates/runtime/src/engine/execution.rs" },
-  { at:"core",      t:"<code>Agent::step</code> builds the request: system prompt, history, and every tool schema the hooks contribute.", src:"crates/core/src/agent/mod.rs:200" },
-  { at:null,        t:"<code>model.send()</code> leaves the workspace. Provider auth, request formatting and streaming all live upstream in <code>crabllm</code>.", src:"github.com/crabtalk/crabllm" },
-  { at:"core",      t:"The response comes back. <code>extract_tool_calls</code> pulls out anything the model wants to run.", src:"crates/core/src/agent/mod.rs:202" },
-  { at:"runtime",   t:"Each call goes through <code>dispatch_tool</code>, which asks the composite hook who owns that name. Nobody owns it → <code>tool not registered</code>.", src:"crates/runtime/src/env.rs:63" },
-  { at:"hooks",     t:"The owning hook runs it — <code>bash</code>, <code>read</code>, <code>edit</code>, <code>skill</code>, <code>recall</code>, <code>remember</code> or <code>forget</code>. Calls in one step run concurrently.", src:"crates/hooks/src" },
-  { at:"mcp",       t:"Or, if the tool came from an MCP server, the bridge forwards it out to that peer instead.", src:"crates/mcp/src/bridge.rs" },
-  { at:"memory",    t:"<code>recall</code> and <code>remember</code> land here — BM25 over an inverted index, in a single file.", src:"crates/memory" },
-  { at:"core",      t:"Assistant message and tool results are pushed to history with no <code>await</code> between them, then the loop goes back to building a request.", src:"crates/core/src/agent/mod.rs:230" },
-  { at:"crabtalk",  t:"When the model stops asking for tools, events are broadcast to subscribers and the messages are appended to the session.", src:"crates/crabtalk/src/system/event.rs" },
-  { at:"transport", t:"<code>ServerMessage</code> streams back down the same socket, and your terminal renders it.", src:"crates/transport" },
-];
-
-/* ══════════════════════════════════════════════════════════════════════
-   PROJECTION
-   ══════════════════════════════════════════════════════════════════════ */
-
-const HW = 26, HH = 15, HZ = 30;   // half tile width, half tile height, one z unit
-const PITCH = 7;                   // grid cells between node centres
-
-const proj = (x, y, z) => [ (x - y) * HW, (x + y) * HH - z * HZ ];
-const pt   = (x, y, z) => proj(x, y, z).join(",");
-
-/* The three visible faces of an axis-aligned box on the ground plane. */
-function faces(x, y, w, d, h) {
-  return {
-    top:   [pt(x,y,h),   pt(x+w,y,h),   pt(x+w,y+d,h), pt(x,y+d,h)  ].join(" "),
-    left:  [pt(x,y+d,h), pt(x+w,y+d,h), pt(x+w,y+d,0), pt(x,y+d,0)  ].join(" "),
-    right: [pt(x+w,y,h), pt(x+w,y+d,h), pt(x+w,y+d,0), pt(x+w,y,0)  ].join(" "),
-  };
-}
-
-const footprint = f => 1.3 + Math.sqrt(Math.max(f, 1)) * 0.55;
-const height    = l => 0.25 + l / 1500;
-
-/* Lay a node out from its (col,row) cell, centred in the cell. */
-function place(n) {
-  const w = footprint(n.files), d = w;
-  return { ...n, w, d, h: height(n.loc), x: n.col * PITCH - w / 2, y: n.row * PITCH - d / 2 };
-}
-
-const SCENE = NODES.map(place);
-const byId = Object.fromEntries(SCENE.map(n => [n.id, n]));
-const centre = n => [n.x + n.w / 2, n.y + n.d / 2];
-
-/* ══════════════════════════════════════════════════════════════════════
-   STATE
-   ══════════════════════════════════════════════════════════════════════ */
-
-const view  = { tx: 0, ty: 0, s: 1 };
-const state = { sel: "core", hover: null, inside: null, tab: "what", turn: -1, playing: false, timer: null };
-
-const svg   = document.getElementById("svg");
-const world = document.getElementById("world");
-const SVGNS = "http://www.w3.org/2000/svg";
-
-const el = (name, attrs = {}) => {
-  const e = document.createElementNS(SVGNS, name);
-  for (const k in attrs) e.setAttribute(k, attrs[k]);
-  return e;
-};
-
-/* ══════════════════════════════════════════════════════════════════════
-   RENDER — diagram
-   ══════════════════════════════════════════════════════════════════════ */
-
-function defs() {
-  const d = el("defs");
-  const hatch = (id, angle, gap, width) => {
-    const p = el("pattern", {
-      id, width: gap, height: gap, patternUnits: "userSpaceOnUse",
-      patternTransform: `rotate(${angle})`,
-    });
-    p.appendChild(el("line", {
-      x1: 0, y1: 0, x2: 0, y2: gap,
-      stroke: "var(--ink)", "stroke-width": width, "stroke-opacity": .5,
-    }));
-    return p;
-  };
-  d.appendChild(hatch("h-top", 45, 5, .7));
-  d.appendChild(hatch("h-left", 45, 3.2, .7));
-  d.appendChild(hatch("h-sel", 45, 2.2, 1.1));
-  return d;
-}
-
-function ground(nodes) {
-  const g = el("g");
-  const xs = nodes.flatMap(n => [n.x, n.x + n.w]);
-  const ys = nodes.flatMap(n => [n.y, n.y + n.d]);
-  const x0 = Math.floor(Math.min(...xs)) - 3, x1 = Math.ceil(Math.max(...xs)) + 3;
-  const y0 = Math.floor(Math.min(...ys)) - 3, y1 = Math.ceil(Math.max(...ys)) + 3;
-  for (let x = x0; x <= x1; x += 1) {
-    g.appendChild(el("line", {
-      x1: proj(x, y0, 0)[0], y1: proj(x, y0, 0)[1],
-      x2: proj(x, y1, 0)[0], y2: proj(x, y1, 0)[1],
-      stroke: "var(--ink)", "stroke-width": .5, "stroke-opacity": .09,
-    }));
-  }
-  for (let y = y0; y <= y1; y += 1) {
-    g.appendChild(el("line", {
-      x1: proj(x0, y, 0)[0], y1: proj(x0, y, 0)[1],
-      x2: proj(x1, y, 0)[0], y2: proj(x1, y, 0)[1],
-      stroke: "var(--ink)", "stroke-width": .5, "stroke-opacity": .09,
-    }));
-  }
-  return g;
-}
-
-function edges(active) {
-  const g = el("g");
-  for (const [from, to] of EDGES) {
-    const a = byId[from], b = byId[to];
-    if (!a || !b) continue;
-    const [ax, ay] = centre(a), [bx, by] = centre(b);
-    const live = active && (from === active || to === active);
-    const pts = [[ax, ay], [bx, ay], [bx, by]];
-    g.appendChild(el("polyline", {
-      points: pts.map(p => pt(p[0], p[1], 0)).join(" "),
-      fill: "none", stroke: "var(--ink)",
-      "stroke-width": live ? 1.6 : .8,
-      "stroke-opacity": live ? .95 : (active ? .10 : .22),
-    }));
-    const [dx, dy] = proj(bx, ay, 0);
-    g.appendChild(el("polygon", {
-      points: `${dx},${dy-3.2} ${dx+3.2},${dy} ${dx},${dy+3.2} ${dx-3.2},${dy}`,
-      fill: "var(--ink)", "fill-opacity": live ? .95 : (active ? .10 : .28),
-    }));
-  }
-  return g;
-}
-
-/* The path a turn takes, drawn over the members it passes through. */
-function turnPath() {
-  const g = el("g");
-  const seq = TURN.map(s => s.at).filter(Boolean);
-  for (let i = 0; i < seq.length - 1; i++) {
-    if (seq[i] === seq[i + 1]) continue;
-    const a = byId[seq[i]], b = byId[seq[i + 1]];
-    const [ax, ay] = centre(a), [bx, by] = centre(b);
-    const done = state.turn >= 0 && i < indexOfStep(state.turn);
-    g.appendChild(el("polyline", {
-      points: [pt(ax, ay, 0), pt(bx, ay, 0), pt(bx, by, 0)].join(" "),
-      fill: "none", stroke: "var(--ink)",
-      "stroke-width": done ? 2.4 : 1.2,
-      "stroke-opacity": done ? .9 : .3,
-      "stroke-dasharray": done ? "none" : "3 4",
-    }));
-  }
-  return g;
-}
-
-/* How many path segments have been walked by the time we reach step i. */
-function indexOfStep(i) {
-  let k = 0;
-  for (let j = 1; j <= i && j < TURN.length; j++) {
-    if (TURN[j].at && TURN[j - 1].at && TURN[j].at !== TURN[j - 1].at) k++;
-  }
-  return k;
-}
-
-function box(n, opts = {}) {
-  const g = el("g", { class: "node", "data-id": n.id });
-  g.style.cursor = "pointer";
-  const f = faces(n.x, n.y, n.w, n.d, n.h);
-  const { on, dim, hot } = opts;
-
-  // Faces are always opaque so a box occludes the grid and the lines behind it.
-  // Two highlight states: `on` (selected) thickens the line and doubles the
-  // hatch; `hot` (the step a turn is on) goes to a solid ink silhouette.
-  const face = (points, hatch) => {
-    g.appendChild(el("polygon", { points, fill: hot ? "var(--ink)" : "var(--bg)" }));
-    if (!hot && hatch) {
-      g.appendChild(el("polygon", {
-        points, fill: `url(#${on ? "h-sel" : hatch})`, "fill-opacity": dim ? .28 : 1,
-      }));
-    }
-    g.appendChild(el("polygon", {
-      points, fill: "none", stroke: "var(--ink)",
-      "stroke-width": on || hot ? 1.8 : 1, "stroke-opacity": dim ? .28 : 1,
-      "stroke-linejoin": "round",
-    }));
-  };
-
-  face(f.left,  "h-left");
-  face(f.right, null);
-  face(f.top,   "h-top");
-
-  if (n.code) {
-    const [cx, cy] = proj(n.x + n.w / 2, n.y + n.d / 2, n.h);
-    const label = el("text", {
-      x: cx, y: cy + 3, class: "lbl", "text-anchor": "middle",
-      fill: hot ? "var(--bg)" : "var(--ink)", "fill-opacity": dim ? .35 : 1,
-    });
-    label.textContent = n.code;
-    g.appendChild(label);
-  }
-
-  // Caption sits under the base's bottom vertex, clear of the box itself.
-  const [bx, byc] = proj(n.x + n.w / 2, n.y + n.d / 2, 0);
-  const by = byc + ((n.w + n.d) / 2) * HH;
-  const cap = el("text", {
-    x: bx, y: by + 15, class: "lbl", "text-anchor": "middle",
-    fill: "var(--ink)", "fill-opacity": dim ? .28 : (on ? 1 : .8),
-  });
-  cap.textContent = (n.name || n.n).toUpperCase();
-  g.appendChild(cap);
-
-  const sub = el("text", { x: bx, y: by + 26, class: "lbl-sub", "text-anchor": "middle", "fill-opacity": dim ? .2 : .6 });
-  sub.textContent = `${n.loc.toLocaleString()} lines`;
-  g.appendChild(sub);
-
-  return g;
-}
-
-function draw() {
-  world.textContent = "";
-  world.appendChild(defs());
-
-  const nodes = state.inside ? insideScene(state.inside) : SCENE;
-  const active = state.hover || state.sel;
-
-  world.appendChild(ground(nodes));
-
-  if (!state.inside) {
-    world.appendChild(edges(active));
-    if (state.turn >= 0) world.appendChild(turnPath());
-  }
-
-  const here = state.turn >= 0 ? TURN[state.turn].at : null;
-  const sorted = [...nodes].sort((a, b) => (a.x + a.y) - (b.x + b.y));
-  for (const n of sorted) {
-    const hot = n.id === here;
-    const on  = n.id === active && !hot;
-    world.appendChild(box(n, { on, hot, dim: state.turn >= 0 && !hot && !on }));
-  }
-  apply();
-}
-
-/* Sub-scene: one member's modules, laid out on their own grid. */
-function insideScene(id) {
-  const parent = byId[id];
-  const items = parent.inside;
-  if (!items.length) return [];
-  const cols = Math.ceil(Math.sqrt(items.length));
-  return items.map((m, i) => {
-    const w = footprint(m.f), col = i % cols, row = Math.floor(i / cols);
-    return {
-      id: `${id}/${m.n}`, code: null,   // the caption underneath already names it
-      name: m.n, loc: m.loc, files: m.f, note: m.note,
-      w, d: w, h: height(m.loc),
-      x: col * 6 - w / 2, y: row * 6 - w / 2,
-    };
-  });
-}
-
-function apply() {
-  world.setAttribute("transform", `translate(${view.tx},${view.ty}) scale(${view.s})`);
-}
-
-function fit() {
-  const nodes = state.inside ? insideScene(state.inside) : SCENE;
-  if (!nodes.length) { view.tx = svg.clientWidth / 2; view.ty = svg.clientHeight / 2; view.s = 1; return apply(); }
-  const xs = [], ys = [];
-  for (const n of nodes) {
-    for (const [a, b, c] of [[n.x,n.y,0],[n.x+n.w,n.y,0],[n.x,n.y+n.d,0],[n.x+n.w,n.y+n.d,0],
-                             [n.x,n.y,n.h],[n.x+n.w,n.y,n.h],[n.x,n.y+n.d,n.h],[n.x+n.w,n.y+n.d,n.h]]) {
-      const [px, py] = proj(a, b, c); xs.push(px); ys.push(py);
-    }
-  }
-  const pad = 90;
-  const w = Math.max(...xs) - Math.min(...xs) + pad * 2;
-  const h = Math.max(...ys) - Math.min(...ys) + pad * 2;
-  view.s = Math.min(svg.clientWidth / w, svg.clientHeight / h, 1.5);
-  view.tx = svg.clientWidth / 2 - ((Math.min(...xs) + Math.max(...xs)) / 2) * view.s;
-  view.ty = svg.clientHeight / 2 - ((Math.min(...ys) + Math.max(...ys)) / 2) * view.s;
-  apply();
-}
-
-/* ══════════════════════════════════════════════════════════════════════
-   RENDER — chrome
-   ══════════════════════════════════════════════════════════════════════ */
-
-function drawStats() {
-  document.getElementById("stats").innerHTML =
-    STATS.map(([k, v]) => `<div class="stat"><i>${k}</i><b>${v}</b></div>`).join("");
-}
-
-function drawSide() {
-  const side = document.getElementById("side");
-  side.innerHTML = GROUPS.map(([key, label]) => {
-    const rows = SCENE.filter(n => n.group === key).map(n => `
-      <div class="row ${n.id === state.sel ? "sel" : ""} ${key === "unwired" ? "mute" : ""}" data-id="${n.id}">
-        <div class="k">${n.code}</div>
-        <div class="t">${n.name}</div>
-        <div class="n">${n.inside.length || "·"}</div>
-      </div>`).join("");
-    return `<div class="grp">${label}</div>${rows}`;
-  }).join("");
-  side.querySelectorAll(".row").forEach(r => {
-    r.onclick = () => select(r.dataset.id);
-    r.onmouseenter = () => { state.hover = r.dataset.id; draw(); };
-    r.onmouseleave = () => { state.hover = null; draw(); };
-  });
-  const sel = side.querySelector(".row.sel");
-  if (sel) sel.scrollIntoView({ block: "nearest" });
-}
-
-function drawCrumb() {
-  const c = document.getElementById("crumb");
-  if (!state.inside) { c.innerHTML = ""; return; }
-  const n = byId[state.inside];
-  c.innerHTML = `<button id="out">← the workspace</button><span class="sep">/</span>${n.path}/src`;
-  document.getElementById("out").onclick = () => { state.inside = null; draw(); fit(); drawBody(); drawCrumb(); };
-}
-
-function drawBody(keepScroll) {
-  const b = document.getElementById("body");
-  const top = keepScroll ? b.scrollTop : 0;
-
-  if (state.tab === "turn") {
-    b.innerHTML = `
-      <div class="eyebrow">One message, end to end</div>
-      <h1>A turn</h1>
-      <div class="dek">Seventeen hops, in the order the code runs them. Press <span class="hl">Step forward</span> to walk it, or <span class="hl">Run a turn</span> to let it play.</div>
-      ${TURN.map((s, i) => `
-        <div class="step ${i === state.turn ? "on" : ""}" data-i="${i}">
-          <div class="i">${String(i + 1).padStart(2, "0")}</div>
-          <div>
-            <em>${s.at ? byId[s.at].name : "outside the workspace"}</em>
-            ${s.t}
-            <u>${s.src}</u>
-          </div>
-        </div>`).join("")}`;
-    b.querySelectorAll(".step").forEach(s => s.onclick = () => goStep(+s.dataset.i));
-    const on = b.querySelector(".step.on");
-    if (on) on.scrollIntoView({ block: "center" });
-    return;
-  }
-
-  const n = byId[state.hover] || byId[state.sel];
-  const inside = state.inside === n.id;
-
-  const meta = `
-    <dl class="meta">
-      <dt>package</dt><dd>${n.pkg}</dd>
-      <dt>path</dt><dd>${n.path}</dd>
-      <dt>size</dt><dd>${n.loc.toLocaleString()} lines · ${n.files} file${n.files === 1 ? "" : "s"}</dd>
-      <dt>depends on</dt><dd>${depsOf(n.id) || "nothing in the workspace"}</dd>
-      <dt>used by</dt><dd>${usersOf(n.id) || "nothing in the workspace"}</dd>
-    </dl>`;
-
-  if (state.tab === "what") {
-    b.innerHTML = `
-      <div class="eyebrow">${GROUPS.find(g => g[0] === n.group)[1]}</div>
-      <h1>${n.name}</h1>
-      <div class="dek">${n.pkg}</div>
-      <h2>What it does</h2>
-      <p>${n.what}</p>
-      ${n.note ? `<div class="warn"><i>Worth knowing</i>${n.note}</div>` : ""}
-      <h2>At a glance</h2>
-      ${meta}
-      ${n.inside.length ? `<h2>Inside</h2><ul>${n.inside.map(m =>
-        `<li class="${state.hover === `${n.id}/${m.n}` ? "on" : ""}"><b>${m.n}</b><i>${m.loc.toLocaleString()} · ${m.f}f</i><span>${m.note}</span></li>`).join("")}</ul>
-        <p><button class="hl" id="go-in">${inside ? "you are inside" : "→ go inside"}</button></p>` : ""}`;
-  } else {
-    b.innerHTML = `
-      <div class="eyebrow">${n.pkg}</div>
-      <h1>${n.name}</h1>
-      <div class="dek">${n.path}</div>
-      <h2>How it's built</h2>
-      <p>${n.how}</p>
-      <h2>At a glance</h2>
-      ${meta}`;
-  }
-
-  b.scrollTop = top;
-  const go = document.getElementById("go-in");
-  if (go) go.onclick = () => enter(n.id);
-}
-
-const depsOf  = id => EDGES.filter(e => e[0] === id).map(e => byId[e[1]].name).join(", ");
-const usersOf = id => EDGES.filter(e => e[1] === id).map(e => byId[e[0]].name).join(", ");
-
-/* ══════════════════════════════════════════════════════════════════════
-   INTERACTION
-   ══════════════════════════════════════════════════════════════════════ */
-
-function select(id) {
-  if (!byId[id]) return;
-  state.sel = id;
-  if (state.inside && state.inside !== id) state.inside = null;
-  if (state.tab === "turn") setTab("what");
-  draw(); drawSide(); drawBody(); drawCrumb();
-}
-
-function enter(id) {
-  if (!byId[id] || !byId[id].inside.length) return;
-  state.sel = id; state.inside = id;
-  draw(); fit(); drawSide(); drawBody(); drawCrumb();
-}
-
-function setTab(tab) {
-  state.tab = tab;
-  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
-  drawBody();
-}
-
-function goStep(i) {
-  state.turn = ((i % TURN.length) + TURN.length) % TURN.length;
-  const at = TURN[state.turn].at;
-  if (at) state.sel = at;
-  if (state.inside) state.inside = null;
-  setTab("turn");
-  draw(); drawSide(); drawCrumb();
-}
-
-function play(on) {
-  state.playing = on;
-  document.getElementById("btn-play").classList.toggle("on", on);
-  document.getElementById("btn-play").textContent = on ? "❚❚ Pause the turn" : "▶ Run a turn";
-  clearInterval(state.timer);
-  if (on) {
-    if (state.turn < 0) goStep(0);
-    state.timer = setInterval(() => {
-      if (state.turn >= TURN.length - 1) return play(false);
-      goStep(state.turn + 1);
-    }, 2200);
-  }
-}
-
-document.getElementById("btn-play").onclick  = () => play(!state.playing);
-document.getElementById("btn-step").onclick  = () => { play(false); goStep(state.turn + 1); };
-document.getElementById("btn-reset").onclick = () => {
-  play(false);
-  state.turn = -1; state.inside = null; state.hover = null;
-  setTab("what"); draw(); fit(); drawSide(); drawCrumb();
-};
-document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => setTab(b.dataset.tab));
-document.getElementById("z-in").onclick  = () => { view.s = Math.min(view.s * 1.25, 4); apply(); };
-document.getElementById("z-out").onclick = () => { view.s = Math.max(view.s / 1.25, .2); apply(); };
-
-/* pan + zoom */
-let drag = null;
-svg.addEventListener("pointerdown", e => {
-  drag = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty };
-  svg.classList.add("drag"); svg.setPointerCapture(e.pointerId);
-});
-svg.addEventListener("pointermove", e => {
-  if (!drag) return;
-  view.tx = drag.tx + (e.clientX - drag.x);
-  view.ty = drag.ty + (e.clientY - drag.y);
-  apply();
-});
-svg.addEventListener("pointerup", e => { drag = null; svg.classList.remove("drag"); });
-svg.addEventListener("wheel", e => {
-  e.preventDefault();
-  const r = svg.getBoundingClientRect();
-  const mx = e.clientX - r.left, my = e.clientY - r.top;
-  const k = Math.exp(-e.deltaY * 0.0015);
-  const s = Math.max(.2, Math.min(4, view.s * k));
-  view.tx = mx - (mx - view.tx) * (s / view.s);
-  view.ty = my - (my - view.ty) * (s / view.s);
-  view.s = s; apply();
-}, { passive: false });
-
-/* hover + click on boxes */
-// Inside a member, re-rendering the whole panel on every hover would reset its
-// scroll — just move the highlight down the Inside list instead.
-function markRow() {
-  const n = byId[state.sel];
-  document.querySelectorAll("#body li").forEach((li, i) => {
-    const m = n.inside[i];
-    const on = m && state.hover === `${n.id}/${m.n}`;
-    li.classList.toggle("on", !!on);
-    if (on) li.scrollIntoView({ block: "nearest" });
-  });
-}
-
-world.addEventListener("mouseover", e => {
-  const g = e.target.closest(".node");
-  if (!g || state.hover === g.dataset.id) return;
-  state.hover = g.dataset.id;
-  draw();
-  state.inside ? markRow() : drawBody();
-});
-world.addEventListener("mouseout", e => {
-  if (!e.target.closest(".node") || state.hover === null) return;
-  state.hover = null;
-  draw();
-  state.inside ? markRow() : drawBody();
-});
-world.addEventListener("click", e => {
-  const g = e.target.closest(".node");
-  if (!g || state.inside) return;
-  select(g.dataset.id);
-});
-
-/* keyboard */
-document.addEventListener("keydown", e => {
-  const order = SCENE.map(n => n.id);
-  const i = order.indexOf(state.sel);
-  if (e.key === "ArrowDown")      { e.preventDefault(); select(order[(i + 1) % order.length]); }
-  else if (e.key === "ArrowUp")   { e.preventDefault(); select(order[(i - 1 + order.length) % order.length]); }
-  else if (e.key === "ArrowRight"){ e.preventDefault(); enter(state.sel); }
-  else if (e.key === "ArrowLeft" || e.key === "Escape") {
-    e.preventDefault();
-    if (state.inside) { state.inside = null; draw(); fit(); drawBody(); drawCrumb(); }
-  }
-  else if (e.key === " ")         { e.preventDefault(); play(!state.playing); }
-});
-
-window.addEventListener("resize", fit);
-
-/* go */
-drawStats(); drawSide(); draw(); fit(); drawBody(); drawCrumb();
-</script>
-</body>
+    </body>
 </html>

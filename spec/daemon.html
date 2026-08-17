@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-33600370.js";
+            window.path_to_searchindex_js = "../searchindex-0b35cd07.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-56997f56.js"></script>
+        <script src="../toc-27a33c77.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -187,12 +187,14 @@
 <ul>
 <li><strong>Transports</strong> — UDS and TCP listeners. Listening endpoints belong to the daemon, not to individual clients or agents.</li>
 <li><strong>Runtime</strong> — a single shared runtime instance behind <code>RwLock</code>. Agents share the runtime; the runtime is never cloned per conversation.</li>
-<li><strong>Hooks</strong> — the composite <code>Hook</code> assembled from sub-hooks (OS tools, <code>ask_user</code>, delegation, event subscription, memory).</li>
+<li><strong>Harnesses</strong> — the composite <code>Harness</code>. Two ship today: the one surfacing the tools of each agent’s declared harnesses, and MCP. <code>Harness</code> is public API at the runtime layer, so an embedder registers their own.</li>
 <li><strong>Event bus</strong> — subscription table and fire callback. File-backed by <code>events/subscriptions.toml</code> under the config directory.</li>
 <li><strong>MCP handler</strong> — connections to external MCP servers and routing to the tools they advertise.</li>
+<li><strong>Harness images</strong> — compiled RV64 ELFs, keyed by a content digest of the ELF, its grants, and the scope its capabilities close over.</li>
 <li><strong>Configuration</strong> — current <code>DaemonConfig</code>, reloaded in place on explicit reload.</li>
 </ul>
-<p>The daemon does not interpret tool semantics. Tool dispatch is the runtime’s responsibility, routed through the composite hook.</p>
+<p>The daemon does not interpret tool semantics. Tool dispatch is the runtime’s responsibility, routed through the composite.</p>
+<p>The daemon owns no tools of its own. <code>bash</code>, <code>read</code> and <code>edit</code> are a harness an agent declares; <code>ask_user</code> is a client tool the daemon forwards and never answers. What the daemon supplies is the socket, the runtime, and the state — not a set of capabilities it decided every agent should have.</p>
 <h2 id="process-model"><a class="header" href="#process-model">Process model</a></h2>
 <p>The daemon runs as a single OS process. All work happens on a single Tokio runtime. There is one listener task per configured transport, one reply task per connected client, and one task per in-flight dispatch. Shutdown is initiated by a broadcast channel; every long-lived task subscribes and exits when the channel fires.</p>
 <p>A daemon process owns at most one configuration directory and at most one set of transport endpoints.</p>
@@ -215,7 +217,7 @@
 </div>
 <p>All paths are resolved relative to the configuration directory. The daemon writes nothing outside this directory.</p>
 <h2 id="lifecycle"><a class="header" href="#lifecycle">Lifecycle</a></h2>
-<p><strong>Startup.</strong> The daemon reads <code>config.toml</code>, constructs the provider, assembles hooks, opens storage, builds the shared runtime, loads event subscriptions from disk, binds transports, and begins accepting client messages.</p>
+<p><strong>Startup.</strong> The daemon reads <code>config.toml</code>, constructs the provider, assembles harnesses, opens storage, builds the shared runtime, loads event subscriptions from disk, binds transports, and begins accepting client messages.</p>
 <p><strong>Runtime.</strong> The daemon serves the <code>Server</code> trait. Each client message is dispatched into a spawned task that produces a stream of server messages.</p>
 <p><strong>Reload.</strong> A <code>ReloadMsg</code> causes the daemon to re-read <code>config.toml</code> and rebuild the shared runtime in place. Existing in-flight dispatches complete against the previous runtime; new dispatches see the reloaded runtime. Transports are not re-bound.</p>
 <p><strong>Shutdown.</strong> The daemon broadcasts a shutdown signal. Transport listeners stop accepting new connections. Active dispatches complete or cancel at the next await point. The daemon writes no final state on shutdown; state is persisted on each mutating operation, not at exit.</p>
@@ -229,7 +231,7 @@
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../spec/runtime.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../spec/harness.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
@@ -243,7 +245,7 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../spec/runtime.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../spec/harness.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
