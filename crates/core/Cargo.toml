@@ -16,6 +16,8 @@ testing = []
 [dependencies]
 # crabllm
 crabllm-core.workspace = true
+# crabtalk
+proto = { workspace = true, features = ["std"] }
 # crates.io
 anyhow.workspace = true
 chrono.workspace = true
@@ -38,6 +40,3 @@ ulid.workspace = true
 crabtalk-core = { path = ".", features = ["testing"] }
 serde_json.workspace = true
 tempfile.workspace = true
-
-[build-dependencies]
-prost-build.workspace = true

@@ -233,7 +233,7 @@ name = "berm-sdk"
 version = "0.0.23"
 dependencies = [
  "berm-codegen",
- "crabtalk-berm-proto",
+ "crabtalk-proto",
  "linked_list_allocator",
  "prost",
  "rvtime-guest",
@@ -686,14 +686,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabtalk-berm-proto"
-version = "0.0.23"
-dependencies = [
- "prost",
- "prost-build",
-]
-
-[[package]]
 name = "crabtalk-cli"
 version = "0.0.23"
 dependencies = [
@@ -736,13 +728,13 @@ dependencies = [
  "chrono",
  "crabllm-core",
  "crabtalk-core",
+ "crabtalk-proto",
  "dirs",
  "futures-core",
  "futures-util",
  "heck",
  "parking_lot",
  "prost",
- "prost-build",
  "schemars",
  "serde",
  "serde_json",
@@ -816,6 +808,18 @@ dependencies = [
  "chrono",
  "tempfile",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "crabtalk-proto"
+version = "0.0.23"
+dependencies = [
+ "anyhow",
+ "crabllm-core",
+ "prost",
+ "prost-build",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,0 +1,29 @@
+[package]
+name = "crabtalk-proto"
+description = "The Crabtalk wire protocol — generated message types, for the daemon and for a harness"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "dep:anyhow",
+    "dep:crabllm-core",
+    "dep:serde",
+    "dep:serde_json",
+    "prost/std",
+]
+
+[dependencies]
+prost.workspace = true
+anyhow = { workspace = true, optional = true }
+crabllm-core = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[build-dependencies]
+prost-build.workspace = true

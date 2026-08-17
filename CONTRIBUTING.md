@@ -15,6 +15,8 @@ lib/                    Standalone libraries. They know nothing about the
   └─ search
 
 crates/                 The framework and its assembly.
+  ├─ proto              The wire schema and its generated types — `std` for
+  │                     the daemon, `no_std` for a harness
   ├─ core (wcore)       Agent, Session, Protocol, Storage, ToolDispatcher
   ├─ runtime            The engine and the `Harness` seam — what you import to
   │                     build on crabtalk as a library
@@ -46,7 +48,8 @@ together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 |----------|-------|
 | Would it make sense as a library without crabtalk? | lib/ |
 | Does it shape an agent? | harness/ |
-| Does it define agent behavior, protocol types, or tool schemas? | crates/core |
+| Does it change a wire message? | crates/proto |
+| Does it define agent behavior or tool schemas? | crates/core |
 | Does it change execution, dispatch, or the `Harness` seam? | crates/runtime |
 | Does it add a persistence backend? | crates/storage |
 | Does it add a wire transport? | crates/transport |

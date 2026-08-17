@@ -95,11 +95,12 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                 client_tools,
             )
             .await?;
+        let usage = Some(response.usage());
         Ok(SendResponse {
             agent: req.agent,
             content: response.final_response.unwrap_or_default(),
             model: response.model,
-            usage: Some(TokenUsage::sum(&response.steps)),
+            usage,
         })
     }
 

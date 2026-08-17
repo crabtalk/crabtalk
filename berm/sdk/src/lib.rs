@@ -98,7 +98,7 @@ pub use tool::{capability, failed};
 // the one the derive was generated against.
 /// The daemon's message types, for a harness holding a `protocol:*` grant.
 #[cfg(feature = "protocol")]
-pub use crabtalk_berm_proto as proto;
+pub use ::proto;
 #[cfg(feature = "args")]
 pub use serde_guest as serde;
 #[cfg(feature = "args")]

@@ -9,8 +9,8 @@
 
 use crate::{abi::HOST_PROTOCOL_CALL, cap};
 use alloc::{string::String, vec::Vec};
-use crabtalk_berm_proto::{ClientMessage, ServerMessage};
 use prost_guest::Message;
+use proto::{ClientMessage, ServerMessage};
 
 /// Send one message and wait for its reply.
 ///
