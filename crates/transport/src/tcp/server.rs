@@ -1,6 +1,10 @@
 //! TCP server — accept loop and per-connection message handler.
 
 use crate::REPLY_CHANNEL_CAPACITY;
+use schema::protocol::{
+    codec,
+    message::{ClientMessage, ServerMessage},
+};
 use std::{
     net::{Ipv4Addr, SocketAddr},
     time::Duration,
@@ -8,10 +12,6 @@ use std::{
 use tokio::{
     net::TcpListener,
     sync::{mpsc, oneshot},
-};
-use wcore::protocol::{
-    codec,
-    message::{ClientMessage, ServerMessage},
 };
 
 /// Default TCP port for the crabtalk daemon.

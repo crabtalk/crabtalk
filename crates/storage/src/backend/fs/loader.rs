@@ -2,12 +2,12 @@
 //!
 //! Handles filesystem I/O: scaffolds the config directory structure on
 //! first run. Manifest resolution and agent loading live in
-//! `wcore::config::manifest`.
+//! `schema::config::manifest`.
 #![allow(dead_code)]
 
 use anyhow::{Context, Result};
+use schema::paths::{AGENTS_DIR, CONFIG_FILE, PACKAGES_DIR, SETTINGS_FILE, SKILLS_DIR};
 use std::path::Path;
-use wcore::paths::{AGENTS_DIR, CONFIG_FILE, PACKAGES_DIR, SETTINGS_FILE, SKILLS_DIR};
 
 /// Default template for `config.toml` — the hand-edited install config
 /// (LLM endpoint, task pool, env vars).

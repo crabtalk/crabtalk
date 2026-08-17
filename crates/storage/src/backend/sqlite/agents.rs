@@ -2,8 +2,8 @@
 
 use crate::backend::sqlite::SqliteStorage;
 use anyhow::Result;
+use schema::{AgentConfig, AgentId, storage::validate_table_name};
 use sqlx::Row;
-use wcore::{AgentConfig, AgentId, storage::validate_table_name};
 
 impl SqliteStorage {
     pub(super) async fn list_agents(&self) -> Result<Vec<AgentConfig>> {

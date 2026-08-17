@@ -2,7 +2,7 @@
 
 Persistence backends for Crabtalk.
 
-The `Storage` trait is declared in [`crabtalk-core`](../core); this crate
+The `Storage` trait is declared in [`crabtalk-schema`](../schema); this crate
 implements it. A backend is chosen at compile time through the `Storage`
 associated type on `runtime::Config`, so a host picks one by wiring a type,
 not by flipping a switch.

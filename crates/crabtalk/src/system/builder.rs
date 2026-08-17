@@ -13,21 +13,21 @@ use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook};
 use mcp::McpHandler;
 use proto::server::Server;
 use runtime::{Harness, Runtime};
+use schema::{ResolvedDirs, model::Model, resolve_dirs, storage::Storage};
 use std::{
     collections::BTreeMap,
     path::Path,
     sync::{Arc, OnceLock},
 };
 use tokio::sync::{RwLock, broadcast};
-use wcore::{ResolvedDirs, model::Model, resolve_dirs, storage::Storage};
 
 /// Build the LLM `Model<P>` given the config and the list of models
 /// advertised by the endpoint (fetched from `/v1/models` at startup).
 pub type BuildProvider<P> =
-    Arc<dyn Fn(&wcore::Config, &[String]) -> Result<wcore::model::Model<P>> + Send + Sync>;
+    Arc<dyn Fn(&schema::Config, &[String]) -> Result<schema::model::Model<P>> + Send + Sync>;
 
 pub fn build_default_provider(
-    config: &wcore::Config,
+    config: &schema::Config,
     models: &[String],
 ) -> Result<Model<DefaultProvider>> {
     build_providers(config, models)
@@ -35,7 +35,7 @@ pub fn build_default_provider(
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn build(
-        config: &wcore::Config,
+        config: &schema::Config,
         config_dir: &Path,
         storage: Arc<S>,
         build_provider: BuildProvider<P>,
@@ -133,7 +133,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 
     pub async fn reload(&self) -> Result<()> {
-        let config = wcore::Config::load(&self.config_dir.join(wcore::paths::CONFIG_FILE))?;
+        let config = schema::Config::load(&self.config_dir.join(schema::paths::CONFIG_FILE))?;
         let runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>> = Arc::new(OnceLock::new());
         runtime_once
             .set(self.runtime.clone())
@@ -192,7 +192,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 
     /// Build Hooks, SystemEnv, and Runtime in one shot.
     async fn build_all(
-        config: &wcore::Config,
+        config: &schema::Config,
         config_dir: &Path,
         storage: Arc<S>,
         build_provider: &BuildProvider<P>,
@@ -241,7 +241,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             bridge: bridge.clone(),
         });
 
-        let mut tools = wcore::ToolRegistry::new();
+        let mut tools = schema::ToolRegistry::new();
         for schema in Harness::schema(hooks.as_ref()) {
             tools.insert(schema);
         }
@@ -326,7 +326,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 }
 
-fn build_providers(config: &wcore::Config, models: &[String]) -> Result<Model<DefaultProvider>> {
+fn build_providers(config: &schema::Config, models: &[String]) -> Result<Model<DefaultProvider>> {
     let llm = &config.llm;
     tracing::info!(
         "llm endpoint registered — {} models from {}",

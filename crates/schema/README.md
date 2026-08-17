@@ -1,4 +1,4 @@
-# crabtalk-core
+# crabtalk-schema
 
 Stateful agent execution library.
 

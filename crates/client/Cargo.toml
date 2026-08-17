@@ -22,7 +22,7 @@ tokio.workspace = true
 transport.workspace = true
 tracing.workspace = true
 
-wcore.workspace = true
+schema.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

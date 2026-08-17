@@ -1,6 +1,6 @@
 //! Transport layer for the Crabtalk daemon.
 //!
-//! Wire message types, API traits, and codec live in `crabtalk-core::protocol`.
+//! Wire message types, API traits, and codec live in `crabtalk-schema::protocol`.
 //! This crate provides UDS and TCP transport layers.
 
 /// Per-connection reply channel capacity.
@@ -13,7 +13,7 @@ pub const REPLY_CHANNEL_CAPACITY: usize = 256;
 use anyhow::Result;
 use futures_core::Stream;
 use proto::client::Client;
-use wcore::protocol::message::{ClientMessage, ServerMessage};
+use schema::protocol::message::{ClientMessage, ServerMessage};
 
 pub mod tcp;
 #[cfg(unix)]

@@ -8,12 +8,12 @@
 
 use crate::{Config, Conversation, Env, Harness, sessions::SessionIndex};
 use memory::Memory;
+use schema::{Agent, ToolRegistry, model::Model};
 use std::{
     collections::BTreeMap,
     sync::{Arc, atomic::AtomicU64},
 };
 use tokio::sync::{Mutex, RwLock, watch};
-use wcore::{Agent, ToolRegistry, model::Model};
 
 mod agents;
 mod config;

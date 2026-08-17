@@ -1,8 +1,8 @@
 //! Conversation — pure working-context container.
 
 use crate::ConversationHandle;
+use schema::{model::HistoryEntry, storage::ConversationMeta};
 use std::time::Instant;
-use wcore::{model::HistoryEntry, storage::ConversationMeta};
 
 /// A conversation tied to a specific agent.
 ///

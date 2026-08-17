@@ -4,12 +4,12 @@ use super::{ConvSlot, Runtime};
 use crate::{Config, Conversation, ConversationHandle};
 use anyhow::{Result, bail};
 use memory::{EntryKind, Op};
-use std::sync::{Arc, atomic::Ordering};
-use tokio::sync::Mutex;
-use wcore::{
+use schema::{
     model::{HistoryEntry, Role},
     storage::Storage,
 };
+use std::sync::{Arc, atomic::Ordering};
+use tokio::sync::Mutex;
 
 impl<C: Config> Runtime<C> {
     pub(super) fn new_slot(id: u64, agent: &str, created_by: &str) -> ConvSlot {
@@ -84,7 +84,7 @@ impl<C: Config> Runtime<C> {
         Ok(id)
     }
 
-    pub async fn list_active(&self) -> Vec<wcore::protocol::message::ActiveConversationInfo> {
+    pub async fn list_active(&self) -> Vec<schema::protocol::message::ActiveConversationInfo> {
         // Snapshot the slot metadata and mutex handles first so the
         // outer read guard isn't held across per-conversation locks —
         // otherwise a slow conversation would block readers of the
@@ -99,7 +99,7 @@ impl<C: Config> Runtime<C> {
         let mut infos = Vec::with_capacity(slots.len());
         for (agent, sender, mutex) in slots {
             let c = mutex.lock().await;
-            infos.push(wcore::protocol::message::ActiveConversationInfo {
+            infos.push(schema::protocol::message::ActiveConversationInfo {
                 agent,
                 sender,
                 message_count: c.history.len() as u64,
@@ -355,7 +355,7 @@ impl<C: Config> Runtime<C> {
     /// — the caller must skip the compact marker so a resume can't
     /// dangle.
     fn write_archive(&self, session_slug: &str, summary: String) -> Option<String> {
-        let slug = wcore::sender_slug(session_slug);
+        let slug = schema::sender_slug(session_slug);
         let prefix = format!("{slug}-");
         let mut mem = self.memory.write();
         // Scan and insert under the same write lock — two concurrent
@@ -411,7 +411,7 @@ impl<C: Config> Runtime<C> {
         agent: &str,
         created_by: &str,
         pre_run_len: usize,
-        event_trace: &[wcore::EventLine],
+        event_trace: &[schema::EventLine],
     ) {
         self.persist_messages(conversation, agent, created_by, pre_run_len, event_trace)
             .await;
@@ -427,7 +427,7 @@ impl<C: Config> Runtime<C> {
         agent: &str,
         created_by: &str,
         pre_run_len: usize,
-        event_trace: &[wcore::EventLine],
+        event_trace: &[schema::EventLine],
     ) {
         self.ensure_handle(conversation, agent, created_by).await;
         let Some(ref handle) = conversation.handle else {

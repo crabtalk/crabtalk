@@ -14,13 +14,13 @@
 use anyhow::Result;
 use futures_util::StreamExt;
 use proto::api::Client as _;
+use schema::protocol::message::{
+    AgentEventMsg, ClientMessage, StreamEvent, StreamMsg, server_message, stream_event,
+};
 use std::net::{Ipv4Addr, SocketAddr};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
-use wcore::protocol::message::{
-    AgentEventMsg, ClientMessage, StreamEvent, StreamMsg, server_message, stream_event,
-};
 
 pub use transport::Transport;
 
@@ -37,11 +37,11 @@ impl ConnectionInfo {
     pub fn platform_default() -> Result<Self> {
         #[cfg(unix)]
         {
-            Ok(Self::Uds(wcore::paths::SOCKET_PATH.to_path_buf()))
+            Ok(Self::Uds(schema::paths::SOCKET_PATH.to_path_buf()))
         }
         #[cfg(not(unix))]
         {
-            let port_str = std::fs::read_to_string(&*wcore::paths::TCP_PORT_FILE)?;
+            let port_str = std::fs::read_to_string(&*schema::paths::TCP_PORT_FILE)?;
             let port: u16 = port_str.trim().parse()?;
             Ok(Self::Tcp(port))
         }

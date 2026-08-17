@@ -155,7 +155,7 @@ impl<T: JsonSchema> AsTool for T {
             .get("description")
             .and_then(|v| v.as_str())
             .map(str::to_owned);
-        // `strict: None` matches the prior wire behavior: the wcore
+        // `strict: None` matches the prior wire behavior: the schema
         // `Tool.strict: bool` field was set to `true` by every `AsTool` impl
         // but silently dropped by the converter (old convert::to_ct_tool
         // hard-coded `strict: None`). Turning on strict-mode validation

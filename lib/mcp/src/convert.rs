@@ -6,7 +6,7 @@
 //! definition, rather than somewhere downstream.
 
 use crate::handler::{McpEvent, ServerStatus};
-use wcore::protocol::message::{McpEventKind, McpEventMsg, McpStatus};
+use schema::protocol::message::{McpEventKind, McpEventMsg, McpStatus};
 
 impl From<McpEvent> for McpEventMsg {
     fn from(event: McpEvent) -> Self {

@@ -3,11 +3,11 @@
 
 use crate::backend::sqlite::{SqliteStorage, convert, schema::BEGIN_IMMEDIATE};
 use anyhow::Result;
-use sqlx::Row;
-use wcore::{
+use schema::{
     model::HistoryEntry,
     storage::{ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary},
 };
+use sqlx::Row;
 
 impl SqliteStorage {
     pub(super) async fn create_session(

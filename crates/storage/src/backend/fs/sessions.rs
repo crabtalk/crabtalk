@@ -4,17 +4,17 @@
 
 use crate::backend::fs::{FsStorage, atomic_write};
 use anyhow::Result;
+use schema::{
+    ConversationMeta, EventLine,
+    model::HistoryEntry,
+    storage::{SessionHandle, SessionSnapshot, SessionSummary},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
 };
 use tokio::fs;
-use wcore::{
-    ConversationMeta, EventLine,
-    model::HistoryEntry,
-    storage::{SessionHandle, SessionSnapshot, SessionSummary},
-};
 
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]

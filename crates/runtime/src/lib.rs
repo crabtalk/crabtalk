@@ -8,15 +8,15 @@ pub use conversation::Conversation;
 pub use engine::{Program, ProgramStep, Runtime, SharedMemory};
 pub use env::Env;
 pub use hook::Harness;
-pub use wcore::{MemoryConfig, TasksConfig};
+pub use schema::{MemoryConfig, TasksConfig};
 
 /// Opaque persistent handle to a conversation. Re-exported from the
 /// storage trait so runtime callers don't need to speak the storage
 /// layer's "session" vocabulary.
-pub type ConversationHandle = wcore::storage::SessionHandle;
+pub type ConversationHandle = schema::storage::SessionHandle;
 
 use crabllm_core::Provider;
-use wcore::storage::Storage;
+use schema::storage::Storage;
 
 /// Configuration trait bundling the associated types for a runtime.
 ///
@@ -31,5 +31,5 @@ pub trait Config: Send + Sync + 'static {
 
     /// Node environment — event broadcasting, instruction discovery,
     /// and composite hook for tool dispatch.
-    type Env: Env + wcore::ToolDispatcher + 'static;
+    type Env: Env + schema::ToolDispatcher + 'static;
 }

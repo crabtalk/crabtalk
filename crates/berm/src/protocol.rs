@@ -15,12 +15,12 @@
 
 use anyhow::{Result, bail};
 use prost::Message;
+use schema::protocol::message::{ClientMessage, ServerMessage, client_message, server_message};
 use std::{
     future::Future,
     pin::Pin,
     sync::{Arc, OnceLock},
 };
-use wcore::protocol::message::{ClientMessage, ServerMessage, client_message, server_message};
 
 /// What the harness calls to reach the runtime. Named `crabtalk.` rather than
 /// `berm.` because only crabtalk implements it — a different embedder has its

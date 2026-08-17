@@ -1,9 +1,9 @@
 //! `recall` — BM25 search over memory entries.
 
 use super::{Memory, MemoryHook};
+use schema::ToolDispatch;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use wcore::ToolDispatch;
 
 /// Search your memory entries by keyword. Returns ranked results.
 #[derive(Deserialize, JsonSchema)]

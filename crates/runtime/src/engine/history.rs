@@ -3,11 +3,11 @@
 use super::Runtime;
 use crate::Config;
 use anyhow::Result;
-use std::collections::HashMap;
-use wcore::{
+use schema::{
     protocol::message::{ConversationHistory, ConversationInfo, ConversationMessage},
     storage::{SessionHandle, SessionSummary, Storage},
 };
+use std::collections::HashMap;
 
 impl<C: Config> Runtime<C> {
     /// List persisted conversations, optionally filtered by agent and sender.
@@ -31,7 +31,7 @@ impl<C: Config> Runtime<C> {
             let content = self.memory().read().get(&name).map(|e| e.content.clone());
             if let Some(summary) = content {
                 let mut out = Vec::with_capacity(messages.len() + 1);
-                out.push(wcore::model::HistoryEntry::user(summary));
+                out.push(schema::model::HistoryEntry::user(summary));
                 out.append(&mut messages);
                 messages = out;
             }
@@ -44,7 +44,7 @@ impl<C: Config> Runtime<C> {
                 .filter(|e| {
                     !matches!(
                         e.role(),
-                        wcore::model::Role::System | wcore::model::Role::Tool
+                        schema::model::Role::System | schema::model::Role::Tool
                     )
                 })
                 .map(|e| ConversationMessage {

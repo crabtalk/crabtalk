@@ -645,11 +645,11 @@ dependencies = [
  "crabllm-provider",
  "crabllm-sdk",
  "crabtalk-berm",
- "crabtalk-core",
  "crabtalk-hooks",
  "crabtalk-mcp",
  "crabtalk-proto",
  "crabtalk-runtime",
+ "crabtalk-schema",
  "crabtalk-skill",
  "crabtalk-transport",
  "futures-core",
@@ -673,8 +673,8 @@ dependencies = [
  "berm",
  "bytes",
  "crabllm-core",
- "crabtalk-core",
  "crabtalk-runtime",
+ "crabtalk-schema",
  "http",
  "http-body-util",
  "hyper-tls",
@@ -690,8 +690,8 @@ name = "crabtalk-client"
 version = "0.0.23"
 dependencies = [
  "anyhow",
- "crabtalk-core",
  "crabtalk-proto",
+ "crabtalk-schema",
  "crabtalk-transport",
  "dirs",
  "futures-core",
@@ -702,33 +702,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "crabtalk-core"
-version = "0.0.23"
-dependencies = [
- "anyhow",
- "async-stream",
- "chrono",
- "crabllm-core",
- "crabtalk-core",
- "crabtalk-proto",
- "crabtalk-skill",
- "dirs",
- "futures-core",
- "futures-util",
- "heck",
- "parking_lot",
- "prost",
- "schemars",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "toml",
- "tracing",
- "ulid",
 ]
 
 [[package]]
@@ -750,10 +723,10 @@ version = "0.0.23"
 dependencies = [
  "anyhow",
  "crabllm-core",
- "crabtalk-core",
  "crabtalk-mcp",
  "crabtalk-memory",
  "crabtalk-runtime",
+ "crabtalk-schema",
  "dirs",
  "parking_lot",
  "schemars",
@@ -770,7 +743,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "chrono",
- "crabtalk-core",
+ "crabtalk-schema",
  "futures-util",
  "http",
  "http-body-util",
@@ -818,14 +791,41 @@ dependencies = [
  "async-stream",
  "chrono",
  "crabllm-core",
- "crabtalk-core",
  "crabtalk-memory",
+ "crabtalk-schema",
  "futures-core",
  "futures-util",
  "parking_lot",
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "crabtalk-schema"
+version = "0.0.23"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "chrono",
+ "crabllm-core",
+ "crabtalk-proto",
+ "crabtalk-schema",
+ "crabtalk-skill",
+ "dirs",
+ "futures-core",
+ "futures-util",
+ "heck",
+ "parking_lot",
+ "prost",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "toml",
+ "tracing",
+ "ulid",
 ]
 
 [[package]]
@@ -864,8 +864,8 @@ version = "0.0.23"
 dependencies = [
  "anyhow",
  "chrono",
- "crabtalk-core",
  "crabtalk-hooks",
+ "crabtalk-schema",
  "crabtalk-skill",
  "parking_lot",
  "serde",
@@ -884,8 +884,8 @@ version = "0.0.23"
 dependencies = [
  "anyhow",
  "async-stream",
- "crabtalk-core",
  "crabtalk-proto",
+ "crabtalk-schema",
  "futures-core",
  "futures-util",
  "tokio",
@@ -898,7 +898,7 @@ version = "0.0.23"
 dependencies = [
  "anyhow",
  "clap",
- "crabtalk-core",
+ "crabtalk-schema",
  "dirs",
  "flate2",
  "indicatif",

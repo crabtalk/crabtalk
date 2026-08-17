@@ -1,6 +1,6 @@
 //! Conversions between the wire messages and the LLM types they carry.
 //!
-//! Both sides are foreign to `crabtalk-core`, so the impls live here — with
+//! Both sides are foreign to `crabtalk-schema`, so the impls live here — with
 //! the generated types, where the orphan rule allows them.
 #![cfg(feature = "llm")]
 

@@ -5,16 +5,18 @@ use crate::llm::Provider;
 use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
 use proto::server::Server;
+use schema::protocol::message::ClientMessage;
+use schema::storage::Storage;
 #[cfg(unix)]
 use std::path::Path;
 use tokio::sync::{broadcast, mpsc, oneshot};
-use wcore::protocol::message::ClientMessage;
-use wcore::storage::Storage;
 
 fn dispatch_callback<P: Provider + 'static, S: Storage>(
     daemon: CrabTalk<P, S>,
-) -> impl Fn(ClientMessage, mpsc::Sender<wcore::protocol::message::ServerMessage>) + Clone + Send + 'static
-{
+) -> impl Fn(ClientMessage, mpsc::Sender<schema::protocol::message::ServerMessage>)
++ Clone
++ Send
++ 'static {
     move |msg, reply| {
         let daemon = daemon.clone();
         tokio::spawn(async move {
@@ -34,7 +36,7 @@ pub fn setup_socket<P: Provider + 'static, S: Storage>(
     daemon: CrabTalk<P, S>,
     shutdown_tx: &broadcast::Sender<()>,
 ) -> Result<(&'static Path, tokio::task::JoinHandle<()>)> {
-    let resolved_path: &'static Path = &wcore::paths::SOCKET_PATH;
+    let resolved_path: &'static Path = &schema::paths::SOCKET_PATH;
     if let Some(parent) = resolved_path.parent() {
         std::fs::create_dir_all(parent)?;
     }

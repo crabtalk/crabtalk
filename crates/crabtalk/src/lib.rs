@@ -5,7 +5,7 @@ mod protocol;
 pub mod system;
 
 pub use crabllm_core as llm;
+pub use schema::Config;
 #[cfg(unix)]
 pub use system::setup_socket;
 pub use system::{CrabTalk, CrabTalkHandle, bridge_shutdown, setup_tcp};
-pub use wcore::Config;

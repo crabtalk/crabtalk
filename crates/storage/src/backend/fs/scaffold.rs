@@ -3,15 +3,15 @@
 
 use crate::backend::fs::FsStorage;
 use anyhow::Result;
+use schema::AgentConfig;
 use tokio::fs;
-use wcore::AgentConfig;
 
 impl FsStorage {
     pub(super) async fn scaffold(&self, default_model: &str) -> Result<()> {
         fs::create_dir_all(&self.config_dir).await?;
-        fs::create_dir_all(self.config_dir.join(wcore::paths::LOCAL_DIR)).await?;
-        fs::create_dir_all(self.config_dir.join(wcore::paths::SKILLS_DIR)).await?;
-        fs::create_dir_all(self.config_dir.join(wcore::paths::AGENTS_DIR)).await?;
+        fs::create_dir_all(self.config_dir.join(schema::paths::LOCAL_DIR)).await?;
+        fs::create_dir_all(self.config_dir.join(schema::paths::SKILLS_DIR)).await?;
+        fs::create_dir_all(self.config_dir.join(schema::paths::AGENTS_DIR)).await?;
         fs::create_dir_all(&self.sessions_root).await?;
 
         let file = self.read_settings().await?;

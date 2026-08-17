@@ -15,12 +15,12 @@ use anyhow::{Context, Result};
 use berm::{Config, Engine, Grants, Harness};
 use crabtalk_berm::Dispatch;
 
+use schema::protocol::message::{AgentInfo, AgentList, ServerMessage, server_message};
 use std::{
     fs,
     path::PathBuf,
     sync::{Arc, OnceLock},
 };
-use wcore::protocol::message::{AgentInfo, AgentList, ServerMessage, server_message};
 
 const HARNESS: &str = "target/riscv64imac-unknown-none-elf/release/peers";
 

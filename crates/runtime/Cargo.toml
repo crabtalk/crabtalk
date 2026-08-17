@@ -11,7 +11,7 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-wcore.workspace = true
+schema.workspace = true
 memory.workspace = true
 crabllm-core.workspace = true
 
@@ -28,4 +28,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-wcore = { workspace = true, features = ["testing"] }
+schema = { workspace = true, features = ["testing"] }

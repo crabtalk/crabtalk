@@ -75,7 +75,7 @@ fn download(url: &str, prefix: &str, mp: &MultiProgress) -> Result<Vec<u8>> {
 
 /// Extract the named binary from a gzipped tarball into BIN_DIR.
 fn extract_binary(tarball: &[u8], bin_name: &str) -> Result<()> {
-    let bin_dir = &*wcore::paths::BIN_DIR;
+    let bin_dir = &*schema::paths::BIN_DIR;
     std::fs::create_dir_all(bin_dir)?;
 
     let gz = flate2::read::GzDecoder::new(tarball);
@@ -131,6 +131,6 @@ pub fn install(entries: &[&Entry], version: Option<&str>) -> Result<()> {
         crate::manifest::record(entry.short, &version)?;
     }
 
-    println!("info: installed to {}", wcore::paths::BIN_DIR.display());
+    println!("info: installed to {}", schema::paths::BIN_DIR.display());
     Ok(())
 }

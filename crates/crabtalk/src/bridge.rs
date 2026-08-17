@@ -18,12 +18,12 @@
 //! names it was handed and never inspects them.
 
 use parking_lot::Mutex;
+use schema::{ToolDispatch, ToolFuture, model::Tool};
 use std::{
     collections::{HashMap, HashSet},
     time::Duration,
 };
 use tokio::sync::oneshot;
-use wcore::{ToolDispatch, ToolFuture, model::Tool};
 
 /// How long a forwarded call waits for a reply before failing.
 const FORWARD_TIMEOUT: Duration = Duration::from_secs(300);

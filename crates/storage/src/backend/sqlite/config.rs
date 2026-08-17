@@ -2,7 +2,7 @@
 
 use crate::backend::sqlite::SqliteStorage;
 use anyhow::Result;
-use wcore::{AgentConfig, Config};
+use schema::{AgentConfig, Config};
 
 impl SqliteStorage {
     pub(super) async fn load_config(&self) -> Result<Config> {

@@ -11,6 +11,11 @@
 use anyhow::Result;
 pub use loader::DEFAULT_SETTINGS;
 use parking_lot::Mutex;
+use schema::{
+    AgentConfig, AgentId, Config, ConversationMeta, EventLine,
+    model::HistoryEntry,
+    storage::{SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -19,11 +24,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::fs;
-use wcore::{
-    AgentConfig, AgentId, Config, ConversationMeta, EventLine,
-    model::HistoryEntry,
-    storage::{SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage},
-};
 
 mod agents;
 mod config;
@@ -62,7 +62,7 @@ impl FsStorage {
     }
 
     pub(super) fn settings_path(&self) -> PathBuf {
-        self.config_dir.join(wcore::paths::SETTINGS_FILE)
+        self.config_dir.join(schema::paths::SETTINGS_FILE)
     }
 
     /// Read and parse the settings file. Re-parsed on every call —

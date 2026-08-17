@@ -46,7 +46,7 @@ pub fn run() -> Result<()> {
     let mut rows: Vec<Row> = Entry::all()
         .iter()
         .map(|e| {
-            let managed = wcore::paths::BIN_DIR.join(e.bin).exists();
+            let managed = schema::paths::BIN_DIR.join(e.bin).exists();
             let cargo = cargo_set.contains(e.krate);
 
             let state = match (managed, cargo) {

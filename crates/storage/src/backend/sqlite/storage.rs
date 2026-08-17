@@ -7,14 +7,14 @@
 
 use crate::backend::sqlite::SqliteStorage;
 use anyhow::Result;
-use skill::discover;
-use wcore::{
+use schema::{
     AgentConfig, AgentId, Config,
     model::HistoryEntry,
     storage::{
         ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage,
     },
 };
+use skill::discover;
 
 impl Storage for SqliteStorage {
     // Skills are markdown on disk for every backend; only sessions,

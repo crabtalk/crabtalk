@@ -10,8 +10,8 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use recall::Recall;
 use remember::Remember;
 use runtime::Harness;
+use schema::{AgentConfig, MemoryConfig, ToolDispatch, ToolFuture, agent::AsTool, model::Tool};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use wcore::{AgentConfig, MemoryConfig, ToolDispatch, ToolFuture, agent::AsTool, model::Tool};
 
 mod forget;
 mod recall;

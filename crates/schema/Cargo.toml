@@ -1,7 +1,7 @@
 [package]
-name = "crabtalk-core"
+name = "crabtalk-schema"
 description = "Core types and traits for the Crabtalk agent runtime"
-documentation = "https://docs.rs/crabtalk-core"
+documentation = "https://docs.rs/crabtalk-schema"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
@@ -38,6 +38,6 @@ tracing.workspace = true
 ulid.workspace = true
 
 [dev-dependencies]
-crabtalk-core = { path = ".", features = ["testing"] }
+crabtalk-schema = { path = ".", features = ["testing"] }
 serde_json.workspace = true
 tempfile.workspace = true

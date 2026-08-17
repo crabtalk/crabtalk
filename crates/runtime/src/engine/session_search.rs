@@ -6,7 +6,7 @@ use crate::{
     Config,
     sessions::{SearchOptions, SessionHit},
 };
-use wcore::storage::Storage;
+use schema::storage::Storage;
 
 impl<C: Config> Runtime<C> {
     /// Number of messages currently indexed.

@@ -7,11 +7,11 @@
 use crabllm_core::Tool;
 use parking_lot::RwLock;
 use runtime::Harness;
+use schema::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
-use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 
 #[cfg(feature = "mcp")]
 pub mod mcp;

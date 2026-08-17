@@ -6,8 +6,8 @@ use crate::{
 };
 use anyhow::Result;
 use runtime::Env;
+use schema::{protocol::message::*, storage::Storage};
 use tokio::sync::broadcast::error::RecvError;
-use wcore::{protocol::message::*, storage::Storage};
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn get_stats(&self) -> Result<Stats> {

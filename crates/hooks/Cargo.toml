@@ -12,7 +12,7 @@ keywords.workspace = true
 [dependencies]
 crabllm-core.workspace = true
 runtime.workspace = true
-wcore.workspace = true
+schema.workspace = true
 
 dirs.workspace = true
 parking_lot.workspace = true

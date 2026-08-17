@@ -17,7 +17,7 @@ lib/                    Standalone libraries. They know nothing about the
 crates/                 The framework and its assembly.
   ├─ proto              The wire schema and its generated types — `std` for
   │                     the daemon, `no_std` for a harness
-  ├─ core (wcore)       Agent, Session, Protocol, Storage, ToolDispatcher
+  ├─ schema             Agent, Session, Protocol, Storage, ToolDispatcher
   ├─ runtime            The engine and the `Harness` seam — what you import to
   │                     build on crabtalk as a library
   ├─ storage            Storage backends; config scaffolding, SKILL.md parsing
@@ -49,7 +49,7 @@ together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 | Would it make sense as a library without crabtalk? | lib/ |
 | Does it shape an agent? | harness/ |
 | Does it change a wire message? | crates/proto |
-| Does it define agent behavior or tool schemas? | crates/core |
+| Does it define agent behavior or tool schemas? | crates/schema |
 | Does it change execution, dispatch, or the `Harness` seam? | crates/runtime |
 | Does it add a persistence backend? | crates/storage |
 | Does it add a wire transport? | crates/transport |
@@ -66,7 +66,7 @@ together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 - **Runtime owns mechanics, clients own UX.** The runtime exposes session primitives (`new_session`, `append_message`, `list_sessions`, `list_messages`, `get_session_meta`, `search_sessions`) and runs auto-compaction only as a context-window safety net. Discretionary lifecycle — `/clear`, `/new`, `/compact`, session selection, archival browsing, saved searches — is composed in the client from those primitives. See [RFC 0185](docs/src/rfcs/0185-session-search.md).
 - **Crabtalk (library)** — never interprets tool semantics. It only routes. Cron and config are system concerns (process-lifetime, not session-lifetime).
 - **Client** — no dependency on runtime or model. Adapter-centric, not agent-centric.
-- **Core** — defines traits and types only. If a core change pulls in runtime or daemon deps, the abstraction is wrong.
+- **Schema** — defines traits and types only. If a schema change pulls in runtime or daemon deps, the abstraction is wrong.
 
 `Env` is the seam between the library and the runtime engine. The library
 constructs the runtime, feeds it messages, and receives tool calls back
@@ -86,8 +86,8 @@ Client (CLI/ACP/Desktop) → UDS/TCP or in-process → CrabTalk
 - `Session` — conversation history container
 - `Runtime<C: Config>` — agents + sessions + tool dispatch
 - `Env` — engine environment: skills, MCP, memory, tool routing
-- `Storage` — wcore trait; pluggable KV backend reached through `Config::Storage`
-- `ToolDispatcher` — wcore trait the agent calls to execute a tool
+- `Storage` — schema trait; pluggable KV backend reached through `Config::Storage`
+- `ToolDispatcher` — schema trait the agent calls to execute a tool
 - Protocol — `ClientMessage` / `ServerMessage` (protobuf)
 
 ## External Dependencies

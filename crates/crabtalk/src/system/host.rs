@@ -3,12 +3,12 @@
 use crate::bridge::ClientBridge;
 use hooks::Hooks;
 use runtime::{Env, Harness};
-use std::sync::Arc;
-use tokio::sync::broadcast;
-use wcore::{
+use schema::{
     AgentEvent, ToolDispatch,
     protocol::message::{AgentEventKind, AgentEventMsg, ToolCallInfo},
 };
+use std::sync::Arc;
+use tokio::sync::broadcast;
 
 /// Tool result output is truncated to this many bytes in the broadcast.
 const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
@@ -152,7 +152,7 @@ impl Env for SystemEnv {
     }
 }
 
-impl wcore::ToolDispatcher for SystemEnv {
+impl schema::ToolDispatcher for SystemEnv {
     fn dispatch<'a>(
         &'a self,
         name: &'a str,
@@ -161,7 +161,7 @@ impl wcore::ToolDispatcher for SystemEnv {
         sender: &'a str,
         conversation_id: Option<u64>,
         call_id: &'a str,
-    ) -> wcore::ToolFuture<'a> {
+    ) -> schema::ToolFuture<'a> {
         let call = ToolDispatch {
             args: args.to_owned(),
             agent: agent.to_owned(),
@@ -184,7 +184,7 @@ impl wcore::ToolDispatcher for SystemEnv {
     }
 }
 
-fn format_usage(response: &wcore::AgentResponse) -> String {
+fn format_usage(response: &schema::AgentResponse) -> String {
     if response.steps.is_empty() {
         return String::new();
     }
@@ -224,7 +224,7 @@ fn human_tokens(n: u32) -> String {
     }
 }
 
-fn tool_call_label(c: &wcore::model::ToolCall) -> String {
+fn tool_call_label(c: &schema::model::ToolCall) -> String {
     if c.function.name == "bash"
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(&c.function.arguments)
         && let Some(cmd) = v.get("command").and_then(|c| c.as_str())

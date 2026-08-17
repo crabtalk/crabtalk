@@ -2,9 +2,9 @@
 
 use super::{Memory, MemoryHook};
 use memory::{EntryKind, Op};
+use schema::ToolDispatch;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use wcore::ToolDispatch;
 
 /// Save or update a memory entry. Aliases are searchable alternative terms.
 #[derive(Deserialize, JsonSchema)]

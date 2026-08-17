@@ -3,8 +3,8 @@
 use super::Runtime;
 use crate::{Config, Env, Harness};
 use anyhow::Result;
+use schema::{Agent, AgentBuilder, AgentConfig, AgentId, ToolDispatcher, paths, storage::Storage};
 use std::sync::Arc;
-use wcore::{Agent, AgentBuilder, AgentConfig, AgentId, ToolDispatcher, paths, storage::Storage};
 
 impl<C: Config> Runtime<C> {
     pub fn add_agent(&self, config: AgentConfig) {

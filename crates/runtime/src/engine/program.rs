@@ -9,7 +9,7 @@ use crate::{Config, Env};
 use async_stream::stream;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use wcore::{AgentEvent, AgentResponse, model::HistoryEntry};
+use schema::{AgentEvent, AgentResponse, model::HistoryEntry};
 
 /// One step of a [`Program`] — a single bounded turn's prompt.
 pub struct ProgramStep {

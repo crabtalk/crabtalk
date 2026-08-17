@@ -2,9 +2,9 @@
 
 use super::{Memory, MemoryHook};
 use memory::Op;
+use schema::ToolDispatch;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use wcore::ToolDispatch;
 
 /// Delete a memory entry by name.
 #[derive(Deserialize, JsonSchema)]

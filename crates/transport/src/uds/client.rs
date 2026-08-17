@@ -3,12 +3,12 @@
 use anyhow::Result;
 use futures_core::Stream;
 use proto::client::Client;
-use std::path::{Path, PathBuf};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
-use wcore::protocol::{
+use schema::protocol::{
     codec,
     message::{ClientMessage, ErrorMsg, ServerMessage, server_message},
 };
+use std::path::{Path, PathBuf};
+use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 /// Client configuration for connecting to a crabtalk daemon.
 #[derive(Debug, Clone)]

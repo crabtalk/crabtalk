@@ -3,10 +3,10 @@
 use mcp::{McpHandler, dispatch::dispatch_mcp};
 use parking_lot::RwLock;
 use runtime::Harness;
+use schema::{ToolDispatch, ToolFuture, agent::AsTool};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::{collections::BTreeMap, sync::Arc};
-use wcore::{ToolDispatch, ToolFuture, agent::AsTool};
 
 /// Call an MCP tool by name, or list available tools if no exact match.
 #[derive(Deserialize, JsonSchema)]
@@ -49,11 +49,11 @@ impl McpHook {
 }
 
 impl Harness for McpHook {
-    fn schema(&self) -> Vec<wcore::model::Tool> {
+    fn schema(&self) -> Vec<schema::model::Tool> {
         vec![Mcp::as_tool()]
     }
 
-    fn scoped_tools(&self, config: &wcore::AgentConfig) -> (Vec<String>, Option<String>) {
+    fn scoped_tools(&self, config: &schema::AgentConfig) -> (Vec<String>, Option<String>) {
         if config.mcps.is_empty() {
             return (vec![], None);
         }
@@ -67,7 +67,7 @@ impl Harness for McpHook {
         (tools, Some(line))
     }
 
-    fn on_register_agent(&self, name: &str, config: &wcore::AgentConfig) {
+    fn on_register_agent(&self, name: &str, config: &schema::AgentConfig) {
         let new_names: Vec<String> = config.mcps.iter().map(|m| m.name.clone()).collect();
         let prior = self
             .agent_mcps

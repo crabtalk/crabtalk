@@ -3,8 +3,8 @@
 use crate::{llm::Provider, system::CrabTalk};
 use anyhow::{Context, Result};
 use mcp::McpServerState;
+use schema::{AgentConfig, protocol::message::*, storage::Storage};
 use std::collections::BTreeMap;
-use wcore::{AgentConfig, protocol::message::*, storage::Storage};
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn set_active_model(&self, model: String) -> Result<()> {
@@ -16,7 +16,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         }
 
         let mut crab = storage
-            .load_agent_by_name(wcore::paths::DEFAULT_AGENT)
+            .load_agent_by_name(schema::paths::DEFAULT_AGENT)
             .await?
             .unwrap_or_else(|| AgentConfig::crab(&model));
         crab.model = model;
@@ -50,7 +50,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 
     pub(crate) async fn upsert_mcp(&self, agent: String, config_json: String) -> Result<McpInfo> {
         anyhow::ensure!(!agent.is_empty(), "agent name is required for upsert_mcp");
-        let cfg: wcore::McpServerConfig =
+        let cfg: schema::McpServerConfig =
             serde_json::from_str(&config_json).context("invalid McpServerConfig JSON")?;
         anyhow::ensure!(!cfg.name.is_empty(), "MCP config must have a name");
         let mcp_name = cfg.name.clone();
@@ -128,8 +128,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 
     pub(crate) async fn list_skills(&self) -> Vec<SkillInfo> {
-        let dirs = wcore::resolve_dirs(&self.config_dir);
-        let local_skills_dir = self.config_dir.join(wcore::paths::SKILLS_DIR);
+        let dirs = schema::resolve_dirs(&self.config_dir);
+        let local_skills_dir = self.config_dir.join(schema::paths::SKILLS_DIR);
         let described: BTreeMap<String, String> = match self
             .runtime
             .read()
@@ -163,7 +163,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             } else if let Some(pkg_id) = dir_to_pkg.get(dir) {
                 (pkg_id.clone(), SourceKind::Package)
             } else {
-                let name = wcore::external_source_name(dir).unwrap_or("external");
+                let name = schema::external_source_name(dir).unwrap_or("external");
                 (name.to_string(), SourceKind::External)
             };
 
@@ -185,7 +185,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 }
 
 fn mcp_info(
-    cfg: &wcore::McpServerConfig,
+    cfg: &schema::McpServerConfig,
     agent: &str,
     states: &BTreeMap<(String, String), McpServerState>,
 ) -> McpInfo {

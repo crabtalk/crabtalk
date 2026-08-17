@@ -19,7 +19,7 @@ native-tls = ["reqwest/native-tls"]
 rustls = ["reqwest/rustls"]
 
 [dependencies]
-wcore.workspace = true
+schema.workspace = true
 
 anyhow.workspace = true
 clap.workspace = true

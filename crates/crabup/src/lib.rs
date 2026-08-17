@@ -173,7 +173,7 @@ impl Removal {
         gate(std::slice::from_ref(&self.name), kind, Kind::remove_verb)?;
 
         if let Some(entry) = Entry::by_short(&self.name) {
-            let managed = wcore::paths::BIN_DIR.join(entry.bin);
+            let managed = schema::paths::BIN_DIR.join(entry.bin);
             if managed.exists() {
                 std::fs::remove_file(&managed)?;
                 manifest::remove(entry.short)?;

@@ -24,7 +24,7 @@ proto = { workspace = true, features = ["llm", "server"] }
 runtime.workspace = true
 skill.workspace = true
 transport.workspace = true
-wcore.workspace = true
+schema.workspace = true
 
 # crates.io
 anyhow.workspace = true

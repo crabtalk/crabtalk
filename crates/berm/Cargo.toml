@@ -12,7 +12,7 @@ publish = false
 berm.workspace = true
 crabllm-core.workspace = true
 runtime.workspace = true
-wcore.workspace = true
+schema.workspace = true
 
 anyhow.workspace = true
 bytes.workspace = true

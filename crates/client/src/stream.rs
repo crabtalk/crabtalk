@@ -9,8 +9,8 @@ use anyhow::Result;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use proto::api::Client as _;
+use schema::protocol::message::*;
 use tokio::sync::mpsc;
-use wcore::protocol::message::*;
 
 /// Accumulates streaming events into a renderable text buffer.
 ///

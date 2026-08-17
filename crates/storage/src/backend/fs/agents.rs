@@ -5,9 +5,9 @@
 
 use crate::backend::fs::FsStorage;
 use anyhow::Result;
+use schema::{AgentConfig, AgentId, storage::validate_table_name};
 use std::io::ErrorKind;
 use tokio::fs;
-use wcore::{AgentConfig, AgentId, storage::validate_table_name};
 
 impl FsStorage {
     pub(super) async fn list_agents(&self) -> Result<Vec<AgentConfig>> {

@@ -10,7 +10,7 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-wcore.workspace = true
+schema.workspace = true
 
 anyhow.workspace = true
 chrono.workspace = true

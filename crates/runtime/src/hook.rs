@@ -5,7 +5,7 @@
 //! events, preprocess messages, and dispatch tool calls.
 
 use crabllm_core::Tool;
-use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
+use schema::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 
 /// A pluggable subsystem that participates in the agent lifecycle.
 ///

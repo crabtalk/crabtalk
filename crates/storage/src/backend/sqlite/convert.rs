@@ -6,8 +6,8 @@
 //! `convert::meta(&row)` reads like the trait would.
 
 use anyhow::Result;
+use schema::storage::{ConversationMeta, EventLine};
 use sqlx::{Row, sqlite::SqliteRow};
-use wcore::storage::{ConversationMeta, EventLine};
 
 /// A session row's metadata.
 pub(super) fn meta(row: &SqliteRow) -> Result<ConversationMeta> {

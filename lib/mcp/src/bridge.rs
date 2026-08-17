@@ -7,8 +7,8 @@
 
 use crate::client::{self, McpPeer};
 use anyhow::Result;
+use schema::model::Tool;
 use tokio::sync::Mutex;
-use wcore::model::Tool;
 
 /// Why a tool call failed.
 ///
@@ -163,7 +163,7 @@ impl McpBridge {
 
 /// Convert an MCP tool to a `crabllm_core::Tool` envelope.
 fn convert_tool(mcp_tool: &client::McpTool) -> Tool {
-    use wcore::model::{FunctionDef, ToolType};
+    use schema::model::{FunctionDef, ToolType};
     Tool {
         kind: ToolType::Function,
         function: FunctionDef {

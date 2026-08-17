@@ -11,11 +11,11 @@ use super::hit::{
     MAX_HITS_PER_QUERY, MAX_SNIPPET_BYTES, MAX_WINDOW_ITEMS, SearchOptions, SessionHit, WindowItem,
 };
 use memory::bm25;
-use std::collections::HashMap;
-use wcore::{
+use schema::{
     model::{ContentBlock, HistoryEntry, Role},
     storage::SessionHandle,
 };
+use std::collections::HashMap;
 
 /// Document identity in the session index — one doc per message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -5,8 +5,8 @@
 //! client parses the JSON arguments into [`AskUser`], renders the
 //! questions, and replies via `ReplyToTool`.
 
+use schema::agent::AsTool;
 use serde::Deserialize;
-use wcore::agent::AsTool;
 
 /// A single option the user can choose from.
 #[derive(Clone, Deserialize, schemars::JsonSchema)]
@@ -45,7 +45,7 @@ pub struct AskUser {
     pub questions: Vec<Question>,
 }
 
-pub fn schema() -> wcore::model::Tool {
+pub fn schema() -> schema::model::Tool {
     AskUser::as_tool()
 }
 

@@ -7,8 +7,8 @@ use async_stream::stream;
 use crabllm_core::{ToolChoice, anthropic};
 use futures_core::Stream;
 use futures_util::StreamExt;
+use schema::{AgentEvent, AgentResponse, AgentStopReason, model::HistoryEntry};
 use tokio::sync::{mpsc, watch};
-use wcore::{AgentEvent, AgentResponse, AgentStopReason, model::HistoryEntry};
 
 impl<C: Config> Runtime<C> {
     fn prepare_history(
@@ -75,14 +75,14 @@ impl<C: Config> Runtime<C> {
             .run(&mut conversation.history, tx, None, tool_choice)
             .await;
 
-        let mut event_trace: Vec<wcore::EventLine> = Vec::new();
+        let mut event_trace: Vec<schema::EventLine> = Vec::new();
         while let Ok(event) = rx.try_recv() {
             self.env
                 .hook()
                 .on_event(&agent_name, conversation_id, &event);
             self.env
                 .on_agent_event(&agent_name, conversation_id, false, &event);
-            if let Some(line) = wcore::EventLine::from_agent_event(&event) {
+            if let Some(line) = schema::EventLine::from_agent_event(&event) {
                 event_trace.push(line);
             }
         }
@@ -132,13 +132,13 @@ impl<C: Config> Runtime<C> {
             let (steer_tx, steer_rx) = watch::channel(None::<String>);
             self.steering.write().await.insert(conversation_id, steer_tx);
             let mut done_event: Option<AgentEvent> = None;
-            let mut event_trace: Vec<wcore::EventLine> = Vec::new();
+            let mut event_trace: Vec<schema::EventLine> = Vec::new();
             {
                 let mut event_stream = std::pin::pin!(agent.run_stream(&mut conversation.history, Some(conversation_id), Some(steer_rx), tool_choice));
                 while let Some(event) = event_stream.next().await {
                     self.env.hook().on_event(&agent_name, conversation_id, &event);
                     self.env.on_agent_event(&agent_name, conversation_id, false, &event);
-                    if let Some(line) = wcore::EventLine::from_agent_event(&event) {
+                    if let Some(line) = schema::EventLine::from_agent_event(&event) {
                         event_trace.push(line);
                     }
                     if matches!(event, AgentEvent::Done(_)) {
