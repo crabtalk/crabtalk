@@ -44,8 +44,8 @@ jobs:
       - name: Clippy
         run: cargo clippy --all -- -D warnings
 
-  guest:
-    name: Guest
+  harness:
+    name: Harness
     runs-on: Linux
     steps:
       - uses: actions/checkout@v4
@@ -54,22 +54,29 @@ jobs:
       # Proves what only a real build can: that the macro's exports survive
       # --gc-sections, that --emit-relocs reached the linker, and that the
       # manifest section is where the host looks for it.
-      - name: Build Guest
-        run: cargo build --release -p spike --target riscv64imac-unknown-none-elf
+      - name: Build Fixture
+        run: cargo build --release -p berm-fixture --target riscv64imac-unknown-none-elf
       # The first real harness, and the one that proves capabilities: fs and
-      # exec, bounded by a root the guest cannot widen.
+      # exec, bounded by a root the harness cannot widen.
       - name: Build OS Harness
         run: cargo build --release -p berm-os --target riscv64imac-unknown-none-elf
-      # The protocol harness: proves the guest can carry the daemon's own
+      # The protocol harness: proves a harness can carry the daemon's own
       # message types, which needs prost built without std.
       - name: Build Peers Harness
         run: cargo build --release -p berm-peers --target riscv64imac-unknown-none-elf
+      # The remaining two, so `make harness` cannot install something CI never
+      # built. Sessions also proves `usage_file`: the macro reads it at compile
+      # time, and a missing file has to fail here rather than at load.
+      - name: Build Skill Harness
+        run: cargo build --release -p berm-skill --target riscv64imac-unknown-none-elf
+      - name: Build Sessions Harness
+        run: cargo build --release -p berm-sessions --target riscv64imac-unknown-none-elf
       # And that the host can compile, instantiate, and call it — the one
       # place rvtime itself runs in this repo's CI.
-      - name: Run Guest
+      - name: Run Engine
         run: cargo run --release --example measure -p berm
       # bash, read, and edit against a real directory, including the paths that
-      # must be refused. Also covers the guest constructs a model's own output
+      # must be refused. Also covers the harness constructs a model's own output
       # reaches: an unknown argument and a wrong argument type.
       - name: Run OS Harness
         run: cargo run --release --example os -p berm

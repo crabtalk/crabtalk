@@ -22,7 +22,7 @@ use std::{
 };
 use wcore::protocol::message::{ClientMessage, ServerMessage, client_message, server_message};
 
-/// What the guest calls to reach the runtime. Named `crabtalk.` rather than
+/// What the harness calls to reach the runtime. Named `crabtalk.` rather than
 /// `berm.` because only crabtalk implements it — a different embedder has its
 /// own API and would name a capability after that.
 pub(crate) const CALL: &str = "crabtalk.protocol.call";
@@ -36,32 +36,74 @@ pub type Dispatch = Arc<
     dyn Fn(ClientMessage) -> Pin<Box<dyn Future<Output = Vec<ServerMessage>> + Send>> + Send + Sync,
 >;
 
-/// Whether a message type is in a group this harness holds.
+/// What one agent's declaration granted the harness it loaded.
 ///
-/// Default-deny: a message named in no group reaches nothing, and a group a
-/// harness was not granted is the same. Anything destructive, anything that
-/// answers on someone else's behalf, and anything whose payload is
-/// substantially a credential belongs to no group a third party can hold.
-pub(crate) fn allowed(message: &client_message::Msg, read: bool) -> bool {
-    use client_message::Msg;
-    match message {
-        // protocol:read — the catalogue, and nothing that spends tokens.
-        Msg::Ping(_)
-        | Msg::GetStats(_)
-        | Msg::ListAgents(_)
-        | Msg::GetAgent(_)
-        | Msg::ListSkills(_)
-        | Msg::ListModels(_)
-        | Msg::ListSubscriptions(_) => read,
-        _ => false,
+/// The grant lives in the declaration, so the agent's own limits are known
+/// here without the invocation having to carry them. That is also why this is
+/// part of an image's digest: two agents declaring the same ELF under
+/// different scopes are two sandboxes, not one.
+pub struct Scope {
+    /// Whether `protocol:read` was granted.
+    pub read: bool,
+    /// Whether `protocol:sessions` was granted.
+    pub sessions: bool,
+    /// The skills this agent declared. Empty is unrestricted, which is what
+    /// an agent naming none has always meant.
+    pub skills: Vec<String>,
+    /// The agent that declared the harness. Session search is narrowed to it
+    /// rather than filtered by it: a harness asking for someone else's
+    /// conversations is answered about its own.
+    pub agent: String,
+}
+
+impl Scope {
+    /// Whether `name` is a skill this agent may reach.
+    fn may_use(&self, name: &str) -> bool {
+        self.skills.is_empty() || self.skills.iter().any(|s| s == name)
+    }
+
+    /// Drop what the agent did not declare from a catalogue listing.
+    fn narrow(&self, mut reply: ServerMessage) -> ServerMessage {
+        if let Some(server_message::Msg::SkillList(list)) = reply.msg.as_mut() {
+            list.skills.retain(|skill| self.may_use(&skill.name));
+        }
+        reply
+    }
+}
+
+impl Scope {
+    /// Whether a message type is in a group this harness holds.
+    ///
+    /// Default-deny: a message named in no group reaches nothing, and a group
+    /// a harness was not granted is the same. Anything destructive, anything
+    /// that answers on someone else's behalf, and anything whose payload is
+    /// substantially a credential belongs to no group a third party can hold.
+    fn allows(&self, message: &client_message::Msg) -> bool {
+        use client_message::Msg;
+        match message {
+            // protocol:read — the catalogue, and nothing that spends tokens.
+            Msg::Ping(_)
+            | Msg::GetStats(_)
+            | Msg::ListAgents(_)
+            | Msg::GetAgent(_)
+            | Msg::ListSkills(_)
+            | Msg::GetSkill(_)
+            | Msg::ListModels(_)
+            | Msg::ListSubscriptions(_) => self.read,
+            // protocol:sessions — excerpts of the declaring agent's own past
+            // conversations. Its own group rather than part of `read`, which
+            // is the catalogue: this is content, and content is not a listing.
+            Msg::SearchSessions(_) => self.sessions,
+            _ => false,
+        }
     }
 }
 
 /// Strip what a harness must not see from a reply.
 ///
 /// `name` and `description` are what a caller actually reads off an agent —
-/// `apps/tui/src/repl/delegate.rs` proves it, using exactly those two and
-/// never touching `.config` — so blanking one field costs nothing real.
+/// the `peers` harness uses exactly those two and never touches `.config` —
+/// so blanking one field costs nothing real.
 pub(crate) fn redact(mut reply: ServerMessage) -> ServerMessage {
     match reply.msg.as_mut() {
         Some(server_message::Msg::AgentInfo(info)) => info.config.clear(),
@@ -81,13 +123,28 @@ pub(crate) fn redact(mut reply: ServerMessage) -> ServerMessage {
 /// The dispatcher arrives after the harnesses do — the daemon that implements
 /// it is built on top of them — so it is read through a `OnceLock` rather than
 /// held. A call before it is connected fails rather than waiting.
-pub fn call(protocol: &OnceLock<Dispatch>, request: &[u8], read: bool) -> Result<Vec<u8>> {
-    let message = ClientMessage::decode(request)?;
+pub fn call(protocol: &OnceLock<Dispatch>, request: &[u8], scope: &Scope) -> Result<Vec<u8>> {
+    let mut message = ClientMessage::decode(request)?;
     let Some(inner) = message.msg.as_ref() else {
         bail!("empty client message");
     };
-    if !allowed(inner, read) {
+    if !scope.allows(inner) {
         bail!("this message type is in no group this harness was granted");
+    }
+    // Refused here rather than filtered out of the reply, so asking for a
+    // skill outside the declaration costs nothing and says so.
+    if let client_message::Msg::GetSkill(msg) = inner
+        && !scope.may_use(&msg.name)
+    {
+        bail!("skill not available: {}", msg.name);
+    }
+
+    // Overwritten rather than checked: the agent filter is not the harness's to
+    // choose, and refusing a wrong one would only teach it to send the right
+    // one. `sender` stays free — an agent's own conversations span every
+    // partner it has, and it can already resume any of them.
+    if let Some(client_message::Msg::SearchSessions(msg)) = message.msg.as_mut() {
+        msg.agent = scope.agent.clone();
     }
 
     let Some(dispatch) = protocol.get() else {
@@ -104,6 +161,6 @@ pub fn call(protocol: &OnceLock<Dispatch>, request: &[u8], read: bool) -> Result
     };
 
     let mut encoded = Vec::new();
-    redact(reply).encode(&mut encoded)?;
+    scope.narrow(redact(reply)).encode(&mut encoded)?;
     Ok(encoded)
 }

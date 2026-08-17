@@ -64,8 +64,8 @@ pub struct ToolEntry {
     pub schema: Tool,
     /// Dispatch handler.
     pub handler: ToolHandler,
-    /// Appended to agent system prompt at build time.
-    pub system_prompt: Option<String>,
+    /// Appended to the agent's description at build time.
+    pub usage: Option<String>,
     /// Injected before each agent turn (auto-recall, context, etc).
     pub before_run: Option<BeforeRunHook>,
 }
@@ -170,6 +170,7 @@ impl<T: JsonSchema> AsTool for T {
                 parameters: Some(serde_json::to_value(&schema).unwrap_or_default()),
             },
             strict: None,
+            cache_control: None,
         }
     }
 }

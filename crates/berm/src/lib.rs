@@ -9,13 +9,17 @@
 //!   dispatches calls to them
 //! - the `crabtalk.protocol.call` capability, which is a [`berm::Capability`]
 //!   like any other an embedder supplies
+//! - `crabtalk.http.fetch`, which is here for a second reason as well: hyper
+//!   needs a reactor, and the sandbox is sync and has none
 //!
 //! The split is what makes "berm is embeddable without crabtalk" a fact the
 //! compiler checks rather than a promise: berm's dependency list has no
 //! crabtalk crate in it, and cannot grow one without this file moving.
 
-mod hook;
+mod harness;
+mod http;
 mod protocol;
 
-pub use hook::HarnessHook;
-pub use protocol::{Dispatch, call as protocol_call};
+pub use harness::HarnessHook;
+pub use http::call as http_fetch;
+pub use protocol::{Dispatch, Scope, call as protocol_call};

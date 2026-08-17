@@ -9,7 +9,7 @@ use memory::Memory as Store;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use recall::Recall;
 use remember::Remember;
-use runtime::Hook;
+use runtime::Harness;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use wcore::{AgentConfig, MemoryConfig, ToolDispatch, ToolFuture, agent::AsTool, model::Tool};
 
@@ -22,13 +22,11 @@ mod remember;
 /// compaction and reading them back on session resume.
 pub type SharedStore = Arc<RwLock<Store>>;
 
-pub const DEFAULT_SOUL: &str = include_str!("../../prompts/crab.md");
-
 /// Behavioural guidance for the agent — when/how to use the memory
 /// tools. Tool *signatures* come from each struct's `///` doc comment
 /// via schemars; this prompt covers everything that doesn't fit in a
 /// per-arg description.
-const MEMORY_PROMPT: &str = include_str!("../../prompts/memory.md");
+const MEMORY_USAGE: &str = include_str!("../../prompts/memory.md");
 
 pub struct Memory {
     pub(super) inner: SharedStore,
@@ -84,13 +82,13 @@ impl MemoryHook {
     }
 }
 
-impl Hook for MemoryHook {
+impl Harness for MemoryHook {
     fn schema(&self) -> Vec<Tool> {
         vec![Recall::as_tool(), Remember::as_tool(), Forget::as_tool()]
     }
 
-    fn system_prompt(&self) -> Option<String> {
-        Some(format!("\n\n{MEMORY_PROMPT}"))
+    fn usage(&self) -> Option<String> {
+        Some(format!("\n\n{MEMORY_USAGE}"))
     }
 
     fn on_register_agent(&self, name: &str, config: &AgentConfig) {

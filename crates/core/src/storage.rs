@@ -117,15 +117,10 @@ pub trait Storage: Send + Sync + 'static {
         name: &str,
     ) -> impl Future<Output = Result<Option<AgentConfig>>> + Send;
 
-    /// Create or replace an agent config and prompt. `config.id` and
-    /// `config.name` must both be set — implementations bail otherwise
-    /// (otherwise the prompt becomes an orphan, unreachable by name or
-    /// by listing).
-    fn upsert_agent(
-        &self,
-        config: &AgentConfig,
-        prompt: &str,
-    ) -> impl Future<Output = Result<()>> + Send;
+    /// Create or replace an agent config. `config.id` and `config.name` must
+    /// both be set — implementations bail otherwise, since an agent
+    /// reachable by neither name nor listing is an orphan.
+    fn upsert_agent(&self, config: &AgentConfig) -> impl Future<Output = Result<()>> + Send;
 
     /// Delete an agent by ULID. Returns `true` if it existed.
     fn delete_agent(&self, id: &AgentId) -> impl Future<Output = Result<bool>> + Send;

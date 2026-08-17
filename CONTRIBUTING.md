@@ -1,33 +1,38 @@
 # Contributing
 
-Crabtalk is a workspace of crates and apps. The `crabtalk` library is the
-product — everything else either powers it or connects to it.
+Crabtalk is a workspace of libraries, a framework, and the products built on
+them. The architecture — what a harness is, what a capability is, and which
+one your feature wants — is [Architecture](docs/src/arch.md). This file is the
+map: which directory the code goes in once you know.
 
 ## Layering
 
 ```
-Layer 0 ─ Foundation
-  └─ core (wcore)        Agent, Session, Runtime, Protocol, Hook, ToolRegistry
+lib/                    Standalone libraries. They know nothing about the
+  ├─ memory             runtime and would make sense without it.
+  ├─ mcp
+  ├─ embed
+  └─ search
 
-Layer 1 ─ Backends (independent of each other)
-  ├─ model               ProviderRegistry (OpenAI, Anthropic, Google, Bedrock, Azure)
-  ├─ transport            UDS + TCP socket layers, shared Transport enum
-  └─ command              Service management (systemd/launchd), proc macro codegen
+crates/                 The framework and its assembly.
+  ├─ core (wcore)       Agent, Session, Protocol, Storage, ToolDispatcher
+  ├─ runtime            The engine and the `Harness` seam — what you import to
+  │                     build on crabtalk as a library
+  ├─ storage            Storage backends; config scaffolding, SKILL.md parsing
+  ├─ transport          UDS + TCP socket layers, shared Transport enum
+  ├─ client             Connection, typed RPC sugars, stream adapters
+  ├─ crabtalk           Assembly: protocol handlers, composition, builder
+  └─ berm               Crabtalk's side of berm — image loading, capabilities
 
-Layer 2 ─ Engine
-  └─ runtime              Env, tool dispatch, MCP, skills, memory
+apps/                   Products.
+  ├─ daemon             crabtalkd — the default agent: a showcase, personal,
+  │                     deployable. *A* product of the framework, not the
+  │                     architecture.
+  ├─ cli                Daemon management commands
+  └─ crabup             Version manager for the ecosystem
 
-Layer 3 ─ Library
-  ├─ storage              Storage backends (FsStorage); config scaffolding
-  └─ crabtalk             Hooks, protocol, composite hook, builder (CrabTalk)
-
-Layer 4 ─ Adapters
-  ├─ crabtalkd            Daemon CLI: run, setup, reload, events
-  ├─ crabup               Package + service manager for the ecosystem
-  ├─ client               Connection, typed RPC sugars, stream adapters
-  ├─ tui                  REPL, config TUI
-  ├─ apps/                telegram (gateway client)
-  └─ harness/             the harnesses (berm guests, RV64 ELFs)
+harness/                One crate per harness, built two ways: `no_std` for
+  └─ os                 RV64 as a sandboxed ELF, `std` as compiled in.
 ```
 
 Beside all of it sits `berm/` — the sandbox harnesses run in, plus its SDK
@@ -37,17 +42,19 @@ together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 
 ## Where does my feature go?
 
-| Question | Crate |
+| Question | Where |
 |----------|-------|
-| Does it define agent behavior, protocol types, or tool schemas? | core |
-| Does it add or configure an LLM provider? | model |
-| Does it add a wire transport? | transport |
-| Does it add a tool the agent can call, a skill, or memory? | runtime |
-| Does it need network I/O, scheduling, or process lifecycle? | crabtalk (system) |
-| Does it adapt a platform or parse bot commands? | client |
-| Does it add a daemon admin command (over the socket)? | crabtalkd |
-| Does it install, update, or service-manage a crabtalk binary? | crabup |
-| Does it add a TUI feature or interactive UI? | tui |
+| Would it make sense as a library without crabtalk? | lib/ |
+| Does it shape an agent? | harness/ |
+| Does it define agent behavior, protocol types, or tool schemas? | crates/core |
+| Does it change execution, dispatch, or the `Harness` seam? | crates/runtime |
+| Does it add a persistence backend? | crates/storage |
+| Does it add a wire transport? | crates/transport |
+| Does it need network I/O, scheduling, or process lifecycle? | crates/crabtalk (system) |
+| Does it adapt a platform or speak to the daemon as a client? | crates/client |
+| Does it add a daemon admin command (over the socket)? | apps/daemon |
+| Does it add a management subcommand to the `crabtalk` binary? | apps/cli |
+| Does it install or update a crabtalk binary? | apps/crabup |
 | **If none of these fit, challenge whether the feature should exist.** | |
 
 ## Boundary Contracts
@@ -65,7 +72,7 @@ through the event channel.
 ## Data Flow
 
 ```
-Client (TUI/Telegram/Desktop) → UDS/TCP or in-process → CrabTalk
+Client (CLI/ACP/Desktop) → UDS/TCP or in-process → CrabTalk
   → Agent.step(): config + history + tools → Model.send()/stream()
   → Tool calls dispatched via ToolDispatcher → Env.dispatch_tool()
 ```

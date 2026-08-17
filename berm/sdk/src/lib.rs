@@ -54,6 +54,9 @@ pub mod exec;
 /// Files, bounded by the granted root. Granted as `fs`.
 #[cfg(feature = "alloc")]
 pub mod fs;
+/// Requests, bounded by the granted hosts. Granted as `http`.
+#[cfg(feature = "alloc")]
+pub mod http;
 /// The runtime, over `ClientMessage`. Granted as `protocol:<group>`.
 #[cfg(feature = "protocol")]
 pub mod protocol;
@@ -66,6 +69,9 @@ mod out;
 /// there is a test to run them from.
 #[cfg(not(target_arch = "riscv64"))]
 pub mod test;
+/// Argument parsing and failure reporting, shared by every tool body.
+#[cfg(feature = "alloc")]
+mod tool;
 #[cfg(feature = "alloc")]
 mod wire;
 
@@ -80,6 +86,23 @@ mod sys;
 pub use abi::{Buf, args_len, log};
 pub use berm_codegen::harness;
 pub use out::Out;
+#[cfg(feature = "args")]
+pub use tool::parse;
+#[cfg(feature = "alloc")]
+pub use tool::{capability, failed};
+
+// Re-exported so a harness declares this SDK and nothing else. The `#[harness]`
+// macro writes `#[serde(crate = "::berm_sdk::serde")]` onto argument structs,
+// which only resolves if the author can reach serde through us — and an author
+// who had to depend on it directly could pick a version that disagrees with
+// the one the derive was generated against.
+/// The daemon's message types, for a harness holding a `protocol:*` grant.
+#[cfg(feature = "protocol")]
+pub use crabtalk_berm_proto as proto;
+#[cfg(feature = "args")]
+pub use serde_guest as serde;
+#[cfg(feature = "args")]
+pub use serde_json_guest as serde_json;
 
 /// The ABI this SDK generates against. A host that does not recognise it
 /// refuses the harness rather than guessing.

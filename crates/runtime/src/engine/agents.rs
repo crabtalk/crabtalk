@@ -1,7 +1,7 @@
 //! Agent registry — persistent and ephemeral agent management.
 
 use super::Runtime;
-use crate::{Config, Env, Hook};
+use crate::{Config, Env, Harness};
 use anyhow::Result;
 use std::sync::Arc;
 use wcore::{Agent, AgentBuilder, AgentConfig, AgentId, ToolDispatcher, paths, storage::Storage};
@@ -66,7 +66,7 @@ impl<C: Config> Runtime<C> {
 
     /// Create a new persisted agent. Writes storage, registers in the
     /// runtime, returns the registered config.
-    pub async fn create_agent(&self, mut config: AgentConfig, prompt: &str) -> Result<AgentConfig> {
+    pub async fn create_agent(&self, mut config: AgentConfig) -> Result<AgentConfig> {
         validate_agent_name(&config.name)?;
         if config.id.is_nil() {
             config.id = AgentId::new();
@@ -75,13 +75,13 @@ impl<C: Config> Runtime<C> {
         if storage.load_agent_by_name(&config.name).await?.is_some() {
             anyhow::bail!("agent '{}' already exists", config.name);
         }
-        storage.upsert_agent(&config, prompt).await?;
+        storage.upsert_agent(&config).await?;
         self.load_and_register(&config.name).await
     }
 
     /// Update an existing persisted agent (or create if absent). Writes
     /// storage, re-registers in the runtime, returns the registered config.
-    pub async fn update_agent(&self, mut config: AgentConfig, prompt: &str) -> Result<AgentConfig> {
+    pub async fn update_agent(&self, mut config: AgentConfig) -> Result<AgentConfig> {
         validate_agent_name(&config.name)?;
         let storage = self.storage();
         let existing = storage.load_agent_by_name(&config.name).await?;
@@ -92,12 +92,7 @@ impl<C: Config> Runtime<C> {
         } else if config.id.is_nil() {
             config.id = AgentId::new();
         }
-        let prompt = if prompt.is_empty() {
-            existing.map(|a| a.system_prompt).unwrap_or_default()
-        } else {
-            prompt.to_owned()
-        };
-        storage.upsert_agent(&config, &prompt).await?;
+        storage.upsert_agent(&config).await?;
         self.load_and_register(&config.name).await
     }
 

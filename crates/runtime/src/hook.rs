@@ -1,6 +1,6 @@
-//! Hook trait — lifecycle callbacks and tool dispatch for subsystems.
+//! Harness trait — lifecycle callbacks and tool dispatch for subsystems.
 //!
-//! Each tool/subsystem implements `Hook` to participate in the runtime
+//! Each tool/subsystem implements `Harness` to participate in the runtime
 //! lifecycle: provide schemas, inject context before runs, observe
 //! events, preprocess messages, and dispatch tool calls.
 
@@ -11,14 +11,20 @@ use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 ///
 /// All methods have default no-op implementations so subsystems only
 /// override what they need.
-pub trait Hook: Send + Sync {
+pub trait Harness: Send + Sync {
     /// Tool schemas this hook provides.
     fn schema(&self) -> Vec<Tool> {
         vec![]
     }
 
-    /// System prompt fragment appended to agent configs at build time.
-    fn system_prompt(&self) -> Option<String> {
+    /// When to reach for this hook's tools, and how they go together.
+    ///
+    /// A declaration rather than a lifecycle callback: it answers a question
+    /// no single tool's `description` can, because it is about choosing
+    /// between them. It is in context from the first turn — the model has to
+    /// have it *before* it decides — so it is paid on every turn and belongs
+    /// at that altitude. Anything longer than a few lines is a skill.
+    fn usage(&self) -> Option<String> {
         None
     }
 
@@ -76,5 +82,5 @@ pub trait Hook: Send + Sync {
     }
 }
 
-/// No-op Hook for tests.
-impl Hook for () {}
+/// No-op Harness for tests.
+impl Harness for () {}

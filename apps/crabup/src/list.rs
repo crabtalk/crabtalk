@@ -1,7 +1,6 @@
-//! List crabtalk binaries with installed and running status.
+//! List crabtalk binaries with installed status.
 
 use anyhow::{Context, Result};
-use std::net::TcpStream;
 
 use crate::registry::Entry;
 
@@ -33,25 +32,10 @@ pub fn installed() -> Result<Vec<String>> {
     Ok(names)
 }
 
-/// Return the port if the service is alive, `None` otherwise.
-fn running_port(name: &str) -> Option<u16> {
-    let port_file = wcore::paths::service_port_file(name);
-    let port: u16 = std::fs::read_to_string(port_file)
-        .ok()?
-        .trim()
-        .parse()
-        .ok()?;
-    TcpStream::connect(("127.0.0.1", port)).ok()?;
-    Some(port)
-}
-
 struct Row {
     name: &'static str,
     state: String,
     version: String,
-    status: &'static str,
-    port: String,
-    sort_key: u8,
 }
 
 /// Print a unified list of available crabtalk binaries.
@@ -64,9 +48,6 @@ pub fn run() -> Result<()> {
         .map(|e| {
             let managed = wcore::paths::BIN_DIR.join(e.bin).exists();
             let cargo = cargo_set.contains(e.krate);
-            let installed = managed || cargo;
-            let serviceable = e.label.is_some();
-            let port = running_port(e.short);
 
             let state = match (managed, cargo) {
                 (true, _) => "installed".to_string(),
@@ -76,54 +57,22 @@ pub fn run() -> Result<()> {
 
             let version = manifest.get(e.short).cloned().unwrap_or_default();
 
-            let (status, port_str, sort_key) = match (installed, serviceable, port) {
-                (true, true, Some(p)) => ("running", p.to_string(), 0),
-                (true, true, None) => ("", String::new(), 1),
-                (true, false, _) => ("-", "-".to_owned(), 2),
-                (false, _, _) => ("", String::new(), 3),
-            };
-
             Row {
                 name: e.short,
                 state,
                 version,
-                status,
-                port: port_str,
-                sort_key,
             }
         })
         .collect();
 
-    rows.sort_by_key(|r| (r.sort_key, r.name));
+    rows.sort_by_key(|r| (r.state.is_empty(), r.name));
 
     let nw = rows.iter().map(|r| r.name.len()).max().unwrap_or(0).max(4);
     let sw = rows.iter().map(|r| r.state.len()).max().unwrap_or(0).max(5);
-    let vw = rows
-        .iter()
-        .map(|r| r.version.len())
-        .max()
-        .unwrap_or(0)
-        .max(7);
-    let tw = rows
-        .iter()
-        .map(|r| r.status.len())
-        .max()
-        .unwrap_or(0)
-        .max(6);
 
-    println!(
-        "{:<nw$}  {:<sw$}  {:<vw$}  {:<tw$}  PORT",
-        "NAME", "STATE", "VERSION", "STATUS"
-    );
+    println!("{:<nw$}  {:<sw$}  VERSION", "NAME", "STATE");
     for row in &rows {
-        println!(
-            "{:<nw$}  {:<sw$}  {:<vw$}  {:<tw$}  {port}",
-            row.name,
-            row.state,
-            row.version,
-            row.status,
-            port = row.port,
-        );
+        println!("{:<nw$}  {:<sw$}  {}", row.name, row.state, row.version);
     }
     Ok(())
 }

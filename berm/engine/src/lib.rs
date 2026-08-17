@@ -23,7 +23,8 @@ mod exec;
 mod fs;
 mod manifest;
 mod root;
-mod wire;
+mod watchdog;
+pub mod wire;
 
 pub use manifest::{Manifest, ToolSpec};
 // An embedder configures and caches compiled code through these; re-exported
@@ -270,6 +271,12 @@ impl Harness {
         };
 
         let mut store = self.instantiate(args.into())?;
+
+        // Entering the guest blocks this thread until the guest chooses to
+        // return, so the bound on that has to be held by someone else. Dropped
+        // on the way out of this function, before the store is.
+        let _deadline = watchdog::Deadline::set(store.interrupt_handle()?);
+
         let (ptr, len) = func
             .call(&mut store, ())
             .with_context(|| format!("harness trapped in {tool}"))?;
@@ -330,6 +337,15 @@ fn stage(
 /// Pull the manifest out of the ELF. This runs before anything is compiled,
 /// let alone executed — a harness gets to describe itself without being given
 /// a turn.
+/// Read what an ELF claims to be, without compiling or running it.
+///
+/// This is what the section is *for* (RFC 0205): learning a harness's tools,
+/// wants, and usage must not mean instantiating it. An embedder assembling a
+/// prompt or listing a registry needs exactly this and nothing else.
+pub fn manifest(elf: &[u8]) -> Result<Manifest> {
+    Manifest::parse(&section(elf)?)
+}
+
 fn section(elf: &[u8]) -> Result<String> {
     let file = object::File::parse(elf).context("harness is not a readable ELF")?;
     let section = file

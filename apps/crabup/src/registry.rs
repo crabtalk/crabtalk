@@ -1,6 +1,4 @@
-//! Short-name → crate/binary resolution + service metadata.
-
-use std::path::PathBuf;
+//! Short-name → crate/binary resolution.
 
 /// What a binary is to the user, and therefore which verb installs it.
 /// Mirrors the workspace split: `apps/` are the things you run, `harness/`
@@ -45,10 +43,6 @@ pub struct Entry {
     pub krate: &'static str,
     /// Binary name on disk (may differ from crate name).
     pub bin: &'static str,
-    /// Reverse-DNS label for platform service unit, or `None` if non-serviceable.
-    pub label: Option<&'static str>,
-    /// Human description embedded in the unit file.
-    pub description: &'static str,
     /// Which verb installs it.
     pub kind: Kind,
 }
@@ -58,24 +52,12 @@ const TABLE: &[Entry] = &[
         short: "daemon",
         krate: "crabtalkd",
         bin: "crabtalkd",
-        label: Some("ai.crabtalk.daemon"),
-        description: "Crabtalk daemon",
         kind: Kind::App,
     },
     Entry {
         short: "cli",
         krate: "crabtalk-cli",
         bin: "crabtalk",
-        label: None,
-        description: "Crabtalk CLI client",
-        kind: Kind::App,
-    },
-    Entry {
-        short: "telegram",
-        krate: "crabtalk-telegram",
-        bin: "crabtalk-telegram",
-        label: Some("ai.crabtalk.telegram"),
-        description: "Telegram gateway for Crabtalk",
         kind: Kind::App,
     },
 ];
@@ -108,33 +90,5 @@ impl Entry {
     /// True if `krate` is a crabtalk-owned crate name.
     pub fn is_crabtalk(krate: &str) -> bool {
         krate == "crabtalkd" || krate.starts_with("crabtalk-") || krate == "crabup"
-    }
-
-    /// Locate this binary on disk.
-    ///
-    /// Search order: managed dir (`~/.crabtalk/bin/`), cargo dir
-    /// (`~/.cargo/bin/`), then PATH.
-    pub fn binary_path(&self) -> Option<PathBuf> {
-        let managed = wcore::paths::BIN_DIR.join(self.bin);
-        if managed.exists() {
-            return Some(managed);
-        }
-
-        if let Some(home) = dirs::home_dir() {
-            let cargo = home.join(".cargo/bin").join(self.bin);
-            if cargo.exists() {
-                return Some(cargo);
-            }
-        }
-
-        let path = std::env::var_os("PATH").unwrap_or_default();
-        for dir in std::env::split_paths(&path) {
-            let candidate = dir.join(self.bin);
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-
-        None
     }
 }

@@ -19,6 +19,13 @@ pub struct Manifest {
     #[serde(default)]
     pub capabilities: Vec<String>,
     pub tools: Vec<ToolSpec>,
+    /// When to reach for these tools, and how they go together — the
+    /// question no single tool's `description` answers, because it is about
+    /// choosing between them. An embedder puts this in front of a model
+    /// before it decides, so it is paid on every turn: a few lines, not a
+    /// manual.
+    #[serde(default)]
+    pub usage: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

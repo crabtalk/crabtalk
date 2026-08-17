@@ -23,7 +23,7 @@ The runtime does not interpret provider-specific errors. `ApiError` is surfaced 
 
 ## Tools across the boundary
 
-Tool schemas are declared in `crabllm-core::Tool`. The runtime collects schemas from the composite hook, attaches them to the request, and lets the provider format them for the backend. Tool calls returned by the provider arrive as `ToolCall` values; the runtime dispatches each call through `Env::hook().dispatch`.
+Tool schemas are declared in `crabllm-core::Tool`. The runtime collects schemas from the composite hook, attaches them to the request, and lets the provider format them for the backend. A harness's schemas are read out of its ELF's manifest section rather than by running it, so a tool list costs no execution. Tool calls returned by the provider arrive as `ToolCall` values; the runtime dispatches each call through `Env::hook().dispatch`.
 
 The shape of tool schemas is fixed by `crabllm-core`. A tool that cannot be expressed in that shape is not expressible to crabtalk.
 

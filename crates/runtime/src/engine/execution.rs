@@ -1,7 +1,7 @@
 //! Execution — message sending and streaming through agents.
 
 use super::Runtime;
-use crate::{Config, Conversation, Env, Hook};
+use crate::{Config, Conversation, Env, Harness};
 use anyhow::Result;
 use async_stream::stream;
 use crabllm_core::{ToolChoice, anthropic};
@@ -262,22 +262,16 @@ impl<C: Config> Runtime<C> {
 
             let model_name = guest_agent.config.model.clone();
 
-            let system = if guest_agent.config.system_prompt.is_empty() {
+            let system = if guest_agent.config.description.is_empty() {
                 None
             } else {
-                Some(anthropic::System::Text(guest_agent.config.system_prompt.clone()))
+                Some(anthropic::System::Text(guest_agent.config.description.clone()))
             };
 
             let messages: Vec<anthropic::Message> = conversation
                 .history
                 .iter()
-                .map(|e| {
-                    let msg = e.to_wire_message();
-                    anthropic::Message {
-                        role: msg.role.as_str().to_string(),
-                        content: anthropic::Content::Blocks(msg.content),
-                    }
-                })
+                .map(|e| e.to_wire_message())
                 .collect();
 
             let (max_tokens, thinking) = guest_agent.config.token_budget();

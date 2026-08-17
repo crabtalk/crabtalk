@@ -1,20 +1,10 @@
-//! Crabtalk daemon — service definition and foreground startup.
+//! Crabtalk daemon — foreground startup.
 
 use anyhow::Result;
 use std::{path::PathBuf, sync::Arc};
 use storage::FsStorage;
 
 pub mod foreground;
-
-#[command::command(kind = "client", name = "daemon")]
-pub struct Daemon;
-
-impl Daemon {
-    async fn run(&self) -> anyhow::Result<()> {
-        ensure_config()?;
-        foreground::start().await
-    }
-}
 
 fn ensure_config() -> Result<()> {
     storage::scaffold_config_dir(&wcore::paths::CONFIG_DIR)?;

@@ -200,8 +200,8 @@ impl Storage for FsStorage {
         self.load_agent_by_name(name).await
     }
 
-    async fn upsert_agent(&self, config: &AgentConfig, prompt: &str) -> Result<()> {
-        self.upsert_agent(config, prompt).await
+    async fn upsert_agent(&self, config: &AgentConfig) -> Result<()> {
+        self.upsert_agent(config).await
     }
 
     async fn delete_agent(&self, id: &AgentId) -> Result<bool> {

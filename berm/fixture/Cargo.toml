@@ -1,0 +1,16 @@
+[package]
+name = "berm-fixture"
+description = "The reference guest berm is measured and tested against"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "fixture"
+path = "src/bin/main.rs"
+
+[dependencies]
+berm-sdk.workspace = true

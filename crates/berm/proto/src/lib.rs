@@ -1,4 +1,4 @@
-//! Protocol types, for a guest.
+//! Protocol types, for a harness.
 //!
 //! Generated from the same `crabtalk.proto` the host compiles, so a harness
 //! speaks the daemon's own vocabulary rather than a second one invented for

@@ -2,15 +2,14 @@
 
 [Introduction](introduction.md)
 
-- [Manifesto](manifesto.md)
 
-# Specification
+# Architecture
 
-- [Conversations](spec/conversations.md)
-- [Dispatch](spec/dispatch.md)
-- [Multi-agent](spec/multi-agent.md)
-- [Memory](spec/memory.md)
+- [Overview](arch.md)
+- [Protocol](spec/protocol.md)
+- [Storage](spec/storage.md)
 - [Runtime](spec/runtime.md)
+- [Harnesses](spec/harness.md)
 - [Daemon](spec/daemon.md)
 - [Providers](spec/providers.md)
 
@@ -19,8 +18,6 @@
 - [0009 - Transport](rfcs/0009-transport.md)
 - [0018 - Protocol](rfcs/0018-protocol.md)
 - [0027 - Model](rfcs/0027-model.md)
-- [0036 - Skill Loading](rfcs/0036-skill.md)
-- [0043 - Component System](rfcs/0043-component.md)
 - [0075 - Hook](rfcs/0075-hook.md)
 - [0082 - Scoping](rfcs/0082-scoping.md)
 - [0121 - Event Bus](rfcs/0121-event-bus.md)

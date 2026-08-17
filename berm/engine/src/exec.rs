@@ -16,7 +16,7 @@ use std::{
 /// How long a command may run. Every capability needs its own timeout: rvtime
 /// can interrupt a looping guest, but not a host call of ours that never
 /// returns.
-const TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// How often to check whether the command is done.
 const POLL: Duration = Duration::from_millis(5);

@@ -12,16 +12,14 @@ keywords.workspace = true
 
 [dependencies]
 wcore.workspace = true
-hooks = { workspace = true, default-features = false, features = [
-    "memory",
-    "skill",
-] }
+hooks = { workspace = true, default-features = false, features = ["memory"] }
 
 anyhow.workspace = true
 chrono.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_yml.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true

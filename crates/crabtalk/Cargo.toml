@@ -15,7 +15,7 @@ crabllm-core.workspace = true
 crabllm-provider = { workspace = true, features = ["hyper"] }
 crabllm-sdk = { workspace = true, features = ["hyper"] }
 crabtalk-berm.workspace = true
-hooks = { workspace = true, default-features = false, features = ["memory", "mcp", "skill"] }
+hooks = { workspace = true, default-features = false, features = ["memory", "mcp"] }
 mcp = { workspace = true, default-features = false, features = ["hyper"] }
 runtime.workspace = true
 transport.workspace = true

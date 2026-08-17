@@ -39,7 +39,7 @@ auto-discovery.
 
 ## Learn More
 
-- [The Crabtalk Book][book] — manifesto, architecture, and design RFCs
+- [The Crabtalk Book][book] — architecture and design RFCs
 - [Configuration](crates/storage/config.toml) — config.toml reference
 - [Contributing](CONTRIBUTING.md) — architecture, layering, and data flow
 

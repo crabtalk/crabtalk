@@ -22,9 +22,9 @@ use std::{
 };
 use wcore::protocol::message::{AgentInfo, AgentList, ServerMessage, server_message};
 
-const GUEST: &str = "target/riscv64imac-unknown-none-elf/release/peers";
+const HARNESS: &str = "target/riscv64imac-unknown-none-elf/release/peers";
 
-// Mirrors the real dispatch path: a guest blocks the thread it runs on, so
+// Mirrors the real dispatch path: a harness blocks the thread it runs on, so
 // the hook hands invocations to the blocking pool and capabilities `block_on`
 // from inside one. Calling from an async context instead would panic.
 #[tokio::main]
@@ -34,8 +34,8 @@ async fn main() -> Result<()> {
         .and_then(|p| p.parent())
         .context("no workspace root")?
         .to_path_buf();
-    let elf = fs::read(workspace.join(GUEST)).with_context(|| {
-        format!("build the guest first: cargo build --release -p berm-peers --target riscv64imac-unknown-none-elf ({GUEST})")
+    let elf = fs::read(workspace.join(HARNESS)).with_context(|| {
+        format!("build the harness first: cargo build --release -p berm-peers --target riscv64imac-unknown-none-elf ({HARNESS})")
     })?;
 
     let engine = Engine::new(&Config::new())?;
@@ -67,7 +67,13 @@ async fn main() -> Result<()> {
             name: "crabtalk.protocol.call".to_owned(),
             call: {
                 let protocol = protocol.clone();
-                Arc::new(move |request| crabtalk_berm::protocol_call(&protocol, request, true))
+                let scope = crabtalk_berm::Scope {
+                    read: true,
+                    sessions: false,
+                    skills: Vec::new(),
+                    agent: "example".to_owned(),
+                };
+                Arc::new(move |request| crabtalk_berm::protocol_call(&protocol, request, &scope))
             },
         }],
     )?;

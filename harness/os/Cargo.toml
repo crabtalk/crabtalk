@@ -14,5 +14,3 @@ path = "src/bin/main.rs"
 
 [dependencies]
 berm-sdk.workspace = true
-serde_guest.workspace = true
-serde_json_guest.workspace = true

@@ -10,7 +10,6 @@ use wcore::AgentConfig;
 /// Callers must supply a model — an agent without one can't run.
 pub fn default_crab(model: impl Into<String>) -> AgentConfig {
     let mut cfg = AgentConfig::new(wcore::paths::DEFAULT_AGENT);
-    cfg.system_prompt = crate::DEFAULT_SOUL.to_owned();
     cfg.model = model.into();
     // Hands. `bash`, `read`, and `edit` are a harness now rather than
     // something a client offers, so an agent that wants them has to say so —
@@ -22,10 +21,23 @@ pub fn default_crab(model: impl Into<String>) -> AgentConfig {
     // the agent `exec` over the daemon's own tokens and memory. Home is the
     // widest thing that is still meaningfully a workspace, and it is narrower
     // than what the client-side tools it replaces could reach.
-    cfg.harnesses = vec![wcore::HarnessConfig {
-        name: "os".to_owned(),
-        capabilities: vec!["fs".to_owned(), "exec".to_owned()],
-        root: dirs::home_dir(),
-    }];
+    cfg.harnesses = vec![
+        wcore::HarnessConfig {
+            name: "os".to_owned(),
+            capabilities: vec!["fs".to_owned(), "exec".to_owned()],
+            root: dirs::home_dir(),
+            hosts: Vec::new(),
+        },
+        // Memory of its own past work, which every agent had while session
+        // search was a hook. Declaring it keeps that true; the grant reaches
+        // this agent's conversations and no one else's, because the host
+        // overwrites the filter rather than trusting the harness.
+        wcore::HarnessConfig {
+            name: "sessions".to_owned(),
+            capabilities: vec!["protocol:sessions".to_owned()],
+            root: None,
+            hosts: Vec::new(),
+        },
+    ];
     cfg
 }

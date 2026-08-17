@@ -30,6 +30,4 @@ pub mod model;
 pub mod paths;
 pub mod protocol;
 pub mod storage;
-#[cfg(feature = "testing")]
-pub mod testing;
 pub mod utils;

@@ -1,12 +1,12 @@
 //! Reusable hook implementations and composition for the Crabtalk runtime.
 //!
-//! `Hooks` is the single `Hook` the runtime `Env` sees — it owns the
+//! `Hooks` is the single `Harness` the runtime `Env` sees — it owns the
 //! sub-hooks registered into it, the dispatch map, per-agent scope
 //! enforcement, agent descriptions, and the late-bound event sink.
 
 use crabllm_core::Tool;
 use parking_lot::RwLock;
-use runtime::Hook;
+use runtime::Harness;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -17,41 +17,36 @@ use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 pub mod mcp;
 #[cfg(feature = "memory")]
 pub mod memory;
-#[cfg(feature = "skill")]
-pub mod skill;
 #[cfg(feature = "memory")]
 mod utils;
 
 #[cfg(feature = "mcp")]
 pub use mcp::McpHook;
 #[cfg(feature = "memory")]
-pub use memory::{DEFAULT_SOUL, Memory, MemoryHook};
-#[cfg(feature = "skill")]
-pub use skill::handler::SkillHook;
+pub use memory::{Memory, MemoryHook};
 #[cfg(feature = "memory")]
 pub use utils::default_crab;
 
-/// Per-agent scope for dispatch enforcement. Empty vecs = unrestricted.
+/// Per-agent scope for dispatch enforcement. An empty vec is unrestricted.
 #[derive(Default)]
 pub struct AgentScope {
     pub tools: Vec<String>,
-    pub skills: Vec<String>,
 }
 
 /// Late-bindable sink for `agent:{name}:done` event publishes.
 pub type EventSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
-/// Aggregates all sub-hooks behind a single `Hook` impl.
+/// Aggregates all sub-hooks behind a single `Harness` impl.
 pub struct Hooks {
     pub scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
-    hooks: BTreeMap<String, Arc<dyn Hook>>,
+    hooks: BTreeMap<String, Arc<dyn Harness>>,
     /// Dispatchable but never advertised ambiently, so a surface's own tools
     /// can't leak into ordinary chat or unattended heartbeats.
-    scoped: BTreeMap<String, Arc<dyn Hook>>,
+    scoped: BTreeMap<String, Arc<dyn Harness>>,
     /// Tool names owned by `scoped`, which dispatch lets past the per-agent
     /// whitelist — declaring one is already the gate.
     scoped_names: BTreeSet<String>,
-    dispatch_map: BTreeMap<String, Arc<dyn Hook>>,
+    dispatch_map: BTreeMap<String, Arc<dyn Harness>>,
     event_sink: RwLock<Option<EventSink>>,
 }
 
@@ -68,7 +63,7 @@ impl Hooks {
     }
 
     /// Register a sub-hook by name.
-    pub fn register_hook(&mut self, name: impl Into<String>, hook: Arc<dyn Hook>) {
+    pub fn register_hook(&mut self, name: impl Into<String>, hook: Arc<dyn Harness>) {
         for tool in hook.schema() {
             self.dispatch_map
                 .insert(tool.function.name.clone(), hook.clone());
@@ -78,7 +73,7 @@ impl Hooks {
 
     /// Register a sub-hook whose tools a stream must opt into by name with
     /// [`Hooks::scoped_schema`]; see the `scoped` field.
-    pub fn register_scoped(&mut self, name: impl Into<String>, hook: Arc<dyn Hook>) {
+    pub fn register_scoped(&mut self, name: impl Into<String>, hook: Arc<dyn Harness>) {
         for tool in hook.schema() {
             self.scoped_names.insert(tool.function.name.clone());
             self.dispatch_map
@@ -113,14 +108,14 @@ impl Hooks {
 
         if !scope_lines.is_empty() {
             let scope_block = format!("\n\n<scope>\n{}\n</scope>", scope_lines.join("\n"));
-            config.system_prompt.push_str(&scope_block);
+            config.description.push_str(&scope_block);
         }
 
         config.tools = whitelist;
     }
 }
 
-impl Hook for Hooks {
+impl Harness for Hooks {
     fn schema(&self) -> Vec<Tool> {
         self.hooks.values().flat_map(|h| h.schema()).collect()
     }
@@ -135,29 +130,23 @@ impl Hook for Hooks {
             .collect()
     }
 
-    fn system_prompt(&self) -> Option<String> {
-        let mut prompt = String::new();
+    fn usage(&self) -> Option<String> {
+        let mut usage = String::new();
         for hook in self.hooks.values() {
-            if let Some(ref s) = hook.system_prompt() {
-                prompt.push_str(s);
+            if let Some(ref declared) = hook.usage() {
+                usage.push_str(declared);
             }
         }
-        if prompt.is_empty() {
-            None
-        } else {
-            Some(prompt)
-        }
+        if usage.is_empty() { None } else { Some(usage) }
     }
 
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
-        // A store that persists only a description composes the identity line
-        // here; one that persists a full prompt already filled this in, so
-        // seeding only when empty leaves it untouched.
-        if config.system_prompt.is_empty() && !config.description.is_empty() {
-            config.system_prompt = format!("You are {}.\n\n{}", config.name, config.description);
-        }
-        if let Some(ref prompt) = self.system_prompt() {
-            config.system_prompt.push_str(prompt);
+        // The description is used as written. Framing it — "You are X." — was
+        // the daemon supplying prose nobody asked for, and an agent that
+        // cannot say who it is in its own description will not be rescued by
+        // a sentence we prepend.
+        if let Some(ref usage) = self.usage() {
+            config.description.push_str(usage);
         }
         self.apply_scope(&mut config);
         config
@@ -168,7 +157,6 @@ impl Hook for Hooks {
             name.to_owned(),
             AgentScope {
                 tools: config.tools.clone(),
-                skills: config.skills.clone(),
             },
         );
         for hook in self.hooks.values() {

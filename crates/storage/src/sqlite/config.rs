@@ -36,8 +36,6 @@ impl SqliteStorage {
         if count > 0 {
             return Ok(());
         }
-        let crab = hooks::default_crab(default_model);
-        let prompt = crab.system_prompt.clone();
-        self.upsert_agent(&crab, &prompt).await
+        self.upsert_agent(&hooks::default_crab(default_model)).await
     }
 }

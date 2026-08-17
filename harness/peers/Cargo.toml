@@ -14,4 +14,3 @@ path = "src/bin/main.rs"
 
 [dependencies]
 berm-sdk = { workspace = true, features = ["protocol"] }
-crabtalk-berm-proto.workspace = true

@@ -1,12 +1,13 @@
 //! Administrative operations: stats, events.
 
-use crate::llm::Provider;
-use crate::system::CrabTalk;
-use crate::system::event::EventSubscription;
+use crate::{
+    llm::Provider,
+    system::{CrabTalk, event::EventSubscription},
+};
 use anyhow::Result;
 use runtime::Env;
-use wcore::protocol::message::*;
-use wcore::storage::Storage;
+use tokio::sync::broadcast::error::RecvError;
+use wcore::{protocol::message::*, storage::Storage};
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn get_stats(&self) -> Result<Stats> {
@@ -35,8 +36,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             loop {
                 match rx.recv().await {
                     Ok(event) => yield event,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(RecvError::Closed) => break,
+                    Err(RecvError::Lagged(_)) => continue,
                 }
             }
         }
@@ -51,8 +52,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             loop {
                 match rx.recv().await {
                     Ok(event) => yield event.into(),
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(RecvError::Closed) => break,
+                    Err(RecvError::Lagged(_)) => continue,
                 }
             }
         }

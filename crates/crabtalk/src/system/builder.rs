@@ -9,9 +9,9 @@ use crate::{
 };
 use anyhow::Result;
 use crabtalk_berm::HarnessHook;
-use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook, SkillHook};
+use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook};
 use mcp::McpHandler;
-use runtime::{Hook, Runtime};
+use runtime::{Harness, Runtime};
 use std::{
     collections::BTreeMap,
     path::Path,
@@ -52,7 +52,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             config_dir,
             storage,
             &build_provider,
-            runtime_once.clone(),
             protocol.clone(),
             hooks,
         )
@@ -150,7 +149,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             &self.config_dir,
             storage,
             &self.build_provider,
-            runtime_once,
             protocol.clone(),
             hooks,
         )
@@ -198,7 +196,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         config_dir: &Path,
         storage: Arc<S>,
         build_provider: &BuildProvider<P>,
-        runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>>,
         protocol: Arc<OnceLock<crabtalk_berm::Dispatch>>,
         mut hooks: Hooks,
     ) -> Result<(
@@ -232,7 +229,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             config_dir,
             mcp_handler.clone(),
             config.env.clone(),
-            runtime_once,
             protocol,
         )
         .await?;
@@ -246,7 +242,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         });
 
         let mut tools = wcore::ToolRegistry::new();
-        for schema in Hook::schema(hooks.as_ref()) {
+        for schema in Harness::schema(hooks.as_ref()) {
             tools.insert(schema);
         }
         let runtime = Runtime::new(model, env, storage, shared_memory, tools);
@@ -262,36 +258,25 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         env_overlay: BTreeMap<String, String>,
-        runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>>,
         protocol: Arc<OnceLock<crabtalk_berm::Dispatch>>,
     ) -> Result<runtime::SharedMemory> {
         let memory_wrapper = Memory::open(config_dir.join("memory.db"))?;
         let shared_memory = memory_wrapper.shared();
         let memory = Arc::new(memory_wrapper);
-        let scopes = hooks.scopes.clone();
-        let skills = storage.list_skills().await.unwrap_or_default();
 
         hooks.register_hook("memory", Arc::new(MemoryHook::new(memory)));
 
-        hooks.register_hook(
-            "sessions",
-            Arc::new(crate::hooks::sessions::SessionsHook::<P, S>::new(
-                runtime_once,
-            )),
-        );
-
-        hooks.register_hook("skill", Arc::new(SkillHook::new(skills, scopes.clone())));
         hooks.register_hook("mcp", Arc::new(McpHook::new(mcp_handler, env_overlay)));
 
         // Harnesses are loaded here rather than when their agent registers,
-        // because the schema catalogue is built from `Hook::schema` before any
+        // because the schema catalogue is built from `Harness::schema` before any
         // agent exists — a tool the catalogue never saw is a tool no model is
         // offered. Registering an agent later loads its own through
         // `on_register_agent`.
         match HarnessHook::new(protocol) {
             Ok(harnesses) => {
                 for agent in storage.list_agents().await.unwrap_or_default() {
-                    harnesses.load(&agent.name, &agent.harnesses);
+                    harnesses.load(&agent.name, &agent);
                 }
                 hooks.register_hook("harness", Arc::new(harnesses));
             }
@@ -310,8 +295,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             stored_agents.iter().map(|a| a.name.clone()).collect();
 
         for agent in stored_agents {
-            if agent.system_prompt.is_empty() {
-                tracing::warn!(name = %agent.name, "stored agent has no prompt — skipping");
+            if agent.description.is_empty() {
+                tracing::warn!(name = %agent.name, "stored agent has no description — skipping");
                 continue;
             }
             if agent.model.is_empty() {
@@ -326,8 +311,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                 continue;
             }
             let agent = agent.clone();
-            if agent.system_prompt.is_empty() {
-                tracing::warn!(name = %name, "package agent has no prompt — skipping");
+            if agent.description.is_empty() {
+                tracing::warn!(name = %name, "package agent has no description — skipping");
                 continue;
             }
             if agent.model.is_empty() {

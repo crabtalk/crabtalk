@@ -2,9 +2,9 @@
 //!
 //! The runtime engine talks to a single `Env` implementation. The node
 //! crate provides [`NodeEnv`] which bundles event broadcasting,
-//! instruction discovery, and a composite Hook. Tests use `()`.
+//! instruction discovery, and a composite Harness. Tests use `()`.
 
-use crate::Hook;
+use crate::Harness;
 use tokio::sync::broadcast;
 use wcore::{AgentEvent, ToolDispatch, ToolFuture, protocol::message};
 
@@ -15,7 +15,7 @@ use wcore::{AgentEvent, ToolDispatch, ToolFuture, protocol::message};
 /// instruction discovery.
 pub trait Env: Send + Sync + 'static {
     /// The composite hook providing tool schemas, dispatch, and lifecycle.
-    type Hook: Hook;
+    type Hook: Harness;
 
     /// Access the composite hook.
     fn hook(&self) -> &Self::Hook;

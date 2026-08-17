@@ -1,7 +1,10 @@
 //! Context compaction — summarize conversation history and replace it.
 
 use crate::model::HistoryEntry;
-use crabllm_core::{ContentBlock, Provider, ToolResultContent, anthropic};
+use crabllm_core::{
+    Provider,
+    anthropic::{self, ContentBlock, ToolResultContent},
+};
 
 pub(crate) const COMPACT_PROMPT: &str = include_str!("../../prompts/compact.md");
 
@@ -16,19 +19,19 @@ impl<P: Provider + 'static> super::Agent<P> {
         let prompt = COMPACT_PROMPT.to_owned();
 
         let mut messages = Vec::with_capacity(1 + history.len());
-        if !self.config.system_prompt.is_empty() {
+        if !self.config.description.is_empty() {
             messages.push(anthropic::Message {
                 role: "user".to_string(),
                 content: anthropic::Content::Text(format!(
                     "Agent system prompt (preserve identity/profile info):\n{}",
-                    self.config.system_prompt
+                    self.config.description
                 )),
             });
         }
         let max_len = self.config.compact_tool_max_len;
         for entry in history {
             let mut msg = entry.to_wire_message();
-            for block in &mut msg.content {
+            for block in msg.blocks_mut().into_iter().flatten() {
                 if let ContentBlock::ToolResult {
                     content: ToolResultContent::Text(text),
                     ..
@@ -39,10 +42,7 @@ impl<P: Provider + 'static> super::Agent<P> {
                     text.push_str("... [truncated]");
                 }
             }
-            messages.push(anthropic::Message {
-                role: msg.role.as_str().to_string(),
-                content: anthropic::Content::Blocks(msg.content),
-            });
+            messages.push(msg);
         }
 
         let request = anthropic::Request {

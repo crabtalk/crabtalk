@@ -1,21 +1,16 @@
 //! Configuration mutations: active model, MCP, skills.
 
-use crate::llm::Provider;
-use crate::system::CrabTalk;
+use crate::{llm::Provider, system::CrabTalk};
 use anyhow::{Context, Result};
 use hooks::default_crab;
 use mcp::McpServerState;
 use std::collections::BTreeMap;
-use wcore::protocol::message::*;
-use wcore::storage::Storage;
+use wcore::{protocol::message::*, storage::Storage};
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn set_active_model(&self, model: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
         let storage = rt.storage();
-
-        // Validate against the cached model list when non-empty; if the
-        // /v1/models fetch at startup failed, trust the caller.
         let known = rt.list_models().await;
         if !known.is_empty() && !known.iter().any(|m| m.name == model) {
             anyhow::bail!("model '{model}' not advertised by the LLM endpoint");
@@ -25,9 +20,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .load_agent_by_name(wcore::paths::DEFAULT_AGENT)
             .await?
             .unwrap_or_else(|| default_crab(&model));
-        let prompt = std::mem::take(&mut crab.system_prompt);
         crab.model = model;
-        storage.upsert_agent(&crab, &prompt).await?;
+        storage.upsert_agent(&crab).await?;
         self.reload().await
     }
 
@@ -45,9 +39,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                 }
             }
             None => {
-                // Union view: every (agent, mcp) pair. Identically-configured
-                // MCPs across agents share one peer (and thus one status
-                // entry in `states`), but the listing surfaces both owners.
                 for cfg in rt.agents() {
                     for mcp_cfg in &cfg.mcps {
                         out.push(mcp_info(mcp_cfg, &cfg.name, &states));
@@ -71,18 +62,12 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .load_agent_by_name(&agent)
             .await?
             .ok_or_else(|| anyhow::anyhow!("agent '{agent}' not found"))?;
-        let prompt = std::mem::take(&mut existing.system_prompt);
         if let Some(slot) = existing.mcps.iter_mut().find(|m| m.name == mcp_name) {
             *slot = cfg;
         } else {
             existing.mcps.push(cfg);
         }
-        rt.update_agent(existing, &prompt).await?;
-
-        // Registration only records the declaration — peers connect on
-        // first use. Connect this one now anyway: a human just typed the
-        // config, and a bad command or a stale token should surface here
-        // rather than inside some later tool call.
+        rt.update_agent(existing).await?;
         self.mcp
             .ensure_connected(&agent, std::slice::from_ref(&mcp_name))
             .await;
@@ -101,17 +86,12 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .load_agent_by_name(&agent)
             .await?
             .ok_or_else(|| anyhow::anyhow!("agent '{agent}' not found"))?;
-        let prompt = std::mem::take(&mut existing.system_prompt);
         let before = existing.mcps.len();
         existing.mcps.retain(|m| m.name != name);
         if existing.mcps.len() == before {
             return Ok(false);
         }
-        rt.update_agent(existing, &prompt).await?;
-        // The runtime's `update_agent` triggers `on_register_agent`,
-        // which diffs the new declarations against the prior set and
-        // calls `unregister_for_agent` for entries that disappeared —
-        // so the bridge peer is released (refcounted) automatically.
+        rt.update_agent(existing).await?;
         Ok(true)
     }
 
@@ -133,9 +113,42 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .ok_or_else(|| anyhow::anyhow!("mcp '{name}' missing from listing after reconnect"))
     }
 
-    pub(crate) fn list_skills(&self) -> Vec<SkillInfo> {
+    /// One skill's instructions, for a client or a harness that has chosen
+    /// from the catalogue.
+    pub(crate) async fn get_skill(&self, name: String) -> Result<SkillBody> {
+        let rt = self.runtime.read().await.clone();
+        let skill = rt
+            .storage()
+            .load_skill(&name)
+            .await?
+            .with_context(|| format!("no skill named '{name}'"))?;
+        Ok(SkillBody {
+            name: skill.name,
+            body: skill.body,
+        })
+    }
+
+    pub(crate) async fn list_skills(&self) -> Vec<SkillInfo> {
         let dirs = wcore::resolve_dirs(&self.config_dir);
         let local_skills_dir = self.config_dir.join(wcore::paths::SKILLS_DIR);
+        let described: BTreeMap<String, String> = match self
+            .runtime
+            .read()
+            .await
+            .clone()
+            .storage()
+            .list_skills()
+            .await
+        {
+            Ok(skills) => skills
+                .into_iter()
+                .map(|s| (s.name, s.description))
+                .collect(),
+            Err(e) => {
+                tracing::warn!("failed to read skill descriptions: {e}");
+                BTreeMap::new()
+            }
+        };
 
         let dir_to_pkg: std::collections::BTreeMap<_, _> = dirs
             .package_skill_dirs
@@ -145,7 +158,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 
         let mut seen = std::collections::BTreeSet::new();
         let mut skills = Vec::new();
-
         for dir in &dirs.skill_dirs {
             let (source, source_kind) = if *dir == local_skills_dir {
                 ("local".to_string(), SourceKind::Local)
@@ -160,10 +172,12 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                 if !seen.insert(name.clone()) {
                     continue;
                 }
+                let description = described.get(&name).cloned().unwrap_or_default();
                 skills.push(SkillInfo {
                     name,
                     source: source.clone(),
                     source_kind: source_kind.into(),
+                    description,
                 });
             }
         }
@@ -183,8 +197,6 @@ fn mcp_info(
             state.tools.len() as u32,
             state.last_error.clone().unwrap_or_default(),
         ),
-        // Declared by the agent but not yet attempted (e.g., agent
-        // recently registered, connect still scheduled).
         None => (McpStatus::Unknown, 0, String::new()),
     };
     McpInfo {
@@ -198,7 +210,6 @@ fn mcp_info(
             .collect(),
         url: cfg.url.clone().unwrap_or_default(),
         auth: cfg.auth.clone().unwrap_or_default(),
-        // The "source" is now the agent that owns the declaration.
         source: agent.to_string(),
         auto_restart: cfg.auto_restart,
         source_kind: SourceKind::Local.into(),
