@@ -1,4 +1,4 @@
-//! Package directory discovery and skill scanning.
+//! Package directory discovery.
 //!
 //! Scans `packages/*.toml` to find each package's cached repo (skills,
 //! agents, MCPs). User-added agents and MCPs live in Storage; this
@@ -190,87 +190,6 @@ pub fn external_source_name(path: &Path) -> Option<&str> {
 }
 
 // ── Skill conflict detection ────────────────────────────────────────
-
-/// Check for skill name conflicts across multiple skill directories.
-///
-/// Scans each directory for `SKILL.md` files, extracts the `name` field
-/// from YAML frontmatter, and reports duplicates. First directory wins
-/// (same priority semantics as daemon skill loading).
-pub fn check_skill_conflicts(skill_dirs: &[PathBuf]) -> Vec<String> {
-    let mut seen = std::collections::BTreeMap::<String, &Path>::new();
-    let mut warnings = Vec::new();
-
-    for dir in skill_dirs {
-        if !dir.exists() {
-            continue;
-        }
-        for name in scan_skill_names(dir) {
-            if let Some(first_dir) = seen.get(&name) {
-                warnings.push(format!(
-                    "skill '{name}' from {} conflicts with skill from {}, skipping",
-                    dir.display(),
-                    first_dir.display(),
-                ));
-            } else {
-                seen.insert(name, dir);
-            }
-        }
-    }
-
-    warnings
-}
-
-/// Scan a directory recursively for `SKILL.md` files and extract skill names.
-pub fn scan_skill_names(dir: &Path) -> Vec<String> {
-    let mut results = Vec::new();
-    scan_skill_names_inner(dir, &mut results);
-    results
-}
-
-fn scan_skill_names_inner(dir: &Path, results: &mut Vec<String>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        if entry
-            .file_name()
-            .to_str()
-            .is_some_and(|n| n.starts_with('.'))
-        {
-            continue;
-        }
-
-        let skill_file = path.join("SKILL.md");
-        if skill_file.exists()
-            && let Some(name) = extract_skill_name(&skill_file)
-        {
-            results.push(name);
-        }
-        scan_skill_names_inner(&path, results);
-    }
-}
-
-/// Extract the `name` field from a SKILL.md YAML frontmatter.
-fn extract_skill_name(path: &Path) -> Option<String> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let (frontmatter, _) = crate::utils::split_yaml_frontmatter(&content).ok()?;
-    for line in frontmatter.lines() {
-        let line = line.trim();
-        if let Some(value) = line.strip_prefix("name:") {
-            let value = value.trim().trim_matches('"').trim_matches('\'');
-            if !value.is_empty() {
-                return Some(value.to_owned());
-            }
-        }
-    }
-    None
-}
 
 /// Convert a repo URL to a filesystem-safe slug.
 ///

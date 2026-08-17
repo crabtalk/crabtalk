@@ -8,7 +8,8 @@ use crate::{AgentConfig, AgentEvent, AgentId, AgentStep, Config, model::HistoryE
 use anyhow::Result;
 use crabllm_core::Usage;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, future::Future};
+pub use skill::Skill;
+use std::future::Future;
 
 // ── Storage trait ───────────────────────────────────────────────────
 
@@ -350,18 +351,4 @@ pub fn sender_slug(s: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("-")
-}
-
-// ── Skills ──────────────────────────────────────────────────────────
-
-/// A named unit of agent behavior (agentskills.io format).
-#[derive(Debug, Clone)]
-pub struct Skill {
-    pub name: String,
-    pub description: String,
-    pub license: Option<String>,
-    pub compatibility: Option<String>,
-    pub metadata: BTreeMap<String, String>,
-    pub allowed_tools: Vec<String>,
-    pub body: String,
 }

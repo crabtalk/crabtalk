@@ -650,6 +650,7 @@ dependencies = [
  "crabtalk-mcp",
  "crabtalk-proto",
  "crabtalk-runtime",
+ "crabtalk-skill",
  "crabtalk-storage",
  "crabtalk-transport",
  "futures-core",
@@ -715,6 +716,7 @@ dependencies = [
  "crabllm-core",
  "crabtalk-core",
  "crabtalk-proto",
+ "crabtalk-skill",
  "dirs",
  "futures-core",
  "futures-util",
@@ -848,6 +850,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabtalk-skill"
+version = "0.0.23"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_yml",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crabtalk-storage"
 version = "0.0.23"
 dependencies = [
@@ -855,6 +868,7 @@ dependencies = [
  "chrono",
  "crabtalk-core",
  "crabtalk-hooks",
+ "crabtalk-skill",
  "parking_lot",
  "serde",
  "serde_json",

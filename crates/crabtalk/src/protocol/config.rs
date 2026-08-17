@@ -167,7 +167,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                 (name.to_string(), SourceKind::External)
             };
 
-            for name in wcore::scan_skill_names(dir) {
+            for name in skill::discover::scan_names(dir) {
                 if !seen.insert(name.clone()) {
                     continue;
                 }

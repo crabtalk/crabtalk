@@ -25,6 +25,7 @@ hooks = { path = "crates/hooks", package = "crabtalk-hooks", version = "0.0.23",
 storage = { path = "crates/storage", package = "crabtalk-storage", version = "0.0.23", default-features = false }
 mcp = { path = "lib/mcp", package = "crabtalk-mcp", version = "0.0.23", default-features = false }
 search = { path = "lib/search", package = "crabtalk-search", version = "0.0.23", default-features = false }
+skill = { path = "lib/skill", package = "crabtalk-skill", version = "0.0.23" }
 berm = { path = "berm/engine", version = "0.0.23" }
 crabtalk-berm = { path = "crates/berm", version = "0.0.23" }
 berm-sdk = { path = "berm/sdk", version = "0.0.23" }

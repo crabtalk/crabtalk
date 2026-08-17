@@ -13,8 +13,8 @@ pub use harness::HarnessConfig;
 pub use hooks::{HooksConfig, MemoryConfig};
 pub use llm::LlmConfig;
 pub use manifest::{
-    PackageMeta, ResolvedDirs, Setup, check_skill_conflicts, external_source_name, load_agents_dir,
-    load_agents_dirs, repo_slug, resolve_dirs, scan_skill_names,
+    PackageMeta, ResolvedDirs, Setup, external_source_name, load_agents_dir, load_agents_dirs,
+    repo_slug, resolve_dirs,
 };
 pub use mcp::{McpConfig, McpServerConfig};
 pub use system::TasksConfig;

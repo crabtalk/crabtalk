@@ -1,15 +1,15 @@
-//! Skill discovery — delegates to the shared filesystem scan.
+//! Skill discovery — delegates to the SKILL.md standard.
 
-use crate::{fs::FsStorage, skills};
+use crate::fs::FsStorage;
 use anyhow::Result;
-use wcore::storage::Skill;
+use skill::{Skill, discover};
 
 impl FsStorage {
     pub(super) async fn list_skills(&self) -> Result<Vec<Skill>> {
-        skills::list(&self.skill_roots).await
+        discover::list(&self.skill_roots).await
     }
 
     pub(super) async fn load_skill(&self, name: &str) -> Result<Option<Skill>> {
-        skills::load(&self.skill_roots, name).await
+        discover::load(&self.skill_roots, name).await
     }
 }

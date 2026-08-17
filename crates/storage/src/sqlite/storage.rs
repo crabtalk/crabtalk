@@ -19,11 +19,11 @@ impl Storage for SqliteStorage {
     // Skills are markdown on disk for every backend; only sessions,
     // agents, and config live in the database.
     async fn list_skills(&self) -> Result<Vec<Skill>> {
-        skills::list(&self.skill_roots).await
+        discover::list(&self.skill_roots).await
     }
 
     async fn load_skill(&self, name: &str) -> Result<Option<Skill>> {
-        skills::load(&self.skill_roots, name).await
+        discover::load(&self.skill_roots, name).await
     }
 
     async fn create_session(&self, agent: &str, created_by: &str) -> Result<SessionHandle> {
