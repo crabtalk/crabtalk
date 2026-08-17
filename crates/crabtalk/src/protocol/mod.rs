@@ -3,6 +3,7 @@
 use crate::llm::Provider;
 use crate::system::CrabTalk;
 use anyhow::Result;
+use serde_json::Value;
 use wcore::protocol::api::Server;
 use wcore::protocol::message::*;
 use wcore::storage::Storage;
@@ -10,23 +11,6 @@ use wcore::storage::Storage;
 mod admin;
 mod config;
 mod conversation;
-
-/// Render an RFC3339 `created_at` string as a human-friendly relative date —
-/// "Today" / "Yesterday" / `YYYY-MM-DD`. Returns empty string if parsing fails.
-fn format_date_label(created_at: &str) -> String {
-    let Ok(ts) = chrono::DateTime::parse_from_rfc3339(created_at) else {
-        return String::new();
-    };
-    let today = chrono::Local::now().date_naive();
-    let date = ts.with_timezone(&chrono::Local).date_naive();
-    if date == today {
-        "Today".to_string()
-    } else if date == today - chrono::Duration::days(1) {
-        "Yesterday".to_string()
-    } else {
-        date.format("%Y-%m-%d").to_string()
-    }
-}
 
 impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
@@ -136,10 +120,15 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
     }
 
     async fn update_agent(&self, req: UpdateAgentMsg) -> Result<AgentInfo> {
-        let mut config: wcore::AgentConfig = serde_json::from_str(&req.config)
+        let patch: Value = serde_json::from_str(&req.config)
+            .map_err(|e| anyhow::anyhow!("invalid AgentConfig JSON: {e}"))?;
+        let rt = self.runtime.read().await.clone();
+        let stored = rt.storage().load_agent_by_name(&req.name).await?;
+        let mut merged = serde_json::to_value(stored.unwrap_or_default())?;
+        self::merge(&mut merged, patch);
+        let mut config: wcore::AgentConfig = serde_json::from_value(merged)
             .map_err(|e| anyhow::anyhow!("invalid AgentConfig JSON: {e}"))?;
         config.name = req.name;
-        let rt = self.runtime.read().await.clone();
         let registered = rt.update_agent(config).await?;
         Ok(AgentInfo::from(&registered))
     }
@@ -166,7 +155,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
             .await
             .into_iter()
             .map(|mut c| {
-                c.date = format_date_label(&c.date);
+                c.date = self::format_date_label(&c.date);
                 c
             })
             .collect())
@@ -218,5 +207,40 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
     async fn list_models(&self) -> Result<Vec<ModelInfo>> {
         let rt = self.runtime.read().await.clone();
         Ok(rt.list_models().await)
+    }
+}
+
+/// Render an RFC3339 `created_at` string as a human-friendly relative date —
+/// "Today" / "Yesterday" / `YYYY-MM-DD`. Returns empty string if parsing fails.
+fn format_date_label(created_at: &str) -> String {
+    let Ok(ts) = chrono::DateTime::parse_from_rfc3339(created_at) else {
+        return String::new();
+    };
+    let today = chrono::Local::now().date_naive();
+    let date = ts.with_timezone(&chrono::Local).date_naive();
+    if date == today {
+        "Today".to_string()
+    } else if date == today - chrono::Duration::days(1) {
+        "Yesterday".to_string()
+    } else {
+        date.format("%Y-%m-%d").to_string()
+    }
+}
+
+/// Apply an RFC 7386 merge patch: objects merge key by key, anything else
+/// replaces, and an explicit `null` removes a key so the field falls back to
+/// its default. A key the patch never mentions keeps the stored value.
+fn merge(base: &mut Value, patch: Value) {
+    match (base, patch) {
+        (Value::Object(base), Value::Object(patch)) => {
+            for (key, value) in patch {
+                if value.is_null() {
+                    base.remove(&key);
+                } else {
+                    merge(base.entry(key).or_insert(Value::Null), value);
+                }
+            }
+        }
+        (base, patch) => *base = patch,
     }
 }
