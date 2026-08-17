@@ -1,83 +1,74 @@
-//! Agent registry — persistent and ephemeral agent management.
+//! Agent resolution and persisted agent CRUD.
+//!
+//! There is no registry. `resolve_agent` reads the config the run in
+//! front of it needs, builds an `Agent`, and hands it over; nothing is
+//! kept afterwards. "Registered" is no longer a state an agent can be
+//! in — it is in storage or it is not — so the hook that tracks
+//! per-agent state fires on resolution instead, which is why
+//! [`Harness::on_resolve_agent`](crate::Harness::on_resolve_agent) must
+//! be idempotent.
 
-use super::Runtime;
-use crate::{Agent, AgentBuilder, ToolDispatcher};
-use crate::{Config, Env, Harness};
+use crate::engine::Runtime;
+use crate::{Agent, AgentBuilder, Config, Env, Harness, ToolDispatcher};
 use anyhow::Result;
 use std::sync::Arc;
-use storage::{AgentConfig, AgentId, Storage};
+use store::{AgentConfig, AgentId, interface::Agents, interface::Sessions};
 
 impl<C: Config> Runtime<C> {
-    pub fn add_agent(&self, config: AgentConfig) {
-        let _ = self.upsert_agent(config);
+    /// One agent's config, or `None` if storage has no such agent.
+    pub async fn agent(&self, id: &AgentId) -> Option<AgentConfig> {
+        self.storage().load_agent(id).await.ok().flatten()
     }
 
-    pub fn upsert_agent(&self, config: AgentConfig) -> AgentConfig {
-        let (id, agent) = self.build_agent(config);
-        let registered = agent.config.clone();
-        // Fire the hook before insert so the invariant "visible via .agent()
-        // ⇒ tracked by hooks" holds. Same rationale in reverse for remove_agent.
-        self.env.hook().on_register_agent(&id, &registered);
-        self.agents.write().insert(id, agent);
-        registered
-    }
-
-    pub fn remove_agent(&self, id: &AgentId) -> bool {
-        let removed = self.agents.write().remove(id).is_some();
-        if removed {
-            self.env.hook().on_unregister_agent(id);
+    /// Every agent's config.
+    ///
+    /// Two round trips by design: the index hands back ids, and each
+    /// config is its own read. A single query returning them all would
+    /// mean every system prompt in the store crossing the wire to render
+    /// a list of names.
+    pub async fn agents(&self) -> Vec<AgentConfig> {
+        let Ok(ids) = self.storage().agent_ids().await else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(config) = self.agent(&id).await {
+                out.push(config);
+            }
         }
-        removed
+        out
     }
 
-    fn build_agent(&self, config: AgentConfig) -> (AgentId, Agent<C::Provider>) {
+    pub(crate) async fn has_agent(&self, id: &AgentId) -> bool {
+        self.agent(id).await.is_some()
+    }
+
+    /// Build the agent for a run.
+    ///
+    /// The hook fires before the `Agent` exists, so anything tracking
+    /// per-agent state has it in place by the time the run starts —
+    /// the same ordering the registry used to guarantee, now scoped to
+    /// the agent actually running rather than every agent that exists.
+    pub(crate) async fn resolve_agent(&self, id: &AgentId) -> Option<Agent<C::Provider>> {
+        let config = self.agent(id).await?;
+        self.env.hook().on_resolve_agent(id, &config);
+        Some(self.build_agent(config))
+    }
+
+    fn build_agent(&self, config: AgentConfig) -> Agent<C::Provider> {
         let config = self.env.hook().on_build_agent(config);
-        let id = config.id;
         let tools = self.tools.filtered_snapshot(&config.tools);
         let dispatcher: Arc<dyn ToolDispatcher> = self.env.clone();
-        let agent = AgentBuilder::new(self.model.clone())
+        AgentBuilder::new(self.model.clone())
             .config(config)
             .tools(tools)
             .dispatcher(dispatcher)
-            .build();
-        (id, agent)
-    }
-
-    pub fn agent(&self, id: &AgentId) -> Option<AgentConfig> {
-        self.agents.read().get(id).map(|a| a.config.clone())
-    }
-
-    /// Resolve a name to the agent wearing it — the runtime's only
-    /// name lookup. A surface calls it once, then addresses everything
-    /// else by id.
-    pub fn agent_by_name(&self, name: &str) -> Option<AgentConfig> {
-        self.agents
-            .read()
-            .values()
-            .find(|a| a.config.name == name)
-            .map(|a| a.config.clone())
-    }
-
-    pub fn agents(&self) -> Vec<AgentConfig> {
-        self.agents
-            .read()
-            .values()
-            .map(|a| a.config.clone())
-            .collect()
-    }
-
-    pub(crate) fn resolve_agent(&self, id: &AgentId) -> Option<Agent<C::Provider>> {
-        self.agents.read().get(id).cloned()
-    }
-
-    pub(crate) fn has_agent(&self, id: &AgentId) -> bool {
-        self.agents.read().contains_key(id)
+            .build()
     }
 
     // --- Storage-backed CRUD ---
 
-    /// Create a new persisted agent. Writes storage, registers in the
-    /// runtime, returns the registered config.
+    /// Create a new persisted agent.
     pub async fn create_agent(&self, mut config: AgentConfig) -> Result<AgentConfig> {
         // Identity is the daemon's to mint. An id arriving in the body
         // would make `create` a way to address an agent that exists.
@@ -87,7 +78,7 @@ impl<C: Config> Runtime<C> {
             anyhow::bail!("agent '{}' already exists", config.name);
         }
         storage.upsert_agent(&config).await?;
-        self.load_and_register(&config.id).await
+        self.reload_agent(&config.id).await
     }
 
     /// Update an existing persisted agent. `id` is the identity — the
@@ -96,17 +87,15 @@ impl<C: Config> Runtime<C> {
     pub async fn update_agent(&self, id: &AgentId, mut config: AgentConfig) -> Result<AgentConfig> {
         config.id = *id;
         self.storage().upsert_agent(&config).await?;
-        self.load_and_register(id).await
+        self.reload_agent(id).await
     }
 
-    /// Purge a persisted agent — removes from storage AND unregisters from
-    /// the runtime. Named distinctly from `Storage::delete_agent` (which is
-    /// storage-only) to say which layer cascades.
+    /// Purge a persisted agent and everything keyed to it.
     pub async fn purge_agent(&self, id: &AgentId) -> Result<bool> {
         let storage = self.storage();
         let removed = storage.delete_agent(id).await?;
         if removed {
-            self.remove_agent(id);
+            self.env.hook().on_forget_agent(id);
             // A session belongs to the agent by id, so nothing can reach
             // these once it is gone — including an agent later created
             // under the same name, which gets its own id.
@@ -124,15 +113,14 @@ impl<C: Config> Runtime<C> {
         if !self.storage().rename_agent(id, new_name).await? {
             anyhow::bail!("agent '{id}' not found");
         }
-        self.load_and_register(id).await
+        self.reload_agent(id).await
     }
 
-    async fn load_and_register(&self, id: &AgentId) -> Result<AgentConfig> {
-        let config = self
-            .storage()
-            .load_agent(id)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("agent '{id}' missing from storage after write"))?;
-        Ok(self.upsert_agent(config))
+    /// Read back what was just written, so a caller sees the stored
+    /// record rather than the one it sent.
+    async fn reload_agent(&self, id: &AgentId) -> Result<AgentConfig> {
+        self.agent(id)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("agent '{id}' missing from storage after write"))
     }
 }

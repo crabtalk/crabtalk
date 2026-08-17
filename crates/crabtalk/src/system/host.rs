@@ -6,7 +6,7 @@ use runtime::harness::Hooks;
 use runtime::{AgentEvent, ToolDispatch};
 use runtime::{Env, Harness};
 use std::sync::Arc;
-use storage::AgentId;
+use store::AgentId;
 use tokio::sync::broadcast;
 
 /// Tool result output is truncated to this many bytes in the broadcast.

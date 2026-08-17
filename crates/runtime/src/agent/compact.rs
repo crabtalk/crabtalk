@@ -4,7 +4,7 @@ use crabllm_core::{
     Provider,
     anthropic::{self, ContentBlock, ToolResultContent},
 };
-use storage::HistoryEntry;
+use store::HistoryEntry;
 
 pub(crate) const COMPACT_PROMPT: &str = include_str!("../../prompts/compact.md");
 

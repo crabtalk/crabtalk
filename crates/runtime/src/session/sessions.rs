@@ -21,7 +21,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
 };
-use storage::{AgentId, Storage};
+use store::{AgentId, interface::Sessions as _};
 use tokio::sync::{Mutex, watch};
 
 /// One live session.
@@ -71,7 +71,7 @@ impl Sessions {
         if let Some(found) = self.find(agent, created_by) {
             return Ok(found);
         }
-        if rt.agent(agent).is_none() {
+        if rt.agent(agent).await.is_none() {
             anyhow::bail!("agent '{agent}' not registered");
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -175,7 +175,7 @@ impl Sessions {
             let c = session.lock().await;
             infos.push(ActiveConversationInfo {
                 agent_id: agent.to_string(),
-                agent_name: rt.agent(&agent).map(|a| a.name).unwrap_or_default(),
+                agent_name: rt.agent(&agent).await.map(|a| a.name).unwrap_or_default(),
                 sender,
                 message_count: c.history.len() as u64,
                 alive_secs: c.created_at.elapsed().as_secs(),

@@ -11,8 +11,7 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-storage = { workspace = true, default-features = false }
-memory.workspace = true
+store = { workspace = true, default-features = false }
 mcp = { workspace = true, default-features = false, features = ["hyper"] }
 proto.workspace = true
 crabllm-core.workspace = true

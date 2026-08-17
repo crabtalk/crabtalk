@@ -20,8 +20,8 @@ use futures_core::Stream;
 use futures_util::{StreamExt, future::join_all, stream::FuturesUnordered};
 pub use model::Model;
 use std::sync::Arc;
-use storage::HistoryEntry;
-pub use storage::{AgentConfig, AgentId};
+use store::HistoryEntry;
+pub use store::{AgentConfig, AgentId};
 use tokio::sync::{mpsc, watch};
 pub use tool::{AsTool, ToolDispatcher};
 

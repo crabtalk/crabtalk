@@ -9,7 +9,7 @@ use crabllm_core::{FunctionDef, Tool, ToolType};
 use heck::ToSnakeCase;
 use schemars::JsonSchema;
 use std::{collections::BTreeMap, future::Future, pin::Pin, sync::Arc};
-use storage::{AgentId, HistoryEntry};
+use store::{AgentId, HistoryEntry};
 
 /// Boxed future returned by a [`ToolDispatcher::dispatch`] call.
 pub type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>>;

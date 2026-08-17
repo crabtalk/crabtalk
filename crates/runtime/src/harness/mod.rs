@@ -13,10 +13,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
-use storage::{AgentConfig, AgentId};
+use store::{AgentConfig, AgentId};
 
 pub use mcp::McpHook;
-pub use memory::{Memory, MemoryHook};
+pub use memory::MemoryHook;
 
 pub mod mcp;
 pub mod memory;
@@ -47,18 +47,20 @@ pub trait Harness: Send + Sync {
         config
     }
 
-    /// Called just before an agent is inserted into the runtime registry
-    /// (via `upsert_agent`). Hooks that track per-agent state (e.g. scopes,
-    /// descriptions) should record it here; the ordering guarantees that by
-    /// the time the agent is visible via `Runtime::agent()`, hook state is
-    /// already in place.
-    fn on_register_agent(&self, _id: &AgentId, _config: &AgentConfig) {}
+    /// Called each time an agent is resolved for a run, before the
+    /// `Agent` is built. Hooks that track per-agent state (e.g. scopes,
+    /// descriptions, sandboxes) record it here, so it is in place before
+    /// the run starts.
+    ///
+    /// **Must be idempotent.** There is no registry to fire this once
+    /// per agent: it fires per run, for the agent that is running, and
+    /// an implementation that re-did its work every time would pay that
+    /// cost on every message.
+    fn on_resolve_agent(&self, _id: &AgentId, _config: &AgentConfig) {}
 
-    /// Called after an agent is removed from the runtime registry. Hooks
-    /// should drop any per-agent state they own. Symmetric to
-    /// `on_register_agent`: once the agent is invisible, hook state is
-    /// cleaned up.
-    fn on_unregister_agent(&self, _id: &AgentId) {}
+    /// Called after an agent is deleted from storage. Hooks drop any
+    /// per-agent state they own — nothing will resolve this id again.
+    fn on_forget_agent(&self, _id: &AgentId) {}
 
     /// Called by Runtime after each agent step during execution.
     fn on_event(&self, _agent: &AgentId, _session_id: u64, _event: &AgentEvent) {}
@@ -224,7 +226,7 @@ impl Harness for Hooks {
         config
     }
 
-    fn on_register_agent(&self, id: &AgentId, config: &AgentConfig) {
+    fn on_resolve_agent(&self, id: &AgentId, config: &AgentConfig) {
         self.scopes.write().insert(
             *id,
             AgentScope {
@@ -232,14 +234,14 @@ impl Harness for Hooks {
             },
         );
         for hook in self.hooks.values() {
-            hook.on_register_agent(id, config);
+            hook.on_resolve_agent(id, config);
         }
     }
 
-    fn on_unregister_agent(&self, id: &AgentId) {
+    fn on_forget_agent(&self, id: &AgentId) {
         self.scopes.write().remove(id);
         for hook in self.hooks.values() {
-            hook.on_unregister_agent(id);
+            hook.on_forget_agent(id);
         }
     }
 

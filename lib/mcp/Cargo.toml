@@ -10,7 +10,7 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-storage = { workspace = true, default-features = false }
+store = { workspace = true, default-features = false }
 proto.workspace = true
 crabllm-core.workspace = true
 

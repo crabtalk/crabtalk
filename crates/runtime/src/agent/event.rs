@@ -2,7 +2,7 @@
 
 use crabllm_core::{FinishReason, ToolCall, Usage, anthropic::Message};
 use proto::*;
-use storage::{AgentId, EventLine, HistoryEntry, ToolCallTrace};
+use store::{AgentId, EventLine, HistoryEntry, ToolCallTrace};
 
 /// A fine-grained event emitted during agent execution.
 #[derive(Debug, Clone)]

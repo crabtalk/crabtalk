@@ -1,10 +1,10 @@
 //! `forget` — delete a memory entry by name.
 
-use super::{Memory, MemoryHook};
 use crate::ToolDispatch;
-use memory::Op;
+use crate::harness::memory::MemoryHook;
 use schemars::JsonSchema;
 use serde::Deserialize;
+use store::interface::Memory;
 
 /// Delete a memory entry by name.
 #[derive(Deserialize, JsonSchema)]
@@ -13,22 +13,18 @@ pub struct Forget {
     pub name: String,
 }
 
-impl Memory {
-    pub fn forget(&self, name: &str) -> String {
-        let mut store = self.store_write();
-        match store.apply(Op::Remove {
-            name: name.to_owned(),
-        }) {
-            Ok(_) => format!("forgot: {name}"),
-            Err(_) => format!("no entry named: {name}"),
+impl<M: Memory> MemoryHook<M> {
+    pub async fn forget(&self, name: &str) -> String {
+        match self.memory.remove_memory(name).await {
+            Ok(true) => format!("forgot: {name}"),
+            Ok(false) => format!("no entry named: {name}"),
+            Err(e) => format!("failed to forget {name}: {e}"),
         }
     }
-}
 
-impl MemoryHook {
     pub(super) async fn handle_forget(&self, call: ToolDispatch) -> Result<String, String> {
         let input: Forget =
             serde_json::from_str(&call.args).map_err(|e| format!("invalid arguments: {e}"))?;
-        Ok(self.memory.forget(&input.name))
+        Ok(self.forget(&input.name).await)
     }
 }

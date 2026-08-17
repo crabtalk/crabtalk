@@ -6,7 +6,7 @@
 
 use crate::Harness;
 use crate::{AgentEvent, ToolDispatch, ToolFuture};
-use storage::AgentId;
+use store::AgentId;
 use tokio::sync::broadcast;
 
 /// The runtime environment — combines server capabilities with tool dispatch.

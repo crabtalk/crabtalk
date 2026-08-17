@@ -8,7 +8,7 @@ use async_stream::stream;
 use crabllm_core::{ToolChoice, anthropic};
 use futures_core::Stream;
 use futures_util::StreamExt;
-use storage::{AgentId, HistoryEntry};
+use store::{AgentId, HistoryEntry};
 use tokio::sync::{mpsc, watch};
 
 impl<C: Config> Runtime<C> {
@@ -59,13 +59,14 @@ impl<C: Config> Runtime<C> {
         self.prepare_history(&mut session, content, sender);
         let mut agent = self
             .resolve_agent(&agent_id)
+            .await
             .ok_or_else(|| anyhow::anyhow!("agent '{agent_id}' not registered"))?;
         agent.extend_tools(extra_tools);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let response = agent.run(&mut session.history, tx, None, tool_choice).await;
 
-        let mut event_trace: Vec<storage::EventLine> = Vec::new();
+        let mut event_trace: Vec<store::EventLine> = Vec::new();
         while let Ok(event) = rx.try_recv() {
             self.env.hook().on_event(&agent_id, session_id, &event);
             self.env
@@ -101,7 +102,7 @@ impl<C: Config> Runtime<C> {
             let session_id = session.id;
             let pre_run_len = session.history.len();
             self.prepare_history(&mut session, &content, &sender);
-            let Some(mut agent) = self.resolve_agent(&agent_id) else {
+            let Some(mut agent) = self.resolve_agent(&agent_id).await else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("agent '{agent_id}' not registered"),
                 ));
@@ -110,7 +111,7 @@ impl<C: Config> Runtime<C> {
             agent.extend_tools(extra_tools);
 
             let mut done_event: Option<AgentEvent> = None;
-            let mut event_trace: Vec<storage::EventLine> = Vec::new();
+            let mut event_trace: Vec<store::EventLine> = Vec::new();
             {
                 let mut event_stream = std::pin::pin!(agent.run_stream(&mut session.history, Some(session_id), steer, tool_choice));
                 while let Some(event) = event_stream.next().await {
@@ -157,7 +158,7 @@ impl<C: Config> Runtime<C> {
     ) -> impl Stream<Item = AgentEvent> + 'a {
         let content = content.to_owned();
         stream! {
-            let Some(mut agent) = self.resolve_agent(agent_id) else {
+            let Some(mut agent) = self.resolve_agent(agent_id).await else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("agent '{agent_id}' not registered"),
                 ));
@@ -187,7 +188,7 @@ impl<C: Config> Runtime<C> {
         let sender = sender.to_owned();
         let guest = *guest;
         stream! {
-            let Some(guest_agent) = self.resolve_agent(&guest) else {
+            let Some(guest_agent) = self.resolve_agent(&guest).await else {
                 yield AgentEvent::Done(AgentResponse::error(
                     format!("guest agent '{guest}' not registered"),
                 ));
@@ -215,6 +216,7 @@ impl<C: Config> Runtime<C> {
 
             let primary = self
                 .agent(&agent_id)
+                .await
                 .map(|a| a.name)
                 .unwrap_or_else(|| agent_id.to_string());
             let framing = HistoryEntry::system(format!(
@@ -314,6 +316,7 @@ impl<C: Config> Runtime<C> {
             let mut response_entry = HistoryEntry::assistant(&response_text, reasoning, None);
             response_entry.agent = self
                 .agent(&guest)
+                .await
                 .map(|a| a.name)
                 .unwrap_or_else(|| guest.to_string());
             session.history.push(response_entry);

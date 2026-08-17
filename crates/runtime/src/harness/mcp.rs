@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::{collections::BTreeMap, sync::Arc};
-use storage::AgentId;
+use store::AgentId;
 
 /// Call an MCP tool by name, or list available tools if no exact match.
 #[derive(Deserialize, JsonSchema)]
@@ -54,7 +54,7 @@ impl Harness for McpHook {
         vec![Mcp::as_tool()]
     }
 
-    fn scoped_tools(&self, config: &storage::AgentConfig) -> (Vec<String>, Option<String>) {
+    fn scoped_tools(&self, config: &store::AgentConfig) -> (Vec<String>, Option<String>) {
         if config.mcps.is_empty() {
             return (vec![], None);
         }
@@ -68,7 +68,7 @@ impl Harness for McpHook {
         (tools, Some(line))
     }
 
-    fn on_register_agent(&self, id: &AgentId, config: &storage::AgentConfig) {
+    fn on_resolve_agent(&self, id: &AgentId, config: &store::AgentConfig) {
         let new_names: Vec<String> = config.mcps.iter().map(|m| m.name.clone()).collect();
         let prior = self
             .agent_mcps
@@ -104,7 +104,7 @@ impl Harness for McpHook {
         }
     }
 
-    fn on_unregister_agent(&self, id: &AgentId) {
+    fn on_forget_agent(&self, id: &AgentId) {
         let Some(names) = self.agent_mcps.write().remove(id) else {
             return;
         };

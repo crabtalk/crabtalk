@@ -1,28 +1,24 @@
-//! Memory hook — thin facade over `crabtalk-memory`. Per-tool files
-//! (`recall.rs`, `remember.rs`, `forget.rs`) own the corresponding
-//! `Memory` methods and `MemoryHook` dispatch handlers. See RFC 0150
-//! for the design.
+//! Memory hook — the `recall` / `remember` / `forget` tools over the
+//! [`Memory`](store::interface::Memory) interface. Per-tool files own
+//! the corresponding handlers. See RFC 0150 for the design.
+//!
+//! The hook holds a store handle, not a store: entries live in the
+//! backend and are read by name for the one call that needs them. There
+//! is no resident index here — ranking is the backend's.
 
 use crate::Harness;
 use crate::{ToolDispatch, ToolFuture, agent::AsTool};
-use anyhow::Result;
 use crabllm_core::Tool;
 use forget::Forget;
-use memory::Memory as Store;
-use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::RwLock;
 use recall::Recall;
 use remember::Remember;
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use storage::{AgentConfig, AgentId, MemoryConfig};
+use std::{collections::BTreeMap, sync::Arc};
+use store::{AgentConfig, AgentId, MemoryConfig, interface::Memory};
 
 mod forget;
 mod recall;
 mod remember;
-
-/// Shared handle to the underlying memory store. Cloneable because the
-/// runtime needs a reference of its own for writing archives during
-/// compaction and reading them back on session resume.
-pub type SharedStore = Arc<RwLock<Store>>;
 
 /// Behavioural guidance for the agent — when/how to use the memory
 /// tools. Tool *signatures* come from each struct's `///` doc comment
@@ -30,45 +26,16 @@ pub type SharedStore = Arc<RwLock<Store>>;
 /// per-arg description.
 const MEMORY_USAGE: &str = include_str!("../../../prompts/memory.md");
 
-pub struct Memory {
-    pub(super) inner: SharedStore,
-}
-
-impl Memory {
-    /// Open (or create) the memory db at `db_path`.
-    pub fn open(db_path: PathBuf) -> Result<Self> {
-        let store = Store::open(&db_path)?;
-        Ok(Self {
-            inner: Arc::new(RwLock::new(store)),
-        })
-    }
-
-    /// Clone the underlying store handle. Used to hand the same memory
-    /// to the runtime for archive writes and resume-time reads.
-    pub fn shared(&self) -> SharedStore {
-        self.inner.clone()
-    }
-
-    pub(super) fn store_read(&self) -> RwLockReadGuard<'_, Store> {
-        self.inner.read()
-    }
-
-    pub(super) fn store_write(&self) -> RwLockWriteGuard<'_, Store> {
-        self.inner.write()
-    }
-}
-
-pub struct MemoryHook {
-    pub(super) memory: Arc<Memory>,
-    /// Per-agent recall limit cache, populated from `on_register_agent`.
-    /// Lives on the hook instead of being read from storage on every
-    /// `before_run` so the sync hook callbacks don't need an async
-    /// roundtrip.
+pub struct MemoryHook<M> {
+    pub(super) memory: Arc<M>,
+    /// Per-agent recall limit, refreshed on every resolve. Kept here so
+    /// the sync hook callbacks and `before_run` never need an async
+    /// roundtrip to read one number.
     configs: RwLock<BTreeMap<AgentId, MemoryConfig>>,
 }
 
-impl MemoryHook {
-    pub fn new(memory: Arc<Memory>) -> Self {
+impl<M: Memory> MemoryHook<M> {
+    pub fn new(memory: Arc<M>) -> Self {
         Self {
             memory,
             configs: RwLock::new(BTreeMap::new()),
@@ -84,7 +51,7 @@ impl MemoryHook {
     }
 }
 
-impl Harness for MemoryHook {
+impl<M: Memory + 'static> Harness for MemoryHook<M> {
     fn schema(&self) -> Vec<Tool> {
         vec![Recall::as_tool(), Remember::as_tool(), Forget::as_tool()]
     }
@@ -93,13 +60,13 @@ impl Harness for MemoryHook {
         Some(format!("\n\n{MEMORY_USAGE}"))
     }
 
-    fn on_register_agent(&self, id: &AgentId, config: &AgentConfig) {
+    fn on_resolve_agent(&self, id: &AgentId, config: &AgentConfig) {
         self.configs
             .write()
             .insert(*id, config.hooks.memory.clone());
     }
 
-    fn on_unregister_agent(&self, id: &AgentId) {
+    fn on_forget_agent(&self, id: &AgentId) {
         self.configs.write().remove(id);
     }
 

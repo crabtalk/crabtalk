@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use storage::AgentId;
+use store::AgentId;
 
 /// Persistent event subscription.
 #[derive(Debug, Clone, Serialize, Deserialize)]

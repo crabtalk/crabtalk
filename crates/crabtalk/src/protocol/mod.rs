@@ -6,13 +6,13 @@ use anyhow::Result;
 use proto::server::Server;
 use proto::*;
 use serde_json::Value;
-use storage::{AgentId, Storage};
+use store::{AgentId, interface::Backend};
 
 mod admin;
 mod config;
 mod session;
 
-impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
+impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
     async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         self.send(req).await
     }
@@ -107,19 +107,21 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
 
     async fn list_agents(&self) -> Result<Vec<AgentInfo>> {
         let rt = self.runtime.read().await.clone();
-        Ok(rt.agents().iter().map(|a| a.clone().into()).collect())
+        Ok(rt.agents().await.into_iter().map(Into::into).collect())
     }
 
     async fn get_agent(&self, name: String) -> Result<AgentInfo> {
         let rt = self.runtime.read().await.clone();
         let config = rt
-            .agent_by_name(&name)
+            .storage()
+            .load_agent_by_name(&name)
+            .await?
             .ok_or_else(|| anyhow::anyhow!("agent '{name}' not found"))?;
         Ok(config.into())
     }
 
     async fn create_agent(&self, req: CreateAgentMsg) -> Result<AgentInfo> {
-        let mut config: storage::AgentConfig = serde_json::from_str(&req.config)
+        let mut config: store::AgentConfig = serde_json::from_str(&req.config)
             .map_err(|e| anyhow::anyhow!("invalid AgentConfig JSON: {e}"))?;
         config.name = req.name;
         let rt = self.runtime.read().await.clone();
@@ -141,7 +143,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
         let name = stored.name.clone();
         let mut merged = serde_json::to_value(stored)?;
         self::merge(&mut merged, patch);
-        let mut config: storage::AgentConfig = serde_json::from_value(merged)
+        let mut config: store::AgentConfig = serde_json::from_value(merged)
             .map_err(|e| anyhow::anyhow!("invalid AgentConfig JSON: {e}"))?;
         config.name = name;
         let registered = rt.update_agent(&id, config).await?;

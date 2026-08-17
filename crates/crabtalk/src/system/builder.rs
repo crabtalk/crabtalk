@@ -12,31 +12,31 @@ use crabtalk_berm::HarnessHook;
 use mcp::McpHandler;
 use proto::server::Server;
 use runtime::agent::Model;
-use runtime::harness::{EventSink, Hooks, McpHook, Memory, MemoryHook};
+use runtime::harness::{EventSink, Hooks, McpHook, MemoryHook};
 use runtime::{Harness, Runtime, Sessions};
 use std::{
     collections::BTreeMap,
     path::Path,
     sync::{Arc, OnceLock},
 };
-use storage::Storage;
+use store::interface::Backend;
 use tokio::sync::{RwLock, broadcast};
 
 /// Build the LLM `Model<P>` given the config and the list of models
 /// advertised by the endpoint (fetched from `/v1/models` at startup).
 pub type BuildProvider<P> =
-    Arc<dyn Fn(&storage::Config, &[String]) -> Result<runtime::agent::Model<P>> + Send + Sync>;
+    Arc<dyn Fn(&store::Config, &[String]) -> Result<runtime::agent::Model<P>> + Send + Sync>;
 
 pub fn build_default_provider(
-    config: &storage::Config,
+    config: &store::Config,
     models: &[String],
 ) -> Result<Model<DefaultProvider>> {
     build_providers(config, models)
 }
 
-impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
+impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     pub(crate) async fn build(
-        config: &storage::Config,
+        config: &store::Config,
         config_dir: &Path,
         storage: Arc<S>,
         build_provider: BuildProvider<P>,
@@ -44,15 +44,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>> = Arc::new(OnceLock::new());
         let protocol: Arc<OnceLock<crabtalk_berm::Dispatch>> = Arc::new(OnceLock::new());
         let hooks = Hooks::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
-        let (runtime, mcp, hooks, bridge) = Self::build_all(
-            config,
-            config_dir,
-            storage,
-            &build_provider,
-            protocol.clone(),
-            hooks,
-        )
-        .await?;
+        let (runtime, mcp, hooks, bridge) =
+            Self::build_all(config, storage, &build_provider, protocol.clone(), hooks).await?;
         let shared_runtime: RuntimeHandle<P, S> = Arc::new(RwLock::new(Arc::new(runtime)));
         runtime_once
             .set(shared_runtime.clone())
@@ -110,7 +103,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 
     pub async fn reload(&self) -> Result<()> {
-        let config = storage::Config::load(&self.config_dir.join(storage::CONFIG_FILE))?;
+        let config = store::Config::load(&self.config_dir.join(store::CONFIG_FILE))?;
         let runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>> = Arc::new(OnceLock::new());
         runtime_once
             .set(self.runtime.clone())
@@ -124,7 +117,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let protocol: Arc<OnceLock<crabtalk_berm::Dispatch>> = Arc::new(OnceLock::new());
         let (new_runtime, _mcp, new_hook, _bridge) = Self::build_all(
             &config,
-            &self.config_dir,
             storage,
             &self.build_provider,
             protocol.clone(),
@@ -159,8 +151,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 
     /// Build Hooks, SystemEnv, and Runtime in one shot.
     async fn build_all(
-        config: &storage::Config,
-        config_dir: &Path,
+        config: &store::Config,
         storage: Arc<S>,
         build_provider: &BuildProvider<P>,
         protocol: Arc<OnceLock<crabtalk_berm::Dispatch>>,
@@ -181,7 +172,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             false => DefaultProvider::from(&config.llm).model_ids().await,
         };
         let default_model = models.first().cloned().unwrap_or_default();
-        storage.scaffold(&default_model).await?;
+        Self::scaffold(&storage, &default_model).await?;
 
         let model = build_provider(config, &models)?;
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::new(
@@ -189,15 +180,13 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         ));
         mcp_handler.spawn_reaper();
         let bridge = Arc::new(ClientBridge::default());
-        let shared_memory = Self::register_hooks(
+        Self::register_hooks(
             &mut hooks,
             storage.clone(),
-            config_dir,
             mcp_handler.clone(),
             config.env.clone(),
             protocol,
-        )
-        .await?;
+        )?;
         let hooks = Arc::new(hooks);
 
         let (events_tx, _) = broadcast::channel(256);
@@ -211,42 +200,52 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         for schema in Harness::schema(hooks.as_ref()) {
             tools.insert(schema);
         }
-        let runtime = Runtime::new(model, env, storage, shared_memory, tools);
+        let runtime = Runtime::new(model, env, storage, tools);
         runtime.set_models(models);
         let runtime = runtime;
         Ok((runtime, mcp_handler, hooks, bridge))
     }
 
-    async fn register_hooks(
+    fn register_hooks(
         hooks: &mut Hooks,
         storage: Arc<S>,
-        config_dir: &Path,
         mcp_handler: Arc<McpHandler>,
         env_overlay: BTreeMap<String, String>,
         protocol: Arc<OnceLock<crabtalk_berm::Dispatch>>,
-    ) -> Result<runtime::SharedMemory> {
-        let memory_wrapper = Memory::open(config_dir.join("memory.db"))?;
-        let shared_memory = memory_wrapper.shared();
-        let memory = Arc::new(memory_wrapper);
-        hooks.register_hook("memory", Arc::new(MemoryHook::new(memory)));
+    ) -> Result<()> {
+        hooks.register_hook("memory", Arc::new(MemoryHook::new(storage)));
         hooks.register_hook("mcp", Arc::new(McpHook::new(mcp_handler, env_overlay)));
 
-        // Loading harnesses
+        // No agents are pre-loaded: a harness is acquired for the agent
+        // that is running, on the run, through `on_resolve_agent`.
+        // Loading every agent's images at startup is what made residency
+        // here proportional to how many agents exist rather than how many
+        // are working.
         match HarnessHook::new(protocol) {
-            Ok(harnesses) => {
-                for agent in storage.list_agents().await.unwrap_or_default() {
-                    harnesses.load(&agent.id, &agent);
-                }
-                hooks.register_hook("harness", Arc::new(harnesses));
-            }
+            Ok(harnesses) => hooks.register_hook("harness", Arc::new(harnesses)),
             Err(error) => tracing::warn!("harness engine unavailable: {error:#}"),
         }
 
-        Ok(shared_memory)
+        Ok(())
+    }
+
+    /// Seed the built-in `crab` agent on a fresh install and point the
+    /// install's default at it.
+    ///
+    /// First-run policy, not persistence: it composes three interface
+    /// calls and has nothing backend-specific in it, so making every
+    /// backend implement onboarding would be duplicating this.
+    async fn scaffold(storage: &Arc<S>, default_model: &str) -> Result<()> {
+        if !storage.agent_ids().await?.is_empty() {
+            return Ok(());
+        }
+        let crab = store::AgentConfig::crab(default_model);
+        storage.upsert_agent(&crab).await?;
+        storage.set_default_agent(&crab.id).await
     }
 }
 
-fn build_providers(config: &storage::Config, models: &[String]) -> Result<Model<DefaultProvider>> {
+fn build_providers(config: &store::Config, models: &[String]) -> Result<Model<DefaultProvider>> {
     let llm = &config.llm;
     tracing::info!(
         "llm endpoint registered — {} models from {}",

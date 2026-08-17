@@ -25,7 +25,7 @@ use std::{
     collections::BTreeMap,
     sync::{Arc, OnceLock, RwLock},
 };
-use storage::{AgentConfig, AgentId, HarnessConfig};
+use store::{AgentConfig, AgentId, HarnessConfig};
 
 /// What names an image: a SHA-256 over the ELF and everything the sandbox is
 /// built with.
@@ -285,11 +285,11 @@ impl runtime::Harness for HarnessHook {
         config
     }
 
-    fn on_register_agent(&self, id: &AgentId, config: &AgentConfig) {
+    fn on_resolve_agent(&self, id: &AgentId, config: &AgentConfig) {
         self.load(id, config);
     }
 
-    fn on_unregister_agent(&self, id: &AgentId) {
+    fn on_forget_agent(&self, id: &AgentId) {
         let mut registry = self.registry.write().expect("harness registry");
         registry.agents.remove(id);
         registry.sweep();

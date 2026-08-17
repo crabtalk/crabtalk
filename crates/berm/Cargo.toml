@@ -12,7 +12,7 @@ publish = false
 berm.workspace = true
 crabllm-core.workspace = true
 runtime.workspace = true
-storage = { workspace = true, default-features = false }
+store = { workspace = true, default-features = false }
 proto.workspace = true
 
 crabup = { workspace = true, default-features = false }

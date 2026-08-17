@@ -5,9 +5,14 @@ use anyhow::{Context, Result};
 use mcp::McpServerState;
 use proto::*;
 use std::collections::BTreeMap;
-use storage::{AgentConfig, AgentId, Storage};
+use store::{AgentConfig, AgentId, interface::Backend};
 
-impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
+/// How many skills one `list_skills` answers with. A catalogue can be
+/// large and every entry is only a name and a description here — the
+/// body is `get_skill`, for the one an agent actually invokes.
+const SKILL_PAGE: usize = 200;
+
+impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     pub(crate) async fn set_active_model(&self, model: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
         let storage = rt.storage();
@@ -32,9 +37,10 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let configs = match agent {
             Some(id) => vec![
                 rt.agent(&id)
+                    .await
                     .ok_or_else(|| anyhow::anyhow!("agent '{id}' not found"))?,
             ],
-            None => rt.agents(),
+            None => rt.agents().await,
         };
         for cfg in configs {
             for mcp_cfg in &cfg.mcps {
@@ -45,7 +51,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 
     pub(crate) async fn upsert_mcp(&self, agent: AgentId, config_json: String) -> Result<McpInfo> {
-        let cfg: storage::McpServerConfig =
+        let cfg: store::McpServerConfig =
             serde_json::from_str(&config_json).context("invalid McpServerConfig JSON")?;
         anyhow::ensure!(!cfg.name.is_empty(), "MCP config must have a name");
         let mcp_name = cfg.name.clone();
@@ -119,7 +125,10 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 
     pub(crate) async fn list_skills(&self) -> Vec<SkillInfo> {
         let rt = self.runtime.read().await.clone();
-        match rt.storage().list_skills().await {
+        // One page. A catalogue is not something a listing reads whole:
+        // `SKILL_PAGE` bounds what crosses the wire, and anything past it
+        // is a second call rather than a silent truncation of the answer.
+        match rt.storage().list_skills(SKILL_PAGE, 0).await {
             Ok(skills) => skills
                 .into_iter()
                 .map(|s| SkillInfo {
@@ -139,8 +148,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 /// ULID — that is the scope key `lib/mcp` was handed — while `source`
 /// carries the name, because this listing is read.
 fn mcp_info(
-    cfg: &storage::McpServerConfig,
-    agent: &storage::AgentConfig,
+    cfg: &store::McpServerConfig,
+    agent: &store::AgentConfig,
     states: &BTreeMap<(String, String), McpServerState>,
 ) -> McpInfo {
     let key = (agent.id.to_string(), cfg.name.clone());

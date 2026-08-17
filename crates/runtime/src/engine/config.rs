@@ -3,13 +3,13 @@
 use super::Runtime;
 use crate::Config;
 use proto::ModelInfo;
-use storage::Storage;
+use store::interface::Agents;
 
 impl<C: Config> Runtime<C> {
-    /// The install's default agent, as configured. `None` before
-    /// scaffold, or if the config points at an agent that is gone.
-    pub async fn default_agent(&self) -> Option<storage::AgentConfig> {
-        let id = self.storage().load_config().await.ok()?.default_agent;
+    /// The install's default agent. `None` before scaffold, or if the
+    /// stored default points at an agent that is gone.
+    pub async fn default_agent(&self) -> Option<store::AgentConfig> {
+        let id = self.storage().default_agent().await.ok().flatten()?;
         self.storage().load_agent(&id).await.ok().flatten()
     }
 

@@ -1,10 +1,10 @@
-//! `remember` — upsert a memory entry as an `EntryKind::Note`.
+//! `remember` — upsert a memory entry.
 
-use super::{Memory, MemoryHook};
 use crate::ToolDispatch;
-use memory::{EntryKind, Op};
+use crate::harness::memory::MemoryHook;
 use schemars::JsonSchema;
 use serde::Deserialize;
+use store::{MemoryEntry, interface::Memory};
 
 /// Save or update a memory entry. Aliases are searchable alternative terms.
 #[derive(Deserialize, JsonSchema)]
@@ -18,37 +18,32 @@ pub struct Remember {
     pub aliases: Vec<String>,
 }
 
-impl Memory {
-    pub fn remember(&self, name: String, content: String, aliases: Vec<String>) -> String {
-        let mut store = self.store_write();
-        let exists = store.get(&name).is_some();
-        let op = if exists {
-            Op::Update {
-                name: name.clone(),
-                content,
-                aliases,
-            }
-        } else {
-            Op::Add {
-                name: name.clone(),
-                content,
-                aliases,
-                kind: EntryKind::Note,
-            }
+impl<M: Memory> MemoryHook<M> {
+    /// Upsert. `created_at` is preserved when the entry already exists,
+    /// so re-remembering does not reset when it was first learned.
+    pub async fn remember(&self, name: String, content: String, aliases: Vec<String>) -> String {
+        let created_at = match self.memory.memory(&name).await {
+            Ok(Some(existing)) => existing.created_at,
+            _ => chrono::Utc::now().to_rfc3339(),
         };
-        match store.apply(op) {
-            Ok(_) => format!("remembered: {name}"),
+        let entry = MemoryEntry {
+            name: name.clone(),
+            kind: "note".to_owned(),
+            content,
+            aliases,
+            created_at,
+        };
+        match self.memory.put_memory(&entry).await {
+            Ok(()) => format!("remembered: {name}"),
             Err(e) => format!("failed to save entry: {e}"),
         }
     }
-}
 
-impl MemoryHook {
     pub(super) async fn handle_remember(&self, call: ToolDispatch) -> Result<String, String> {
         let input: Remember =
             serde_json::from_str(&call.args).map_err(|e| format!("invalid arguments: {e}"))?;
         Ok(self
-            .memory
-            .remember(input.name, input.content, input.aliases))
+            .remember(input.name, input.content, input.aliases)
+            .await)
     }
 }

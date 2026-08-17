@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use storage::Storage;
+use store::interface::Backend;
 use tokio::sync::{RwLock, broadcast};
 pub use transport::{bridge_shutdown, setup_tcp};
 use {
@@ -34,18 +34,18 @@ mod transport;
 pub type RuntimeHandle<P, S> = Arc<RwLock<Arc<Runtime<SystemCfg<P, S>>>>>;
 
 /// Config binding for the runtime.
-pub struct SystemCfg<P: Provider + 'static, S: Storage> {
+pub struct SystemCfg<P: Provider + 'static, S: Backend> {
     _marker: std::marker::PhantomData<(P, S)>,
 }
 
-impl<P: Provider + 'static, S: Storage> runtime::Config for SystemCfg<P, S> {
+impl<P: Provider + 'static, S: Backend> runtime::Config for SystemCfg<P, S> {
     type Storage = S;
     type Provider = P;
     type Env = SystemEnv;
 }
 
 /// Core crabtalk instance — runtime, hooks, and protocol.
-pub struct CrabTalk<P: Provider + 'static, S: Storage> {
+pub struct CrabTalk<P: Provider + 'static, S: Backend> {
     pub runtime: RuntimeHandle<P, S>,
     /// Root hook owning all sub-hooks and shared state.
     pub hook: Arc<runtime::harness::Hooks>,
@@ -61,7 +61,7 @@ pub struct CrabTalk<P: Provider + 'static, S: Storage> {
     pub(crate) sessions: Arc<Sessions>,
 }
 
-impl<P: Provider + 'static, S: Storage> Clone for CrabTalk<P, S> {
+impl<P: Provider + 'static, S: Backend> Clone for CrabTalk<P, S> {
     fn clone(&self) -> Self {
         Self {
             runtime: self.runtime.clone(),
@@ -77,7 +77,7 @@ impl<P: Provider + 'static, S: Storage> Clone for CrabTalk<P, S> {
     }
 }
 
-impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
+impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     /// Start against a caller-supplied provider and storage. These are the
     /// seams an embedder uses to bring its own keys rather than the single
     /// configured endpoint, and its own persistence rather than the
@@ -87,8 +87,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         storage: Arc<S>,
         build_provider: BuildProvider<P>,
     ) -> Result<CrabTalkHandle<P, S>> {
-        let config_path = config_dir.join(storage::CONFIG_FILE);
-        let config = storage::Config::load(&config_path)?;
+        let config_path = config_dir.join(store::CONFIG_FILE);
+        let config = store::Config::load(&config_path)?;
         tracing::info!("loaded configuration from {}", config_path.display());
 
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
@@ -102,14 +102,14 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 }
 
-impl<S: Storage> CrabTalk<DefaultProvider, S> {
+impl<S: Backend> CrabTalk<DefaultProvider, S> {
     /// Start against the configured endpoint, with the caller's storage.
     pub async fn start(
         config_dir: &Path,
         storage: Arc<S>,
     ) -> Result<CrabTalkHandle<DefaultProvider, S>> {
         let build_provider: BuildProvider<DefaultProvider> =
-            Arc::new(|config: &storage::Config, models: &[String]| {
+            Arc::new(|config: &store::Config, models: &[String]| {
                 build_default_provider(config, models)
             });
 
@@ -117,13 +117,13 @@ impl<S: Storage> CrabTalk<DefaultProvider, S> {
     }
 }
 
-pub struct CrabTalkHandle<P: Provider + 'static, S: Storage> {
-    pub config: storage::Config,
+pub struct CrabTalkHandle<P: Provider + 'static, S: Backend> {
+    pub config: store::Config,
     pub shutdown_tx: broadcast::Sender<()>,
     pub inner: CrabTalk<P, S>,
 }
 
-impl<P: Provider + 'static, S: Storage> CrabTalkHandle<P, S> {
+impl<P: Provider + 'static, S: Backend> CrabTalkHandle<P, S> {
     pub async fn wait_until_ready(&self) -> Result<()> {
         Ok(())
     }

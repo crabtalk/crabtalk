@@ -3,7 +3,7 @@
 use crate::agent::{Agent, Model, tool::ToolDispatcher};
 use crabllm_core::{Provider, Tool};
 use std::sync::Arc;
-use storage::AgentConfig;
+use store::AgentConfig;
 
 /// Fluent builder for [`Agent<P>`].
 ///

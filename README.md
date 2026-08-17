@@ -4,6 +4,13 @@
 [![Docs][docs-badge]][docs]
 [![Discord][discord-badge]][discord]
 
+> [!WARNING]
+> **Heavy refactor in progress.** The persistence layer is being rebuilt
+> around two primitives — a key-value store for content and an index for
+> lookups — and the runtime is being emptied of everything it used to hold
+> resident. Crate layout, APIs and docs are all moving; treat anything
+> written about internals as out of date until this settles.
+
 **Agent daemon.** Runs agents, dispatches tools, connects to MCP servers.
 Start it, talk to it, extend it with packages.
 

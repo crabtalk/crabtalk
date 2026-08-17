@@ -4,8 +4,10 @@ use super::Runtime;
 use crate::{Config, Session, SessionHandle, SharedSession};
 use anyhow::{Result, bail};
 use crabllm_core::Role;
-use memory::{EntryKind, Op};
-use storage::{HistoryEntry, Storage};
+use store::{
+    HistoryEntry, MemoryEntry,
+    interface::{Memory, Sessions},
+};
 
 impl<C: Config> Runtime<C> {
     /// Rebuild a persisted session into a live one under `id`.
@@ -18,11 +20,13 @@ impl<C: Config> Runtime<C> {
             .load_session(&handle)
             .await?
             .ok_or_else(|| anyhow::anyhow!("session '{}' not found", handle.as_str()))?;
-        if !self.has_agent(&snapshot.meta.agent) {
-            bail!("agent '{}' not registered", snapshot.meta.agent);
+        if !self.has_agent(&snapshot.meta.agent).await {
+            bail!("agent '{}' not found", snapshot.meta.agent);
         }
         let mut session = Session::new(id, &snapshot.meta.agent, &snapshot.meta.created_by);
-        session.history = self.resumed_history(snapshot.archive.as_deref(), snapshot.history);
+        session.history = self
+            .resumed_history(snapshot.archive.as_deref(), snapshot.history)
+            .await;
         session.title = snapshot.meta.title;
         if !snapshot.meta.created_at.is_empty() {
             session.created_at_iso = snapshot.meta.created_at;
@@ -48,12 +52,12 @@ impl<C: Config> Runtime<C> {
             }
             (session.agent, session.history.clone())
         };
-        let summary = self.resolve_agent(&agent)?.compact(&history).await?;
+        let summary = self.resolve_agent(&agent).await?.compact(&history).await?;
 
         let mut session = session.lock().await;
         self.ensure_handle(&mut session).await;
         let handle = session.handle.clone()?;
-        let archive_name = self.write_archive(handle.as_str(), summary.clone())?;
+        let archive_name = self.write_archive(handle.as_str(), summary.clone()).await?;
 
         let storage = self.storage();
         if let Err(e) = storage.append_session_compact(&handle, &archive_name).await {
@@ -110,16 +114,19 @@ impl<C: Config> Runtime<C> {
     /// (memory wiped, different machine, etc.) injects a visible placeholder
     /// so the model can acknowledge the gap instead of silently truncating
     /// the user's context.
-    fn resumed_history(
+    async fn resumed_history(
         &self,
         archive: Option<&str>,
         mut history: Vec<HistoryEntry>,
     ) -> Vec<HistoryEntry> {
         let Some(name) = archive else { return history };
-        let content = {
-            let mem = self.memory.read();
-            mem.get(name).map(|e| e.content.clone())
-        };
+        let content = self
+            .storage()
+            .memory(name)
+            .await
+            .ok()
+            .flatten()
+            .map(|e| e.content);
         let prefix = content.unwrap_or_else(|| {
             tracing::warn!("resume: archive '{name}' missing from memory");
             format!("[archived context unavailable: {name}]")
@@ -137,17 +144,22 @@ impl<C: Config> Runtime<C> {
     /// overwritten. Returns the generated name, or `None` on failure
     /// — the caller must skip the compact marker so a resume can't
     /// dangle.
-    fn write_archive(&self, session_slug: &str, summary: String) -> Option<String> {
-        let slug = storage::sender_slug(session_slug);
+    async fn write_archive(&self, session_slug: &str, summary: String) -> Option<String> {
+        let slug = store::sender_slug(session_slug);
         let prefix = format!("{slug}-");
-        let mut mem = self.memory.write();
-        // Scan and insert under the same write lock — two concurrent
-        // compactions can't both pick `seq` and collide.
-        let next_seq = mem
-            .list()
-            .filter(|e| e.kind == EntryKind::Archive && e.name.starts_with(&prefix))
-            .filter_map(|e| {
-                let suffix = &e.name[prefix.len()..];
+        // The sequence is derived from the names already stored, so two
+        // compactions racing can pick the same one. The loser overwrites
+        // rather than corrupting: an archive is write-once content keyed
+        // by a name, and both hold the same session's summary.
+        let next_seq = self
+            .storage()
+            .memory_names()
+            .await
+            .unwrap_or_default()
+            .iter()
+            .filter(|name| name.starts_with(&prefix))
+            .filter_map(|name| {
+                let suffix = &name[prefix.len()..];
                 let n: u32 = suffix.parse().ok()?;
                 // Reject non-canonical forms ("02", "+1", etc.) so a
                 // future `{slug}-2` can't collide with a historic
@@ -158,12 +170,14 @@ impl<C: Config> Runtime<C> {
             .unwrap_or(0)
             + 1;
         let name = format!("{slug}-{next_seq}");
-        match mem.apply(Op::Add {
+        let entry = MemoryEntry {
             name: name.clone(),
+            kind: "archive".to_owned(),
             content: summary,
-            aliases: vec![],
-            kind: EntryKind::Archive,
-        }) {
+            aliases: Vec::new(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        match self.storage().put_memory(&entry).await {
             Ok(()) => Some(name),
             Err(e) => {
                 tracing::error!("archive write failed: {e}");
@@ -198,7 +212,7 @@ impl<C: Config> Runtime<C> {
         &self,
         session: &mut Session,
         pre_run_len: usize,
-        event_trace: &[storage::EventLine],
+        event_trace: &[store::EventLine],
     ) {
         self.ensure_handle(session).await;
         let Some(ref handle) = session.handle else {

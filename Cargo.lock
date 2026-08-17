@@ -649,7 +649,7 @@ dependencies = [
  "crabtalk-proto",
  "crabtalk-runtime",
  "crabtalk-skill",
- "crabtalk-storage",
+ "crabtalk-store",
  "crabtalk-transport",
  "futures-core",
  "futures-util",
@@ -665,6 +665,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabtalk-agent"
+version = "0.0.23"
+dependencies = [
+ "anyhow",
+ "crabllm-core",
+ "crabtalk-store",
+ "sqlx",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crabtalk-berm"
 version = "0.0.23"
 dependencies = [
@@ -674,7 +686,7 @@ dependencies = [
  "crabllm-core",
  "crabtalk-proto",
  "crabtalk-runtime",
- "crabtalk-storage",
+ "crabtalk-store",
  "crabup",
  "http",
  "http-body-util",
@@ -693,7 +705,7 @@ dependencies = [
  "anyhow",
  "crabllm-core",
  "crabtalk-proto",
- "crabtalk-storage",
+ "crabtalk-store",
  "crabtalk-transport",
  "dirs",
  "futures-core",
@@ -727,7 +739,7 @@ dependencies = [
  "chrono",
  "crabllm-core",
  "crabtalk-proto",
- "crabtalk-storage",
+ "crabtalk-store",
  "futures-util",
  "http",
  "http-body-util",
@@ -741,16 +753,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "crabtalk-memory"
-version = "0.0.23"
-dependencies = [
- "anyhow",
- "chrono",
- "tempfile",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -776,10 +778,9 @@ dependencies = [
  "chrono",
  "crabllm-core",
  "crabtalk-mcp",
- "crabtalk-memory",
  "crabtalk-proto",
  "crabtalk-skill",
- "crabtalk-storage",
+ "crabtalk-store",
  "dirs",
  "futures-core",
  "futures-util",
@@ -824,7 +825,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabtalk-storage"
+name = "crabtalk-store"
 version = "0.0.23"
 dependencies = [
  "anyhow",
@@ -837,7 +838,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yml",
- "sqlx",
  "tokio",
  "toml",
  "tracing",

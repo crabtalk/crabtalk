@@ -21,7 +21,7 @@ use std::{
     pin::Pin,
     sync::{Arc, OnceLock},
 };
-use storage::AgentId;
+use store::AgentId;
 
 /// What the harness calls to reach the runtime. Named `crabtalk.` rather than
 /// `berm.` because only crabtalk implements it — a different embedder has its

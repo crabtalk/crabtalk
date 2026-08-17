@@ -9,9 +9,9 @@ use futures_util::{StreamExt, pin_mut};
 use proto::*;
 use runtime::{AgentEvent, Sessions};
 use std::sync::Arc;
-use storage::{AgentId, SearchOptions, Storage};
+use store::{AgentId, SearchOptions, interface::Backend};
 
-impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
+impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     /// Ranked excerpts from past sessions.
     ///
     /// The index is the runtime's; this converts the request into its

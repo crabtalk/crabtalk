@@ -8,10 +8,10 @@ use proto::ClientMessage;
 use proto::server::Server;
 #[cfg(unix)]
 use std::path::Path;
-use storage::Storage;
+use store::interface::Backend;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-fn dispatch_callback<P: Provider + 'static, S: Storage>(
+fn dispatch_callback<P: Provider + 'static, S: Backend>(
     daemon: CrabTalk<P, S>,
 ) -> impl Fn(ClientMessage, mpsc::Sender<proto::ServerMessage>) + Clone + Send + 'static {
     move |msg, reply| {
@@ -29,7 +29,7 @@ fn dispatch_callback<P: Provider + 'static, S: Storage>(
 }
 
 #[cfg(unix)]
-pub fn setup_socket<P: Provider + 'static, S: Storage>(
+pub fn setup_socket<P: Provider + 'static, S: Backend>(
     daemon: CrabTalk<P, S>,
     shutdown_tx: &broadcast::Sender<()>,
 ) -> Result<(&'static Path, tokio::task::JoinHandle<()>)> {
@@ -54,7 +54,7 @@ pub fn setup_socket<P: Provider + 'static, S: Storage>(
     Ok((resolved_path, join))
 }
 
-pub fn setup_tcp<P: Provider + 'static, S: Storage>(
+pub fn setup_tcp<P: Provider + 'static, S: Backend>(
     daemon: CrabTalk<P, S>,
     shutdown_tx: &broadcast::Sender<()>,
 ) -> Result<(tokio::task::JoinHandle<()>, u16)> {

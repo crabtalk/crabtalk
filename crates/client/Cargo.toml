@@ -22,7 +22,7 @@ tokio.workspace = true
 transport.workspace = true
 tracing.workspace = true
 
-storage = { workspace = true, default-features = false }
+store = { workspace = true, default-features = false }
 
 [dev-dependencies]
 tempfile.workspace = true

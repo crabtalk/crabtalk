@@ -6,7 +6,7 @@
 //! them — a session carries `storage`'s [`SessionHandle`] directly.
 
 use std::{sync::Arc, time::Instant};
-use storage::{AgentId, HistoryEntry, SessionHandle, SessionMeta};
+use store::{AgentId, HistoryEntry, SessionHandle, SessionMeta};
 use tokio::sync::Mutex;
 
 mod sessions;

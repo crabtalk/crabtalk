@@ -6,7 +6,10 @@ use anyhow::Result;
 use crabllm_core::Role;
 use proto::{ConversationHistory, ConversationInfo, ConversationMessage};
 use std::collections::HashMap;
-use storage::{AgentId, SessionHandle, Storage};
+use store::{
+    AgentId, SessionHandle,
+    interface::{Memory, Sessions},
+};
 
 impl<C: Config> Runtime<C> {
     /// List persisted sessions, optionally filtered by agent and sender.
@@ -25,31 +28,34 @@ impl<C: Config> Runtime<C> {
         // the handle is opaque.
         let mut matched: Vec<_> = summaries
             .into_iter()
-            .filter(|s| agent.is_none_or(|id| s.meta.agent == id))
-            .filter(|s| sender.is_empty() || s.meta.created_by == sender)
+            .filter(|(_, meta)| agent.is_none_or(|id| meta.agent == id))
+            .filter(|(_, meta)| sender.is_empty() || meta.created_by == sender)
             .collect();
 
         // `seq` is the nth session of an (agent, sender) pair. It used to be
         // read out of the path; it is derived here instead, by creation order
         // within the pair, so nothing has to store it.
-        matched.sort_by(|a, b| {
-            (&a.meta.created_at, a.handle.as_str()).cmp(&(&b.meta.created_at, b.handle.as_str()))
+        matched.sort_by(|(ah, am), (bh, bm)| {
+            (&am.created_at, ah.as_str()).cmp(&(&bm.created_at, bh.as_str()))
         });
         let mut seqs: HashMap<(AgentId, &str), u32> = HashMap::new();
         let mut results = Vec::with_capacity(matched.len());
-        for summary in &matched {
-            let meta = &summary.meta;
+        for (handle, meta) in &matched {
             let seq = seqs
                 .entry((meta.agent, meta.created_by.as_str()))
                 .and_modify(|n| *n += 1)
                 .or_insert(1);
             results.push(ConversationInfo {
                 agent_id: meta.agent.to_string(),
-                agent_name: self.agent(&meta.agent).map(|a| a.name).unwrap_or_default(),
+                agent_name: self
+                    .agent(&meta.agent)
+                    .await
+                    .map(|a| a.name)
+                    .unwrap_or_default(),
                 sender: meta.created_by.clone(),
                 seq: *seq,
                 title: meta.title.clone(),
-                file_path: summary.handle.as_str().to_owned(),
+                file_path: handle.as_str().to_owned(),
                 message_count: meta.message_count,
                 // Wall-clock age between create and last update, in seconds.
                 // 0 marks "unknown" (no `updated_at` in pre-0185 meta files).
@@ -80,10 +86,10 @@ impl<C: Config> Runtime<C> {
         let meta = snapshot.meta;
         let mut messages = snapshot.history;
         if let Some(name) = snapshot.archive {
-            let content = self.memory().read().get(&name).map(|e| e.content.clone());
+            let content = self.storage().memory(&name).await?.map(|e| e.content);
             if let Some(summary) = content {
                 let mut out = Vec::with_capacity(messages.len() + 1);
-                out.push(storage::HistoryEntry::user(summary));
+                out.push(store::HistoryEntry::user(summary));
                 out.append(&mut messages);
                 messages = out;
             }
@@ -91,7 +97,11 @@ impl<C: Config> Runtime<C> {
         Ok(ConversationHistory {
             title: meta.title,
             agent_id: meta.agent.to_string(),
-            agent_name: self.agent(&meta.agent).map(|a| a.name).unwrap_or_default(),
+            agent_name: self
+                .agent(&meta.agent)
+                .await
+                .map(|a| a.name)
+                .unwrap_or_default(),
             messages: messages
                 .into_iter()
                 .filter(|e| !matches!(e.role(), Role::System | Role::Tool))
