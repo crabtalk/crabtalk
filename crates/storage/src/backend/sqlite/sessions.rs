@@ -1,7 +1,7 @@
 //! Session persistence — one row per thread, plus the message and event
 //! streams keyed to it.
 
-use crate::sqlite::{SqliteStorage, convert, schema::BEGIN_IMMEDIATE};
+use crate::backend::sqlite::{SqliteStorage, convert, schema::BEGIN_IMMEDIATE};
 use anyhow::Result;
 use sqlx::Row;
 use wcore::{

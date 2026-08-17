@@ -5,8 +5,9 @@
 //! forwarding, not recursion — deleting one turns its trait method into
 //! an infinite loop rather than a compile error.
 
-use crate::{skills, sqlite::SqliteStorage};
+use crate::backend::sqlite::SqliteStorage;
 use anyhow::Result;
+use skill::discover;
 use wcore::{
     AgentConfig, AgentId, Config,
     model::HistoryEntry,
@@ -98,8 +99,8 @@ impl Storage for SqliteStorage {
         self.load_agent_by_name(name).await
     }
 
-    async fn upsert_agent(&self, config: &AgentConfig, prompt: &str) -> Result<()> {
-        self.upsert_agent(config, prompt).await
+    async fn upsert_agent(&self, config: &AgentConfig) -> Result<()> {
+        self.upsert_agent(config).await
     }
 
     async fn delete_agent(&self, id: &AgentId) -> Result<bool> {

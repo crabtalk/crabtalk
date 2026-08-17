@@ -8,6 +8,7 @@
 //! Each entity's logic lives in inherent methods on [`SqliteStorage`],
 //! one file per concern; the `Storage` impl in `storage.rs` forwards to
 //! them.
+#![cfg(feature = "sqlite")]
 
 use anyhow::Result;
 use sqlx::{

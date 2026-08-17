@@ -11,19 +11,7 @@ use serde::{Deserialize, Serialize};
 pub use skill::Skill;
 use std::future::Future;
 
-// ── Storage trait ───────────────────────────────────────────────────
-
 /// Unified persistence backend.
-///
-/// All read/write operations for skills, sessions, and agents live
-/// here. Implementations own their encoding and storage layout — the
-/// trait speaks domain types only.
-///
-/// Methods are declared as `fn -> impl Future + Send` (rather than
-/// `async fn`) so callers can spawn storage work onto a multi-thread
-/// runtime — `async fn` in trait does not auto-imply `Send` on the
-/// returned future. Implementations still write `async fn` bodies; the
-/// `+ Send` bound is satisfied automatically as long as the body is.
 pub trait Storage: Send + Sync + 'static {
     // ── Skills (read-only — skills are discovered from disk, not
     //    created through the runtime) ───────────────────────────────
@@ -143,18 +131,10 @@ pub trait Storage: Send + Sync + 'static {
 
     /// Create the initial config directory structure and seed the
     /// default `crab` agent if no agent is stored yet.
-    ///
-    /// `default_model` is the model assigned to the seeded crab agent.
-    /// Callers pick it from the configured providers; an empty string
-    /// here would produce an unusable agent, so callers must ensure a
-    /// provider is configured first.
     fn scaffold(&self, default_model: &str) -> impl Future<Output = Result<()>> + Send;
 }
 
 /// Reject names that won't survive serialization as a TOML table key.
-/// Used by MCP and agent CRUD to keep `local/settings.toml` from
-/// silently aliasing entries (e.g. `mcp."foo.bar"` round-trips today
-/// but a hand-edit dropping the quotes would corrupt the file).
 pub fn validate_table_name(kind: &str, name: &str) -> Result<()> {
     if name.is_empty() {
         anyhow::bail!("{kind}: name must not be empty");
@@ -172,9 +152,7 @@ pub fn validate_table_name(kind: &str, name: &str) -> Result<()> {
 
 // ── Sessions ────────────────────────────────────────────────────────
 
-/// Opaque handle identifying a persisted session. Created by the repo
-/// on `create`, returned by `find_latest`. Callers pass it back to
-/// append/load methods without interpreting the inner value.
+/// Opaque handle identifying a persisted session.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SessionHandle(String);
 
@@ -196,10 +174,6 @@ impl SessionHandle {
 pub struct SessionSnapshot {
     pub meta: ConversationMeta,
     pub history: Vec<HistoryEntry>,
-    /// Name of the `Archive`-kind memory entry whose content represents
-    /// the compacted prefix of this session, if any. Callers that want
-    /// the full resumed context resolve this against `memory` and
-    /// prepend the entry's content to `history`.
     pub archive: Option<String>,
 }
 
@@ -210,18 +184,6 @@ pub struct SessionSummary {
 }
 
 /// Conversation metadata persisted alongside the session.
-///
-/// `created_at` is immutable — written once when the session is
-/// created. `updated_at` and `message_count` are bumped on every
-/// `append_session_messages` / `update_session_meta`. `summary` is
-/// emitted by overflow compaction and contributes to session search
-/// ranking (3× boost).
-///
-/// Old session files (pre-0185) may carry a `topic` or `uptime_secs`
-/// field. Serde silently ignores unknown keys (no
-/// `deny_unknown_fields`), and missing new keys default — so mixed
-/// versions deserialize cleanly. The next meta rewrite drops the
-/// removed fields from disk and stamps the new ones.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationMeta {
     pub agent: String,
@@ -238,11 +200,6 @@ pub struct ConversationMeta {
 }
 
 /// A trace entry persisted alongside messages.
-///
-/// Captures the *how* of agent execution (which tools ran, how long
-/// they took, why the agent stopped, what it cost) — information that
-/// doesn't fit in the message stream itself but is invaluable for
-/// debugging.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum EventLine {

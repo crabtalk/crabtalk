@@ -1,6 +1,6 @@
 //! Config (`config.toml`) load/save.
 
-use crate::fs::{FsStorage, atomic_write};
+use crate::backend::fs::{FsStorage, atomic_write};
 use anyhow::Result;
 use tokio::fs;
 use wcore::Config;

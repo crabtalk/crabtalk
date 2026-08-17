@@ -9,10 +9,4 @@
 //! [`FsStorage`] is the daemon's backend: TOML configs, markdown prompts,
 //! and JSON session files under `~/.crabtalk/`.
 
-pub use fs::{DEFAULT_CONFIG, DEFAULT_SETTINGS, FsStorage, scaffold_config_dir};
-#[cfg(feature = "sqlite")]
-pub use sqlite::SqliteStorage;
-
-mod fs;
-#[cfg(feature = "sqlite")]
-mod sqlite;
+pub mod backend;

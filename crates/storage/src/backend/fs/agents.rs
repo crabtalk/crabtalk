@@ -3,7 +3,7 @@
 //! serializes with everything else, so there is no second file to keep in
 //! step with the first.
 
-use crate::fs::FsStorage;
+use crate::backend::fs::FsStorage;
 use anyhow::Result;
 use std::io::ErrorKind;
 use tokio::fs;

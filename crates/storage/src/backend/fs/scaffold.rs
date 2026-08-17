@@ -1,7 +1,7 @@
 //! First-startup scaffold: create the directory layout and seed the
 //! built-in `crab` agent.
 
-use crate::fs::FsStorage;
+use crate::backend::fs::FsStorage;
 use anyhow::Result;
 use tokio::fs;
 use wcore::AgentConfig;

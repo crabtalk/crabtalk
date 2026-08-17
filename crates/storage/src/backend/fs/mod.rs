@@ -6,9 +6,10 @@
 //! below forwards to those inherent methods, which shadow it by the
 //! same name. Settings file reads/writes are shared between agents
 //! and config, so they sit on the struct itself.
+#![cfg(feature = "fs")]
 
 use anyhow::Result;
-pub use loader::{DEFAULT_CONFIG, DEFAULT_SETTINGS, scaffold_config_dir};
+pub use loader::DEFAULT_SETTINGS;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -26,7 +27,8 @@ use wcore::{
 
 mod agents;
 mod config;
-mod loader;
+pub mod loader;
+mod paths;
 mod scaffold;
 mod sessions;
 mod skills;

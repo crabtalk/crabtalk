@@ -31,5 +31,6 @@ ulid.workspace = true
 sqlx = { workspace = true, optional = true }
 
 [features]
-default = []
+default = ["fs", "sqlite"]
 sqlite = ["dep:sqlx"]
+fs = []

@@ -1,8 +1,8 @@
 //! Install config and first-run scaffolding.
 
-use crate::sqlite::SqliteStorage;
+use crate::backend::sqlite::SqliteStorage;
 use anyhow::Result;
-use wcore::Config;
+use wcore::{AgentConfig, Config};
 
 impl SqliteStorage {
     pub(super) async fn load_config(&self) -> Result<Config> {

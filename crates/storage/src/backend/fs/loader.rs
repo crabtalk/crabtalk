@@ -3,6 +3,7 @@
 //! Handles filesystem I/O: scaffolds the config directory structure on
 //! first run. Manifest resolution and agent loading live in
 //! `wcore::config::manifest`.
+#![allow(dead_code)]
 
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -10,11 +11,11 @@ use wcore::paths::{AGENTS_DIR, CONFIG_FILE, PACKAGES_DIR, SETTINGS_FILE, SKILLS_
 
 /// Default template for `config.toml` — the hand-edited install config
 /// (LLM endpoint, task pool, env vars).
-pub const DEFAULT_CONFIG: &str = include_str!("../../config.toml");
+pub const DEFAULT_CONFIG: &str = include_str!("../../../config.toml");
 
 /// Default template for `local/settings.toml` — daemon-managed runtime
 /// records (MCPs, agents). Overwritten on first daemon write.
-pub const DEFAULT_SETTINGS: &str = include_str!("../../settings.toml");
+pub const DEFAULT_SETTINGS: &str = include_str!("../../../settings.toml");
 
 /// Scaffold the full config directory structure on first run.
 ///

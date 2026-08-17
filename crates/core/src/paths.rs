@@ -40,12 +40,6 @@ pub const SKILLS_DIR: &str = "local/skills";
 pub static BIN_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("bin"));
 
 /// Harness images (`~/.crabtalk/harnesses/`).
-///
-/// Derived from [`CONFIG_DIR`] rather than written out, so a harness is looked
-/// up wherever the configuration directory actually is. The daemon reads from
-/// here and never writes: it loads what is present and errors if it is not,
-/// because a daemon that fetches code because a config named it is a daemon
-/// making a policy decision with a network connection (RFC 0205).
 pub static HARNESSES_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("harnesses"));
 
 /// OAuth token storage directory (`~/.crabtalk/tokens/`).

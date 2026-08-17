@@ -1,6 +1,6 @@
 //! Skill discovery — delegates to the SKILL.md standard.
 
-use crate::fs::FsStorage;
+use crate::backend::fs::FsStorage;
 use anyhow::Result;
 use skill::{Skill, discover};
 
