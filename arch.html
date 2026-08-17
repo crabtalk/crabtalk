@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-0b35cd07.js";
+            window.path_to_searchindex_js = "searchindex-9473a2fc.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-27a33c77.js"></script>
+        <script src="toc-92ffc2ad.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -189,7 +189,7 @@ turn out to be arguments about which one someone means.</p>
 harness      what shapes an agent      declared per agent, one source, two builds
 capability   what an agent reaches     bounded by its argument
 runtime      lifetime orchestration    turns, conversations, the agent loop
-storage      data                      agents, sessions, config
+store        data                      one key-value primitive, everything above it free
 </code></pre>
 <p>The line worth getting right is between the middle two.</p>
 <p>A <strong>harness</strong> shapes an agent: what it remembers, what skills it can load, what
@@ -205,7 +205,9 @@ entirely, and a harness reaching back through <code>crabtalk.protocol.call</code
 holding a client’s surface. It stays exported whether or not anything shipped
 here uses it — who <em>may</em> write a harness justifies it, not who does.</p>
 <p><code>runtime</code> owns the <em>architecture of lifetime</em> — turns, conversations, the
-agent loop — and nothing else. <code>storage</code> owns the data.</p>
+agent loop — and nothing else. <code>store</code> owns the data, and owns it behind a
+single primitive: implement five key-value methods and every interface above
+them — agents, sessions, memory, skills, harnesses, search — comes for free.</p>
 <h2 id="one-source-two-builds"><a class="header" href="#one-source-two-builds">One source, two builds</a></h2>
 <p>A harness is one crate compiled two ways. Built <code>no_std</code> for RV64 it is a
 sandboxed ELF the daemon schedules, reaching the world only through

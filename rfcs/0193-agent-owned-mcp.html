@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0b35cd07.js";
+            window.path_to_searchindex_js = "../searchindex-9473a2fc.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-27a33c77.js"></script>
+        <script src="../toc-92ffc2ad.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -190,6 +190,9 @@
 </ul>
 <blockquote>
 <p><strong>Updated by <a href="0204-mcp-peer-lifetime.html">0204 (MCP Peer Lifetime)</a> (2026-08-15).</strong> The fingerprint gains <code>auth</code>, and registering an MCP no longer spawns a process — a declaration and a peer now have separate lifetimes.</p>
+</blockquote>
+<blockquote>
+<p><strong>Updated by <a href="0207-store.html">0207 (Store)</a> (2026-08-18).</strong> <code>FsStorage</code> and <code>MemStorage</code> no longer exist; a store implements <code>KVStorage</code> and gets the rest. The decision recorded here — that MCP configs live on the agent rather than in their own storage methods — is unchanged and is why no MCP keys appear in the keyspace.</p>
 </blockquote>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <p>Agents own their MCP servers by value, not by name reference into a daemon-global registry. <code>AgentConfig.mcps</code> becomes <code>Vec&lt;McpServerConfig&gt;</code> — every agent carries the full configuration of every MCP it uses. The daemon’s job shrinks to “spawn what agents declare, dedup identical processes, route tool calls per agent.” <code>Storage::{list,upsert,delete}_mcp</code> and <code>crabtalkd mcp</code> go away. Forking an agent now means copying one config; the new owner gets a self-contained, runnable artifact.</p>

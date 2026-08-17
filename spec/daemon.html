@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0b35cd07.js";
+            window.path_to_searchindex_js = "../searchindex-9473a2fc.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-27a33c77.js"></script>
+        <script src="../toc-92ffc2ad.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -206,11 +206,8 @@
 <tr><th>Path</th><th>Contents</th></tr>
 </thead>
 <tbody>
-<tr><td><code>config.toml</code></td><td>Node configuration.</td></tr>
-<tr><td><code>agents/</code></td><td>Agent definitions.</td></tr>
-<tr><td><code>sessions/</code></td><td>Conversation JSONL logs, one file per conversation.</td></tr>
-<tr><td><code>memory/</code></td><td>Per-agent memory databases, one file per agent.</td></tr>
-<tr><td><code>skills/</code></td><td>Skill bundles loadable by agents.</td></tr>
+<tr><td><code>config.toml</code></td><td>Node configuration, hand-written and read on reload.</td></tr>
+<tr><td><code>store.crmem</code></td><td>The store: agents, sessions, memory, skills, search.</td></tr>
 <tr><td><code>events/subscriptions.toml</code></td><td>Event subscription recovery file.</td></tr>
 </tbody>
 </table>
@@ -222,7 +219,8 @@
 <p><strong>Reload.</strong> A <code>ReloadMsg</code> causes the daemon to re-read <code>config.toml</code> and rebuild the shared runtime in place. Existing in-flight dispatches complete against the previous runtime; new dispatches see the reloaded runtime. Transports are not re-bound.</p>
 <p><strong>Shutdown.</strong> The daemon broadcasts a shutdown signal. Transport listeners stop accepting new connections. Active dispatches complete or cancel at the next await point. The daemon writes no final state on shutdown; state is persisted on each mutating operation, not at exit.</p>
 <h2 id="persistence-boundary"><a class="header" href="#persistence-boundary">Persistence boundary</a></h2>
-<p>The daemon persists state through the <code>Storage</code> trait. Operations that mutate conversations, memory, or agent definitions write synchronously through storage before acknowledging the caller. Cron and event subscription files are written directly by the daemon.</p>
+<p>The daemon persists through the store. Operations that mutate conversations, memory, or agent definitions write before acknowledging the caller. Cron and event subscription files are written directly by the daemon.</p>
+<p>A write reaches the OS immediately, so a process crash loses nothing. <code>fsync</code> happens at a checkpoint, so a power loss can lose writes since the last one — see <a href="storage.html">Storage</a>.</p>
 <p>A daemon restart recovers all state from the config directory. No state is held only in the process.</p>
 <h2 id="client-addressing"><a class="header" href="#client-addressing">Client addressing</a></h2>
 <p>Clients do not address the daemon. Clients connect to a transport and send <code>ClientMessage</code> values. The transport’s reply channel delivers <code>ServerMessage</code> values back until the connection closes. A client that reconnects and addresses the same <code>(agent, sender)</code> pair resumes the same conversation; no client-side resume token is required.</p>

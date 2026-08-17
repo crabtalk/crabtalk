@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-0b35cd07.js";
+            window.path_to_searchindex_js = "../searchindex-9473a2fc.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-27a33c77.js"></script>
+        <script src="../toc-92ffc2ad.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -192,6 +192,9 @@
 <blockquote>
 <p><strong>Updated (2026-08-17).</strong> Three changes since this landed. Images are keyed by a content digest — the ELF, its <code>Grants</code>, the capability <code>Scope</code>, and the granted hosts — rather than by <code>(agent, harness)</code>, so identical declarations share one image and a rename is not an event. An <code>http</code> capability exists, bounded by a <code>hosts</code> allowlist on the declaration exactly as <code>root</code> bounds <code>fs</code>; it lives in <code>crates/berm</code> rather than the engine because hyper needs a reactor the sandbox deliberately lacks. And <code>.berm.abi</code> carries a <code>usage</code> string — what the tools are for — read off the ELF without running it and injected only into agents that declared the harness.</p>
 </blockquote>
+<blockquote>
+<p><strong>Updated by <a href="0207-store.html">0207 (Store)</a> (2026-08-18).</strong> The <code>crates/hooks</code> paths cited below are gone — hooks were deleted as a crate, the internal <code>Hook</code> seam this RFC scoped out is now <code>Harness</code>, and its lifecycle methods were renamed (0207 supersedes 0075). Harness images have a home in the store as <code>image/{digest}</code>, but berm still reads them from <code>HARNESSES_DIR</code> on the filesystem; wiring it to the <code>Harnesses</code> interface is open work.</p>
+</blockquote>
 <h2 id="summary"><a class="header" href="#summary">Summary</a></h2>
 <p>A <strong>harness</strong> is code the daemon schedules: one hash-pinned RV64IMAC ELF, compiled and run in-process by <a href="https://github.com/crabtalk/rvtime">rvtime</a>, confined to its own address space, reaching the world only through numbered host calls it was explicitly granted. A harness never runs of its own accord — the daemon decides when it runs, and while running it may call back in.</p>
 <p><strong>berm</strong> is what runs one. It is the sandbox rather than the agent platform: it loads the ELF, grants capabilities, and invokes, and it knows nothing about agents or the protocol. Crabtalk is one thing that embeds it, and deliberately not the only one — see <a href="#layout">Layout</a>.</p>
@@ -328,7 +331,7 @@
 <li>The <strong>number</strong> gates the family. Ungranted, it is absent from the <code>Linker</code> and traps — a harness with no protocol grant cannot reach the runtime at all, and that enforcement is still the absence of code.</li>
 <li>An <strong>allowlist</strong> gates which message types pass, checked once on decode.</li>
 </ul>
-<p><strong>The guest speaks the daemon’s own message types</strong>, which the fallback in this RFC’s first draft treated as the likely outcome and the preferred one as unexamined. It is settled: <code>crates/core</code>’s module is not separable — it is <code>std</code> and carries serde derives — so <code>crates/berm/proto</code> generates from the same <code>crabtalk.proto</code> a second time. Two configuration differences make it a guest: <code>btree_map</code> because <code>map</code> fields otherwise reach for <code>std::collections::HashMap</code>, and a crate alias because prost writes <code>::prost::</code> paths and the workspace’s own copy keeps its default features. One schema, two emissions, and no way to drift without the <code>.proto</code> changing.</p>
+<p><strong>The guest speaks the daemon’s own message types</strong>, which the fallback in this RFC’s first draft treated as the likely outcome and the preferred one as unexamined. It is settled, and it is one crate rather than two emissions: <code>crates/proto</code> owns <code>crabtalk.proto</code> and both worlds compile it, with <code>std</code> deciding what comes along. On is the daemon’s: serde derives, and the conversions that carry an <code>anyhow::Error</code> or an LLM type. Off is a guest’s — <code>no_std</code> over an allocator, with <code>btree_map</code> throughout because <code>map</code> fields otherwise reach for <code>std::collections::HashMap</code>, and a crate alias because prost writes <code>::prost::</code> paths and a member cannot turn off default features it inherits. One schema, one crate, and no way for the two to drift.</p>
 <p>Three rules govern what goes in that allowlist:</p>
 <p><strong>The protocol is the vocabulary, not the grant.</strong> <code>ClientMessage</code> is what the user’s own trusted UI may do, and it includes <code>DeleteAgent</code>, <code>UpdateAgent</code>, and <code>Reload</code>. A third-party harness holding those can delete the agents it was installed to help. Default-deny, granted in groups named by intent rather than one flag per message type.</p>
 <p><strong>Authority rides on the invocation, not only the declaration.</strong> A harness invoked during agent X’s tool call and calling <code>send</code> is acting as <em>someone</em>. The invocation carries <code>(agent, conversation, sender)</code>, and protocol calls are scoped to that context unless a broader grant exists. The declaration grants classes of operation; the invocation supplies the instance. It is the difference between handing a process a file descriptor and granting it permission to open any file.</p>
@@ -464,8 +467,8 @@ capabilities = ["clock", "protocol:schedule", "protocol:send"]
 <pre><code>berm/engine       the sandbox — loader, ABI, grants, fs and exec
 berm/sdk          guest library third parties build against
 berm/codegen      the `#[harness]` macro
-crates/berm       crabtalk's side — the Hook impl, the protocol capability,
-                  and the guest's copy of crabtalk's message types
+crates/berm       crabtalk's side — the Hook impl and the protocol capability
+crates/proto      the message types both sides speak, std and no_std
 harness/*         the harnesses themselves
 </code></pre>
 <p><code>harness/</code> holds every harness regardless of what it asks for — <code>os</code> needs only <code>fs</code> and <code>exec</code> and so runs under any embedder, <code>peers</code> needs <code>crabtalk.protocol.call</code> and cannot run anywhere else — because where a harness lives is about what it <em>is</em>, not who can host it. <code>berm/</code> and <code>harness/</code> leave this repository together when berm does; what a harness needs from its host is settled by its capabilities, which the declaration already states.</p>
@@ -537,7 +540,7 @@ crabtalk.protocol.call                              ← only crabtalk has one
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../rfcs/superseded.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../rfcs/0207-store.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -551,7 +554,7 @@ crabtalk.protocol.call                              ← only crabtalk has one
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../rfcs/superseded.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../rfcs/0207-store.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
