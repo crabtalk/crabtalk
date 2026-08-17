@@ -12,7 +12,7 @@ pub use ::skill::Skill;
 ///
 /// What a listing renders and what the index stores. The body is a KV
 /// read, made only for the skill an agent actually invokes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SkillSummary {
     pub name: String,
     pub description: String,

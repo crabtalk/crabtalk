@@ -110,6 +110,17 @@ pub trait KVStorage: Send + Sync + 'static {
         col: Column,
         prefix: &[u8],
     ) -> impl Future<Output = Result<Vec<Vec<u8>>>> + Send;
+
+    /// Keys and values under `prefix`, ascending.
+    ///
+    /// For secondary indexes, where the value is the primary key being
+    /// pointed at and is small by construction. Never reach for this on
+    /// a prefix holding content.
+    fn scan(
+        &self,
+        col: Column,
+        prefix: &[u8],
+    ) -> impl Future<Output = Result<Vec<(Vec<u8>, Vec<u8>)>>> + Send;
 }
 
 /// A shared handle is a backend. Lets one open database serve as both
@@ -139,6 +150,14 @@ impl<T: KVStorage> KVStorage for std::sync::Arc<T> {
         prefix: &[u8],
     ) -> impl Future<Output = Result<Vec<Vec<u8>>>> + Send {
         (**self).scan_keys(col, prefix)
+    }
+
+    fn scan(
+        &self,
+        col: Column,
+        prefix: &[u8],
+    ) -> impl Future<Output = Result<Vec<(Vec<u8>, Vec<u8>)>>> + Send {
+        (**self).scan(col, prefix)
     }
 }
 
@@ -187,6 +206,15 @@ impl KVStorage for MemoryDb {
             .range((col as u8, prefix.to_vec())..)
             .take_while(|((c, key), _)| *c == col as u8 && key.starts_with(prefix))
             .map(|((_, key), _)| key.clone())
+            .collect())
+    }
+
+    async fn scan(&self, col: Column, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        let entries = self.entries.read();
+        Ok(entries
+            .range((col as u8, prefix.to_vec())..)
+            .take_while(|((c, key), _)| *c == col as u8 && key.starts_with(prefix))
+            .map(|((_, key), value)| (key.clone(), value.clone()))
             .collect())
     }
 }

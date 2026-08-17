@@ -7,9 +7,11 @@
 //! postgres for the index — is another crate like this one, not a change
 //! to anything above it.
 //!
-//! `kv.rs` implements the content primitive, `index.rs` the queries
-//! derived from it, and [`SqliteStore`] pairs them. One database per
-//! tenant, so a tenant is a thing you can copy, move, or delete whole.
+//! `kv.rs` implements the content primitive and `text.rs` the ranked
+//! search one; [`SqliteStore`] pairs them. Eight methods in total —
+//! everything a query used to be written for lives above this, in
+//! `Store`. One database per tenant, so a tenant is a thing you can
+//! copy, move, or delete whole.
 
 use anyhow::Result;
 use sqlx::{
@@ -19,11 +21,9 @@ use sqlx::{
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 use store::Store;
 
-mod convert;
-mod index;
 mod kv;
 mod schema;
-mod search;
+mod text;
 
 /// The shipped local backend.
 ///

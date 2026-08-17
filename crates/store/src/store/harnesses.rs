@@ -3,12 +3,12 @@
 use crate::{
     interface::Harnesses,
     kv::{Column, KVStorage},
-    sql::SqlIndex,
     store::Store,
+    text::TextSearch,
 };
 use anyhow::Result;
 
-impl<K: KVStorage, Q: SqlIndex> Harnesses for Store<K, Q> {
+impl<K: KVStorage, T: TextSearch> Harnesses for Store<K, T> {
     async fn harness_image(&self, digest: &str) -> Result<Option<Vec<u8>>> {
         let key = self.tenant.key(&["image", digest]);
         self.kv.get(Column::Harness, &key).await

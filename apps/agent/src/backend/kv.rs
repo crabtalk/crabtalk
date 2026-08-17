@@ -44,6 +44,32 @@ impl KVStorage for SqliteStorage {
         Ok(deleted > 0)
     }
 
+    async fn scan(&self, col: Column, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        let mut upper = prefix.to_vec();
+        let rows: Vec<(Vec<u8>, Vec<u8>)> = match next_prefix(&mut upper) {
+            true => {
+                sqlx::query_as(
+                    "SELECT key, value FROM kv
+                     WHERE col = ? AND key >= ? AND key < ?
+                     ORDER BY key",
+                )
+                .bind(col as u8)
+                .bind(prefix)
+                .bind(&upper)
+                .fetch_all(&self.pool)
+                .await?
+            }
+            false => {
+                sqlx::query_as("SELECT key, value FROM kv WHERE col = ? AND key >= ? ORDER BY key")
+                    .bind(col as u8)
+                    .bind(prefix)
+                    .fetch_all(&self.pool)
+                    .await?
+            }
+        };
+        Ok(rows)
+    }
+
     async fn scan_keys(&self, col: Column, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
         // `GLOB` would treat `*`, `?` and `[` in a key as syntax. The
         // range is an index seek on the primary key and needs no
@@ -79,7 +105,7 @@ impl KVStorage for SqliteStorage {
 
 /// Bump `prefix` to the first key that no longer starts with it.
 /// `false` when there is none.
-fn next_prefix(prefix: &mut Vec<u8>) -> bool {
+pub(super) fn next_prefix(prefix: &mut Vec<u8>) -> bool {
     while let Some(last) = prefix.last_mut() {
         if *last < u8::MAX {
             *last += 1;

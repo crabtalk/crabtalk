@@ -1,15 +1,15 @@
 //! Persistence for Crabtalk, in three layers.
 //!
-//! [`KVStorage`] holds content addressed by a key the caller already
-//! has. [`SqlIndex`] holds what a lookup needs to *find* that key, and
-//! nothing else — so it is derived, rebuildable, and never the thing a
-//! crash can corrupt. [`Store`] pairs them and implements the
-//! [`interface`] traits the runtime programs against.
+//! [`KVStorage`] holds content, and the secondary indexes that find it —
+//! an ordered lookup, a name resolution, a set membership are all just
+//! more keys. [`TextSearch`] holds the one thing keys cannot answer:
+//! ranked full-text. [`Store`] builds every query the runtime asks for
+//! on those two, and implements the [`interface`] traits.
 //!
-//! Only the primitives are implemented per backend. Everything above
-//! them is written once, which is what makes a different deployment a
-//! different implementation rather than a rewrite of anything here.
-//! `crabtalk-agent` is one such backend: sqlite behind both halves.
+//! A backend implements eight methods and gets everything above them
+//! for free — which is what makes a different deployment a different
+//! implementation rather than a rewrite of anything here.
+//! `crabtalk-agent` is one such backend: sqlite behind both.
 
 pub use agent::{AgentConfig, AgentId, DEFAULT_AGENT};
 pub use config::{
@@ -25,8 +25,8 @@ pub use session::{
     WindowItem, sender_slug,
 };
 pub use skill::{Skill, SkillSummary};
-pub use sql::{MessageDoc, SqlIndex};
 pub use store::Store;
+pub use text::{TextHit, TextIndex, TextSearch};
 pub use utils::validate_table_name;
 
 pub mod agent;
@@ -36,6 +36,6 @@ pub mod kv;
 pub mod memory;
 pub mod session;
 pub mod skill;
-pub mod sql;
 pub mod store;
+pub mod text;
 pub mod utils;
