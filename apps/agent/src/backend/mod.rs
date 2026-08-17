@@ -10,7 +10,7 @@
 //! `kv.rs` implements the content primitive and `text.rs` the ranked
 //! search one; [`SqliteStore`] pairs them. Eight methods in total —
 //! everything a query used to be written for lives above this, in
-//! `Store`. One database per tenant, so a tenant is a thing you can
+//! `Store`. One database per realm, so a realm is a thing you can
 //! copy, move, or delete whole.
 
 use anyhow::Result;
@@ -18,20 +18,19 @@ use sqlx::{
     SqlitePool,
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
-use std::{path::PathBuf, str::FromStr, sync::Arc};
-use store::Store;
+use std::{path::PathBuf, str::FromStr};
 
 mod kv;
 mod schema;
 mod text;
 
-/// The shipped local backend.
+/// A realm's database.
 ///
-/// One open database serves as both primitives — a local install is one
-/// file, so its content and the index derived from it share a pool.
-pub type SqliteStore = Store<Arc<SqliteStorage>, Arc<SqliteStorage>>;
-
-/// A tenant's database.
+/// Implements both primitives, and is therefore already an `Agents`, a
+/// `Sessions`, a `Memory`, a `Skills` and a `Harnesses` — the interfaces
+/// carry their own bodies, so there is nothing here to pair up or wrap.
+/// A local install is one file, so content and the text index derived
+/// from it share a pool.
 pub struct SqliteStorage {
     pool: SqlitePool,
 }
@@ -57,19 +56,7 @@ impl SqliteStorage {
         Ok(Self { pool })
     }
 
-    /// Open the shipped backend at `path`.
-    pub async fn store(path: impl Into<PathBuf>) -> Result<SqliteStore> {
-        let db = Arc::new(Self::open(path).await?);
-        Ok(Store::new(db.clone(), db))
-    }
-
-    /// The shipped backend, in RAM. Each call is an independent store.
-    pub async fn memory_store() -> Result<SqliteStore> {
-        let db = Arc::new(Self::open_in_memory().await?);
-        Ok(Store::new(db.clone(), db))
-    }
-
-    /// Open an in-memory database. Each call is an independent store.
+    /// Open in RAM. Each call is an independent store.
     pub async fn open_in_memory() -> Result<Self> {
         let options = SqliteConnectOptions::from_str("sqlite::memory:")?.foreign_keys(true);
         // An in-memory database lives as long as its connection, so the
@@ -90,6 +77,6 @@ impl SqliteStorage {
 /// This backend satisfies everything the runtime asks for.
 /// Asserted here because nothing in this workspace instantiates it yet.
 const _: fn() = || {
-    fn assert_backend<T: store::interface::Backend>() {}
-    assert_backend::<SqliteStore>();
+    fn assert_backend<T: store::Backend>() {}
+    assert_backend::<SqliteStorage>();
 };

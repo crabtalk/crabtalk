@@ -16,7 +16,7 @@ than leaving a row pointing at nothing.
 
 A backend implements the two primitives and gets everything above them for
 free. `SqliteStore` is one open file behind both halves — a local install is
-one file, so a tenant is a thing you can copy, move, or delete whole.
+one file, so a realm is a thing you can copy, move, or delete whole.
 
 ## Layout
 
@@ -26,10 +26,10 @@ one file, so a tenant is a thing you can copy, move, or delete whole.
 | `SqlIndex`           | per backend — `SqliteStorage`               |
 | `interface::*`       | `Store<K, Q>`, written once                 |
 
-Keys carry a tenant slot from the first byte. One tenant is one store here,
+Keys carry a realm slot from the first byte. One realm is one store here,
 so it buys nothing today; it is in the format anyway, because a backend
-serving many tenants is then a different `KVStorage` impl rather than a key
-migration, and a read outside the tenant is not expressible rather than
+serving many realms is then a different `KVStorage` impl rather than a key
+migration, and a read outside the realm is not expressible rather than
 merely forbidden.
 
 The `sqlite` feature is about driver cost, not selection: nothing that only

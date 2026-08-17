@@ -1,15 +1,15 @@
 //! Session search, end to end against a real SQLite database.
 
 use crabllm_core::anthropic::Message;
-use crabtalk_agent::backend::{SqliteStorage, SqliteStore};
+use crabtalk_agent::backend::SqliteStorage;
 use store::{AgentId, HistoryEntry, SearchOptions, interface::Sessions};
 
-async fn open() -> SqliteStore {
-    SqliteStorage::memory_store().await.unwrap()
+async fn open() -> SqliteStorage {
+    SqliteStorage::open_in_memory().await.unwrap()
 }
 
 async fn seed(
-    s: &SqliteStore,
+    s: &SqliteStorage,
     agent: &AgentId,
     sender: &str,
     msgs: &[&str],

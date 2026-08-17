@@ -79,38 +79,3 @@ pub trait TextSearch: Send + Sync + 'static {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<TextHit>>> + Send;
 }
-
-/// A shared handle is a text index, mirroring the `Arc` impl on
-/// [`KVStorage`](crate::KVStorage).
-impl<T: TextSearch> TextSearch for std::sync::Arc<T> {
-    fn index_text(
-        &self,
-        index: TextIndex,
-        key: &[u8],
-        text: &str,
-        weight: f64,
-    ) -> impl Future<Output = Result<()>> + Send {
-        (**self).index_text(index, key, text, weight)
-    }
-
-    fn drop_text(&self, index: TextIndex, key: &[u8]) -> impl Future<Output = Result<()>> + Send {
-        (**self).drop_text(index, key)
-    }
-
-    fn drop_text_prefix(
-        &self,
-        index: TextIndex,
-        prefix: &[u8],
-    ) -> impl Future<Output = Result<()>> + Send {
-        (**self).drop_text_prefix(index, prefix)
-    }
-
-    fn search_text(
-        &self,
-        index: TextIndex,
-        query: &str,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<TextHit>>> + Send {
-        (**self).search_text(index, query, limit)
-    }
-}
