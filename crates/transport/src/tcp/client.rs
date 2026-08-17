@@ -2,10 +2,10 @@
 
 use anyhow::Result;
 use futures_core::Stream;
+use proto::client::Client;
 use std::net::SocketAddr;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use wcore::protocol::{
-    api::Client,
     codec,
     message::{ClientMessage, ErrorMsg, ServerMessage, server_message},
 };

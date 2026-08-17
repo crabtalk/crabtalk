@@ -2,7 +2,6 @@
 
 pub use ::proto;
 
-pub mod api;
 pub mod codec;
 pub mod message;
 

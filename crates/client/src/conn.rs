@@ -1,4 +1,4 @@
-//! Connection bootstrap on top of the [`wcore::protocol::api::Client`] trait.
+//! Connection bootstrap on top of the [`proto::api::Client`] trait.
 //!
 //! The trait defines every protocol RPC; transport connections (UDS, TCP, mem)
 //! implement it. This module adds:
@@ -13,19 +13,16 @@
 
 use anyhow::Result;
 use futures_util::StreamExt;
+use proto::api::Client as _;
 use std::net::{Ipv4Addr, SocketAddr};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
-use wcore::protocol::{
-    api::Client as _,
-    message::{AgentEventMsg, ClientMessage, StreamEvent, StreamMsg, server_message, stream_event},
+use wcore::protocol::message::{
+    AgentEventMsg, ClientMessage, StreamEvent, StreamMsg, server_message, stream_event,
 };
 
-pub use transport::{
-    Transport,
-    mem::{MemConnection, connect as connect_mem},
-};
+pub use transport::Transport;
 
 /// How to (re)connect to the daemon.
 #[derive(Clone)]

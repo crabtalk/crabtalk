@@ -648,6 +648,7 @@ dependencies = [
  "crabtalk-core",
  "crabtalk-hooks",
  "crabtalk-mcp",
+ "crabtalk-proto",
  "crabtalk-runtime",
  "crabtalk-storage",
  "crabtalk-transport",
@@ -693,6 +694,7 @@ dependencies = [
  "clap",
  "crabtalk-client",
  "crabtalk-core",
+ "crabtalk-proto",
  "serde",
  "serde_json",
  "tokio",
@@ -707,6 +709,7 @@ version = "0.0.23"
 dependencies = [
  "anyhow",
  "crabtalk-core",
+ "crabtalk-proto",
  "crabtalk-transport",
  "dirs",
  "futures-core",
@@ -815,10 +818,12 @@ name = "crabtalk-proto"
 version = "0.0.23"
 dependencies = [
  "anyhow",
+ "async-stream",
  "crabllm-core",
+ "futures-core",
+ "futures-util",
  "prost",
  "prost-build",
- "serde",
  "serde_json",
 ]
 
@@ -885,6 +890,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "crabtalk-core",
+ "crabtalk-proto",
  "futures-core",
  "futures-util",
  "tokio",

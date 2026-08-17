@@ -20,7 +20,7 @@ http.workspace = true
 http-body-util.workspace = true
 hyper-tls.workspace = true
 hyper-util.workspace = true
-prost.workspace = true
+prost = { workspace = true, features = ["std"] }
 sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true

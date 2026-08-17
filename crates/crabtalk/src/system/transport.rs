@@ -4,10 +4,11 @@ use super::CrabTalk;
 use crate::llm::Provider;
 use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
+use proto::server::Server;
 #[cfg(unix)]
 use std::path::Path;
 use tokio::sync::{broadcast, mpsc, oneshot};
-use wcore::protocol::{api::Server, message::ClientMessage};
+use wcore::protocol::message::ClientMessage;
 use wcore::storage::Storage;
 
 fn dispatch_callback<P: Provider + 'static, S: Storage>(

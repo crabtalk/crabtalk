@@ -11,6 +11,7 @@ use anyhow::Result;
 use crabtalk_berm::HarnessHook;
 use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook};
 use mcp::McpHandler;
+use proto::server::Server;
 use runtime::{Harness, Runtime};
 use std::{
     collections::BTreeMap,
@@ -183,7 +184,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             let daemon = daemon.clone();
             Box::pin(async move {
                 use futures_util::StreamExt;
-                use wcore::protocol::api::Server as _;
                 daemon.dispatch(msg).collect::<Vec<_>>().await
             })
         });

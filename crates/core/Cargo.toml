@@ -17,7 +17,7 @@ testing = []
 # crabllm
 crabllm-core.workspace = true
 # crabtalk
-proto = { workspace = true, features = ["std"] }
+proto = { workspace = true, features = ["llm"] }
 # crates.io
 anyhow.workspace = true
 chrono.workspace = true

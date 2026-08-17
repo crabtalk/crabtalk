@@ -2,7 +2,7 @@
 //!
 //! Both sides are foreign to `crabtalk-core`, so the impls live here — with
 //! the generated types, where the orphan rule allows them.
-#![cfg(feature = "std")]
+#![cfg(feature = "llm")]
 
 use crate::{TokenUsage, ToolDef};
 use crabllm_core::{FunctionDef, Tool, ToolType, Usage};
@@ -36,20 +36,6 @@ impl From<ToolDef> for Tool {
             },
             strict: None,
             cache_control: None,
-        }
-    }
-}
-
-impl From<Tool> for ToolDef {
-    fn from(tool: Tool) -> Self {
-        Self {
-            name: tool.function.name,
-            description: tool.function.description.unwrap_or_default(),
-            parameters_schema: tool
-                .function
-                .parameters
-                .map(|p| p.to_string())
-                .unwrap_or_default(),
         }
     }
 }

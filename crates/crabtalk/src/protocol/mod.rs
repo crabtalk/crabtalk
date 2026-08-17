@@ -3,8 +3,8 @@
 use crate::llm::Provider;
 use crate::system::CrabTalk;
 use anyhow::Result;
+use proto::server::Server;
 use serde_json::Value;
-use wcore::protocol::api::Server;
 use wcore::protocol::message::*;
 use wcore::storage::Storage;
 

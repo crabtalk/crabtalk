@@ -1,72 +1,69 @@
 //! Conversions between the generated messages — wrapping a payload in its
 //! envelope, and unwrapping the envelope again.
 
-use crate::{
-    AgentEventMsg, ClientMessage, ConversationHistory, McpEventMsg, SendMsg, SendResponse,
-    ServerMessage, StreamEvent, StreamMsg, client_message, server_message,
-};
+use crate::{client_message, server_message};
 
-impl From<SendMsg> for ClientMessage {
-    fn from(msg: SendMsg) -> Self {
+impl From<crate::SendMsg> for crate::ClientMessage {
+    fn from(msg: crate::SendMsg) -> Self {
         Self {
             msg: Some(client_message::Msg::Send(msg)),
         }
     }
 }
 
-impl From<StreamMsg> for ClientMessage {
-    fn from(msg: StreamMsg) -> Self {
+impl From<crate::StreamMsg> for crate::ClientMessage {
+    fn from(msg: crate::StreamMsg) -> Self {
         Self {
             msg: Some(client_message::Msg::Stream(msg)),
         }
     }
 }
 
-impl From<SendResponse> for ServerMessage {
-    fn from(r: SendResponse) -> Self {
+impl From<crate::SendResponse> for crate::ServerMessage {
+    fn from(r: crate::SendResponse) -> Self {
         Self {
             msg: Some(server_message::Msg::Response(r)),
         }
     }
 }
 
-impl From<StreamEvent> for ServerMessage {
-    fn from(e: StreamEvent) -> Self {
+impl From<crate::StreamEvent> for crate::ServerMessage {
+    fn from(e: crate::StreamEvent) -> Self {
         Self {
             msg: Some(server_message::Msg::Stream(e)),
         }
     }
 }
 
-impl From<AgentEventMsg> for ServerMessage {
-    fn from(e: AgentEventMsg) -> Self {
+impl From<crate::AgentEventMsg> for crate::ServerMessage {
+    fn from(e: crate::AgentEventMsg) -> Self {
         Self {
             msg: Some(server_message::Msg::AgentEvent(e)),
         }
     }
 }
 
-impl From<McpEventMsg> for ServerMessage {
-    fn from(e: McpEventMsg) -> Self {
+impl From<crate::McpEventMsg> for crate::ServerMessage {
+    fn from(e: crate::McpEventMsg) -> Self {
         Self {
             msg: Some(server_message::Msg::McpEvent(e)),
         }
     }
 }
 
-impl From<ConversationHistory> for ServerMessage {
-    fn from(h: ConversationHistory) -> Self {
+impl From<crate::ConversationHistory> for crate::ServerMessage {
+    fn from(h: crate::ConversationHistory) -> Self {
         Self {
             msg: Some(server_message::Msg::ConversationHistory(h)),
         }
     }
 }
 
-#[cfg(feature = "prost_guest")]
+#[cfg(feature = "client")]
 mod message {
-    use crate::{SendResponse, ServerMessage, server_message};
+    use crate::server_message;
 
-    impl ServerMessage {
+    impl crate::ServerMessage {
         /// Convert a `ServerMessage` to an `anyhow::Error`.
         pub fn error_or_unexpected(self) -> anyhow::Error {
             match self.msg {
@@ -78,9 +75,9 @@ mod message {
         }
     }
 
-    impl TryFrom<ServerMessage> for SendResponse {
+    impl TryFrom<crate::ServerMessage> for crate::SendResponse {
         type Error = anyhow::Error;
-        fn try_from(msg: ServerMessage) -> anyhow::Result<Self> {
+        fn try_from(msg: crate::ServerMessage) -> anyhow::Result<Self> {
             match msg.msg {
                 Some(server_message::Msg::Response(r)) => Ok(r),
                 _ => Err(msg.error_or_unexpected()),
@@ -88,9 +85,9 @@ mod message {
         }
     }
 
-    impl TryFrom<ServerMessage> for crate::stream_event::Event {
+    impl TryFrom<crate::ServerMessage> for crate::stream_event::Event {
         type Error = anyhow::Error;
-        fn try_from(msg: ServerMessage) -> anyhow::Result<Self> {
+        fn try_from(msg: crate::ServerMessage) -> anyhow::Result<Self> {
             match msg.msg {
                 Some(server_message::Msg::Stream(e)) => {
                     e.event.ok_or_else(|| anyhow::anyhow!("empty stream event"))

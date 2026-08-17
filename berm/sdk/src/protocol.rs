@@ -9,7 +9,7 @@
 
 use crate::{abi::HOST_PROTOCOL_CALL, cap};
 use alloc::{string::String, vec::Vec};
-use prost_guest::Message;
+use prost::Message;
 use proto::{ClientMessage, ServerMessage};
 
 /// Send one message and wait for its reply.

@@ -13,7 +13,7 @@ pub mod tools;
 pub use command::{COMMAND_HINT, COMMANDS, Command, collect_candidates, parse_command};
 #[cfg(unix)]
 pub use conn::connect_uds;
-pub use conn::{ConnectionInfo, MemConnection, Transport, connect_from, connect_mem, connect_tcp};
+pub use conn::{ConnectionInfo, Transport, connect_from, connect_tcp};
 pub use message::{Attachment, AttachmentKind, Message, attachment_summary};
 pub use stream::{OutputChunk, StreamAccumulator, spawn_stream, stream_chunks};
 

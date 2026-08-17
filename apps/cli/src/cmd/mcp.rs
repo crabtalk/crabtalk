@@ -2,8 +2,8 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
+use proto::api::Client;
 use std::path::PathBuf;
-use wcore::protocol::api::Client;
 
 /// Manage MCP servers declared by an agent.
 #[derive(Args, Debug)]

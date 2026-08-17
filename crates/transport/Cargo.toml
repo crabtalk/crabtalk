@@ -10,6 +10,7 @@ documentation = "https://docs.rs/crabtalk-transport"
 keywords.workspace = true
 
 [dependencies]
+proto = { workspace = true, features = ["client", "server"] }
 wcore.workspace = true
 # crates.io
 anyhow.workspace = true

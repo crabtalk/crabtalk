@@ -1,7 +1,7 @@
 //! Hot-reload the running daemon's configuration.
 
 use anyhow::Result;
-use wcore::protocol::api::Client;
+use proto::api::Client;
 use wcore::protocol::message::{ClientMessage, client_message};
 
 pub async fn run(tcp: bool) -> Result<()> {

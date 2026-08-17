@@ -1,6 +1,7 @@
 //! Client trait — transport primitives plus typed provided methods.
+#![cfg(feature = "client")]
 
-use crate::protocol::message::*;
+use crate::{client_message, server_message, stream_event};
 use anyhow::Result;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -15,8 +16,8 @@ pub trait Client: Send {
     /// Send a `ClientMessage` and receive a single `ServerMessage`.
     fn request(
         &mut self,
-        msg: ClientMessage,
-    ) -> impl std::future::Future<Output = Result<ServerMessage>> + Send;
+        msg: crate::ClientMessage,
+    ) -> impl std::future::Future<Output = Result<crate::ServerMessage>> + Send;
 
     /// Send a `ClientMessage` and receive a stream of `ServerMessage`s.
     ///
@@ -26,28 +27,28 @@ pub trait Client: Send {
     /// automatically.
     fn request_stream(
         &mut self,
-        msg: ClientMessage,
-    ) -> impl Stream<Item = Result<ServerMessage>> + Send + '_;
+        msg: crate::ClientMessage,
+    ) -> impl Stream<Item = Result<crate::ServerMessage>> + Send + '_;
 
     /// Send a message to an agent and receive a complete response.
     fn send(
         &mut self,
-        req: SendMsg,
-    ) -> impl std::future::Future<Output = Result<SendResponse>> + Send {
-        async move { SendResponse::try_from(self.request(req.into()).await?) }
+        req: crate::SendMsg,
+    ) -> impl std::future::Future<Output = Result<crate::SendResponse>> + Send {
+        async move { crate::SendResponse::try_from(self.request(req.into()).await?) }
     }
 
     /// Send a message to an agent and receive a streamed response.
     fn stream(
         &mut self,
-        req: StreamMsg,
+        req: crate::StreamMsg,
     ) -> impl Stream<Item = Result<stream_event::Event>> + Send + '_ {
         self.request_stream(req.into())
             .take_while(|r| {
                 std::future::ready(!matches!(
                     r,
-                    Ok(ServerMessage {
-                        msg: Some(server_message::Msg::Stream(StreamEvent {
+                    Ok(crate::ServerMessage {
+                        msg: Some(server_message::Msg::Stream(crate::StreamEvent {
                             event: Some(stream_event::Event::End(_))
                         }))
                     })
@@ -60,16 +61,16 @@ pub trait Client: Send {
     fn ping(&mut self) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::Ping(Ping {})),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::Ping(crate::Ping {})),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -79,19 +80,19 @@ pub trait Client: Send {
     }
 
     /// Get daemon stats including the active model name.
-    fn get_stats(&mut self) -> impl std::future::Future<Output = Result<Stats>> + Send {
+    fn get_stats(&mut self) -> impl std::future::Future<Output = Result<crate::Stats>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::GetStats(GetStats {})),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::GetStats(crate::GetStats {})),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Stats(stats)),
                 } => Ok(stats),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -101,19 +102,21 @@ pub trait Client: Send {
     }
 
     /// List all registered agents.
-    fn list_agents(&mut self) -> impl std::future::Future<Output = Result<Vec<AgentInfo>>> + Send {
+    fn list_agents(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<Vec<crate::AgentInfo>>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::ListAgents(ListAgentsMsg {})),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::ListAgents(crate::ListAgentsMsg {})),
                 })
                 .await?
             {
-                ServerMessage {
-                    msg: Some(server_message::Msg::AgentList(AgentList { agents })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::AgentList(crate::AgentList { agents })),
                 } => Ok(agents),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -126,19 +129,19 @@ pub trait Client: Send {
     fn get_agent(
         &mut self,
         name: String,
-    ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send {
+    ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::GetAgent(GetAgentMsg { name })),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::GetAgent(crate::GetAgentMsg { name })),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::AgentInfo(info)),
                 } => Ok(info),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -152,22 +155,22 @@ pub trait Client: Send {
         &mut self,
         name: String,
         config: String,
-    ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send {
+    ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::CreateAgent(CreateAgentMsg {
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::CreateAgent(crate::CreateAgentMsg {
                         name,
                         config,
                     })),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::AgentInfo(info)),
                 } => Ok(info),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -181,22 +184,22 @@ pub trait Client: Send {
         &mut self,
         name: String,
         config: String,
-    ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send {
+    ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::UpdateAgent(UpdateAgentMsg {
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::UpdateAgent(crate::UpdateAgentMsg {
                         name,
                         config,
                     })),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::AgentInfo(info)),
                 } => Ok(info),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -212,16 +215,18 @@ pub trait Client: Send {
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::DeleteAgent(DeleteAgentMsg { name })),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::DeleteAgent(crate::DeleteAgentMsg {
+                        name,
+                    })),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -235,22 +240,22 @@ pub trait Client: Send {
         &mut self,
         old_name: String,
         new_name: String,
-    ) -> impl std::future::Future<Output = Result<AgentInfo>> + Send {
+    ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::RenameAgent(RenameAgentMsg {
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::RenameAgent(crate::RenameAgentMsg {
                         old_name,
                         new_name,
                     })),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::AgentInfo(info)),
                 } => Ok(info),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -264,22 +269,24 @@ pub trait Client: Send {
         &mut self,
         agent: String,
         sender: String,
-    ) -> impl std::future::Future<Output = Result<Vec<ConversationInfo>>> + Send {
+    ) -> impl std::future::Future<Output = Result<Vec<crate::ConversationInfo>>> + Send {
         async move {
             match self
-                .request(ClientMessage {
+                .request(crate::ClientMessage {
                     msg: Some(client_message::Msg::ListConversations(
-                        ListConversationsMsg { agent, sender },
+                        crate::ListConversationsMsg { agent, sender },
                     )),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg:
-                        Some(server_message::Msg::ConversationList(ConversationList { conversations })),
+                        Some(server_message::Msg::ConversationList(crate::ConversationList {
+                            conversations,
+                        })),
                 } => Ok(conversations),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -292,21 +299,21 @@ pub trait Client: Send {
     fn get_conversation_history(
         &mut self,
         file_path: String,
-    ) -> impl std::future::Future<Output = Result<ConversationHistory>> + Send {
+    ) -> impl std::future::Future<Output = Result<crate::ConversationHistory>> + Send {
         async move {
             match self
-                .request(ClientMessage {
+                .request(crate::ClientMessage {
                     msg: Some(client_message::Msg::GetConversationHistory(
-                        GetConversationHistoryMsg { file_path },
+                        crate::GetConversationHistoryMsg { file_path },
                     )),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::ConversationHistory(history)),
                 } => Ok(history),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -322,18 +329,18 @@ pub trait Client: Send {
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
-                .request(ClientMessage {
+                .request(crate::ClientMessage {
                     msg: Some(client_message::Msg::DeleteConversation(
-                        DeleteConversationMsg { file_path },
+                        crate::DeleteConversationMsg { file_path },
                     )),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -347,19 +354,19 @@ pub trait Client: Send {
     fn list_mcps(
         &mut self,
         agent: String,
-    ) -> impl std::future::Future<Output = Result<Vec<McpInfo>>> + Send {
+    ) -> impl std::future::Future<Output = Result<Vec<crate::McpInfo>>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::ListMcps(ListMcpsMsg { agent })),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::ListMcps(crate::ListMcpsMsg { agent })),
                 })
                 .await?
             {
-                ServerMessage {
-                    msg: Some(server_message::Msg::McpList(McpList { mcps })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::McpList(crate::McpList { mcps })),
                 } => Ok(mcps),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
@@ -371,22 +378,22 @@ pub trait Client: Send {
         &mut self,
         agent: String,
         config: String,
-    ) -> impl std::future::Future<Output = Result<McpInfo>> + Send {
+    ) -> impl std::future::Future<Output = Result<crate::McpInfo>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::UpsertMcp(UpsertMcpMsg {
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::UpsertMcp(crate::UpsertMcpMsg {
                         agent,
                         config,
                     })),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::McpInfo(info)),
                 } => Ok(info),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
@@ -401,16 +408,19 @@ pub trait Client: Send {
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::DeleteMcp(DeleteMcpMsg { agent, name })),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::DeleteMcp(crate::DeleteMcpMsg {
+                        agent,
+                        name,
+                    })),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
@@ -423,22 +433,22 @@ pub trait Client: Send {
         &mut self,
         agent: String,
         name: String,
-    ) -> impl std::future::Future<Output = Result<McpInfo>> + Send {
+    ) -> impl std::future::Future<Output = Result<crate::McpInfo>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::ReconnectMcp(ReconnectMcpMsg {
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::ReconnectMcp(crate::ReconnectMcpMsg {
                         agent,
                         name,
                     })),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::McpInfo(info)),
                 } => Ok(info),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
@@ -452,18 +462,18 @@ pub trait Client: Send {
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::SetActiveModel(SetActiveModelMsg {
-                        model,
-                    })),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::SetActiveModel(
+                        crate::SetActiveModelMsg { model },
+                    )),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
@@ -471,19 +481,21 @@ pub trait Client: Send {
     }
 
     /// List all available skills with enabled state.
-    fn list_skills(&mut self) -> impl std::future::Future<Output = Result<Vec<SkillInfo>>> + Send {
+    fn list_skills(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<Vec<crate::SkillInfo>>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::ListSkills(ListSkillsMsg {})),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::ListSkills(crate::ListSkillsMsg {})),
                 })
                 .await?
             {
-                ServerMessage {
-                    msg: Some(server_message::Msg::SkillList(SkillList { skills })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::SkillList(crate::SkillList { skills })),
                 } => Ok(skills),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -496,20 +508,20 @@ pub trait Client: Send {
     /// filters; empty means unrestricted.
     fn search_sessions(
         &mut self,
-        req: SearchSessionsMsg,
-    ) -> impl std::future::Future<Output = Result<Vec<SessionHit>>> + Send {
+        req: crate::SearchSessionsMsg,
+    ) -> impl std::future::Future<Output = Result<Vec<crate::SessionHit>>> + Send {
         async move {
             match self
-                .request(ClientMessage {
+                .request(crate::ClientMessage {
                     msg: Some(client_message::Msg::SearchSessions(req)),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::SessionHits(list)),
                 } => Ok(list.hits),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -522,19 +534,19 @@ pub trait Client: Send {
     fn get_skill(
         &mut self,
         name: String,
-    ) -> impl std::future::Future<Output = Result<SkillBody>> + Send {
+    ) -> impl std::future::Future<Output = Result<crate::SkillBody>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::GetSkill(GetSkillMsg { name })),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::GetSkill(crate::GetSkillMsg { name })),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::SkillBody(skill)),
                 } => Ok(skill),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -544,19 +556,21 @@ pub trait Client: Send {
     }
 
     /// List all resolved models with provider and active state.
-    fn list_models(&mut self) -> impl std::future::Future<Output = Result<Vec<ModelInfo>>> + Send {
+    fn list_models(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<Vec<crate::ModelInfo>>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::ListModels(ListModelsMsg {})),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::ListModels(crate::ListModelsMsg {})),
                 })
                 .await?
             {
-                ServerMessage {
-                    msg: Some(server_message::Msg::ModelList(ModelList { models })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::ModelList(crate::ModelList { models })),
                 } => Ok(models),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -571,23 +585,25 @@ pub trait Client: Send {
         source: String,
         target_agent: String,
         once: bool,
-    ) -> impl std::future::Future<Output = Result<SubscriptionInfo>> + Send {
+    ) -> impl std::future::Future<Output = Result<crate::SubscriptionInfo>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::SubscribeEvent(SubscribeEventMsg {
-                        source,
-                        target_agent,
-                        once,
-                    })),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::SubscribeEvent(
+                        crate::SubscribeEventMsg {
+                            source,
+                            target_agent,
+                            once,
+                        },
+                    )),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::SubscriptionInfo(info)),
                 } => Ok(info),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -603,18 +619,18 @@ pub trait Client: Send {
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::UnsubscribeEvent(UnsubscribeEventMsg {
-                        id,
-                    })),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::UnsubscribeEvent(
+                        crate::UnsubscribeEventMsg { id },
+                    )),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -626,22 +642,24 @@ pub trait Client: Send {
     /// List all event bus subscriptions.
     fn list_subscriptions(
         &mut self,
-    ) -> impl std::future::Future<Output = Result<Vec<SubscriptionInfo>>> + Send {
+    ) -> impl std::future::Future<Output = Result<Vec<crate::SubscriptionInfo>>> + Send {
         async move {
             match self
-                .request(ClientMessage {
+                .request(crate::ClientMessage {
                     msg: Some(client_message::Msg::ListSubscriptions(
-                        ListSubscriptionsMsg {},
+                        crate::ListSubscriptionsMsg {},
                     )),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg:
-                        Some(server_message::Msg::SubscriptionList(SubscriptionList { subscriptions })),
+                        Some(server_message::Msg::SubscriptionList(crate::SubscriptionList {
+                            subscriptions,
+                        })),
                 } => Ok(subscriptions),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -658,19 +676,19 @@ pub trait Client: Send {
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::PublishEvent(PublishEventMsg {
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::PublishEvent(crate::PublishEventMsg {
                         source,
                         payload,
                     })),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => {
                     anyhow::bail!("server error ({code}): {message}")
                 }
@@ -689,8 +707,8 @@ pub trait Client: Send {
         is_error: bool,
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
-            let msg = ClientMessage {
-                msg: Some(client_message::Msg::ReplyToTool(ReplyToTool {
+            let msg = crate::ClientMessage {
+                msg: Some(client_message::Msg::ReplyToTool(crate::ReplyToTool {
                     conversation_id,
                     call_id,
                     output,
@@ -698,11 +716,11 @@ pub trait Client: Send {
                 })),
             };
             match self.request(msg).await? {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
@@ -714,24 +732,24 @@ pub trait Client: Send {
         &mut self,
         agent: String,
         sender: String,
-    ) -> impl std::future::Future<Output = Result<Vec<ActiveConversationInfo>>> + Send {
+    ) -> impl std::future::Future<Output = Result<Vec<crate::ActiveConversationInfo>>> + Send {
         async move {
             match self
-                .request(ClientMessage {
+                .request(crate::ClientMessage {
                     msg: Some(client_message::Msg::ListActiveConversations(
-                        ListActiveConversationsMsg { agent, sender },
+                        crate::ListActiveConversationsMsg { agent, sender },
                     )),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg:
-                        Some(server_message::Msg::ActiveConversations(ActiveConversationList {
+                        Some(server_message::Msg::ActiveConversations(crate::ActiveConversationList {
                             conversations,
                         })),
                 } => Ok(conversations),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
@@ -746,19 +764,19 @@ pub trait Client: Send {
     ) -> impl std::future::Future<Output = Result<bool>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::Kill(KillMsg { agent, sender })),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::Kill(crate::KillMsg { agent, sender })),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(true),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code: 404, .. })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code: 404, .. })),
                 } => Ok(false),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
@@ -773,16 +791,19 @@ pub trait Client: Send {
     ) -> impl std::future::Future<Output = Result<String>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::Compact(CompactMsg { agent, sender })),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::Compact(crate::CompactMsg {
+                        agent,
+                        sender,
+                    })),
                 })
                 .await?
             {
-                ServerMessage {
-                    msg: Some(server_message::Msg::Compact(CompactResponse { summary })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Compact(crate::CompactResponse { summary })),
                 } => Ok(summary),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
@@ -793,16 +814,16 @@ pub trait Client: Send {
     fn get_config(&mut self) -> impl std::future::Future<Output = Result<String>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::GetConfig(GetConfig {})),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::GetConfig(crate::GetConfig {})),
                 })
                 .await?
             {
-                ServerMessage {
-                    msg: Some(server_message::Msg::Config(ConfigMsg { config })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Config(crate::ConfigMsg { config })),
                 } => Ok(config),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
@@ -813,16 +834,16 @@ pub trait Client: Send {
     fn reload(&mut self) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::Reload(ReloadMsg {})),
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::Reload(crate::ReloadMsg {})),
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }
@@ -831,17 +852,19 @@ pub trait Client: Send {
 
     /// Subscribe to all agent events. Returns a stream that ends when the
     /// connection drops.
-    fn subscribe_events(&mut self) -> impl Stream<Item = Result<AgentEventMsg>> + Send + '_ {
-        self.request_stream(ClientMessage {
-            msg: Some(client_message::Msg::SubscribeEvents(SubscribeEvents {})),
+    fn subscribe_events(&mut self) -> impl Stream<Item = Result<crate::AgentEventMsg>> + Send + '_ {
+        self.request_stream(crate::ClientMessage {
+            msg: Some(client_message::Msg::SubscribeEvents(
+                crate::SubscribeEvents {},
+            )),
         })
         .filter_map(|r| async {
             match r {
-                Ok(ServerMessage {
+                Ok(crate::ServerMessage {
                     msg: Some(server_message::Msg::AgentEvent(e)),
                 }) => Some(Ok(e)),
-                Ok(ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                Ok(crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 }) => Some(Err(anyhow::anyhow!("server error ({code}): {message}"))),
                 Ok(_) => None,
                 Err(e) => Some(Err(e)),
@@ -850,19 +873,21 @@ pub trait Client: Send {
     }
 
     /// Subscribe to MCP lifecycle events.
-    fn subscribe_mcp_events(&mut self) -> impl Stream<Item = Result<McpEventMsg>> + Send + '_ {
-        self.request_stream(ClientMessage {
+    fn subscribe_mcp_events(
+        &mut self,
+    ) -> impl Stream<Item = Result<crate::McpEventMsg>> + Send + '_ {
+        self.request_stream(crate::ClientMessage {
             msg: Some(client_message::Msg::SubscribeMcpEvents(
-                SubscribeMcpEventsMsg {},
+                crate::SubscribeMcpEventsMsg {},
             )),
         })
         .filter_map(|r| async {
             match r {
-                Ok(ServerMessage {
+                Ok(crate::ServerMessage {
                     msg: Some(server_message::Msg::McpEvent(e)),
                 }) => Some(Ok(e)),
-                Ok(ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                Ok(crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 }) => Some(Err(anyhow::anyhow!("server error ({code}): {message}"))),
                 Ok(_) => None,
                 Err(e) => Some(Err(e)),
@@ -879,8 +904,8 @@ pub trait Client: Send {
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
-                .request(ClientMessage {
-                    msg: Some(client_message::Msg::SteerSession(SteerSessionMsg {
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::SteerSession(crate::SteerSessionMsg {
                         agent,
                         sender,
                         content,
@@ -888,11 +913,11 @@ pub trait Client: Send {
                 })
                 .await?
             {
-                ServerMessage {
+                crate::ServerMessage {
                     msg: Some(server_message::Msg::Pong(_)),
                 } => Ok(()),
-                ServerMessage {
-                    msg: Some(server_message::Msg::Error(ErrorMsg { code, message })),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
             }

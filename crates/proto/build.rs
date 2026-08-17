@@ -14,8 +14,5 @@ fn main() -> Result<()> {
     // `map` fields default to `std::collections::HashMap`, which a guest does
     // not have. The ordered one lives in `alloc`.
     config.btree_map(["."]);
-    if std::env::var_os("CARGO_FEATURE_STD").is_some() {
-        config.type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]");
-    }
     config.compile_protos(&[proto], &["proto/"])
 }

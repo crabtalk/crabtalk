@@ -17,6 +17,7 @@ crabllm-sdk = { workspace = true, features = ["hyper"] }
 crabtalk-berm.workspace = true
 hooks = { workspace = true, default-features = false, features = ["memory", "mcp"] }
 mcp = { workspace = true, default-features = false, features = ["hyper"] }
+proto = { workspace = true, features = ["llm", "server"] }
 runtime.workspace = true
 transport.workspace = true
 wcore.workspace = true

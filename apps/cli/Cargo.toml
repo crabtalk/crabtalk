@@ -16,6 +16,7 @@ path = "src/bin/main.rs"
 
 [dependencies]
 client.workspace = true
+proto = { workspace = true, features = ["client"] }
 wcore.workspace = true
 
 # crates.io

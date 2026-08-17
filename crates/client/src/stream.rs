@@ -8,8 +8,9 @@ use crate::{
 use anyhow::Result;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use proto::api::Client as _;
 use tokio::sync::mpsc;
-use wcore::protocol::{api::Client as _, message::*};
+use wcore::protocol::message::*;
 
 /// Accumulates streaming events into a renderable text buffer.
 ///

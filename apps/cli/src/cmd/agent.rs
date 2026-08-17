@@ -2,8 +2,8 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
+use proto::api::Client;
 use std::path::PathBuf;
-use wcore::protocol::api::Client;
 
 /// Manage agents.
 #[derive(Args, Debug)]

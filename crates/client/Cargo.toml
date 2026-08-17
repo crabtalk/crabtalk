@@ -14,6 +14,7 @@ anyhow.workspace = true
 dirs.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
+proto = { workspace = true, features = ["client"] }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
