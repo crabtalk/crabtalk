@@ -4,11 +4,11 @@ use crate::bridge::ClientBridge;
 use crate::llm::Provider;
 use anyhow::Result;
 use runtime::Runtime;
-use schema::Storage;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use storage::Storage;
 use tokio::sync::{RwLock, broadcast};
 pub use transport::{bridge_shutdown, setup_tcp};
 use {
@@ -83,8 +83,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         storage: Arc<S>,
         build_provider: BuildProvider<P>,
     ) -> Result<CrabTalkHandle<P, S>> {
-        let config_path = config_dir.join(schema::CONFIG_FILE);
-        let config = schema::Config::load(&config_path)?;
+        let config_path = config_dir.join(storage::CONFIG_FILE);
+        let config = storage::Config::load(&config_path)?;
         tracing::info!("loaded configuration from {}", config_path.display());
 
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
@@ -105,7 +105,7 @@ impl<S: Storage> CrabTalk<DefaultProvider, S> {
         storage: Arc<S>,
     ) -> Result<CrabTalkHandle<DefaultProvider, S>> {
         let build_provider: BuildProvider<DefaultProvider> =
-            Arc::new(|config: &schema::Config, models: &[String]| {
+            Arc::new(|config: &storage::Config, models: &[String]| {
                 build_default_provider(config, models)
             });
 
@@ -114,7 +114,7 @@ impl<S: Storage> CrabTalk<DefaultProvider, S> {
 }
 
 pub struct CrabTalkHandle<P: Provider + 'static, S: Storage> {
-    pub config: schema::Config,
+    pub config: storage::Config,
     pub shutdown_tx: broadcast::Sender<()>,
     pub inner: CrabTalk<P, S>,
 }

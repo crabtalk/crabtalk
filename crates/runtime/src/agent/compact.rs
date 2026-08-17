@@ -1,10 +1,10 @@
 //! Context compaction — summarize conversation history and replace it.
 
-use crate::HistoryEntry;
 use crabllm_core::{
     Provider,
     anthropic::{self, ContentBlock, ToolResultContent},
 };
+use storage::HistoryEntry;
 
 pub(crate) const COMPACT_PROMPT: &str = include_str!("../../prompts/compact.md");
 

@@ -4,14 +4,16 @@
 //! for the design.
 
 use anyhow::Result;
+use crabllm_core::Tool;
 use forget::Forget;
 use memory::Memory as Store;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use recall::Recall;
 use remember::Remember;
 use runtime::Harness;
-use schema::{AgentConfig, MemoryConfig, ToolDispatch, ToolFuture, agent::AsTool, model::Tool};
+use runtime::{ToolDispatch, ToolFuture, agent::AsTool};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use storage::{AgentConfig, MemoryConfig};
 
 mod forget;
 mod recall;

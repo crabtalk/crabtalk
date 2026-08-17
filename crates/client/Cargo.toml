@@ -10,19 +10,19 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
+crabllm-core.workspace = true
 anyhow.workspace = true
 dirs.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
 proto = { workspace = true, features = ["client"] }
-schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 transport.workspace = true
 tracing.workspace = true
 
-schema.workspace = true
+storage = { workspace = true, default-features = false }
 
 [dev-dependencies]
 tempfile.workspace = true

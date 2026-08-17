@@ -8,7 +8,6 @@ pub mod command;
 pub mod conn;
 pub mod message;
 pub mod stream;
-pub mod tools;
 
 pub use command::{COMMAND_HINT, COMMANDS, Command, collect_candidates, parse_command};
 #[cfg(unix)]
@@ -32,10 +31,10 @@ pub enum StreamResult {
 }
 
 /// Read the agents directory and return the first agent name found,
-/// falling back to [`schema::DEFAULT_AGENT`].
+/// falling back to [`storage::DEFAULT_AGENT`].
 pub fn resolve_default_agent(agents_dir: &Path) -> String {
     let Ok(entries) = std::fs::read_dir(agents_dir) else {
-        return schema::DEFAULT_AGENT.to_owned();
+        return storage::DEFAULT_AGENT.to_owned();
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -45,5 +44,5 @@ pub fn resolve_default_agent(agents_dir: &Path) -> String {
             return stem.to_owned();
         }
     }
-    schema::DEFAULT_AGENT.to_owned()
+    storage::DEFAULT_AGENT.to_owned()
 }

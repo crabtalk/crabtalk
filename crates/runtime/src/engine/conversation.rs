@@ -3,9 +3,10 @@
 use super::{ConvSlot, Runtime};
 use crate::{Config, Conversation, ConversationHandle};
 use anyhow::{Result, bail};
+use crabllm_core::Role;
 use memory::{EntryKind, Op};
-use schema::{HistoryEntry, Storage, model::Role};
 use std::sync::{Arc, atomic::Ordering};
+use storage::{HistoryEntry, Storage};
 use tokio::sync::Mutex;
 
 impl<C: Config> Runtime<C> {
@@ -352,7 +353,7 @@ impl<C: Config> Runtime<C> {
     /// — the caller must skip the compact marker so a resume can't
     /// dangle.
     fn write_archive(&self, session_slug: &str, summary: String) -> Option<String> {
-        let slug = schema::sender_slug(session_slug);
+        let slug = storage::sender_slug(session_slug);
         let prefix = format!("{slug}-");
         let mut mem = self.memory.write();
         // Scan and insert under the same write lock — two concurrent
@@ -408,7 +409,7 @@ impl<C: Config> Runtime<C> {
         agent: &str,
         created_by: &str,
         pre_run_len: usize,
-        event_trace: &[schema::EventLine],
+        event_trace: &[storage::EventLine],
     ) {
         self.persist_messages(conversation, agent, created_by, pre_run_len, event_trace)
             .await;
@@ -424,7 +425,7 @@ impl<C: Config> Runtime<C> {
         agent: &str,
         created_by: &str,
         pre_run_len: usize,
-        event_trace: &[schema::EventLine],
+        event_trace: &[storage::EventLine],
     ) {
         self.ensure_handle(conversation, agent, created_by).await;
         let Some(ref handle) = conversation.handle else {

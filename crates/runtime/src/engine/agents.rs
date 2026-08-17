@@ -1,10 +1,11 @@
 //! Agent registry — persistent and ephemeral agent management.
 
 use super::Runtime;
+use crate::{Agent, AgentBuilder, ToolDispatcher};
 use crate::{Config, Env, Harness};
 use anyhow::Result;
-use schema::{Agent, AgentBuilder, AgentConfig, AgentId, Storage, ToolDispatcher};
 use std::sync::Arc;
+use storage::{AgentConfig, AgentId, Storage};
 
 impl<C: Config> Runtime<C> {
     pub fn add_agent(&self, config: AgentConfig) {
@@ -159,7 +160,7 @@ impl<C: Config> Runtime<C> {
     pub async fn rename_agent(&self, old_name: &str, new_name: &str) -> Result<AgentConfig> {
         validate_agent_name(new_name)?;
         anyhow::ensure!(
-            old_name != schema::DEFAULT_AGENT,
+            old_name != storage::DEFAULT_AGENT,
             "cannot rename the default agent '{old_name}'"
         );
         // Short-circuit rename-to-same: returns the in-memory config without

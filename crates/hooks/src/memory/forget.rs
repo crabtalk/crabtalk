@@ -2,7 +2,7 @@
 
 use super::{Memory, MemoryHook};
 use memory::Op;
-use schema::ToolDispatch;
+use runtime::ToolDispatch;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

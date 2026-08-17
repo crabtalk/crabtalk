@@ -7,7 +7,7 @@
 
 use crate::client::{self, McpPeer};
 use anyhow::Result;
-use schema::model::Tool;
+use crabllm_core::Tool;
 use tokio::sync::Mutex;
 
 /// Why a tool call failed.
@@ -163,7 +163,7 @@ impl McpBridge {
 
 /// Convert an MCP tool to a `crabllm_core::Tool` envelope.
 fn convert_tool(mcp_tool: &client::McpTool) -> Tool {
-    use schema::model::{FunctionDef, ToolType};
+    use crabllm_core::{FunctionDef, ToolType};
     Tool {
         kind: ToolType::Function,
         function: FunctionDef {

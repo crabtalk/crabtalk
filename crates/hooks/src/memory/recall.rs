@@ -1,7 +1,7 @@
 //! `recall` — BM25 search over memory entries.
 
 use super::{Memory, MemoryHook};
-use schema::ToolDispatch;
+use runtime::ToolDispatch;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

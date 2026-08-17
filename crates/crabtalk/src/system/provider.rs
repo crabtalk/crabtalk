@@ -5,8 +5,8 @@ use crabllm_core::{
     ModelList, Provider, ProviderConfig, Retrying, anthropic, gemini,
 };
 use crabllm_provider::{RemoteProvider, make_client};
-use schema::LlmConfig;
 use std::time::Duration;
+use storage::LlmConfig;
 
 /// Two variants, not one. `Gateway` is a crabllm proxy: it reads the dialect
 /// each model reports and routes natively, on top of the SDK's retry and

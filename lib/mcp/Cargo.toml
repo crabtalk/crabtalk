@@ -10,8 +10,9 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-schema.workspace = true
+storage = { workspace = true, default-features = false }
 proto.workspace = true
+crabllm-core.workspace = true
 
 # crates-io
 anyhow.workspace = true

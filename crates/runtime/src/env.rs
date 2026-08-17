@@ -5,7 +5,7 @@
 //! instruction discovery, and a composite Harness. Tests use `()`.
 
 use crate::Harness;
-use schema::{AgentEvent, ToolDispatch, ToolFuture};
+use crate::{AgentEvent, ToolDispatch, ToolFuture};
 use tokio::sync::broadcast;
 
 /// The runtime environment — combines server capabilities with tool dispatch.

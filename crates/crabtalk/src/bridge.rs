@@ -17,8 +17,9 @@
 //! Which tools those are is not this crate's business. It forwards the
 //! names it was handed and never inspects them.
 
+use crabllm_core::Tool;
 use parking_lot::Mutex;
-use schema::{ToolDispatch, ToolFuture, model::Tool};
+use runtime::{ToolDispatch, ToolFuture};
 use std::{
     collections::{HashMap, HashSet},
     time::Duration,

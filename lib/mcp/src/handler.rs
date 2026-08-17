@@ -13,13 +13,13 @@
 
 use crate::{McpBridge, bridge::CallError};
 use parking_lot::RwLock as SyncRwLock;
-use schema::McpServerConfig;
 use std::{
     collections::{BTreeMap, BTreeSet, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     sync::Arc,
     time::{Duration, Instant},
 };
+use storage::McpServerConfig;
 use tokio::sync::{Mutex, RwLock, broadcast};
 
 /// Stable identifier for a peer process — hash of the structural config.

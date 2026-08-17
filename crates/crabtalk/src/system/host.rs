@@ -3,8 +3,8 @@
 use crate::bridge::ClientBridge;
 use hooks::Hooks;
 use proto::{AgentEventKind, AgentEventMsg, ToolCallInfo};
+use runtime::{AgentEvent, ToolDispatch};
 use runtime::{Env, Harness};
-use schema::{AgentEvent, ToolDispatch};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -150,7 +150,7 @@ impl Env for SystemEnv {
     }
 }
 
-impl schema::ToolDispatcher for SystemEnv {
+impl runtime::ToolDispatcher for SystemEnv {
     fn dispatch<'a>(
         &'a self,
         name: &'a str,
@@ -159,7 +159,7 @@ impl schema::ToolDispatcher for SystemEnv {
         sender: &'a str,
         conversation_id: Option<u64>,
         call_id: &'a str,
-    ) -> schema::ToolFuture<'a> {
+    ) -> runtime::ToolFuture<'a> {
         let call = ToolDispatch {
             args: args.to_owned(),
             agent: agent.to_owned(),
@@ -182,7 +182,7 @@ impl schema::ToolDispatcher for SystemEnv {
     }
 }
 
-fn format_usage(response: &schema::AgentResponse) -> String {
+fn format_usage(response: &runtime::AgentResponse) -> String {
     if response.steps.is_empty() {
         return String::new();
     }
@@ -222,7 +222,7 @@ fn human_tokens(n: u32) -> String {
     }
 }
 
-fn tool_call_label(c: &schema::model::ToolCall) -> String {
+fn tool_call_label(c: &crabllm_core::ToolCall) -> String {
     if c.function.name == "bash"
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(&c.function.arguments)
         && let Some(cmd) = v.get("command").and_then(|c| c.as_str())

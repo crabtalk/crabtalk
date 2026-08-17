@@ -10,13 +10,10 @@
 use super::hit::{
     MAX_HITS_PER_QUERY, MAX_SNIPPET_BYTES, MAX_WINDOW_ITEMS, SearchOptions, SessionHit, WindowItem,
 };
+use crabllm_core::{Role, anthropic::ContentBlock};
 use memory::bm25;
-use schema::{
-    HistoryEntry,
-    model::{ContentBlock, Role},
-    storage::SessionHandle,
-};
 use std::collections::HashMap;
+use storage::{HistoryEntry, storage::SessionHandle};
 
 /// Document identity in the session index — one doc per message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

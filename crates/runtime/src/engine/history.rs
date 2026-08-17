@@ -3,9 +3,10 @@
 use super::Runtime;
 use crate::Config;
 use anyhow::Result;
+use crabllm_core::Role;
 use proto::{ConversationHistory, ConversationInfo, ConversationMessage};
-use schema::{SessionHandle, SessionSummary, Storage};
 use std::collections::HashMap;
+use storage::{SessionHandle, SessionSummary, Storage};
 
 impl<C: Config> Runtime<C> {
     /// List persisted conversations, optionally filtered by agent and sender.
@@ -29,7 +30,7 @@ impl<C: Config> Runtime<C> {
             let content = self.memory().read().get(&name).map(|e| e.content.clone());
             if let Some(summary) = content {
                 let mut out = Vec::with_capacity(messages.len() + 1);
-                out.push(schema::HistoryEntry::user(summary));
+                out.push(storage::HistoryEntry::user(summary));
                 out.append(&mut messages);
                 messages = out;
             }
@@ -39,12 +40,7 @@ impl<C: Config> Runtime<C> {
             agent: meta.agent,
             messages: messages
                 .into_iter()
-                .filter(|e| {
-                    !matches!(
-                        e.role(),
-                        schema::model::Role::System | schema::model::Role::Tool
-                    )
-                })
+                .filter(|e| !matches!(e.role(), Role::System | Role::Tool))
                 .map(|e| ConversationMessage {
                     role: e.role().as_str().to_owned(),
                     content: e.text().to_owned(),

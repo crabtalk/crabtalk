@@ -1,8 +1,8 @@
 //! Agent event types for step-based execution and streaming.
 
-use crate::{EventLine, HistoryEntry, ToolCallTrace};
 use crabllm_core::{FinishReason, ToolCall, Usage, anthropic::Message};
 use proto::*;
+use storage::{EventLine, HistoryEntry, ToolCallTrace};
 
 /// A fine-grained event emitted during agent execution.
 #[derive(Debug, Clone)]

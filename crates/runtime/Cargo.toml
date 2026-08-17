@@ -11,10 +11,13 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-schema.workspace = true
+storage = { workspace = true, default-features = false }
 memory.workspace = true
 proto.workspace = true
 crabllm-core.workspace = true
+skill.workspace = true
+schemars.workspace = true
+heck.workspace = true
 
 # crates.io
 chrono.workspace = true
@@ -29,4 +32,3 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-schema = { workspace = true, features = ["testing"] }

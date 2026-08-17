@@ -4,8 +4,8 @@ use crate::{llm::Provider, system::CrabTalk};
 use anyhow::{Context, Result};
 use mcp::McpServerState;
 use proto::*;
-use schema::{AgentConfig, Storage};
 use std::collections::BTreeMap;
+use storage::{AgentConfig, Storage};
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn set_active_model(&self, model: String) -> Result<()> {
@@ -17,7 +17,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         }
 
         let mut crab = storage
-            .load_agent_by_name(schema::DEFAULT_AGENT)
+            .load_agent_by_name(storage::DEFAULT_AGENT)
             .await?
             .unwrap_or_else(|| AgentConfig::crab(&model));
         crab.model = model;
@@ -51,7 +51,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 
     pub(crate) async fn upsert_mcp(&self, agent: String, config_json: String) -> Result<McpInfo> {
         anyhow::ensure!(!agent.is_empty(), "agent name is required for upsert_mcp");
-        let cfg: schema::McpServerConfig =
+        let cfg: storage::McpServerConfig =
             serde_json::from_str(&config_json).context("invalid McpServerConfig JSON")?;
         anyhow::ensure!(!cfg.name.is_empty(), "MCP config must have a name");
         let mcp_name = cfg.name.clone();
@@ -147,7 +147,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 }
 
 fn mcp_info(
-    cfg: &schema::McpServerConfig,
+    cfg: &storage::McpServerConfig,
     agent: &str,
     states: &BTreeMap<(String, String), McpServerState>,
 ) -> McpInfo {

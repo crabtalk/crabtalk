@@ -6,9 +6,9 @@ use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
 use proto::ClientMessage;
 use proto::server::Server;
-use schema::Storage;
 #[cfg(unix)]
 use std::path::Path;
+use storage::Storage;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 fn dispatch_callback<P: Provider + 'static, S: Storage>(

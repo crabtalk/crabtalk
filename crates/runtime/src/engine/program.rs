@@ -5,11 +5,12 @@
 //! per step — rather than one open-ended turn.
 
 use super::Runtime;
+use crate::{AgentEvent, AgentResponse};
 use crate::{Config, Env};
 use async_stream::stream;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use schema::{AgentEvent, AgentResponse, HistoryEntry};
+use storage::HistoryEntry;
 
 /// One step of a [`Program`] — a single bounded turn's prompt.
 pub struct ProgramStep {

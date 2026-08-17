@@ -5,11 +5,11 @@
 //! execute a tool call; [`ToolHandler`] is the per-tool async closure
 //! type stored in a [`ToolEntry`].
 
-use crate::HistoryEntry;
 use crabllm_core::{FunctionDef, Tool, ToolType};
 use heck::ToSnakeCase;
 use schemars::JsonSchema;
 use std::{collections::BTreeMap, future::Future, pin::Pin, sync::Arc};
+use storage::HistoryEntry;
 
 /// Boxed future returned by a [`ToolDispatcher::dispatch`] call.
 pub type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>>;

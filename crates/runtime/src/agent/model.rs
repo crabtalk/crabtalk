@@ -1,11 +1,6 @@
 //! Unified LLM interface types and the `Model<P>` wrapper.
 
-pub use crabllm_core::{
-    FinishReason, FunctionCall, FunctionDef, Role, Tool, ToolCall, ToolChoice, ToolType, Usage,
-    anthropic,
-    anthropic::{Content, ContentBlock, Message, ToolResultContent},
-    codec::MessageBuilder,
-};
+pub use crabllm_core::{anthropic, codec::MessageBuilder};
 
 use anyhow::Result;
 use async_stream::try_stream;

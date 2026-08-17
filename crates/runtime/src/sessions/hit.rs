@@ -2,8 +2,8 @@
 //! at construction so callers can't blow up context windows by
 //! requesting larger windows than the runtime is willing to return.
 
-use schema::SessionHandle;
-use schema::model::Role;
+use crabllm_core::Role;
+use storage::SessionHandle;
 
 /// Maximum bytes per window item snippet. Long messages are truncated
 /// at this boundary with `truncated = true`.

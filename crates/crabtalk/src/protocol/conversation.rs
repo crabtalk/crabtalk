@@ -6,24 +6,10 @@ use crate::system::CrabTalk;
 use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
 use proto::*;
+use runtime::AgentEvent;
 use runtime::sessions::SearchOptions;
-use schema::{AgentEvent, Storage};
 use std::sync::Arc;
-
-/// Roles travel raw — a label like `tool:read` is presentation, and the
-/// protocol carries `role` and `tool_name` separately so whatever renders
-/// them can decide.
-fn role_name(role: schema::model::Role) -> String {
-    use schema::model::Role;
-    match role {
-        Role::User => "user",
-        Role::Assistant => "assistant",
-        Role::Tool => "tool",
-        Role::System => "system",
-        _ => "other",
-    }
-    .to_owned()
-}
+use storage::Storage;
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     /// Ranked excerpts from past conversations.
@@ -63,7 +49,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                     .window
                     .into_iter()
                     .map(|item| SessionWindowItem {
-                        role: role_name(item.role),
+                        role: item.role.as_str().to_owned(),
                         msg_idx: item.msg_idx,
                         snippet: item.snippet,
                         truncated: item.truncated,
@@ -83,7 +69,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .await?;
         let tool_choice = req
             .tool_choice
-            .map(|s| schema::model::ToolChoice::from(s.as_str()));
+            .map(|s| crabllm_core::ToolChoice::from(s.as_str()));
         let client_tools = resolve_client_tools(&self.bridge, conversation_id, req.tools);
         let response = rt
             .send_to(
@@ -115,7 +101,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let guest = req.guest.unwrap_or_default();
         let tool_choice = req
             .tool_choice
-            .map(|s| schema::model::ToolChoice::from(s.as_str()));
+            .map(|s| crabllm_core::ToolChoice::from(s.as_str()));
         let req_tools = req.tools;
         let ephemeral = req.ephemeral;
         let correlation_id = req.correlation_id.unwrap_or(0);
@@ -155,7 +141,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
             yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.clone() })) };
 
-            let stream: std::pin::Pin<Box<dyn futures_core::Stream<Item = schema::AgentEvent> + Send + '_>> = if guest.is_empty() {
+            let stream: std::pin::Pin<Box<dyn futures_core::Stream<Item = runtime::AgentEvent> + Send + '_>> = if guest.is_empty() {
                 Box::pin(rt.stream_to(conversation_id, &content, &sender, tool_choice, client_tools))
             } else {
                 Box::pin(rt.guest_stream_to(conversation_id, &content, &sender, &guest))

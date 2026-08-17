@@ -18,15 +18,14 @@
 use crate::{Dispatch, Scope};
 use berm::{Capability, Config, Engine, Grants, Harness};
 use crabllm_core::Tool;
-use schema::{
-    AgentConfig, HarnessConfig, ToolDispatch, ToolFuture,
-    model::{FunctionDef, ToolType},
-};
+use crabllm_core::{FunctionDef, ToolType};
+use runtime::{ToolDispatch, ToolFuture};
 use sha2::{Digest as _, Sha256};
 use std::{
     collections::BTreeMap,
     sync::{Arc, OnceLock, RwLock},
 };
+use storage::{AgentConfig, HarnessConfig};
 
 /// What names an image: a SHA-256 over the ELF and everything the sandbox is
 /// built with.

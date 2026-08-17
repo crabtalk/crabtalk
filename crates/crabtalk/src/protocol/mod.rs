@@ -5,8 +5,8 @@ use crate::system::CrabTalk;
 use anyhow::Result;
 use proto::server::Server;
 use proto::*;
-use schema::Storage;
 use serde_json::Value;
+use storage::Storage;
 
 mod admin;
 mod config;
@@ -111,7 +111,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
     }
 
     async fn create_agent(&self, req: CreateAgentMsg) -> Result<AgentInfo> {
-        let mut config: schema::AgentConfig = serde_json::from_str(&req.config)
+        let mut config: storage::AgentConfig = serde_json::from_str(&req.config)
             .map_err(|e| anyhow::anyhow!("invalid AgentConfig JSON: {e}"))?;
         config.name = req.name;
         let rt = self.runtime.read().await.clone();
@@ -126,7 +126,7 @@ impl<P: Provider + 'static, S: Storage> Server for CrabTalk<P, S> {
         let stored = rt.storage().load_agent_by_name(&req.name).await?;
         let mut merged = serde_json::to_value(stored.unwrap_or_default())?;
         self::merge(&mut merged, patch);
-        let mut config: schema::AgentConfig = serde_json::from_value(merged)
+        let mut config: storage::AgentConfig = serde_json::from_value(merged)
             .map_err(|e| anyhow::anyhow!("invalid AgentConfig JSON: {e}"))?;
         config.name = req.name;
         let registered = rt.update_agent(config).await?;

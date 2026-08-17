@@ -9,7 +9,7 @@ use proto::{
     AgentEventMsg, McpEventMsg, Stats, SubscribeEventMsg, SubscriptionInfo, SubscriptionList,
 };
 use runtime::Env;
-use schema::Storage;
+use storage::Storage;
 use tokio::sync::broadcast::error::RecvError;
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {

@@ -4,8 +4,9 @@
 //! lifecycle: provide schemas, inject context before runs, observe
 //! events, preprocess messages, and dispatch tool calls.
 
+use crate::{AgentEvent, ToolDispatch, ToolFuture};
 use crabllm_core::Tool;
-use schema::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
+use storage::AgentConfig;
 
 /// A pluggable subsystem that participates in the agent lifecycle.
 ///

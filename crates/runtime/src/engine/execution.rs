@@ -1,13 +1,14 @@
 //! Execution — message sending and streaming through agents.
 
 use super::Runtime;
+use crate::{AgentEvent, AgentResponse, AgentStopReason};
 use crate::{Config, Conversation, Env, Harness};
 use anyhow::Result;
 use async_stream::stream;
 use crabllm_core::{ToolChoice, anthropic};
 use futures_core::Stream;
 use futures_util::StreamExt;
-use schema::{AgentEvent, AgentResponse, AgentStopReason, HistoryEntry};
+use storage::HistoryEntry;
 use tokio::sync::{mpsc, watch};
 
 impl<C: Config> Runtime<C> {
@@ -75,7 +76,7 @@ impl<C: Config> Runtime<C> {
             .run(&mut conversation.history, tx, None, tool_choice)
             .await;
 
-        let mut event_trace: Vec<schema::EventLine> = Vec::new();
+        let mut event_trace: Vec<storage::EventLine> = Vec::new();
         while let Ok(event) = rx.try_recv() {
             self.env
                 .hook()
@@ -132,7 +133,7 @@ impl<C: Config> Runtime<C> {
             let (steer_tx, steer_rx) = watch::channel(None::<String>);
             self.steering.write().await.insert(conversation_id, steer_tx);
             let mut done_event: Option<AgentEvent> = None;
-            let mut event_trace: Vec<schema::EventLine> = Vec::new();
+            let mut event_trace: Vec<storage::EventLine> = Vec::new();
             {
                 let mut event_stream = std::pin::pin!(agent.run_stream(&mut conversation.history, Some(conversation_id), Some(steer_rx), tool_choice));
                 while let Some(event) = event_stream.next().await {
