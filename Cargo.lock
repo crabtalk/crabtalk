@@ -574,6 +574,7 @@ dependencies = [
 [[package]]
 name = "crabllm-core"
 version = "0.0.24"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#7b567ac5a53aa9e32999e2f165802a0b2ae7245a"
 dependencies = [
  "bytes",
  "futures",
@@ -588,6 +589,7 @@ dependencies = [
 [[package]]
 name = "crabllm-http"
 version = "0.0.24"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#7b567ac5a53aa9e32999e2f165802a0b2ae7245a"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -608,6 +610,7 @@ dependencies = [
 [[package]]
 name = "crabllm-provider"
 version = "0.0.24"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#7b567ac5a53aa9e32999e2f165802a0b2ae7245a"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -621,6 +624,7 @@ dependencies = [
 [[package]]
 name = "crabllm-sdk"
 version = "0.0.24"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#7b567ac5a53aa9e32999e2f165802a0b2ae7245a"
 dependencies = [
  "bytes",
  "crabllm-core",
