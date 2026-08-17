@@ -1,12 +1,12 @@
 //! Reusable hook implementations and composition for the Crabtalk runtime.
 //!
-//! `Hooks` is the single `Hook` the runtime `Env` sees — it owns the
+//! `Hooks` is the single `Harness` the runtime `Env` sees — it owns the
 //! sub-hooks registered into it, the dispatch map, per-agent scope
 //! enforcement, agent descriptions, and the late-bound event sink.
 
 use crabllm_core::Tool;
 use parking_lot::RwLock;
-use runtime::Hook;
+use runtime::Harness;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -36,17 +36,17 @@ pub struct AgentScope {
 /// Late-bindable sink for `agent:{name}:done` event publishes.
 pub type EventSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
-/// Aggregates all sub-hooks behind a single `Hook` impl.
+/// Aggregates all sub-hooks behind a single `Harness` impl.
 pub struct Hooks {
     pub scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
-    hooks: BTreeMap<String, Arc<dyn Hook>>,
+    hooks: BTreeMap<String, Arc<dyn Harness>>,
     /// Dispatchable but never advertised ambiently, so a surface's own tools
     /// can't leak into ordinary chat or unattended heartbeats.
-    scoped: BTreeMap<String, Arc<dyn Hook>>,
+    scoped: BTreeMap<String, Arc<dyn Harness>>,
     /// Tool names owned by `scoped`, which dispatch lets past the per-agent
     /// whitelist — declaring one is already the gate.
     scoped_names: BTreeSet<String>,
-    dispatch_map: BTreeMap<String, Arc<dyn Hook>>,
+    dispatch_map: BTreeMap<String, Arc<dyn Harness>>,
     event_sink: RwLock<Option<EventSink>>,
 }
 
@@ -63,7 +63,7 @@ impl Hooks {
     }
 
     /// Register a sub-hook by name.
-    pub fn register_hook(&mut self, name: impl Into<String>, hook: Arc<dyn Hook>) {
+    pub fn register_hook(&mut self, name: impl Into<String>, hook: Arc<dyn Harness>) {
         for tool in hook.schema() {
             self.dispatch_map
                 .insert(tool.function.name.clone(), hook.clone());
@@ -73,7 +73,7 @@ impl Hooks {
 
     /// Register a sub-hook whose tools a stream must opt into by name with
     /// [`Hooks::scoped_schema`]; see the `scoped` field.
-    pub fn register_scoped(&mut self, name: impl Into<String>, hook: Arc<dyn Hook>) {
+    pub fn register_scoped(&mut self, name: impl Into<String>, hook: Arc<dyn Harness>) {
         for tool in hook.schema() {
             self.scoped_names.insert(tool.function.name.clone());
             self.dispatch_map
@@ -115,7 +115,7 @@ impl Hooks {
     }
 }
 
-impl Hook for Hooks {
+impl Harness for Hooks {
     fn schema(&self) -> Vec<Tool> {
         self.hooks.values().flat_map(|h| h.schema()).collect()
     }

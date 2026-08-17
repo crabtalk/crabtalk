@@ -79,7 +79,7 @@ pub struct AgentConfig {
     /// Longer results are truncated before sending to the compaction LLM.
     #[serde(default = "default_compact_tool_max_len")]
     pub compact_tool_max_len: usize,
-    /// Hook configuration for this agent (memory recall limit, etc.).
+    /// Harness configuration for this agent (memory recall limit, etc.).
     /// Each agent owns its own hook state — there is no global override.
     #[serde(default)]
     pub hooks: HooksConfig,

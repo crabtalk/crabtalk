@@ -1,8 +1,8 @@
-//! MCP tool — as a Hook implementation.
+//! MCP tool — as a Harness implementation.
 
 use mcp::{McpHandler, dispatch::dispatch_mcp};
 use parking_lot::RwLock;
-use runtime::Hook;
+use runtime::Harness;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::{collections::BTreeMap, sync::Arc};
@@ -48,7 +48,7 @@ impl McpHook {
     }
 }
 
-impl Hook for McpHook {
+impl Harness for McpHook {
     fn schema(&self) -> Vec<wcore::model::Tool> {
         vec![Mcp::as_tool()]
     }

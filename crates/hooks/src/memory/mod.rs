@@ -9,7 +9,7 @@ use memory::Memory as Store;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use recall::Recall;
 use remember::Remember;
-use runtime::Hook;
+use runtime::Harness;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use wcore::{AgentConfig, MemoryConfig, ToolDispatch, ToolFuture, agent::AsTool, model::Tool};
 
@@ -82,7 +82,7 @@ impl MemoryHook {
     }
 }
 
-impl Hook for MemoryHook {
+impl Harness for MemoryHook {
     fn schema(&self) -> Vec<Tool> {
         vec![Recall::as_tool(), Remember::as_tool(), Forget::as_tool()]
     }

@@ -11,7 +11,7 @@ use anyhow::Result;
 use crabtalk_berm::HarnessHook;
 use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook};
 use mcp::McpHandler;
-use runtime::{Hook, Runtime};
+use runtime::{Harness, Runtime};
 use std::{
     collections::BTreeMap,
     path::Path,
@@ -242,7 +242,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         });
 
         let mut tools = wcore::ToolRegistry::new();
-        for schema in Hook::schema(hooks.as_ref()) {
+        for schema in Harness::schema(hooks.as_ref()) {
             tools.insert(schema);
         }
         let runtime = Runtime::new(model, env, storage, shared_memory, tools);
@@ -269,7 +269,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         hooks.register_hook("mcp", Arc::new(McpHook::new(mcp_handler, env_overlay)));
 
         // Harnesses are loaded here rather than when their agent registers,
-        // because the schema catalogue is built from `Hook::schema` before any
+        // because the schema catalogue is built from `Harness::schema` before any
         // agent exists — a tool the catalogue never saw is a tool no model is
         // offered. Registering an agent later loads its own through
         // `on_register_agent`.

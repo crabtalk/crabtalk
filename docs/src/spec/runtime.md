@@ -2,7 +2,7 @@
 
 The runtime owns the architecture of *lifetime*: it holds live conversations, runs agent steps, dispatches tool calls, and applies compaction. It does not open sockets, accept connections, or schedule time. Capabilities that require I/O are provided to the runtime by its environment.
 
-It is also the thing that eats hooks. Features do not belong here — a feature that ends up as a runtime field is a feature that leaked into the lifecycle engine.
+It is also the thing that eats harnesses. Features do not belong here — a feature that ends up as a runtime field is a feature that leaked into the lifecycle engine.
 
 ## Composition
 
@@ -14,7 +14,7 @@ A runtime is parameterized by a `Config` that names three associated types:
 | `Provider` | LLM request and streaming.                          |
 | `Env`      | Node-specific capabilities and tool dispatch.       |
 
-A binary supplies one `Config`. The daemon's `Config` wires filesystem storage, a configured provider, and a node environment that owns hooks and event broadcasting. Tests supply a `Config` with in-memory storage, a stub provider, and `()` as the environment.
+A binary supplies one `Config`. The daemon's `Config` wires filesystem storage, a configured provider, and a node environment that owns harnesses and event broadcasting. Tests supply a `Config` with in-memory storage, a stub provider, and `()` as the environment.
 
 ## Responsibilities
 
@@ -113,30 +113,30 @@ These belong to the server that hosts the runtime.
 
 `Env` is the runtime's only outward-facing capability surface. It provides:
 
-- `hook()` — the composite `Hook` that exposes tool schemas, dispatches tool calls, and participates in lifecycle events.
+- `hook()` — the composite `Harness` that exposes tool schemas, dispatches tool calls, and participates in lifecycle events.
 - `on_agent_event(agent, conversation_id, event)` — hook point for side effects, such as event broadcasting or persistence of step traces.
 - `subscribe_events()` — optional subscription to a cross-conversation event stream, for servers that expose agent events to external clients.
 Methods that the runtime does not need in a given context have default implementations. An `Env` implementation may leave event broadcasting at its default.
 
 Instruction discovery and working-directory resolution are not here. The daemon does not read the user's filesystem — a client renders local instructions into the message it sends, and a harness reaches files through the root its declaration grants.
 
-## Hook
+## Harness
 
-A hook is a way to serve a tool call the daemon does not implement itself.
+A harness is a way to serve a tool call the daemon does not implement itself.
 
-`Hook` is public API at the runtime layer, and that is the point: an embedder
+`Harness` is public API at the runtime layer, and that is the point: an embedder
 using crabtalk as a library implements it, registers it through the composite,
 and gets tools in their own process without running a daemon. That is a
 consumer the protocol cannot serve — a client on a socket and a crate in your
 binary want different things.
 
-`Hook` is the single point through which the runtime reaches node-specific tools. A hook:
+`Harness` is the single point through which the runtime reaches node-specific tools. A harness:
 
 - Advertises tool schemas for the LLM request.
 - Dispatches tool calls by name, returning a future that yields the tool's result.
 - Participates in step lifecycle, observing starts, completions, and errors.
 
-A hook is composite: the daemon's hook owns sub-hooks, and the runtime sees a single `Hook`. Order is fixed by the composite.
+It is composite: the daemon's owns sub-harnesses, and the runtime sees a single `Harness`. Order is fixed by the composite.
 
 `usage` is the one declaration worth calling out — what these tools are for, when to reach for them, and how they go together. It is the question no single tool's `description` answers, because it is about choosing between them.
 
@@ -144,9 +144,9 @@ A hook is composite: the daemon's hook owns sub-hooks, and the runtime sees a si
 
 `dispatch` is the only method on the trait that genuinely requires it —
 `schema` and `usage` are declarations, and the rest is lifecycle bookkeeping.
-So the question "how many hooks are there" is really "how many ways can a tool
-call be served that the daemon does not implement", and there are two: **inside
-a sandbox** (harnesses) or **over the network** (MCP). A third would need a
+So the question "how many implementations are there" is really "how many ways
+can a tool call be served that the daemon does not implement", and there are
+two: **inside a sandbox** or **over the network** (MCP). A third would need a
 third execution substrate.
 
 An embedder adding their own is not a violation of that count. It is the seam
@@ -154,6 +154,6 @@ working.
 
 ## Tool dispatch
 
-A tool call from the agent carries the tool name, arguments, the originating agent and sender, and the conversation id. The runtime invokes `Env::hook().dispatch(name, call)`. If no sub-hook claims the name, the dispatch yields an error result; the agent receives the error as the tool's output.
+A tool call from the agent carries the tool name, arguments, the originating agent and sender, and the conversation id. The runtime invokes `Env::hook().dispatch(name, call)`. If no sub-harness claims the name, the dispatch yields an error result; the agent receives the error as the tool's output.
 
 Dispatch is asynchronous. The runtime awaits the tool future at the next step boundary and applies the result to the conversation before the following step.

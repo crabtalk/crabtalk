@@ -2,7 +2,7 @@
 
 use crate::bridge::ClientBridge;
 use hooks::Hooks;
-use runtime::{Env, Hook};
+use runtime::{Env, Harness};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use wcore::{

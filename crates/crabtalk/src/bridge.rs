@@ -1,8 +1,8 @@
 //! Client bridge — forwards tool dispatches to the connected client and
 //! awaits replies.
 //!
-//! This is the client-side dispatch layer. System capabilities (memory,
-//! sessions, skill, mcp) dispatch through daemon-side hooks. Client tools
+//! This is the client-side dispatch layer. What the daemon serves itself
+//! dispatches through the composite harness. Client tools
 //! dispatch through this bridge: the protocol layer emits a
 //! `ToolCallForward` event, the client executes locally, and posts a reply
 //! which resolves via [`ClientBridge::try_resolve`].

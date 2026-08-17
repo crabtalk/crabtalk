@@ -6,7 +6,7 @@
 //! (`send_to`, `stream_to`) take a conversation ID, lock the conversation,
 //! clone the agent, and run with the conversation's history.
 
-use crate::{Config, Conversation, Env, Hook, sessions::SessionIndex};
+use crate::{Config, Conversation, Env, Harness, sessions::SessionIndex};
 use memory::Memory;
 use std::{
     collections::BTreeMap,

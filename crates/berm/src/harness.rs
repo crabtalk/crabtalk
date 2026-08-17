@@ -18,7 +18,6 @@
 use crate::{Dispatch, Scope};
 use berm::{Capability, Config, Engine, Grants, Harness};
 use crabllm_core::Tool;
-use runtime::Hook;
 use sha2::{Digest as _, Sha256};
 use std::{
     collections::BTreeMap,
@@ -238,9 +237,9 @@ fn digest(elf: &[u8], grants: &Grants, scope: Option<&Scope>, hosts: Option<&[St
     hasher.finalize().into()
 }
 
-impl Hook for HarnessHook {
+impl runtime::Harness for HarnessHook {
     /// Every harness tool, for the schema catalogue. What an agent may
-    /// actually call is [`Hook::scoped_tools`].
+    /// actually call is [`runtime::Harness::scoped_tools`].
     fn schema(&self) -> Vec<Tool> {
         self.registry
             .read()
@@ -262,7 +261,7 @@ impl Hook for HarnessHook {
 
     /// Append the usage each declared harness carries.
     ///
-    /// Per-agent rather than through [`Hook::usage`], which has no agent in
+    /// Per-agent rather than through [`runtime::Harness::usage`], which has no agent in
     /// its signature and would put every harness's text in front of every
     /// agent. The declaration is the gate here as everywhere else.
     ///

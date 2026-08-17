@@ -104,7 +104,7 @@ dependency lists and cannot grow one without `crates/berm/src/lib.rs` moving.
 That split is compiler-checked rather than promised, and it is why the sandbox
 can leave this repository whenever it needs to.
 
-`crates/berm` is crabtalk's *side*: the hook that surfaces harness tools, and
+`crates/berm` is crabtalk's *side*: what surfaces sandboxed tools, and
 the `crabtalk.*` capabilities. Anything host-specific belongs there. `http`
 lives there rather than in the engine because hyper needs a reactor and the
 engine is sync and has none — keeping the engine dep-light is keeping it

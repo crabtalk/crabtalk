@@ -11,7 +11,7 @@ use crabllm_core::{FinishReason, Message, ToolCall, Usage};
 
 /// A fine-grained event emitted during agent execution.
 ///
-/// Yielded by `Agent::run_stream()` or emitted via `Hook::on_event()`
+/// Yielded by `Agent::run_stream()` or emitted via `Harness::on_event()`
 /// for real-time status reporting to clients.
 ///
 /// Text and thinking deltas are bracketed by explicit

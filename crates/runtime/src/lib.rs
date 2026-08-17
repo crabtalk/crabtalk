@@ -7,7 +7,7 @@ pub mod sessions;
 pub use conversation::Conversation;
 pub use engine::{Program, ProgramStep, Runtime, SharedMemory};
 pub use env::Env;
-pub use hook::Hook;
+pub use hook::Harness;
 pub use wcore::{MemoryConfig, TasksConfig};
 
 /// Opaque persistent handle to a conversation. Re-exported from the

@@ -16,10 +16,10 @@
 //! compiler checks rather than a promise: berm's dependency list has no
 //! crabtalk crate in it, and cannot grow one without this file moving.
 
-mod hook;
+mod harness;
 mod http;
 mod protocol;
 
-pub use hook::HarnessHook;
+pub use harness::HarnessHook;
 pub use http::call as http_fetch;
 pub use protocol::{Dispatch, Scope, call as protocol_call};

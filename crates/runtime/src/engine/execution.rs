@@ -1,7 +1,7 @@
 //! Execution — message sending and streaming through agents.
 
 use super::Runtime;
-use crate::{Config, Conversation, Env, Hook};
+use crate::{Config, Conversation, Env, Harness};
 use anyhow::Result;
 use async_stream::stream;
 use crabllm_core::{ToolChoice, anthropic};

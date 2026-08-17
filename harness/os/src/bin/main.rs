@@ -1,9 +1,8 @@
 //! OS tools as a harness: bash, read, edit.
 //!
-//! These were a `Hook` the daemon could not execute and every client had to
-//! answer, which meant a run with no client had no tools at all. As a harness
-//! they run wherever the runtime does, which is the machine that owns the
-//! files (RFC 0205).
+//! These were once dispatched to whichever client was connected, so a run with
+//! no client had no tools at all. As a harness they run wherever the runtime
+//! does, which is the machine that owns the files (RFC 0205).
 //!
 //! Paths are relative to the root the harness was granted, and nothing here
 //! checks that — the root is enforced host-side, so a path that escapes comes
