@@ -20,7 +20,6 @@ transport = { path = "crates/transport", package = "crabtalk-transport", version
 proto = { path = "crates/proto", package = "crabtalk-proto", version = "0.0.23", default-features = false }
 memory = { path = "lib/memory", package = "crabtalk-memory", version = "0.0.23" }
 embed = { path = "lib/embed", package = "crabtalk-embed", version = "0.0.23" }
-hooks = { path = "crates/hooks", package = "crabtalk-hooks", version = "0.0.23", default-features = false }
 storage = { path = "crates/storage", package = "crabtalk-storage", version = "0.0.23", default-features = false }
 mcp = { path = "lib/mcp", package = "crabtalk-mcp", version = "0.0.23", default-features = false }
 search = { path = "lib/search", package = "crabtalk-search", version = "0.0.23", default-features = false }

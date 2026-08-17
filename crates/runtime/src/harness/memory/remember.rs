@@ -1,8 +1,8 @@
 //! `remember` — upsert a memory entry as an `EntryKind::Note`.
 
 use super::{Memory, MemoryHook};
+use crate::ToolDispatch;
 use memory::{EntryKind, Op};
-use runtime::ToolDispatch;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

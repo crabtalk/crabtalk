@@ -1,9 +1,9 @@
 //! MCP tool — as a Harness implementation.
 
+use crate::Harness;
+use crate::{ToolDispatch, ToolFuture, agent::AsTool};
 use mcp::{McpHandler, dispatch::dispatch_mcp};
 use parking_lot::RwLock;
-use runtime::Harness;
-use runtime::{ToolDispatch, ToolFuture, agent::AsTool};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::{collections::BTreeMap, sync::Arc};

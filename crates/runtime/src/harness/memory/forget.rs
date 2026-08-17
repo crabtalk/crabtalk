@@ -1,8 +1,8 @@
 //! `forget` — delete a memory entry by name.
 
 use super::{Memory, MemoryHook};
+use crate::ToolDispatch;
 use memory::Op;
-use runtime::ToolDispatch;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

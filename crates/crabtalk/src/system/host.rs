@@ -1,8 +1,8 @@
 //! SystemEnv — the runtime environment implementation.
 
 use crate::bridge::ClientBridge;
-use hooks::Hooks;
 use proto::{AgentEventKind, AgentEventMsg, ToolCallInfo};
+use runtime::harness::Hooks;
 use runtime::{AgentEvent, ToolDispatch};
 use runtime::{Env, Harness};
 use std::sync::Arc;

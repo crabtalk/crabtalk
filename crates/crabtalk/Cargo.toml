@@ -15,10 +15,6 @@ crabllm-core.workspace = true
 crabllm-provider = { workspace = true, features = ["hyper"] }
 crabllm-sdk = { workspace = true, features = ["hyper"] }
 crabtalk-berm.workspace = true
-hooks = { workspace = true, default-features = false, features = [
-    "memory",
-    "mcp",
-] }
 mcp = { workspace = true, default-features = false, features = ["hyper"] }
 proto = { workspace = true, features = ["llm", "server"] }
 runtime.workspace = true
@@ -48,12 +44,12 @@ default = ["native-tls"]
 native-tls = [
     "crabllm-provider/native-tls",
     "crabllm-sdk/native-tls",
-    "hooks/native-tls",
+    "runtime/native-tls",
     "mcp/native-tls",
 ]
 rustls = [
     "crabllm-provider/rustls",
     "crabllm-sdk/rustls",
-    "hooks/rustls",
+    "runtime/rustls",
     "mcp/rustls",
 ]

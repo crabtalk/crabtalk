@@ -7,7 +7,7 @@ pub mod agent;
 mod conversation;
 mod engine;
 pub mod env;
-pub mod hook;
+pub mod harness;
 pub mod sessions;
 
 pub use agent::{
@@ -21,7 +21,7 @@ pub use agent::{
 pub use conversation::Conversation;
 pub use engine::{Program, ProgramStep, Runtime, SharedMemory};
 pub use env::Env;
-pub use hook::Harness;
+pub use harness::Harness;
 
 /// Opaque persistent handle to a conversation. Re-exported from the
 /// storage trait so runtime callers don't need to speak the storage

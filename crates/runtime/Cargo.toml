@@ -13,6 +13,7 @@ keywords.workspace = true
 [dependencies]
 storage = { workspace = true, default-features = false }
 memory.workspace = true
+mcp = { workspace = true, default-features = false, features = ["hyper"] }
 proto.workspace = true
 crabllm-core.workspace = true
 skill.workspace = true
@@ -26,9 +27,15 @@ async-stream.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
 parking_lot.workspace = true
+serde.workspace = true
+dirs.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
+[features]
+default = ["native-tls"]
+native-tls = ["mcp/native-tls"]
+rustls = ["mcp/rustls"]
+
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

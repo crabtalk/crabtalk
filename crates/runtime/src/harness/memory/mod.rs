@@ -3,6 +3,8 @@
 //! `Memory` methods and `MemoryHook` dispatch handlers. See RFC 0150
 //! for the design.
 
+use crate::Harness;
+use crate::{ToolDispatch, ToolFuture, agent::AsTool};
 use anyhow::Result;
 use crabllm_core::Tool;
 use forget::Forget;
@@ -10,8 +12,6 @@ use memory::Memory as Store;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use recall::Recall;
 use remember::Remember;
-use runtime::Harness;
-use runtime::{ToolDispatch, ToolFuture, agent::AsTool};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use storage::{AgentConfig, MemoryConfig};
 
@@ -28,7 +28,7 @@ pub type SharedStore = Arc<RwLock<Store>>;
 /// tools. Tool *signatures* come from each struct's `///` doc comment
 /// via schemars; this prompt covers everything that doesn't fit in a
 /// per-arg description.
-const MEMORY_USAGE: &str = include_str!("../../prompts/memory.md");
+const MEMORY_USAGE: &str = include_str!("../../../prompts/memory.md");
 
 pub struct Memory {
     pub(super) inner: SharedStore,

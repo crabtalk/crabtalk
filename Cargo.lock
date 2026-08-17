@@ -645,7 +645,6 @@ dependencies = [
  "crabllm-provider",
  "crabllm-sdk",
  "crabtalk-berm",
- "crabtalk-hooks",
  "crabtalk-mcp",
  "crabtalk-proto",
  "crabtalk-runtime",
@@ -720,25 +719,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabtalk-hooks"
-version = "0.0.23"
-dependencies = [
- "anyhow",
- "crabllm-core",
- "crabtalk-mcp",
- "crabtalk-memory",
- "crabtalk-runtime",
- "crabtalk-storage",
- "dirs",
- "parking_lot",
- "schemars",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "crabtalk-mcp"
 version = "0.0.23"
 dependencies = [
@@ -795,15 +775,18 @@ dependencies = [
  "async-stream",
  "chrono",
  "crabllm-core",
+ "crabtalk-mcp",
  "crabtalk-memory",
  "crabtalk-proto",
  "crabtalk-skill",
  "crabtalk-storage",
+ "dirs",
  "futures-core",
  "futures-util",
  "heck",
  "parking_lot",
  "schemars",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",

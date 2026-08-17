@@ -9,10 +9,10 @@ use crate::{
 };
 use anyhow::Result;
 use crabtalk_berm::HarnessHook;
-use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook};
 use mcp::McpHandler;
 use proto::server::Server;
 use runtime::agent::Model;
+use runtime::harness::{EventSink, Hooks, McpHook, Memory, MemoryHook};
 use runtime::{Harness, Runtime};
 use std::{
     collections::BTreeMap,

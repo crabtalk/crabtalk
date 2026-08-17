@@ -48,7 +48,7 @@ impl<P: Provider + 'static, S: Storage> runtime::Config for SystemCfg<P, S> {
 pub struct CrabTalk<P: Provider + 'static, S: Storage> {
     pub runtime: RuntimeHandle<P, S>,
     /// Root hook owning all sub-hooks and shared state.
-    pub hook: Arc<hooks::Hooks>,
+    pub hook: Arc<runtime::harness::Hooks>,
     pub(crate) config_dir: PathBuf,
     pub(crate) started_at: std::time::Instant,
     pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,
