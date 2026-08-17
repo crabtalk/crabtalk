@@ -60,10 +60,8 @@ pub trait Sessions: KVStorage + TextSearch {
     ///
     /// The numbers live here rather than in constants because they are
     /// judgements, and a judgement should have a name and a place to be
-    /// changed. When one store needs to differ from another, the hook
-    /// belongs on [`TextSearch`](crate::TextSearch) — a backend
-    /// implements that directly, so it can override, which a
-    /// blanket-implemented trait cannot.
+    /// changed. One place, for now: this trait is blanket-implemented,
+    /// so the default is what every store gets.
     fn config(&self) -> Weights {
         Weights::default()
     }

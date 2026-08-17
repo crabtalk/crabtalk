@@ -9,10 +9,12 @@
 //! bodies, so implementing the primitives *is* implementing the
 //! interfaces — there is no wrapper to build and nothing to wire.
 //!
-//! A backend implements nine methods and gets everything above them for
+//! A backend implements five methods and gets everything above them for
 //! free — which is what makes a different deployment a different
 //! implementation rather than a rewrite of anything here.
-//! `crabtalk-agent` is one such backend: sqlite behind both.
+//! `crabtalk-agent` is one such backend, over [`crabdb`].
+//!
+//! [`crabdb`]: https://docs.rs/crabtalk-crabdb
 
 pub use agent::{AgentConfig, AgentId, DEFAULT_AGENT};
 pub use config::{

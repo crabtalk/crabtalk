@@ -2,8 +2,10 @@
 //!
 //! [`meta`] is its identity and metadata, [`history`] the turns the model
 //! replays, [`event`] the trace of what happened during a run, and
-//! [`hit`] the shape a search result comes back in. How a backend finds
-//! a match is its own business — sqlite uses FTS5. See RFC 0185.
+//! [`SessionHit`] the shape a search result comes back in. Finding a
+//! match is
+//! not a backend's business: it is BM25 over the same keyspace, written
+//! once in [`text`](crate::text). See RFC 0207.
 
 pub mod event;
 pub mod history;

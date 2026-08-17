@@ -129,10 +129,6 @@ tokio = { version = "1", features = [
 ] }
 textwrap = "0.16"
 toml = "0.8"
-sqlx = { version = "0.8", default-features = false, features = [
-    "runtime-tokio",
-    "sqlite",
-] }
 tracing = "0.1"
 ulid = { version = "1", features = ["serde"] }
 tracing-subscriber = "0.3"

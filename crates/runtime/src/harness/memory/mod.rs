@@ -1,6 +1,6 @@
 //! Memory hook — the `recall` / `remember` / `forget` tools over the
-//! [`Memory`](store::interface::Memory) interface. Per-tool files own
-//! the corresponding handlers. See RFC 0150 for the design.
+//! [`store::interface::Memory`] interface. Per-tool files own the
+//! corresponding handlers. See RFC 0207 for the design.
 //!
 //! The hook holds a store handle, not a store: entries live in the
 //! backend and are read by name for the one call that needs them. There

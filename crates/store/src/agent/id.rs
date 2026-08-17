@@ -16,9 +16,8 @@ use ulid::Ulid;
 /// extend the type later without touching call sites.
 ///
 /// The zero ULID is not a sentinel — it is the identity of the agent
-/// seeded by [`Storage::scaffold`](crate::Storage::scaffold), so
-/// [`Default`] names a real agent rather than a missing one. Absence is
-/// spelled `Option<AgentId>`.
+/// the daemon seeds on first run, so [`Default`] names a real agent
+/// rather than a missing one. Absence is spelled `Option<AgentId>`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
 )]

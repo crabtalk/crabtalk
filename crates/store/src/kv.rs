@@ -2,14 +2,14 @@
 //!
 //! Everything addressable by a key you already hold lives here: agent
 //! configs, skill bodies, memory entries, session blobs, harness images.
-//! [`SqlIndex`](crate::SqlIndex) sits beside it holding only what a
-//! lookup needs to *find* one of these — ordering fields, FTS terms, set
-//! membership — and never content. That asymmetry is the whole design:
-//! the index is derived, so it can be rebuilt by scanning a column, and
-//! no write ever needs a transaction spanning the two stores.
+//! What a lookup needs to *find* one of these — ordering, name
+//! resolution, set membership — is more keys, filed under an `idx/`
+//! prefix and holding a primary key rather than content. Those indexes
+//! are derived, so any of them can be rebuilt by scanning the column it
+//! points into, and no write ever needs a transaction.
 //!
 //! The surface is deliberately small. A query engine would let a caller
-//! ask for anything, including something that crosses a realm; four
+//! ask for anything, including something that crosses a realm; five
 //! methods over a prefixed keyspace cannot express that.
 
 use anyhow::Result;

@@ -7,7 +7,7 @@
 //! seek and prefix scans are an ordered walk, and survives a crash by
 //! discarding a torn tail.
 //!
-//! Two pieces: [`format`] is the CRMEM layout on disk, [`CrabDb`] is the
+//! Two pieces: [`mod@format`] is the CRMEM layout on disk, [`CrabDb`] is the
 //! store over it.
 //!
 //! ```no_run

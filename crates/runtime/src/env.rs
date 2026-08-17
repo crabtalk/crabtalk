@@ -1,8 +1,8 @@
 //! Env — trait for node-specific capabilities and tool dispatch.
 //!
-//! The runtime engine talks to a single `Env` implementation. The node
-//! crate provides [`NodeEnv`] which bundles event broadcasting,
-//! instruction discovery, and a composite Harness. Tests use `()`.
+//! The runtime engine talks to a single `Env` implementation.
+//! `crabtalk`'s `SystemEnv` is the shipped one, bundling event
+//! broadcasting and a composite Harness. Tests use `()`.
 
 use crate::Harness;
 use crate::{AgentEvent, ToolDispatch, ToolFuture};

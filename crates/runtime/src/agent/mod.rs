@@ -90,7 +90,7 @@ impl<P: Provider + 'static> Agent<P> {
     /// agent may see. Without the filter a scoped agent is advertised tools
     /// the dispatcher will reject — enforcement without advertisement just
     /// buys a wasted turn. Empty whitelist = unrestricted, matching
-    /// [`ToolRegistry::filtered_snapshot`].
+    /// [`ToolRegistry::filtered_snapshot`](crate::ToolRegistry::filtered_snapshot).
     pub fn extend_tools(&mut self, tools: Vec<Tool>) {
         if self.config.tools.is_empty() {
             self.tools.extend(tools);
