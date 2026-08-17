@@ -81,4 +81,4 @@ and as a fallback when a release download fails — puts them in
 
 ## License
 
-MIT OR Apache-2.0
+MIT

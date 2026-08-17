@@ -50,4 +50,4 @@ associated type already makes.
 
 ## License
 
-MIT OR Apache-2.0
+MIT

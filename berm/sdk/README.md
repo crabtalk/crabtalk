@@ -43,7 +43,7 @@ failure message, so an error can be specific without needing an allocator to say
 it.
 
 The manifest — ABI version, tools, schemas, capabilities wanted — is built at
-compile time and carried in a `.crabtalk.abi` section, so a host reads what a
+compile time and carried in a `.berm.abi` section, so a host reads what a
 harness claims to be without running it.
 
 ## Testing
