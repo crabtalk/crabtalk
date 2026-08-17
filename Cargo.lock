@@ -855,6 +855,7 @@ name = "crabtalk-skill"
 version = "0.0.23"
 dependencies = [
  "anyhow",
+ "dirs",
  "serde",
  "serde_yml",
  "tokio",

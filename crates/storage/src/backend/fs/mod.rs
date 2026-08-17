@@ -9,7 +9,6 @@
 #![cfg(feature = "fs")]
 
 use anyhow::Result;
-pub use loader::DEFAULT_SETTINGS;
 use parking_lot::Mutex;
 use schema::{
     AgentConfig, AgentId, Config, ConversationMeta, EventLine,
@@ -27,17 +26,15 @@ use tokio::fs;
 
 mod agents;
 mod config;
-pub mod loader;
 mod paths;
-mod scaffold;
+pub mod scaffold;
 mod sessions;
 mod skills;
 
-/// Header prepended to `local/settings.toml` on every write — same
-/// template as the one scaffolded on first-run (`DEFAULT_SETTINGS`).
-/// Tells humans not to edit the file while the daemon is running and
-/// documents the allowed sections.
-pub(super) const SETTINGS_HEADER: &str = DEFAULT_SETTINGS;
+/// Header prepended to `local/settings.toml` on every write — the same
+/// template scaffolded on first run. Tells humans not to edit the file
+/// while the daemon is running and documents the allowed sections.
+pub(super) const SETTINGS_HEADER: &str = scaffold::DEFAULT_SETTINGS;
 
 /// Filesystem persistence backend.
 pub struct FsStorage {
@@ -45,14 +42,17 @@ pub struct FsStorage {
     pub(super) config_dir: PathBuf,
     /// Root for session directories.
     pub(super) sessions_root: PathBuf,
-    /// Ordered skill roots to scan (local first, then packages).
+    /// Ordered skill roots to scan — this install first, then the
+    /// well-known roots of other tools.
     pub(super) skill_roots: Vec<PathBuf>,
     /// Per-session step counters, recovered from disk on first access.
     pub(super) session_counters: Mutex<HashMap<String, u64>>,
 }
 
 impl FsStorage {
-    pub fn new(config_dir: PathBuf, sessions_root: PathBuf, skill_roots: Vec<PathBuf>) -> Self {
+    pub fn new(config_dir: PathBuf, sessions_root: PathBuf) -> Self {
+        let mut skill_roots = vec![config_dir.join(schema::paths::SKILLS_DIR)];
+        skill_roots.extend(skill::discover::external_roots());
         Self {
             config_dir,
             sessions_root,

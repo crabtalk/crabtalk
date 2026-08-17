@@ -27,12 +27,8 @@ pub static TCP_PORT_FILE: LazyLock<PathBuf> = LazyLock::new(|| RUN_DIR.join("cra
 pub const CONFIG_FILE: &str = "config.toml";
 /// Mutable settings file (daemon-owned, persisted under `local/`).
 pub const SETTINGS_FILE: &str = "local/settings.toml";
-/// Local package directory (user's own skills, agents, MCPs).
+/// Daemon-owned state directory.
 pub const LOCAL_DIR: &str = "local";
-/// Installed package manifests directory.
-pub const PACKAGES_DIR: &str = "packages";
-/// Agents subdirectory (contains *.md files).
-pub const AGENTS_DIR: &str = "local/agents";
 /// Skills subdirectory.
 pub const SKILLS_DIR: &str = "local/skills";
 

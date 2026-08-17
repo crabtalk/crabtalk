@@ -12,6 +12,21 @@ use std::{
 };
 use tokio::fs;
 
+/// Well-known skill roots belonging to other agent tools.
+///
+/// SKILL.md is a shared format, so a skill installed for one tool is
+/// readable by all of them. Only directories that exist are returned.
+pub fn external_roots() -> Vec<PathBuf> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
+    [".claude/skills", ".codex/skills", ".openclaw/skills"]
+        .iter()
+        .map(|dir| home.join(dir))
+        .filter(|path| path.exists())
+        .collect()
+}
+
 /// Every skill across `roots`, first root winning on name collisions.
 pub async fn list(roots: &[PathBuf]) -> Result<Vec<Skill>> {
     let mut skills = Vec::new();

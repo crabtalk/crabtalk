@@ -1,18 +1,36 @@
-//! First-startup scaffold: create the directory layout and seed the
-//! built-in `crab` agent.
+//! First-startup scaffold: create the directory layout, write the config
+//! templates, and seed the built-in `crab` agent.
 
 use crate::backend::fs::FsStorage;
 use anyhow::Result;
 use schema::AgentConfig;
 use tokio::fs;
 
+/// Default template for `config.toml` — the hand-edited install config
+/// (LLM endpoint, task pool, env vars).
+pub const DEFAULT_CONFIG: &str = include_str!("../../../config.toml");
+
+/// Default template for `local/settings.toml` — daemon-managed runtime
+/// records (MCPs, agents). Overwritten on first daemon write.
+pub const DEFAULT_SETTINGS: &str = include_str!("../../../settings.toml");
+
 impl FsStorage {
     pub(super) async fn scaffold(&self, default_model: &str) -> Result<()> {
         fs::create_dir_all(&self.config_dir).await?;
         fs::create_dir_all(self.config_dir.join(schema::paths::LOCAL_DIR)).await?;
         fs::create_dir_all(self.config_dir.join(schema::paths::SKILLS_DIR)).await?;
-        fs::create_dir_all(self.config_dir.join(schema::paths::AGENTS_DIR)).await?;
         fs::create_dir_all(&self.sessions_root).await?;
+
+        write_if_absent(
+            &self.config_dir.join(schema::paths::CONFIG_FILE),
+            DEFAULT_CONFIG,
+        )
+        .await?;
+        write_if_absent(
+            &self.config_dir.join(schema::paths::SETTINGS_FILE),
+            DEFAULT_SETTINGS,
+        )
+        .await?;
 
         let file = self.read_settings().await?;
         if file.agents.is_empty() {
@@ -20,4 +38,12 @@ impl FsStorage {
         }
         Ok(())
     }
+}
+
+async fn write_if_absent(path: &std::path::Path, contents: &str) -> Result<()> {
+    if fs::try_exists(path).await? {
+        return Ok(());
+    }
+    fs::write(path, contents).await?;
+    Ok(())
 }

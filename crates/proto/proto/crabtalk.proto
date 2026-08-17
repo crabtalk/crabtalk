@@ -642,10 +642,10 @@ message AgentList {
 
 message SkillInfo {
   string name = 1;
-  reserved 2;
-  reserved "enabled";
-  string source = 3;
-  SourceKind source_kind = 4;
+  // Tags 2-4 were `enabled`, then `source`/`source_kind` from the package
+  // manifest design. Reserved until packages are redesigned.
+  reserved 2, 3, 4;
+  reserved "enabled", "source", "source_kind";
   // What the skill is for. The catalogue is chosen from by description, so
   // a listing without one cannot be selected from.
   string description = 5;

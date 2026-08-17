@@ -129,59 +129,20 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 
     pub(crate) async fn list_skills(&self) -> Vec<SkillInfo> {
-        let dirs = schema::resolve_dirs(&self.config_dir);
-        let local_skills_dir = self.config_dir.join(schema::paths::SKILLS_DIR);
-        let described: BTreeMap<String, String> = match self
-            .runtime
-            .read()
-            .await
-            .clone()
-            .storage()
-            .list_skills()
-            .await
-        {
+        let rt = self.runtime.read().await.clone();
+        match rt.storage().list_skills().await {
             Ok(skills) => skills
                 .into_iter()
-                .map(|s| (s.name, s.description))
+                .map(|s| SkillInfo {
+                    name: s.name,
+                    description: s.description,
+                })
                 .collect(),
             Err(e) => {
-                tracing::warn!("failed to read skill descriptions: {e}");
-                BTreeMap::new()
-            }
-        };
-
-        let dir_to_pkg: std::collections::BTreeMap<_, _> = dirs
-            .package_skill_dirs
-            .iter()
-            .map(|(id, dir)| (dir.clone(), id.clone()))
-            .collect();
-
-        let mut seen = std::collections::BTreeSet::new();
-        let mut skills = Vec::new();
-        for dir in &dirs.skill_dirs {
-            let (source, source_kind) = if *dir == local_skills_dir {
-                ("local".to_string(), SourceKind::Local)
-            } else if let Some(pkg_id) = dir_to_pkg.get(dir) {
-                (pkg_id.clone(), SourceKind::Package)
-            } else {
-                let name = schema::external_source_name(dir).unwrap_or("external");
-                (name.to_string(), SourceKind::External)
-            };
-
-            for name in skill::discover::scan_names(dir) {
-                if !seen.insert(name.clone()) {
-                    continue;
-                }
-                let description = described.get(&name).cloned().unwrap_or_default();
-                skills.push(SkillInfo {
-                    name,
-                    source: source.clone(),
-                    source_kind: source_kind.into(),
-                    description,
-                });
+                tracing::warn!("failed to list skills: {e}");
+                Vec::new()
             }
         }
-        skills
     }
 }
 

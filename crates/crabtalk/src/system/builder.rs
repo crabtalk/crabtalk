@@ -13,7 +13,7 @@ use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook};
 use mcp::McpHandler;
 use proto::server::Server;
 use runtime::{Harness, Runtime};
-use schema::{ResolvedDirs, model::Model, resolve_dirs, storage::Storage};
+use schema::{model::Model, storage::Storage};
 use std::{
     collections::BTreeMap,
     path::Path,
@@ -41,13 +41,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         build_provider: BuildProvider<P>,
     ) -> Result<Self> {
         let runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>> = Arc::new(OnceLock::new());
-        // Harnesses load before the daemon that answers their protocol calls
-        // exists, so they are handed the door rather than the server, and it
-        // opens once there is something behind it.
         let protocol: Arc<OnceLock<crabtalk_berm::Dispatch>> = Arc::new(OnceLock::new());
-
         let hooks = Hooks::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
-
         let (runtime, mcp, hooks, bridge) = Self::build_all(
             config,
             config_dir,
@@ -62,12 +57,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .set(shared_runtime.clone())
             .unwrap_or_else(|_| panic!("runtime already initialized"));
 
-        // Rebuild the session search index in the background — it
-        // does N file reads per persisted session, which on real
-        // disks can take seconds to tens of seconds at scale. Until
-        // the rebuild completes, `search_sessions` returns whatever
-        // subset has already been indexed (live appends index
-        // immediately, so new work is always findable).
+        // Rebuild the session search index in the background
         {
             let rebuild_runtime = shared_runtime.clone();
             tokio::spawn(async move {
@@ -173,12 +163,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
 
     /// Open the protocol door for harnesses, now that there is something
     /// behind it.
-    ///
-    /// `Server::dispatch` is already the one entry point every client goes
-    /// through, so a harness gets the same one rather than a second vocabulary
-    /// (RFC 0205). It is handed over as a closure because the trait is not
-    /// object-safe, and because `berm` must not depend on the crate
-    /// that implements it.
     fn connect_protocol(protocol: &OnceLock<crabtalk_berm::Dispatch>, daemon: Self) {
         let dispatch: crabtalk_berm::Dispatch = Arc::new(move |msg| {
             let daemon = daemon.clone();
@@ -204,7 +188,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         Arc<Hooks>,
         Arc<ClientBridge>,
     )> {
-        let dirs = resolve_dirs(config_dir);
         // Ask the endpoint what it serves; an empty list is survivable, so a
         // failure only warns and the next reload retries.
         let models = match config.llm.kind.is_none() && config.llm.base_url.is_empty() {
@@ -247,8 +230,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         }
         let runtime = Runtime::new(model, env, storage, shared_memory, tools);
         runtime.set_models(models);
-        let mut runtime = runtime;
-        Self::register_agents(&mut runtime, &dirs).await?;
+        let runtime = runtime;
         Ok((runtime, mcp_handler, hooks, bridge))
     }
 
@@ -263,16 +245,10 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let memory_wrapper = Memory::open(config_dir.join("memory.db"))?;
         let shared_memory = memory_wrapper.shared();
         let memory = Arc::new(memory_wrapper);
-
         hooks.register_hook("memory", Arc::new(MemoryHook::new(memory)));
-
         hooks.register_hook("mcp", Arc::new(McpHook::new(mcp_handler, env_overlay)));
 
-        // Harnesses are loaded here rather than when their agent registers,
-        // because the schema catalogue is built from `Harness::schema` before any
-        // agent exists — a tool the catalogue never saw is a tool no model is
-        // offered. Registering an agent later loads its own through
-        // `on_register_agent`.
+        // Loading harnesses
         match HarnessHook::new(protocol) {
             Ok(harnesses) => {
                 for agent in storage.list_agents().await.unwrap_or_default() {
@@ -284,45 +260,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         }
 
         Ok(shared_memory)
-    }
-
-    async fn register_agents(
-        runtime: &mut Runtime<crate::system::SystemCfg<P, S>>,
-        dirs: &ResolvedDirs,
-    ) -> Result<()> {
-        let stored_agents = runtime.storage().list_agents().await?;
-        let stored_names: std::collections::BTreeSet<String> =
-            stored_agents.iter().map(|a| a.name.clone()).collect();
-
-        for agent in stored_agents {
-            if agent.description.is_empty() {
-                tracing::warn!(name = %agent.name, "stored agent has no description — skipping");
-                continue;
-            }
-            if agent.model.is_empty() {
-                tracing::warn!(name = %agent.name, "stored agent has no model — skipping");
-                continue;
-            }
-            runtime.add_agent(agent);
-        }
-
-        for (name, agent) in &dirs.package_agents {
-            if stored_names.contains(name) {
-                continue;
-            }
-            let agent = agent.clone();
-            if agent.description.is_empty() {
-                tracing::warn!(name = %name, "package agent has no description — skipping");
-                continue;
-            }
-            if agent.model.is_empty() {
-                tracing::warn!(name = %name, "package agent has no model — skipping");
-                continue;
-            }
-            runtime.add_agent(agent);
-        }
-
-        Ok(())
     }
 }
 
