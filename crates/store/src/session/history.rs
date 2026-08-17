@@ -3,6 +3,7 @@
 //! The inner `message` is the wire shape sent to providers; the rest is
 //! runtime state the session file keeps so a reload can reconstruct it.
 
+use crate::session::MAX_SNIPPET_BYTES;
 use crabllm_core::{
     Role, ToolCall,
     anthropic::{Content, ContentBlock, Message},
@@ -146,52 +147,82 @@ impl HistoryEntry {
     }
 }
 
-/// Text and role tag for the search index, or `None` for a message that
-/// must not be indexed.
-///
-/// The exclusions are the point. Tool results and tool-call arguments
-/// carry credentials often enough that neither belongs in free text a
-/// query can reach — a tool-calling assistant contributes only the
-/// function names. Auto-injected framing is not the user's words and
-/// would match against every session that has it. The tag feeds the
-/// ranking weights, so `assistant_tool` is distinct from `assistant`.
-pub fn indexable(entry: &HistoryEntry) -> Option<(String, &'static str)> {
-    if entry.auto_injected {
-        return None;
-    }
-    let role = entry.role().clone();
-    if !matches!(role, Role::User | Role::Assistant) || has_tool_result(entry) {
-        return None;
-    }
-    let text = entry.text();
-    if !text.is_empty() {
+impl HistoryEntry {
+    /// Text and role tag for the search index, or `None` for a message
+    /// that must not be indexed.
+    ///
+    /// The exclusions are the point. Tool results and tool-call
+    /// arguments carry credentials often enough that neither belongs in
+    /// free text a query can reach — a tool-calling assistant
+    /// contributes only the function names. Auto-injected framing is not
+    /// the user's words and would match against every session that has
+    /// it. The tag feeds the ranking weights, so `assistant_tool` is
+    /// distinct from `assistant`.
+    pub fn indexable(&self) -> Option<(String, &'static str)> {
+        if self.auto_injected {
+            return None;
+        }
+        let role = self.role().clone();
+        if !matches!(role, Role::User | Role::Assistant) || self.has_tool_result() {
+            return None;
+        }
+        let text = self.text();
+        if !text.is_empty() {
+            let tag = if matches!(role, Role::User) {
+                "user"
+            } else {
+                "assistant"
+            };
+            return Some((text.to_owned(), tag));
+        }
+        let names: Vec<_> = self
+            .tool_calls()
+            .iter()
+            .map(|tc| tc.function.name.clone())
+            .collect();
+        if names.is_empty() {
+            return None;
+        }
         let tag = if matches!(role, Role::User) {
             "user"
         } else {
-            "assistant"
+            "assistant_tool"
         };
-        return Some((text.to_owned(), tag));
+        Some((names.join(" "), tag))
     }
-    let names: Vec<_> = entry
-        .tool_calls()
-        .iter()
-        .map(|tc| tc.function.name.clone())
-        .collect();
-    if names.is_empty() {
-        return None;
-    }
-    let tag = if matches!(role, Role::User) {
-        "user"
-    } else {
-        "assistant_tool"
-    };
-    Some((names.join(" "), tag))
-}
 
-fn has_tool_result(entry: &HistoryEntry) -> bool {
-    entry
-        .message
-        .blocks()
-        .iter()
-        .any(|b| matches!(b, ContentBlock::ToolResult { .. }))
+    /// The entry's text, cut to [`MAX_SNIPPET_BYTES`] on a character
+    /// boundary. The flag says whether anything was dropped.
+    pub fn snippet(&self) -> (String, bool) {
+        let raw = self.text().to_owned();
+        if raw.len() <= MAX_SNIPPET_BYTES {
+            return (raw, false);
+        }
+        let mut end = MAX_SNIPPET_BYTES;
+        while end > 0 && !raw.is_char_boundary(end) {
+            end -= 1;
+        }
+        (raw[..end].to_owned(), true)
+    }
+
+    /// The function name on a tool call or a tool result.
+    pub fn tool_name(&self) -> Option<String> {
+        for block in self.message.blocks() {
+            match block {
+                ContentBlock::ToolResult { name: Some(n), .. } if !n.is_empty() => {
+                    return Some(n.clone());
+                }
+                ContentBlock::ToolUse { name, .. } => return Some(name.clone()),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn has_tool_result(&self) -> bool {
+        self.message
+            .blocks()
+            .iter()
+            .any(|b| matches!(b, ContentBlock::ToolResult { .. }))
+    }
 }

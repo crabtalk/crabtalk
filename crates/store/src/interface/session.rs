@@ -4,13 +4,12 @@ use crate::{
     AgentConfig, AgentId, HistoryEntry,
     kv::{Column, KVStorage},
     session::{
-        EventLine, MAX_HITS_PER_QUERY, MAX_SNIPPET_BYTES, MAX_WINDOW_ITEMS, SearchOptions,
-        SessionHandle, SessionHit, SessionMeta, SessionSnapshot, WindowItem, history::indexable,
+        EventLine, MAX_HITS_PER_QUERY, MAX_WINDOW_ITEMS, SearchOptions, SessionHandle, SessionHit,
+        SessionMeta, SessionSnapshot, WindowItem,
     },
     text::{TextIndex, TextSearch},
 };
 use anyhow::Result;
-use crabllm_core::anthropic::ContentBlock;
 use std::{collections::BTreeMap, future::Future};
 
 /// How a store ranks a session search.
@@ -193,7 +192,7 @@ pub trait Sessions: KVStorage + TextSearch {
                 // results and tool-call arguments are excluded there, so
                 // the index never sees a credential that passed through
                 // a message.
-                if let Some((body, role)) = indexable(entry) {
+                if let Some((body, role)) = entry.indexable() {
                     let weight = match role {
                         "user" => weights.user,
                         "assistant_tool" => weights.tool_call,
@@ -544,13 +543,13 @@ pub trait Sessions: KVStorage + TextSearch {
                 else {
                     continue;
                 };
-                let (snippet, truncated) = snippet(&entry);
+                let (snippet, truncated) = entry.snippet();
                 out.push(WindowItem {
                     role: entry.role().clone(),
                     msg_idx: i as u32,
                     snippet,
                     truncated,
-                    tool_name: tool_name(&entry),
+                    tool_name: entry.tool_name(),
                 });
             }
             Ok(out)
@@ -570,29 +569,4 @@ fn parse_message_key(key: &[u8]) -> Option<(String, usize)> {
         return None;
     }
     Some((parts.next()?.to_owned(), idx))
-}
-
-fn snippet(entry: &HistoryEntry) -> (String, bool) {
-    let raw = entry.text().to_owned();
-    if raw.len() <= MAX_SNIPPET_BYTES {
-        return (raw, false);
-    }
-    let mut end = MAX_SNIPPET_BYTES;
-    while end > 0 && !raw.is_char_boundary(end) {
-        end -= 1;
-    }
-    (raw[..end].to_owned(), true)
-}
-
-fn tool_name(entry: &HistoryEntry) -> Option<String> {
-    for block in entry.message.blocks() {
-        match block {
-            ContentBlock::ToolResult { name: Some(n), .. } if !n.is_empty() => {
-                return Some(n.clone());
-            }
-            ContentBlock::ToolUse { name, .. } => return Some(name.clone()),
-            _ => {}
-        }
-    }
-    None
 }

@@ -14,17 +14,17 @@
 //! identities or summaries, and the body is a second call for the one
 //! thing the caller kept.
 
-pub use agents::{Agents, validate_table_name};
-pub use harnesses::Harnesses;
+pub use agent::{Agents, validate_table_name};
+pub use harness::Harnesses;
 pub use memory::{Memory, MemoryEntry};
-pub use sessions::{Sessions, Weights};
-pub use skills::{Skill, SkillSummary, Skills};
+pub use session::{Sessions, Weights};
+pub use skill::{Skill, SkillSummary, Skills};
 
-mod agents;
-mod harnesses;
+mod agent;
+mod harness;
 mod memory;
-mod sessions;
-mod skills;
+mod session;
+mod skill;
 
 /// Everything the runtime needs from a store.
 ///

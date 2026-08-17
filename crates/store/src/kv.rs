@@ -27,17 +27,21 @@ pub enum Column {
     Skill = 3,
     Harness = 4,
     Config = 5,
+    /// The inverted index. Its own column so a scan for a term can never
+    /// wander into the content it points at.
+    Text = 6,
 }
 
 impl Column {
     /// Every column, for backends that must enumerate them at open.
-    pub const ALL: [Column; 6] = [
+    pub const ALL: [Column; 7] = [
         Column::Agent,
         Column::Session,
         Column::Memory,
         Column::Skill,
         Column::Harness,
         Column::Config,
+        Column::Text,
     ];
 }
 

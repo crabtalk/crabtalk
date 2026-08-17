@@ -19,6 +19,7 @@ transport = { path = "crates/transport", package = "crabtalk-transport", version
 proto = { path = "crates/proto", package = "crabtalk-proto", version = "0.0.23", default-features = false }
 store = { path = "crates/store", package = "crabtalk-store", version = "0.0.23", default-features = false }
 crabtalk-berm = { path = "crates/berm", version = "0.0.23" }
+crabdb = { path = "lib/crabdb", package = "crabtalk-crabdb", version = "0.0.23" }
 embed = { path = "lib/embed", package = "crabtalk-embed", version = "0.0.23" }
 mcp = { path = "lib/mcp", package = "crabtalk-mcp", version = "0.0.23", default-features = false }
 search = { path = "lib/search", package = "crabtalk-search", version = "0.0.23", default-features = false }

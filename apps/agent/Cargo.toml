@@ -13,10 +13,11 @@ name = "crabtalk-agent"
 path = "src/bin/main.rs"
 
 [dependencies]
+crabdb.workspace = true
 store.workspace = true
 
 anyhow.workspace = true
-sqlx.workspace = true
+tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 
 [dev-dependencies]

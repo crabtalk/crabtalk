@@ -1,19 +1,20 @@
 //! Session search, end to end against a real SQLite database.
 
 use crabllm_core::anthropic::Message;
-use crabtalk_agent::backend::SqliteStorage;
+use crabtalk_agent::backend::Backend;
 use store::{AgentId, HistoryEntry, SearchOptions, interface::Sessions};
 
-async fn open() -> SqliteStorage {
-    SqliteStorage::open_in_memory().await.unwrap()
+async fn open() -> Backend {
+    let path = std::env::temp_dir().join(format!(
+        "crabtalk-search-{}-{:?}.crmem",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    Backend::open(path).unwrap()
 }
 
-async fn seed(
-    s: &SqliteStorage,
-    agent: &AgentId,
-    sender: &str,
-    msgs: &[&str],
-) -> store::SessionHandle {
+async fn seed(s: &Backend, agent: &AgentId, sender: &str, msgs: &[&str]) -> store::SessionHandle {
     let h = s.create_session(agent, sender).await.unwrap();
     let entries: Vec<HistoryEntry> = msgs
         .iter()

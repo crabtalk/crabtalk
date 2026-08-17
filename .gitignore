@@ -15,6 +15,7 @@ Cargo.toml.orig
 
 # Local
 TODOs.md
+todos
 res
 *.local.json
 *.local.md

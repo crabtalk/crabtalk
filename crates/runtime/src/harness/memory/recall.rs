@@ -9,7 +9,10 @@ use store::interface::Memory;
 /// Search your memory entries by keyword. Returns ranked results.
 #[derive(Deserialize, JsonSchema)]
 pub struct Recall {
-    /// Keyword or phrase to search your memory entries for.
+    /// Keywords to search your memory entries for. Terms match whole
+    /// words, so end one with `*` to match every word it starts —
+    /// `deploy*` finds "deployment" and "deployed" where `deploy` finds
+    /// neither.
     pub query: String,
     /// Maximum number of results to return. Defaults to 5.
     pub limit: Option<usize>,
