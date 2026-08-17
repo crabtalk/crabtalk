@@ -32,10 +32,10 @@ pub enum StreamResult {
 }
 
 /// Read the agents directory and return the first agent name found,
-/// falling back to [`schema::paths::DEFAULT_AGENT`].
+/// falling back to [`schema::DEFAULT_AGENT`].
 pub fn resolve_default_agent(agents_dir: &Path) -> String {
     let Ok(entries) = std::fs::read_dir(agents_dir) else {
-        return schema::paths::DEFAULT_AGENT.to_owned();
+        return schema::DEFAULT_AGENT.to_owned();
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -45,5 +45,5 @@ pub fn resolve_default_agent(agents_dir: &Path) -> String {
             return stem.to_owned();
         }
     }
-    schema::paths::DEFAULT_AGENT.to_owned()
+    schema::DEFAULT_AGENT.to_owned()
 }

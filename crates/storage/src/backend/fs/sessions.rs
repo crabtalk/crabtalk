@@ -3,12 +3,11 @@
 //! step-counter recovery live here too.
 
 use crate::backend::fs::{FsStorage, atomic_write};
-use anyhow::Result;
-use schema::{
-    ConversationMeta, EventLine,
-    model::HistoryEntry,
+use crate::{
+    ConversationMeta, EventLine, HistoryEntry,
     storage::{SessionHandle, SessionSnapshot, SessionSummary},
 };
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
     io::ErrorKind,

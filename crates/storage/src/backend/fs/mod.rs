@@ -8,13 +8,12 @@
 //! and config, so they sit on the struct itself.
 #![cfg(feature = "fs")]
 
-use anyhow::Result;
-use parking_lot::Mutex;
-use schema::{
-    AgentConfig, AgentId, Config, ConversationMeta, EventLine,
-    model::HistoryEntry,
+use crate::{
+    AgentConfig, AgentId, Config, ConversationMeta, EventLine, HistoryEntry,
     storage::{SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage},
 };
+use anyhow::Result;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -51,7 +50,7 @@ pub struct FsStorage {
 
 impl FsStorage {
     pub fn new(config_dir: PathBuf, sessions_root: PathBuf) -> Self {
-        let mut skill_roots = vec![config_dir.join(schema::paths::SKILLS_DIR)];
+        let mut skill_roots = vec![config_dir.join(crate::SKILLS_DIR)];
         skill_roots.extend(skill::discover::external_roots());
         Self {
             config_dir,
@@ -62,7 +61,7 @@ impl FsStorage {
     }
 
     pub(super) fn settings_path(&self) -> PathBuf {
-        self.config_dir.join(schema::paths::SETTINGS_FILE)
+        self.config_dir.join(crate::SETTINGS_FILE)
     }
 
     /// Read and parse the settings file. Re-parsed on every call —

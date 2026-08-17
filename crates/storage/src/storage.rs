@@ -4,7 +4,7 @@
 //! implementation per backend. Memory lives in its own `crabtalk-memory`
 //! crate and is not part of this trait.
 
-use crate::{AgentConfig, AgentEvent, AgentId, AgentStep, Config, model::HistoryEntry};
+use crate::{AgentConfig, AgentId, Config, history::HistoryEntry};
 use anyhow::Result;
 use crabllm_core::Usage;
 use serde::{Deserialize, Serialize};
@@ -233,64 +233,6 @@ pub struct ToolCallTrace {
     pub name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub arguments: String,
-}
-
-impl EventLine {
-    /// Build a trace entry from an [`AgentEvent`]. Returns `None` for
-    /// events that don't carry useful trace information.
-    pub fn from_agent_event(event: &AgentEvent) -> Option<Self> {
-        let ts = chrono::Utc::now().to_rfc3339();
-        match event {
-            AgentEvent::ToolCallsStart(calls) => Some(Self::ToolStart {
-                calls: calls
-                    .iter()
-                    .map(|c| ToolCallTrace {
-                        id: c.id.clone(),
-                        name: c.function.name.to_string(),
-                        arguments: c.function.arguments.clone(),
-                    })
-                    .collect(),
-                ts,
-            }),
-            AgentEvent::ToolResult {
-                call_id,
-                duration_ms,
-                ..
-            } => Some(Self::ToolResult {
-                call_id: call_id.clone(),
-                duration_ms: *duration_ms,
-                ts,
-            }),
-            AgentEvent::Done(resp) => Some(Self::Done {
-                model: resp.model.clone(),
-                iterations: resp.iterations,
-                stop_reason: resp.stop_reason.to_string(),
-                usage: sum_step_usage(&resp.steps),
-                ts,
-            }),
-            AgentEvent::UserSteered { content } => Some(Self::UserSteered {
-                content: content.clone(),
-                ts,
-            }),
-            _ => None,
-        }
-    }
-}
-
-/// Sum token usage across all steps.
-fn sum_step_usage(steps: &[AgentStep]) -> Usage {
-    steps.iter().fold(Usage::default(), |mut acc, step| {
-        let u = &step.usage;
-        acc.input_tokens += u.input_tokens;
-        acc.cache_read_tokens += u.cache_read_tokens;
-        acc.cache_write_tokens += u.cache_write_tokens;
-        acc.output_tokens += u.output_tokens;
-        acc.reasoning_tokens += u.reasoning_tokens;
-        for (k, v) in &u.server_tool_calls {
-            *acc.server_tool_calls.entry(k.clone()).or_insert(0) += v;
-        }
-        acc
-    })
 }
 
 /// Sanitize a string into a filesystem-safe slug for session naming.

@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 
-use crate::registry::Entry;
+use crate::cmd::registry::Entry;
 
 /// Return the set of installed crabtalk-owned crates (from cargo), sorted.
 pub fn installed() -> Result<Vec<String>> {
@@ -41,12 +41,12 @@ struct Row {
 /// Print a unified list of available crabtalk binaries.
 pub fn run() -> Result<()> {
     let cargo_set: std::collections::HashSet<String> = installed()?.into_iter().collect();
-    let manifest = crate::manifest::all().unwrap_or_default();
+    let manifest = crate::cmd::manifest::all().unwrap_or_default();
 
     let mut rows: Vec<Row> = Entry::all()
         .iter()
         .map(|e| {
-            let managed = schema::paths::BIN_DIR.join(e.bin).exists();
+            let managed = crate::dirs::BIN_DIR.join(e.bin).exists();
             let cargo = cargo_set.contains(e.krate);
 
             let state = match (managed, cargo) {

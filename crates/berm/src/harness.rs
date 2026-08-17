@@ -79,7 +79,7 @@ impl HarnessHook {
     /// which is a clearer failure than a call that waits for one.
     pub fn new(protocol: Arc<OnceLock<Dispatch>>) -> anyhow::Result<Self> {
         let mut config = Config::new();
-        config.cache_dir(schema::paths::CONFIG_DIR.join("cache/berm"));
+        config.cache_dir(crabup::CONFIG_DIR.join("cache/berm"));
         Ok(Self {
             engine: Engine::new(&config)?,
             registry: RwLock::new(Registry::default()),
@@ -124,7 +124,7 @@ impl HarnessHook {
         declaration: &HarnessConfig,
         skills: &[String],
     ) -> anyhow::Result<Digest> {
-        let path = schema::paths::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
+        let path = crate::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
         let elf = std::fs::read(&path).map_err(|e| {
             anyhow::anyhow!(
                 "{}: {e} — `make harness` installs images here",
@@ -272,7 +272,7 @@ impl runtime::Harness for HarnessHook {
     /// available without instantiating anything.
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
         for declaration in &config.harnesses {
-            let path = schema::paths::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
+            let path = crate::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
             let usage = std::fs::read(&path)
                 .ok()
                 .and_then(|elf| berm::manifest(&elf).ok())

@@ -5,8 +5,8 @@
 //! one module named for what they produce is the next best thing —
 //! `convert::meta(&row)` reads like the trait would.
 
+use crate::{ConversationMeta, EventLine};
 use anyhow::Result;
-use schema::storage::{ConversationMeta, EventLine};
 use sqlx::{Row, sqlite::SqliteRow};
 
 /// A session row's metadata.

@@ -3,10 +3,14 @@
 //! [`AgentConfig`] is a serializable struct holding all agent parameters.
 //! Used by [`super::AgentBuilder`] to construct an [`super::Agent`].
 
-use crate::{AgentId, config::hooks::HooksConfig, model::ToolChoice};
+use crate::{AgentId, config::hooks::HooksConfig};
+use crabllm_core::ToolChoice;
 use crabllm_core::anthropic;
 use proto::AgentInfo;
 use serde::{Deserialize, Serialize};
+
+/// Name of the built-in agent seeded on first run.
+pub const DEFAULT_AGENT: &str = "crab";
 
 /// Default maximum iterations for agent execution.
 const DEFAULT_MAX_ITERATIONS: usize = 16;
@@ -82,7 +86,7 @@ pub struct AgentConfig {
 impl AgentConfig {
     /// Construct the default `crab` agent with the given model.
     pub fn crab(model: impl Into<String>) -> Self {
-        let mut cfg = AgentConfig::new(crate::paths::DEFAULT_AGENT);
+        let mut cfg = AgentConfig::new(DEFAULT_AGENT);
         cfg.model = model.into();
         cfg.harnesses = vec![
             crate::HarnessConfig {

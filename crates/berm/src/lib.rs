@@ -16,6 +16,8 @@
 //! compiler checks rather than a promise: berm's dependency list has no
 //! crabtalk crate in it, and cannot grow one without this file moving.
 
+use std::{path::PathBuf, sync::LazyLock};
+
 mod harness;
 mod http;
 mod protocol;
@@ -23,3 +25,11 @@ mod protocol;
 pub use harness::HarnessHook;
 pub use http::call as http_fetch;
 pub use protocol::{Dispatch, Scope, call as protocol_call};
+
+/// Harness images (`~/.crabtalk/harnesses/`), one `{name}.elf` each.
+///
+/// Lives here rather than with the rest of the install layout because this
+/// crate is the only thing that loads an image — and the installer that will
+/// write them reaches crabtalk's side of berm, not the other way round.
+pub static HARNESSES_DIR: LazyLock<PathBuf> =
+    LazyLock::new(|| crabup::CONFIG_DIR.join("harnesses"));

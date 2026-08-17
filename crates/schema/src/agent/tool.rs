@@ -5,7 +5,7 @@
 //! execute a tool call; [`ToolHandler`] is the per-tool async closure
 //! type stored in a [`ToolEntry`].
 
-use crate::model::HistoryEntry;
+use crate::HistoryEntry;
 use crabllm_core::{FunctionDef, Tool, ToolType};
 use heck::ToSnakeCase;
 use schemars::JsonSchema;

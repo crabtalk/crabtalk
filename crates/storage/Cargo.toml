@@ -11,9 +11,10 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-schema.workspace = true
+crabllm-core.workspace = true
+dirs.workspace = true
+proto = { workspace = true, features = ["llm"] }
 skill.workspace = true
-hooks = { workspace = true, default-features = false, features = ["memory"] }
 
 anyhow.workspace = true
 chrono.workspace = true

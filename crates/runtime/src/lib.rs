@@ -13,10 +13,10 @@ pub use schema::{MemoryConfig, TasksConfig};
 /// Opaque persistent handle to a conversation. Re-exported from the
 /// storage trait so runtime callers don't need to speak the storage
 /// layer's "session" vocabulary.
-pub type ConversationHandle = schema::storage::SessionHandle;
+pub type ConversationHandle = schema::SessionHandle;
 
 use crabllm_core::Provider;
-use schema::storage::Storage;
+use schema::Storage;
 
 /// Configuration trait bundling the associated types for a runtime.
 ///

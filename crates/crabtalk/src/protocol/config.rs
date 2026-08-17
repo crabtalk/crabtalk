@@ -4,7 +4,7 @@ use crate::{llm::Provider, system::CrabTalk};
 use anyhow::{Context, Result};
 use mcp::McpServerState;
 use proto::*;
-use schema::{AgentConfig, storage::Storage};
+use schema::{AgentConfig, Storage};
 use std::collections::BTreeMap;
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
@@ -17,7 +17,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         }
 
         let mut crab = storage
-            .load_agent_by_name(schema::paths::DEFAULT_AGENT)
+            .load_agent_by_name(schema::DEFAULT_AGENT)
             .await?
             .unwrap_or_else(|| AgentConfig::crab(&model));
         crab.model = model;

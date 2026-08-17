@@ -6,14 +6,13 @@
 //! an infinite loop rather than a compile error.
 
 use crate::backend::sqlite::SqliteStorage;
-use anyhow::Result;
-use schema::{
-    AgentConfig, AgentId, Config,
-    model::HistoryEntry,
+use crate::{
+    AgentConfig, AgentId, Config, HistoryEntry,
     storage::{
         ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage,
     },
 };
+use anyhow::Result;
 use skill::discover;
 
 impl Storage for SqliteStorage {

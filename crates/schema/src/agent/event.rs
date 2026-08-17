@@ -1,6 +1,6 @@
 //! Agent event types for step-based execution and streaming.
 
-use crate::model::HistoryEntry;
+use crate::{EventLine, HistoryEntry, ToolCallTrace};
 use crabllm_core::{FinishReason, ToolCall, Usage, anthropic::Message};
 use proto::*;
 
@@ -221,4 +221,62 @@ impl std::fmt::Display for AgentStopReason {
             Self::Error(msg) => write!(f, "error: {msg}"),
         }
     }
+}
+
+impl AgentEvent {
+    /// Build a trace entry from this event. `None` for events that carry
+    /// no useful trace information.
+    pub fn to_event_line(&self) -> Option<EventLine> {
+        let ts = chrono::Utc::now().to_rfc3339();
+        match self {
+            AgentEvent::ToolCallsStart(calls) => Some(EventLine::ToolStart {
+                calls: calls
+                    .iter()
+                    .map(|c| ToolCallTrace {
+                        id: c.id.clone(),
+                        name: c.function.name.to_string(),
+                        arguments: c.function.arguments.clone(),
+                    })
+                    .collect(),
+                ts,
+            }),
+            AgentEvent::ToolResult {
+                call_id,
+                duration_ms,
+                ..
+            } => Some(EventLine::ToolResult {
+                call_id: call_id.clone(),
+                duration_ms: *duration_ms,
+                ts,
+            }),
+            AgentEvent::Done(resp) => Some(EventLine::Done {
+                model: resp.model.clone(),
+                iterations: resp.iterations,
+                stop_reason: resp.stop_reason.to_string(),
+                usage: sum_step_usage(&resp.steps),
+                ts,
+            }),
+            AgentEvent::UserSteered { content } => Some(EventLine::UserSteered {
+                content: content.clone(),
+                ts,
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// Sum token usage across all steps.
+fn sum_step_usage(steps: &[AgentStep]) -> Usage {
+    steps.iter().fold(Usage::default(), |mut acc, step| {
+        let u = &step.usage;
+        acc.input_tokens += u.input_tokens;
+        acc.cache_read_tokens += u.cache_read_tokens;
+        acc.cache_write_tokens += u.cache_write_tokens;
+        acc.output_tokens += u.output_tokens;
+        acc.reasoning_tokens += u.reasoning_tokens;
+        for (k, v) in &u.server_tool_calls {
+            *acc.server_tool_calls.entry(k.clone()).or_insert(0) += v;
+        }
+        acc
+    })
 }

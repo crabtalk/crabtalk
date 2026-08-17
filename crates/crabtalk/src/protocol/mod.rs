@@ -5,7 +5,7 @@ use crate::system::CrabTalk;
 use anyhow::Result;
 use proto::server::Server;
 use proto::*;
-use schema::storage::Storage;
+use schema::Storage;
 use serde_json::Value;
 
 mod admin;

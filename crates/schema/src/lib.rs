@@ -1,20 +1,19 @@
 //! Crabtalk agent library.
+//!
+//! What an agent *does*. What one *is* — its config, and everything persisted
+//! about it — lives in `crabtalk-storage`, which this crate reads.
 
 pub use agent::{
-    Agent, AgentBuilder, AgentConfig, AgentId,
+    Agent, AgentBuilder,
     event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason},
     tool::{
         BeforeRunHook, ToolDispatch, ToolDispatcher, ToolEntry, ToolFuture, ToolHandler,
         ToolRegistry,
     },
 };
-pub use config::{
-    Config, HarnessConfig, HooksConfig, LlmConfig, McpServerConfig, MemoryConfig, TasksConfig,
-};
-pub use storage::{ConversationMeta, EventLine, sender_slug};
+// Re-exported so the agent half reads its own vocabulary. Temporary: when
+// this crate folds into `crabtalk-runtime`, callers import from storage.
+pub use ::storage::*;
 
 pub mod agent;
-pub mod config;
 pub mod model;
-pub mod paths;
-pub mod storage;

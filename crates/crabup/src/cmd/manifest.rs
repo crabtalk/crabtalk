@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 
 fn manifest_path() -> std::path::PathBuf {
-    schema::paths::CONFIG_DIR.join("installed.toml")
+    crate::dirs::CONFIG_DIR.join("installed.toml")
 }
 
 fn load() -> Result<toml::Table> {

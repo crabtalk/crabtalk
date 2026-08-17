@@ -4,7 +4,7 @@ use super::Runtime;
 use crate::Config;
 use anyhow::Result;
 use proto::{ConversationHistory, ConversationInfo, ConversationMessage};
-use schema::storage::{SessionHandle, SessionSummary, Storage};
+use schema::{SessionHandle, SessionSummary, Storage};
 use std::collections::HashMap;
 
 impl<C: Config> Runtime<C> {
@@ -29,7 +29,7 @@ impl<C: Config> Runtime<C> {
             let content = self.memory().read().get(&name).map(|e| e.content.clone());
             if let Some(summary) = content {
                 let mut out = Vec::with_capacity(messages.len() + 1);
-                out.push(schema::model::HistoryEntry::user(summary));
+                out.push(schema::HistoryEntry::user(summary));
                 out.append(&mut messages);
                 messages = out;
             }

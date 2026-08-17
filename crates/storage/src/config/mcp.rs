@@ -37,8 +37,7 @@ pub struct McpServerConfig {
     /// via HTTP instead of spawning a child process.
     pub url: Option<String>,
     /// Full `Authorization` header value to send on every HTTP-transport
-    /// request, e.g. `"Bearer eyJ..."`. Caller picks the scheme. Ignored
-    /// for stdio transports.
+    /// request, e.g. `"Bearer eyJ..."`. Caller picks the scheme.
     pub auth: Option<String>,
 }
 

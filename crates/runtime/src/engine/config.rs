@@ -3,14 +3,14 @@
 use super::Runtime;
 use crate::Config;
 use proto::ModelInfo;
-use schema::{paths, storage::Storage};
+use schema::Storage;
 
 impl<C: Config> Runtime<C> {
     /// The active model — defined as the default agent's `model` field.
     /// Empty string if the default agent is missing (pre-scaffold).
     pub async fn active_model(&self) -> String {
         self.storage()
-            .load_agent_by_name(paths::DEFAULT_AGENT)
+            .load_agent_by_name(schema::DEFAULT_AGENT)
             .await
             .ok()
             .flatten()

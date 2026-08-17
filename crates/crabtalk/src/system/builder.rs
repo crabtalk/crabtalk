@@ -13,7 +13,7 @@ use hooks::{EventSink, Hooks, McpHook, Memory, MemoryHook};
 use mcp::McpHandler;
 use proto::server::Server;
 use runtime::{Harness, Runtime};
-use schema::{model::Model, storage::Storage};
+use schema::{Storage, model::Model};
 use std::{
     collections::BTreeMap,
     path::Path,
@@ -123,7 +123,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 
     pub async fn reload(&self) -> Result<()> {
-        let config = schema::Config::load(&self.config_dir.join(schema::paths::CONFIG_FILE))?;
+        let config = schema::Config::load(&self.config_dir.join(schema::CONFIG_FILE))?;
         let runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>> = Arc::new(OnceLock::new());
         runtime_once
             .set(self.runtime.clone())

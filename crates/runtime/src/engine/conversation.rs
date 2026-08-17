@@ -4,10 +4,7 @@ use super::{ConvSlot, Runtime};
 use crate::{Config, Conversation, ConversationHandle};
 use anyhow::{Result, bail};
 use memory::{EntryKind, Op};
-use schema::{
-    model::{HistoryEntry, Role},
-    storage::Storage,
-};
+use schema::{HistoryEntry, Storage, model::Role};
 use std::sync::{Arc, atomic::Ordering};
 use tokio::sync::Mutex;
 

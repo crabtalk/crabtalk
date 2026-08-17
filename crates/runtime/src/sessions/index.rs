@@ -12,7 +12,8 @@ use super::hit::{
 };
 use memory::bm25;
 use schema::{
-    model::{ContentBlock, HistoryEntry, Role},
+    HistoryEntry,
+    model::{ContentBlock, Role},
     storage::SessionHandle,
 };
 use std::collections::HashMap;

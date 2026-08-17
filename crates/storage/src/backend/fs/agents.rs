@@ -4,8 +4,8 @@
 //! step with the first.
 
 use crate::backend::fs::FsStorage;
+use crate::{AgentConfig, AgentId, storage::validate_table_name};
 use anyhow::Result;
-use schema::{AgentConfig, AgentId, storage::validate_table_name};
 use std::io::ErrorKind;
 use tokio::fs;
 

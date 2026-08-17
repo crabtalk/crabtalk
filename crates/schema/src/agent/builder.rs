@@ -1,7 +1,8 @@
 //! Fluent builder for constructing an [`Agent`].
 
 use crate::{
-    agent::{Agent, config::AgentConfig, tool::ToolDispatcher},
+    AgentConfig,
+    agent::{Agent, tool::ToolDispatcher},
     model::Model,
 };
 use crabllm_core::{Provider, Tool};

@@ -1,4 +1,4 @@
-//! SQLite-backed [`Storage`](schema::storage::Storage).
+//! SQLite-backed [`Storage`](crate::Storage).
 //!
 //! One database per tenant: sessions, agents, and the install config all
 //! live in a single file, so a tenant is a thing you can copy, move, or

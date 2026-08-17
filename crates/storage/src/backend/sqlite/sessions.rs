@@ -2,11 +2,11 @@
 //! streams keyed to it.
 
 use crate::backend::sqlite::{SqliteStorage, convert, schema::BEGIN_IMMEDIATE};
-use anyhow::Result;
-use schema::{
-    model::HistoryEntry,
+use crate::{
+    HistoryEntry,
     storage::{ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary},
 };
+use anyhow::Result;
 use sqlx::Row;
 
 impl SqliteStorage {

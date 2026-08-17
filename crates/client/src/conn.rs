@@ -35,11 +35,11 @@ impl ConnectionInfo {
     pub fn platform_default() -> Result<Self> {
         #[cfg(unix)]
         {
-            Ok(Self::Uds(schema::paths::SOCKET_PATH.to_path_buf()))
+            Ok(Self::Uds(transport::SOCKET_PATH.to_path_buf()))
         }
         #[cfg(not(unix))]
         {
-            let port_str = std::fs::read_to_string(&*schema::paths::TCP_PORT_FILE)?;
+            let port_str = std::fs::read_to_string(&*transport::TCP_PORT_FILE)?;
             let port: u16 = port_str.trim().parse()?;
             Ok(Self::Tcp(port))
         }

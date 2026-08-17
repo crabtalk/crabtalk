@@ -6,7 +6,7 @@ use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
 use proto::ClientMessage;
 use proto::server::Server;
-use schema::storage::Storage;
+use schema::Storage;
 #[cfg(unix)]
 use std::path::Path;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -33,7 +33,7 @@ pub fn setup_socket<P: Provider + 'static, S: Storage>(
     daemon: CrabTalk<P, S>,
     shutdown_tx: &broadcast::Sender<()>,
 ) -> Result<(&'static Path, tokio::task::JoinHandle<()>)> {
-    let resolved_path: &'static Path = &schema::paths::SOCKET_PATH;
+    let resolved_path: &'static Path = &transport::SOCKET_PATH;
     if let Some(parent) = resolved_path.parent() {
         std::fs::create_dir_all(parent)?;
     }

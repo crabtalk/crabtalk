@@ -6,7 +6,7 @@ use crate::{
     Config,
     sessions::{SearchOptions, SessionHit},
 };
-use schema::storage::Storage;
+use schema::Storage;
 
 impl<C: Config> Runtime<C> {
     /// Number of messages currently indexed.

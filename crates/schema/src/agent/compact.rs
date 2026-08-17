@@ -1,6 +1,6 @@
 //! Context compaction — summarize conversation history and replace it.
 
-use crate::model::HistoryEntry;
+use crate::HistoryEntry;
 use crabllm_core::{
     Provider,
     anthropic::{self, ContentBlock, ToolResultContent},

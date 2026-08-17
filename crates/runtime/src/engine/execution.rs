@@ -7,7 +7,7 @@ use async_stream::stream;
 use crabllm_core::{ToolChoice, anthropic};
 use futures_core::Stream;
 use futures_util::StreamExt;
-use schema::{AgentEvent, AgentResponse, AgentStopReason, model::HistoryEntry};
+use schema::{AgentEvent, AgentResponse, AgentStopReason, HistoryEntry};
 use tokio::sync::{mpsc, watch};
 
 impl<C: Config> Runtime<C> {
@@ -82,7 +82,7 @@ impl<C: Config> Runtime<C> {
                 .on_event(&agent_name, conversation_id, &event);
             self.env
                 .on_agent_event(&agent_name, conversation_id, false, &event);
-            if let Some(line) = schema::EventLine::from_agent_event(&event) {
+            if let Some(line) = event.to_event_line() {
                 event_trace.push(line);
             }
         }
@@ -138,7 +138,7 @@ impl<C: Config> Runtime<C> {
                 while let Some(event) = event_stream.next().await {
                     self.env.hook().on_event(&agent_name, conversation_id, &event);
                     self.env.on_agent_event(&agent_name, conversation_id, false, &event);
-                    if let Some(line) = schema::EventLine::from_agent_event(&event) {
+                    if let Some(line) = event.to_event_line() {
                         event_trace.push(line);
                     }
                     if matches!(event, AgentEvent::Done(_)) {

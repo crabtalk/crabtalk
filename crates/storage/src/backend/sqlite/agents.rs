@@ -1,8 +1,8 @@
 //! Agent persistence — config stored whole, name and id as columns.
 
 use crate::backend::sqlite::SqliteStorage;
+use crate::{AgentConfig, AgentId, storage::validate_table_name};
 use anyhow::Result;
-use schema::{AgentConfig, AgentId, storage::validate_table_name};
 use sqlx::Row;
 
 impl SqliteStorage {

@@ -1,9 +1,9 @@
 //! First-startup scaffold: create the directory layout, write the config
 //! templates, and seed the built-in `crab` agent.
 
+use crate::AgentConfig;
 use crate::backend::fs::FsStorage;
 use anyhow::Result;
-use schema::AgentConfig;
 use tokio::fs;
 
 /// Default template for `config.toml` — the hand-edited install config
@@ -17,17 +17,13 @@ pub const DEFAULT_SETTINGS: &str = include_str!("../../../settings.toml");
 impl FsStorage {
     pub(super) async fn scaffold(&self, default_model: &str) -> Result<()> {
         fs::create_dir_all(&self.config_dir).await?;
-        fs::create_dir_all(self.config_dir.join(schema::paths::LOCAL_DIR)).await?;
-        fs::create_dir_all(self.config_dir.join(schema::paths::SKILLS_DIR)).await?;
+        fs::create_dir_all(self.config_dir.join(crate::LOCAL_DIR)).await?;
+        fs::create_dir_all(self.config_dir.join(crate::SKILLS_DIR)).await?;
         fs::create_dir_all(&self.sessions_root).await?;
 
+        write_if_absent(&self.config_dir.join(crate::CONFIG_FILE), DEFAULT_CONFIG).await?;
         write_if_absent(
-            &self.config_dir.join(schema::paths::CONFIG_FILE),
-            DEFAULT_CONFIG,
-        )
-        .await?;
-        write_if_absent(
-            &self.config_dir.join(schema::paths::SETTINGS_FILE),
+            &self.config_dir.join(crate::SETTINGS_FILE),
             DEFAULT_SETTINGS,
         )
         .await?;

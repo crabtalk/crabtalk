@@ -4,7 +4,7 @@ use crate::bridge::ClientBridge;
 use crate::llm::Provider;
 use anyhow::Result;
 use runtime::Runtime;
-use schema::storage::Storage;
+use schema::Storage;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -83,7 +83,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         storage: Arc<S>,
         build_provider: BuildProvider<P>,
     ) -> Result<CrabTalkHandle<P, S>> {
-        let config_path = config_dir.join(schema::paths::CONFIG_FILE);
+        let config_path = config_dir.join(schema::CONFIG_FILE);
         let config = schema::Config::load(&config_path)?;
         tracing::info!("loaded configuration from {}", config_path.display());
 

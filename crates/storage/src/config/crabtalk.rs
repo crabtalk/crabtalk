@@ -5,6 +5,9 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Name of the file [`Config`] is read from, under the install root.
+pub const CONFIG_FILE: &str = "config.toml";
+
 /// Top-level configuration (`config.toml`).
 ///
 /// Holds immutable per-install settings: the LLM endpoint, task executor

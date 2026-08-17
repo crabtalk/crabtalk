@@ -3,7 +3,7 @@
 use super::Runtime;
 use crate::{Config, Env, Harness};
 use anyhow::Result;
-use schema::{Agent, AgentBuilder, AgentConfig, AgentId, ToolDispatcher, paths, storage::Storage};
+use schema::{Agent, AgentBuilder, AgentConfig, AgentId, Storage, ToolDispatcher};
 use std::sync::Arc;
 
 impl<C: Config> Runtime<C> {
@@ -159,7 +159,7 @@ impl<C: Config> Runtime<C> {
     pub async fn rename_agent(&self, old_name: &str, new_name: &str) -> Result<AgentConfig> {
         validate_agent_name(new_name)?;
         anyhow::ensure!(
-            old_name != paths::DEFAULT_AGENT,
+            old_name != schema::DEFAULT_AGENT,
             "cannot rename the default agent '{old_name}'"
         );
         // Short-circuit rename-to-same: returns the in-memory config without

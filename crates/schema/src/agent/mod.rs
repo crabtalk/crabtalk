@@ -7,11 +7,15 @@
 //! [`Agent::run_stream`]. `run_stream()` is the canonical step loop —
 //! `run()` collects its events and returns the final response.
 
-use crate::model::{HistoryEntry, MessageBuilder, Model};
+pub use crate::AgentConfig;
+pub use crate::AgentId;
+use crate::{
+    HistoryEntry,
+    model::{MessageBuilder, Model},
+};
 use anyhow::Result;
 use async_stream::stream;
 pub use builder::AgentBuilder;
-pub use config::AgentConfig;
 use crabllm_core::{
     FinishReason, Provider, Role, Tool, ToolCall, ToolChoice, Usage,
     anthropic::{self, Messages},
@@ -19,16 +23,13 @@ use crabllm_core::{
 use event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason};
 use futures_core::Stream;
 use futures_util::{StreamExt, future::join_all, stream::FuturesUnordered};
-pub use id::AgentId;
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 pub use tool::{AsTool, ToolDispatcher};
 
 mod builder;
 mod compact;
-pub mod config;
 pub mod event;
-mod id;
 pub mod tool;
 
 /// Extract sender from the last user entry in history.

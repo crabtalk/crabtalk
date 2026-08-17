@@ -5,7 +5,7 @@ use std::io::Read;
 use anyhow::{Context, Result, bail};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
-use crate::registry::Entry;
+use crate::cmd::registry::Entry;
 
 const REPO: &str = "crabtalk/crabtalk";
 
@@ -75,7 +75,7 @@ fn download(url: &str, prefix: &str, mp: &MultiProgress) -> Result<Vec<u8>> {
 
 /// Extract the named binary from a gzipped tarball into BIN_DIR.
 fn extract_binary(tarball: &[u8], bin_name: &str) -> Result<()> {
-    let bin_dir = &*schema::paths::BIN_DIR;
+    let bin_dir = &*crate::dirs::BIN_DIR;
     std::fs::create_dir_all(bin_dir)?;
 
     let gz = flate2::read::GzDecoder::new(tarball);
@@ -128,9 +128,9 @@ pub fn install(entries: &[&Entry], version: Option<&str>) -> Result<()> {
         );
         let tarball = download(&url, entry.bin, &mp)?;
         extract_binary(&tarball, entry.bin)?;
-        crate::manifest::record(entry.short, &version)?;
+        crate::cmd::manifest::record(entry.short, &version)?;
     }
 
-    println!("info: installed to {}", schema::paths::BIN_DIR.display());
+    println!("info: installed to {}", crate::dirs::BIN_DIR.display());
     Ok(())
 }

@@ -7,7 +7,7 @@ pub mod llm;
 pub mod mcp;
 pub mod system;
 
-pub use crabtalk::Config;
+pub use crabtalk::{CONFIG_FILE, Config};
 pub use harness::HarnessConfig;
 pub use hooks::{HooksConfig, MemoryConfig};
 pub use llm::LlmConfig;
