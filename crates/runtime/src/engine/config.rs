@@ -2,17 +2,22 @@
 
 use super::Runtime;
 use crate::Config;
-use wcore::{paths, protocol::message::ModelInfo, storage::Storage};
+use proto::ModelInfo;
+use store::interface::Agents;
 
 impl<C: Config> Runtime<C> {
+    /// The install's default agent. `None` before scaffold, or if the
+    /// stored default points at an agent that is gone.
+    pub async fn default_agent(&self) -> Option<store::AgentConfig> {
+        let id = self.storage().default_agent().await.ok().flatten()?;
+        self.storage().load_agent(&id).await.ok().flatten()
+    }
+
     /// The active model — defined as the default agent's `model` field.
     /// Empty string if the default agent is missing (pre-scaffold).
     pub async fn active_model(&self) -> String {
-        self.storage()
-            .load_agent_by_name(paths::DEFAULT_AGENT)
+        self.default_agent()
             .await
-            .ok()
-            .flatten()
             .map(|c| c.model)
             .unwrap_or_default()
     }

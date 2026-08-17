@@ -30,11 +30,8 @@ The daemon is rooted at a configuration directory supplied at startup. The direc
 
 | Path                           | Contents                                            |
 |--------------------------------|-----------------------------------------------------|
-| `config.toml`                  | Node configuration.                                 |
-| `agents/`                      | Agent definitions.                                  |
-| `sessions/`                    | Conversation JSONL logs, one file per conversation. |
-| `memory/`                      | Per-agent memory databases, one file per agent.     |
-| `skills/`                      | Skill bundles loadable by agents.                   |
+| `config.toml`                  | Node configuration, hand-written and read on reload. |
+| `store.crmem`                  | The store: agents, sessions, memory, skills, search. |
 | `events/subscriptions.toml`    | Event subscription recovery file.                   |
 
 All paths are resolved relative to the configuration directory. The daemon writes nothing outside this directory.
@@ -51,7 +48,9 @@ All paths are resolved relative to the configuration directory. The daemon write
 
 ## Persistence boundary
 
-The daemon persists state through the `Storage` trait. Operations that mutate conversations, memory, or agent definitions write synchronously through storage before acknowledging the caller. Cron and event subscription files are written directly by the daemon.
+The daemon persists through the store. Operations that mutate conversations, memory, or agent definitions write before acknowledging the caller. Cron and event subscription files are written directly by the daemon.
+
+A write reaches the OS immediately, so a process crash loses nothing. `fsync` happens at a checkpoint, so a power loss can lose writes since the last one — see [Storage](storage.md).
 
 A daemon restart recovers all state from the config directory. No state is held only in the process.
 

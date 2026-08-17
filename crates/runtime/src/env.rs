@@ -5,8 +5,9 @@
 //! instruction discovery, and a composite Harness. Tests use `()`.
 
 use crate::Harness;
+use crate::{AgentEvent, ToolDispatch, ToolFuture};
+use store::AgentId;
 use tokio::sync::broadcast;
-use wcore::{AgentEvent, ToolDispatch, ToolFuture, protocol::message};
 
 /// The runtime environment — combines server capabilities with tool dispatch.
 ///
@@ -23,12 +24,12 @@ pub trait Env: Send + Sync + 'static {
     /// Called when an agent event occurs. Default: no-op.
     ///
     /// `ephemeral` marks events from an anonymous, unpersisted turn —
-    /// `conversation_id` is then a caller-supplied correlation id, not a
+    /// `session_id` is then a caller-supplied correlation id, not a
     /// real session.
     fn on_agent_event(
         &self,
-        _agent: &str,
-        _conversation_id: u64,
+        _agent: &AgentId,
+        _session_id: u64,
         _ephemeral: bool,
         _event: &AgentEvent,
     ) {
@@ -36,7 +37,7 @@ pub trait Env: Send + Sync + 'static {
 
     /// Subscribe to agent events. Returns `None` if event broadcasting
     /// is not supported.
-    fn subscribe_events(&self) -> Option<broadcast::Receiver<message::AgentEventMsg>> {
+    fn subscribe_events(&self) -> Option<broadcast::Receiver<proto::AgentEventMsg>> {
         None
     }
 }
@@ -47,16 +48,16 @@ pub fn dispatch_tool<'a, E: Env>(
     env: &'a E,
     name: &'a str,
     args: &'a str,
-    agent: &'a str,
+    agent: &'a AgentId,
     sender: &'a str,
-    conversation_id: Option<u64>,
+    session_id: Option<u64>,
     call_id: &'a str,
 ) -> ToolFuture<'a> {
     let call = ToolDispatch {
         args: args.to_owned(),
-        agent: agent.to_owned(),
+        agent: *agent,
         sender: sender.to_owned(),
-        conversation_id,
+        session_id,
         call_id: call_id.to_owned(),
     };
 

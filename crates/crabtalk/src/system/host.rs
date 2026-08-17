@@ -1,14 +1,13 @@
 //! SystemEnv — the runtime environment implementation.
 
 use crate::bridge::ClientBridge;
-use hooks::Hooks;
+use proto::{AgentEventKind, AgentEventMsg, ToolCallInfo};
+use runtime::harness::Hooks;
+use runtime::{AgentEvent, ToolDispatch};
 use runtime::{Env, Harness};
 use std::sync::Arc;
+use store::AgentId;
 use tokio::sync::broadcast;
-use wcore::{
-    AgentEvent, ToolDispatch,
-    protocol::message::{AgentEventKind, AgentEventMsg, ToolCallInfo},
-};
 
 /// Tool result output is truncated to this many bytes in the broadcast.
 const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
@@ -33,8 +32,8 @@ impl Env for SystemEnv {
 
     fn on_agent_event(
         &self,
-        agent: &str,
-        conversation_id: u64,
+        agent: &AgentId,
+        session_id: u64,
         ephemeral: bool,
         event: &AgentEvent,
     ) {
@@ -136,7 +135,7 @@ impl Env for SystemEnv {
         };
         let _ = self.events_tx.send(AgentEventMsg {
             agent: agent.to_string(),
-            sender: conversation_id.to_string(),
+            sender: session_id.to_string(),
             kind: p.kind.into(),
             content: p.content,
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -152,21 +151,21 @@ impl Env for SystemEnv {
     }
 }
 
-impl wcore::ToolDispatcher for SystemEnv {
+impl runtime::ToolDispatcher for SystemEnv {
     fn dispatch<'a>(
         &'a self,
         name: &'a str,
         args: &'a str,
-        agent: &'a str,
+        agent: &'a AgentId,
         sender: &'a str,
-        conversation_id: Option<u64>,
+        session_id: Option<u64>,
         call_id: &'a str,
-    ) -> wcore::ToolFuture<'a> {
+    ) -> runtime::ToolFuture<'a> {
         let call = ToolDispatch {
             args: args.to_owned(),
-            agent: agent.to_owned(),
+            agent: *agent,
             sender: sender.to_owned(),
-            conversation_id,
+            session_id,
             call_id: call_id.to_owned(),
         };
 
@@ -184,7 +183,7 @@ impl wcore::ToolDispatcher for SystemEnv {
     }
 }
 
-fn format_usage(response: &wcore::AgentResponse) -> String {
+fn format_usage(response: &runtime::AgentResponse) -> String {
     if response.steps.is_empty() {
         return String::new();
     }
@@ -224,7 +223,7 @@ fn human_tokens(n: u32) -> String {
     }
 }
 
-fn tool_call_label(c: &wcore::model::ToolCall) -> String {
+fn tool_call_label(c: &crabllm_core::ToolCall) -> String {
     if c.function.name == "bash"
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(&c.function.arguments)
         && let Some(cmd) = v.get("command").and_then(|c| c.as_str())

@@ -2,12 +2,17 @@
 
 use crate::{llm::Provider, system::CrabTalk};
 use anyhow::{Context, Result};
-use hooks::default_crab;
 use mcp::McpServerState;
+use proto::*;
 use std::collections::BTreeMap;
-use wcore::{protocol::message::*, storage::Storage};
+use store::{AgentConfig, AgentId, interface::Backend};
 
-impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
+/// How many skills one `list_skills` answers with. A catalogue can be
+/// large and every entry is only a name and a description here — the
+/// body is `get_skill`, for the one an agent actually invokes.
+const SKILL_PAGE: usize = 200;
+
+impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     pub(crate) async fn set_active_model(&self, model: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
         let storage = rt.storage();
@@ -16,42 +21,37 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             anyhow::bail!("model '{model}' not advertised by the LLM endpoint");
         }
 
-        let mut crab = storage
-            .load_agent_by_name(wcore::paths::DEFAULT_AGENT)
-            .await?
-            .unwrap_or_else(|| default_crab(&model));
-        crab.model = model;
-        storage.upsert_agent(&crab).await?;
+        let mut default = match rt.default_agent().await {
+            Some(config) => config,
+            None => AgentConfig::crab(&model),
+        };
+        default.model = model;
+        storage.upsert_agent(&default).await?;
         self.reload().await
     }
 
-    pub(crate) async fn list_mcps(&self, agent: Option<String>) -> Result<Vec<McpInfo>> {
+    pub(crate) async fn list_mcps(&self, agent: Option<AgentId>) -> Result<Vec<McpInfo>> {
         let states = self.mcp.states();
         let rt = self.runtime.read().await.clone();
         let mut out: Vec<McpInfo> = Vec::new();
-        match agent {
-            Some(name) => {
-                let cfg = rt
-                    .agent(&name)
-                    .ok_or_else(|| anyhow::anyhow!("agent '{name}' not found"))?;
-                for mcp_cfg in &cfg.mcps {
-                    out.push(mcp_info(mcp_cfg, &name, &states));
-                }
-            }
-            None => {
-                for cfg in rt.agents() {
-                    for mcp_cfg in &cfg.mcps {
-                        out.push(mcp_info(mcp_cfg, &cfg.name, &states));
-                    }
-                }
+        let configs = match agent {
+            Some(id) => vec![
+                rt.agent(&id)
+                    .await
+                    .ok_or_else(|| anyhow::anyhow!("agent '{id}' not found"))?,
+            ],
+            None => rt.agents().await,
+        };
+        for cfg in configs {
+            for mcp_cfg in &cfg.mcps {
+                out.push(mcp_info(mcp_cfg, &cfg, &states));
             }
         }
         Ok(out)
     }
 
-    pub(crate) async fn upsert_mcp(&self, agent: String, config_json: String) -> Result<McpInfo> {
-        anyhow::ensure!(!agent.is_empty(), "agent name is required for upsert_mcp");
-        let cfg: wcore::McpServerConfig =
+    pub(crate) async fn upsert_mcp(&self, agent: AgentId, config_json: String) -> Result<McpInfo> {
+        let cfg: store::McpServerConfig =
             serde_json::from_str(&config_json).context("invalid McpServerConfig JSON")?;
         anyhow::ensure!(!cfg.name.is_empty(), "MCP config must have a name");
         let mcp_name = cfg.name.clone();
@@ -59,7 +59,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let rt = self.runtime.read().await.clone();
         let mut existing = rt
             .storage()
-            .load_agent_by_name(&agent)
+            .load_agent(&agent)
             .await?
             .ok_or_else(|| anyhow::anyhow!("agent '{agent}' not found"))?;
         if let Some(slot) = existing.mcps.iter_mut().find(|m| m.name == mcp_name) {
@@ -67,9 +67,9 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         } else {
             existing.mcps.push(cfg);
         }
-        rt.update_agent(existing).await?;
+        rt.update_agent(&agent, existing).await?;
         self.mcp
-            .ensure_connected(&agent, std::slice::from_ref(&mcp_name))
+            .ensure_connected(&agent.to_string(), std::slice::from_ref(&mcp_name))
             .await;
 
         let mcps = self.list_mcps(Some(agent)).await?;
@@ -78,12 +78,11 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .ok_or_else(|| anyhow::anyhow!("mcp '{mcp_name}' missing from listing after upsert"))
     }
 
-    pub(crate) async fn delete_mcp(&self, agent: String, name: String) -> Result<bool> {
-        anyhow::ensure!(!agent.is_empty(), "agent name is required for delete_mcp");
+    pub(crate) async fn delete_mcp(&self, agent: AgentId, name: String) -> Result<bool> {
         let rt = self.runtime.read().await.clone();
         let mut existing = rt
             .storage()
-            .load_agent_by_name(&agent)
+            .load_agent(&agent)
             .await?
             .ok_or_else(|| anyhow::anyhow!("agent '{agent}' not found"))?;
         let before = existing.mcps.len();
@@ -91,20 +90,16 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         if existing.mcps.len() == before {
             return Ok(false);
         }
-        rt.update_agent(existing).await?;
+        rt.update_agent(&agent, existing).await?;
         Ok(true)
     }
 
     /// Respawn the peer behind an agent's MCP. Nothing on disk changes —
     /// the handler reconnects from the config the peer is already running,
     /// so this is the answer to a dead connection, not to a stale one.
-    pub(crate) async fn reconnect_mcp(&self, agent: String, name: String) -> Result<McpInfo> {
-        anyhow::ensure!(
-            !agent.is_empty(),
-            "agent name is required for reconnect_mcp"
-        );
+    pub(crate) async fn reconnect_mcp(&self, agent: AgentId, name: String) -> Result<McpInfo> {
         self.mcp
-            .reconnect_for_agent(&agent, &name)
+            .reconnect_for_agent(&agent.to_string(), &name)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
         let mcps = self.list_mcps(Some(agent)).await?;
@@ -129,68 +124,35 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 
     pub(crate) async fn list_skills(&self) -> Vec<SkillInfo> {
-        let dirs = wcore::resolve_dirs(&self.config_dir);
-        let local_skills_dir = self.config_dir.join(wcore::paths::SKILLS_DIR);
-        let described: BTreeMap<String, String> = match self
-            .runtime
-            .read()
-            .await
-            .clone()
-            .storage()
-            .list_skills()
-            .await
-        {
+        let rt = self.runtime.read().await.clone();
+        // One page. A catalogue is not something a listing reads whole:
+        // `SKILL_PAGE` bounds what crosses the wire, and anything past it
+        // is a second call rather than a silent truncation of the answer.
+        match rt.storage().list_skills(SKILL_PAGE, 0).await {
             Ok(skills) => skills
                 .into_iter()
-                .map(|s| (s.name, s.description))
+                .map(|s| SkillInfo {
+                    name: s.name,
+                    description: s.description,
+                })
                 .collect(),
             Err(e) => {
-                tracing::warn!("failed to read skill descriptions: {e}");
-                BTreeMap::new()
-            }
-        };
-
-        let dir_to_pkg: std::collections::BTreeMap<_, _> = dirs
-            .package_skill_dirs
-            .iter()
-            .map(|(id, dir)| (dir.clone(), id.clone()))
-            .collect();
-
-        let mut seen = std::collections::BTreeSet::new();
-        let mut skills = Vec::new();
-        for dir in &dirs.skill_dirs {
-            let (source, source_kind) = if *dir == local_skills_dir {
-                ("local".to_string(), SourceKind::Local)
-            } else if let Some(pkg_id) = dir_to_pkg.get(dir) {
-                (pkg_id.clone(), SourceKind::Package)
-            } else {
-                let name = wcore::external_source_name(dir).unwrap_or("external");
-                (name.to_string(), SourceKind::External)
-            };
-
-            for name in wcore::scan_skill_names(dir) {
-                if !seen.insert(name.clone()) {
-                    continue;
-                }
-                let description = described.get(&name).cloned().unwrap_or_default();
-                skills.push(SkillInfo {
-                    name,
-                    source: source.clone(),
-                    source_kind: source_kind.into(),
-                    description,
-                });
+                tracing::warn!("failed to list skills: {e}");
+                Vec::new()
             }
         }
-        skills
     }
 }
 
+/// One MCP as the wire describes it. Peers are keyed by the agent's
+/// ULID — that is the scope key `lib/mcp` was handed — while `source`
+/// carries the name, because this listing is read.
 fn mcp_info(
-    cfg: &wcore::McpServerConfig,
-    agent: &str,
+    cfg: &store::McpServerConfig,
+    agent: &store::AgentConfig,
     states: &BTreeMap<(String, String), McpServerState>,
 ) -> McpInfo {
-    let key = (agent.to_owned(), cfg.name.clone());
+    let key = (agent.id.to_string(), cfg.name.clone());
     let (status, tool_count, error) = match states.get(&key) {
         Some(state) => (
             state.status.into(),
@@ -210,7 +172,7 @@ fn mcp_info(
             .collect(),
         url: cfg.url.clone().unwrap_or_default(),
         auth: cfg.auth.clone().unwrap_or_default(),
-        source: agent.to_string(),
+        source: agent.name.clone(),
         auto_restart: cfg.auto_restart,
         source_kind: SourceKind::Local.into(),
         status: status.into(),

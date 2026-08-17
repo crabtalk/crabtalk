@@ -1,0 +1,16 @@
+[package]
+name = "crabtalk-crabdb"
+description = "Append-only key-value store for Crabtalk — CRMEM format, resident key index, ordered prefix scans."
+documentation = "https://docs.rs/crabtalk-crabdb"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true

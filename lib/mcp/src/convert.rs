@@ -6,7 +6,7 @@
 //! definition, rather than somewhere downstream.
 
 use crate::handler::{McpEvent, ServerStatus};
-use wcore::protocol::message::{McpEventKind, McpEventMsg, McpStatus};
+use proto::{McpEventKind, McpEventMsg, McpStatus};
 
 impl From<McpEvent> for McpEventMsg {
     fn from(event: McpEvent) -> Self {
@@ -33,6 +33,8 @@ impl From<McpEvent> for McpEventMsg {
                 String::new(),
             ),
         };
+        // The scope key this crate is handed is the agent's ULID; it
+        // never sees a name, so it forwards what it was given.
         Self {
             kind: kind.into(),
             name,

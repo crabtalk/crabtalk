@@ -49,9 +49,9 @@ pub enum AttachmentKind {
     Video,
 }
 
-impl From<Message> for wcore::model::Message {
+impl From<Message> for crabllm_core::Message {
     fn from(msg: Message) -> Self {
-        wcore::model::Message::user(msg.content)
+        crabllm_core::Message::user(msg.content)
     }
 }
 

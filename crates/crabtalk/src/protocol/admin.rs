@@ -5,15 +5,18 @@ use crate::{
     system::{CrabTalk, event::EventSubscription},
 };
 use anyhow::Result;
+use proto::{
+    AgentEventMsg, McpEventMsg, Stats, SubscribeEventMsg, SubscriptionInfo, SubscriptionList,
+};
 use runtime::Env;
+use store::interface::Backend;
 use tokio::sync::broadcast::error::RecvError;
-use wcore::{protocol::message::*, storage::Storage};
 
-impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
+impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     pub(crate) async fn get_stats(&self) -> Result<Stats> {
         let rt = self.runtime.read().await.clone();
-        let active = rt.conversation_count().await;
-        let agents = rt.agents().len() as u32;
+        let active = self.sessions.count();
+        let agents = rt.agents().await.len() as u32;
         let uptime = self.started_at.elapsed().as_secs();
         let active_model = rt.active_model().await;
         Ok(Stats {
@@ -60,14 +63,15 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 
     pub(crate) async fn subscribe_event(&self, req: SubscribeEventMsg) -> Result<SubscriptionInfo> {
+        let target = crate::protocol::parse_agent(&req.target_agent)?;
         let rt = self.runtime.read().await.clone();
-        if rt.agent(&req.target_agent).is_none() {
-            anyhow::bail!("agent '{}' not found", req.target_agent);
+        if rt.agent(&target).await.is_none() {
+            anyhow::bail!("agent '{target}' not found");
         }
         let sub = EventSubscription {
             id: 0,
             source: req.source,
-            target_agent: req.target_agent,
+            target_agent: target,
             once: req.once,
         };
         let created = self.events.lock().subscribe(sub);

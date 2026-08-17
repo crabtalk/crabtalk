@@ -1,0 +1,533 @@
+//! Server trait — one async method per protocol operation.
+#![cfg(feature = "server")]
+
+use crate::{client_message, server_message};
+use anyhow::Result;
+use futures_core::Stream;
+use futures_util::{StreamExt, pin_mut};
+
+/// Construct an error `ServerMessage`.
+fn server_error(code: u32, message: String) -> crate::ServerMessage {
+    crate::ServerMessage {
+        msg: Some(server_message::Msg::Error(crate::ErrorMsg {
+            code,
+            message,
+        })),
+    }
+}
+
+/// Construct a pong `ServerMessage`.
+fn server_pong() -> crate::ServerMessage {
+    crate::ServerMessage {
+        msg: Some(server_message::Msg::Pong(crate::Pong {})),
+    }
+}
+
+/// Convert a typed `Result` into a `ServerMessage`.
+fn result_to_msg<T: Into<crate::ServerMessage>>(result: Result<T>) -> crate::ServerMessage {
+    match result {
+        Ok(resp) => resp.into(),
+        Err(e) => server_error(500, e.to_string()),
+    }
+}
+
+/// Server-side protocol handler.
+///
+/// Each method corresponds to one `ClientMessage` variant. Implementations
+/// receive typed request structs and return typed responses — no enum matching
+/// required. Streaming operations return `impl Stream`.
+///
+/// The provided [`dispatch`](Server::dispatch) method routes a raw
+/// `ClientMessage` to the appropriate handler, returning a stream of
+/// `ServerMessage`s.
+pub trait Server: Sync {
+    /// Handle `Send` — run agent and return complete response.
+    fn send(
+        &self,
+        req: crate::SendMsg,
+    ) -> impl std::future::Future<Output = Result<crate::SendResponse>> + Send;
+
+    /// Handle `Stream` — run agent and stream response events.
+    fn stream(
+        &self,
+        req: crate::StreamMsg,
+    ) -> impl Stream<Item = Result<crate::StreamEvent>> + Send;
+
+    /// Handle `Ping` — keepalive.
+    fn ping(&self) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `ListActiveConversations` — list active conversations.
+    fn list_conversations_active(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<crate::ActiveConversationInfo>>> + Send;
+
+    /// Handle `Kill` — close a conversation by (agent, sender).
+    fn kill_conversation(
+        &self,
+        agent: String,
+        sender: String,
+    ) -> impl std::future::Future<Output = Result<bool>> + Send;
+
+    /// Handle `SubscribeEvents` — stream agent events.
+    fn subscribe_events(&self) -> impl Stream<Item = Result<crate::AgentEventMsg>> + Send;
+
+    /// Handle `SubscribeMcpEvents` — stream MCP lifecycle events.
+    fn subscribe_mcp_events(&self) -> impl Stream<Item = Result<crate::McpEventMsg>> + Send;
+
+    /// Handle `Reload` — hot-reload runtime from disk.
+    fn reload(&self) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `GetStats` — return runtime stats.
+    fn get_stats(&self) -> impl std::future::Future<Output = Result<crate::Stats>> + Send;
+
+    /// Handle `SubscribeEvent` — create an event bus subscription.
+    fn subscribe_event(
+        &self,
+        req: crate::SubscribeEventMsg,
+    ) -> impl std::future::Future<Output = Result<crate::SubscriptionInfo>> + Send;
+
+    /// Handle `UnsubscribeEvent` — remove an event bus subscription.
+    fn unsubscribe_event(&self, id: u64) -> impl std::future::Future<Output = Result<bool>> + Send;
+
+    /// Handle `ListSubscriptions` — return all event bus subscriptions.
+    fn list_subscriptions(
+        &self,
+    ) -> impl std::future::Future<Output = Result<crate::SubscriptionList>> + Send;
+
+    /// Handle `PublishEvent` — publish an event to the bus.
+    fn publish_event(
+        &self,
+        req: crate::PublishEventMsg,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `Compact` — compact a conversation's history into a summary.
+    fn compact_conversation(
+        &self,
+        agent: String,
+        sender: String,
+    ) -> impl std::future::Future<Output = Result<String>> + Send;
+
+    /// Handle `ReplyToTool` — deliver a client-side tool result for a
+    /// pending forwarded call. Resolves the pending entry keyed by
+    /// `(conversation_id, call_id)`.
+    fn reply_to_tool(
+        &self,
+        conversation_id: u64,
+        call_id: String,
+        output: String,
+        is_error: bool,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `SteerSession` — inject a user message into an active stream.
+    fn steer_session(
+        &self,
+        req: crate::SteerSessionMsg,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `ListAgents` — return all registered agents.
+    fn list_agents(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<crate::AgentInfo>>> + Send;
+
+    /// Handle `GetAgent` — resolve a name to an agent. The one
+    /// name-keyed agent RPC; every other one takes the ULID.
+    fn get_agent(
+        &self,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send;
+
+    /// Handle `CreateAgent` — create a new agent from JSON config.
+    fn create_agent(
+        &self,
+        req: crate::CreateAgentMsg,
+    ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send;
+
+    /// Handle `UpdateAgent` — update an existing agent from JSON config.
+    fn update_agent(
+        &self,
+        req: crate::UpdateAgentMsg,
+    ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send;
+
+    /// Handle `DeleteAgent` — remove an agent and its sessions.
+    fn delete_agent(&self, agent: String)
+    -> impl std::future::Future<Output = Result<bool>> + Send;
+
+    /// Handle `RenameAgent` — rename an agent in place.
+    fn rename_agent(
+        &self,
+        agent: String,
+        new_name: String,
+    ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send;
+
+    /// Handle `ListSkills` — return all available skills with enabled state.
+    fn list_skills(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<crate::SkillInfo>>> + Send;
+
+    /// Handle `GetSkill` — return one skill's instructions.
+    fn get_skill(
+        &self,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<crate::SkillBody>> + Send;
+
+    /// Handle `ListModels` — return all resolved models with provider and active state.
+    fn list_models(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<crate::ModelInfo>>> + Send;
+
+    /// Handle `ListConversations` — return historical conversations from disk.
+    fn list_conversations(
+        &self,
+        agent: String,
+        sender: String,
+    ) -> impl std::future::Future<Output = Result<Vec<crate::ConversationInfo>>> + Send;
+
+    /// Handle `GetConversationHistory` — load messages from a session file.
+    fn get_conversation_history(
+        &self,
+        file_path: String,
+    ) -> impl std::future::Future<Output = Result<crate::ConversationHistory>> + Send;
+
+    /// Handle `DeleteConversation` — delete a conversation file from disk.
+    fn delete_conversation(
+        &self,
+        file_path: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `SearchSessions` — ranked excerpts from past conversations.
+    ///
+    /// Returns the matched message and a bounded window around it, never a
+    /// whole session: the handle is there to drill in with
+    /// `get_conversation_history` if the excerpt warrants it.
+    fn search_sessions(
+        &self,
+        req: crate::SearchSessionsMsg,
+    ) -> impl std::future::Future<Output = Result<Vec<crate::SessionHit>>> + Send;
+
+    /// Handle `ListMcps` — return MCPs declared by agents. When
+    /// `req.agent` is non-empty, scoped to that agent; otherwise the
+    /// union view across every registered agent.
+    fn list_mcps(
+        &self,
+        req: crate::ListMcpsMsg,
+    ) -> impl std::future::Future<Output = Result<Vec<crate::McpInfo>>> + Send;
+
+    /// Handle `UpsertMcp` — add or replace an MCP in the named agent's `mcps` list.
+    fn upsert_mcp(
+        &self,
+        req: crate::UpsertMcpMsg,
+    ) -> impl std::future::Future<Output = Result<crate::McpInfo>> + Send;
+
+    /// Handle `DeleteMcp` — remove an MCP from the named agent's `mcps` list.
+    fn delete_mcp(
+        &self,
+        req: crate::DeleteMcpMsg,
+    ) -> impl std::future::Future<Output = Result<bool>> + Send;
+
+    /// Handle `ReconnectMcp` — respawn the peer backing the named agent's
+    /// MCP. Stored config is untouched.
+    fn reconnect_mcp(
+        &self,
+        req: crate::ReconnectMcpMsg,
+    ) -> impl std::future::Future<Output = Result<crate::McpInfo>> + Send;
+
+    /// Handle `SetActiveModel` — update the active model in config.toml.
+    fn set_active_model(
+        &self,
+        model: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    /// Handle `Extension` — opaque bytes for downstream product protocols.
+    ///
+    /// Default: returns "not supported". Downstream products override this
+    /// to handle their own message formats (local proto, JSON, bincode, etc.).
+    fn dispatch_extension(
+        &self,
+        _payload: Vec<u8>,
+    ) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send {
+        async { anyhow::bail!("extension not supported") }
+    }
+
+    /// Dispatch a `ClientMessage` to the appropriate handler method.
+    ///
+    /// Returns a stream of `ServerMessage`s. Request-response operations
+    /// yield exactly one message; streaming operations yield many.
+    fn dispatch(
+        &self,
+        msg: crate::ClientMessage,
+    ) -> impl Stream<Item = crate::ServerMessage> + Send + '_ {
+        async_stream::stream! {
+            let Some(inner) = msg.msg else {
+                yield server_error(400, "empty client message".to_string());
+                return;
+            };
+
+            match inner {
+                client_message::Msg::Send(send_msg) => {
+                    yield result_to_msg(self.send(send_msg).await);
+                }
+                client_message::Msg::Stream(stream_msg) => {
+                    let s = self.stream(stream_msg);
+                    pin_mut!(s);
+                    while let Some(result) = s.next().await {
+                        yield result_to_msg(result);
+                    }
+                }
+                client_message::Msg::Ping(_) => {
+                    yield match self.ping().await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ListActiveConversations(_req) => {
+                    yield match self.list_conversations_active().await {
+                        Ok(conversations) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::ActiveConversations(crate::ActiveConversationList { conversations })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::Kill(kill_msg) => {
+                    yield match self.kill_conversation(kill_msg.agent.clone(), kill_msg.sender.clone()).await {
+                        Ok(true) => server_pong(),
+                        Ok(false) => server_error(
+                            404,
+                            format!("conversation not found for agent='{}' sender='{}'", kill_msg.agent, kill_msg.sender),
+                        ),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::GetConfig(_) => {
+                    yield server_error(410, "GetConfig is deprecated — use GetStats and granular APIs".into());
+                }
+                client_message::Msg::SubscribeEvents(_) => {
+                    let s = self.subscribe_events();
+                    pin_mut!(s);
+                    while let Some(result) = s.next().await {
+                        yield result_to_msg(result);
+                    }
+                }
+                client_message::Msg::SubscribeMcpEvents(_) => {
+                    let s = self.subscribe_mcp_events();
+                    pin_mut!(s);
+                    while let Some(result) = s.next().await {
+                        yield result_to_msg(result);
+                    }
+                }
+                client_message::Msg::Reload(_) => {
+                    yield match self.reload().await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ReplyToAsk(_) => {
+                    yield server_error(410, "ReplyToAsk removed — use ReplyToTool".into());
+                }
+                client_message::Msg::ReplyToTool(msg) => {
+                    yield match self.reply_to_tool(msg.conversation_id, msg.call_id, msg.output, msg.is_error).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(404, e.to_string()),
+                    };
+                }
+                client_message::Msg::SteerSession(req) => {
+                    yield match self.steer_session(req).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::GetStats(_) => {
+                    yield match self.get_stats().await {
+                        Ok(stats) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::Stats(stats)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::SubscribeEvent(req) => {
+                    yield match self.subscribe_event(req).await {
+                        Ok(info) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::SubscriptionInfo(info)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::UnsubscribeEvent(req) => {
+                    yield match self.unsubscribe_event(req.id).await {
+                        Ok(true) => server_pong(),
+                        Ok(false) => server_error(404, format!("subscription {} not found", req.id)),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ListSubscriptions(_) => {
+                    yield match self.list_subscriptions().await {
+                        Ok(list) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::SubscriptionList(list)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::PublishEvent(req) => {
+                    yield match self.publish_event(req).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::Compact(req) => {
+                    yield match self.compact_conversation(req.agent, req.sender).await {
+                        Ok(summary) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::Compact(crate::CompactResponse { summary })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ListAgents(_) => {
+                    yield match self.list_agents().await {
+                        Ok(agents) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::AgentList(crate::AgentList { agents })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::GetAgent(req) => {
+                    yield match self.get_agent(req.name).await {
+                        Ok(info) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::AgentInfo(info)),
+                        },
+                        Err(e) => server_error(404, e.to_string()),
+                    };
+                }
+                client_message::Msg::CreateAgent(req) => {
+                    yield match self.create_agent(req).await {
+                        Ok(info) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::AgentInfo(info)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::UpdateAgent(req) => {
+                    yield match self.update_agent(req).await {
+                        Ok(info) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::AgentInfo(info)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::DeleteAgent(req) => {
+                    yield match self.delete_agent(req.agent.clone()).await {
+                        Ok(true) => server_pong(),
+                        Ok(false) => server_error(
+                            404,
+                            format!("agent '{}' not found in local manifest", req.agent),
+                        ),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::RenameAgent(req) => {
+                    yield match self.rename_agent(req.agent, req.new_name).await {
+                        Ok(info) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::AgentInfo(info)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ListSkills(_) => {
+                    yield match self.list_skills().await {
+                        Ok(skills) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::SkillList(crate::SkillList { skills })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::GetSkill(msg) => {
+                    yield match self.get_skill(msg.name).await {
+                        Ok(skill) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::SkillBody(skill)),
+                        },
+                        Err(e) => server_error(404, e.to_string()),
+                    };
+                }
+                client_message::Msg::SearchSessions(msg) => {
+                    yield match self.search_sessions(msg).await {
+                        Ok(hits) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::SessionHits(crate::SessionHitList { hits })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ListModels(_) => {
+                    yield match self.list_models().await {
+                        Ok(models) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::ModelList(crate::ModelList { models })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ListConversations(req) => {
+                    yield match self.list_conversations(req.agent, req.sender).await {
+                        Ok(conversations) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::ConversationList(crate::ConversationList {
+                                conversations,
+                            })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::GetConversationHistory(req) => {
+                    yield result_to_msg(self.get_conversation_history(req.file_path).await);
+                }
+                client_message::Msg::DeleteConversation(req) => {
+                    yield match self.delete_conversation(req.file_path).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ListMcps(req) => {
+                    yield match self.list_mcps(req).await {
+                        Ok(mcps) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::McpList(crate::McpList { mcps })),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::UpsertMcp(req) => {
+                    yield match self.upsert_mcp(req).await {
+                        Ok(info) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::McpInfo(info)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::DeleteMcp(req) => {
+                    let name = req.name.clone();
+                    yield match self.delete_mcp(req).await {
+                        Ok(true) => server_pong(),
+                        Ok(false) => server_error(404, format!("mcp '{name}' not found")),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::ReconnectMcp(req) => {
+                    yield match self.reconnect_mcp(req).await {
+                        Ok(info) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::McpInfo(info)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::SetActiveModel(req) => {
+                    yield match self.set_active_model(req.model).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::Extension(payload) => {
+                    yield match self.dispatch_extension(payload).await {
+                        Ok(response) => crate::ServerMessage {
+                            msg: Some(server_message::Msg::Extension(response)),
+                        },
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+            }
+        }
+    }
+}

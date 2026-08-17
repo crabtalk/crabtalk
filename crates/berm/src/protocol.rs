@@ -15,12 +15,13 @@
 
 use anyhow::{Result, bail};
 use prost::Message;
+use proto::{ClientMessage, ServerMessage, client_message, server_message};
 use std::{
     future::Future,
     pin::Pin,
     sync::{Arc, OnceLock},
 };
-use wcore::protocol::message::{ClientMessage, ServerMessage, client_message, server_message};
+use store::AgentId;
 
 /// What the harness calls to reach the runtime. Named `crabtalk.` rather than
 /// `berm.` because only crabtalk implements it — a different embedder has its
@@ -53,7 +54,7 @@ pub struct Scope {
     /// The agent that declared the harness. Session search is narrowed to it
     /// rather than filtered by it: a harness asking for someone else's
     /// conversations is answered about its own.
-    pub agent: String,
+    pub agent: AgentId,
 }
 
 impl Scope {
@@ -144,7 +145,7 @@ pub fn call(protocol: &OnceLock<Dispatch>, request: &[u8], scope: &Scope) -> Res
     // one. `sender` stays free — an agent's own conversations span every
     // partner it has, and it can already resume any of them.
     if let Some(client_message::Msg::SearchSessions(msg)) = message.msg.as_mut() {
-        msg.agent = scope.agent.clone();
+        msg.agent = scope.agent.to_string();
     }
 
     let Some(dispatch) = protocol.get() else {

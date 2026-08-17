@@ -1,13 +1,6 @@
 [workspace]
 resolver = "3"
-members = [
-    "apps/*",
-    "berm/*",
-    "crates/*",
-    "crates/berm/proto",
-    "harness/*",
-    "lib/*",
-]
+members = ["apps/*", "berm/*", "crates/*", "harness/*", "lib/*"]
 
 [workspace.package]
 version = "0.0.23"
@@ -18,25 +11,22 @@ repository = "https://github.com/crabtalk/crabtalk"
 keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
+crabup = { path = "apps/crabup", package = "crabup", version = "0.0.23", default-features = false }
 client = { path = "crates/client", package = "crabtalk-client", version = "0.0.23" }
-cli = { path = "apps/cli", package = "crabtalk-cli", version = "0.0.23" }
 crabtalk = { path = "crates/crabtalk", package = "crabtalk", version = "0.0.23", default-features = false }
-crabtalkd = { path = "apps/daemon", package = "crabtalkd", version = "0.0.23" }
-crabup = { path = "apps/crabup", package = "crabup", version = "0.0.23" }
 runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.0.23" }
 transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.23" }
-wcore = { path = "crates/core", package = "crabtalk-core", version = "0.0.23" }
-memory = { path = "lib/memory", package = "crabtalk-memory", version = "0.0.23" }
+proto = { path = "crates/proto", package = "crabtalk-proto", version = "0.0.23", default-features = false }
+store = { path = "crates/store", package = "crabtalk-store", version = "0.0.23", default-features = false }
+crabtalk-berm = { path = "crates/berm", version = "0.0.23" }
+crabdb = { path = "lib/crabdb", package = "crabtalk-crabdb", version = "0.0.23" }
 embed = { path = "lib/embed", package = "crabtalk-embed", version = "0.0.23" }
-hooks = { path = "crates/hooks", package = "crabtalk-hooks", version = "0.0.23", default-features = false }
-storage = { path = "crates/storage", package = "crabtalk-storage", version = "0.0.23", default-features = false }
 mcp = { path = "lib/mcp", package = "crabtalk-mcp", version = "0.0.23", default-features = false }
 search = { path = "lib/search", package = "crabtalk-search", version = "0.0.23", default-features = false }
+skill = { path = "lib/skill", package = "crabtalk-skill", version = "0.0.23" }
 berm = { path = "berm/engine", version = "0.0.23" }
-crabtalk-berm = { path = "crates/berm", version = "0.0.23" }
 berm-sdk = { path = "berm/sdk", version = "0.0.23" }
 berm-codegen = { path = "berm/codegen", version = "0.0.23" }
-crabtalk-berm-proto = { path = "crates/berm/proto", version = "0.0.23" }
 
 # rvtime
 object = "0.40"
@@ -83,11 +73,7 @@ percent-encoding = "2"
 rand = "0.9"
 ratatui = "0.29"
 scraper = "0.22"
-prost = "0.13"
-# prost for guests: no_std with an allocator, same reason as serde above.
-prost_guest = { package = "prost", version = "0.13", default-features = false, features = [
-    "derive",
-] }
+prost = { version = "0.13", features = ["derive"], default-features = false }
 prost-build = "0.13"
 reqwest = { version = "0.13", default-features = false, features = [
     "blocking",

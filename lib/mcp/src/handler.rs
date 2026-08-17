@@ -19,8 +19,8 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use store::McpServerConfig;
 use tokio::sync::{Mutex, RwLock, broadcast};
-use wcore::McpServerConfig;
 
 /// Stable identifier for a peer process — hash of the structural config.
 /// Two configs with the same fingerprint produce the same peer; different

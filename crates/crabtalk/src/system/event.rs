@@ -6,23 +6,24 @@
 
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use store::AgentId;
 
 /// Persistent event subscription.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventSubscription {
     pub id: u64,
     pub source: String,
-    pub target_agent: String,
+    pub target_agent: AgentId,
     #[serde(default)]
     pub once: bool,
 }
 
-impl From<&EventSubscription> for wcore::protocol::message::SubscriptionInfo {
+impl From<&EventSubscription> for proto::SubscriptionInfo {
     fn from(sub: &EventSubscription) -> Self {
         Self {
             id: sub.id,
             source: sub.source.clone(),
-            target_agent: sub.target_agent.clone(),
+            target_agent: sub.target_agent.to_string(),
             once: sub.once,
         }
     }

@@ -15,12 +15,12 @@ use anyhow::{Context, Result};
 use berm::{Config, Engine, Grants, Harness};
 use crabtalk_berm::Dispatch;
 
+use proto::{AgentInfo, AgentList, ServerMessage};
 use std::{
     fs,
     path::PathBuf,
     sync::{Arc, OnceLock},
 };
-use wcore::protocol::message::{AgentInfo, AgentList, ServerMessage, server_message};
 
 const HARNESS: &str = "target/riscv64imac-unknown-none-elf/release/peers";
 
@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     let dispatch: Dispatch = Arc::new(|_msg| {
         Box::pin(async {
             vec![ServerMessage {
-                msg: Some(server_message::Msg::AgentList(AgentList {
+                msg: Some(proto::server_message::Msg::AgentList(AgentList {
                     agents: vec![AgentInfo {
                         name: "reviewer".into(),
                         description: "reads diffs".into(),
@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
                     read: true,
                     sessions: false,
                     skills: Vec::new(),
-                    agent: "example".to_owned(),
+                    agent: store::AgentId::default(),
                 };
                 Arc::new(move |request| crabtalk_berm::protocol_call(&protocol, request, &scope))
             },

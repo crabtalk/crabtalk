@@ -1,0 +1,25 @@
+[package]
+name = "crabtalk-agent"
+description = "The backend a general Crabtalk install runs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[[bin]]
+name = "crabtalk-agent"
+path = "src/bin/main.rs"
+
+[dependencies]
+crabdb.workspace = true
+store.workspace = true
+
+anyhow.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+tracing.workspace = true
+
+[dev-dependencies]
+crabllm-core.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

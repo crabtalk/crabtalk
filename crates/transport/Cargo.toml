@@ -10,8 +10,12 @@ documentation = "https://docs.rs/crabtalk-transport"
 keywords.workspace = true
 
 [dependencies]
-wcore.workspace = true
+proto = { workspace = true, features = ["client", "server"] }
+prost = { workspace = true, features = ["std"] }
+
 # crates.io
+crabup = { workspace = true, default-features = false }
+
 anyhow.workspace = true
 async-stream.workspace = true
 futures-core.workspace = true

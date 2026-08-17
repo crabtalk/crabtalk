@@ -1,0 +1,17 @@
+[package]
+name = "crabtalk-skill"
+description = "The SKILL.md standard — the type, the format, and discovery on disk"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+dirs.workspace = true
+serde.workspace = true
+serde_yml.workspace = true
+tokio = { workspace = true, features = ["fs"] }
+tracing.workspace = true

@@ -6,7 +6,7 @@ use crabllm_core::{
 };
 use crabllm_provider::{RemoteProvider, make_client};
 use std::time::Duration;
-use wcore::LlmConfig;
+use store::LlmConfig;
 
 /// Two variants, not one. `Gateway` is a crabllm proxy: it reads the dialect
 /// each model reports and routes natively, on top of the SDK's retry and

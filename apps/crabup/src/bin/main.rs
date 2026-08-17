@@ -1,7 +1,7 @@
 //! `crabup` binary entry point.
 
 use clap::Parser;
-use crabup::Cli;
+use crabup::cmd::Cli;
 
 fn main() {
     if let Err(e) = Cli::parse().run() {

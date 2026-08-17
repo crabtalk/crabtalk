@@ -12,7 +12,10 @@ publish = false
 berm.workspace = true
 crabllm-core.workspace = true
 runtime.workspace = true
-wcore.workspace = true
+store = { workspace = true, default-features = false }
+proto.workspace = true
+
+crabup = { workspace = true, default-features = false }
 
 anyhow.workspace = true
 bytes.workspace = true
@@ -20,7 +23,7 @@ http.workspace = true
 http-body-util.workspace = true
 hyper-tls.workspace = true
 hyper-util.workspace = true
-prost.workspace = true
+prost = { workspace = true, features = ["std"] }
 sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true

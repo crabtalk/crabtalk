@@ -1,4 +1,4 @@
-//! Connection bootstrap on top of the [`wcore::protocol::api::Client`] trait.
+//! Connection bootstrap on top of the [`proto::api::Client`] trait.
 //!
 //! The trait defines every protocol RPC; transport connections (UDS, TCP, mem)
 //! implement it. This module adds:
@@ -13,19 +13,14 @@
 
 use anyhow::Result;
 use futures_util::StreamExt;
+use proto::api::Client as _;
+use proto::{AgentEventMsg, ClientMessage, StreamEvent, StreamMsg, server_message, stream_event};
 use std::net::{Ipv4Addr, SocketAddr};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
-use wcore::protocol::{
-    api::Client as _,
-    message::{AgentEventMsg, ClientMessage, StreamEvent, StreamMsg, server_message, stream_event},
-};
 
-pub use transport::{
-    Transport,
-    mem::{MemConnection, connect as connect_mem},
-};
+pub use transport::Transport;
 
 /// How to (re)connect to the daemon.
 #[derive(Clone)]
@@ -40,11 +35,11 @@ impl ConnectionInfo {
     pub fn platform_default() -> Result<Self> {
         #[cfg(unix)]
         {
-            Ok(Self::Uds(wcore::paths::SOCKET_PATH.to_path_buf()))
+            Ok(Self::Uds(transport::SOCKET_PATH.to_path_buf()))
         }
         #[cfg(not(unix))]
         {
-            let port_str = std::fs::read_to_string(&*wcore::paths::TCP_PORT_FILE)?;
+            let port_str = std::fs::read_to_string(&*transport::TCP_PORT_FILE)?;
             let port: u16 = port_str.trim().parse()?;
             Ok(Self::Tcp(port))
         }

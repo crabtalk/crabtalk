@@ -11,9 +11,13 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-wcore.workspace = true
-memory.workspace = true
+store = { workspace = true, default-features = false }
+mcp = { workspace = true, default-features = false, features = ["hyper"] }
+proto.workspace = true
 crabllm-core.workspace = true
+skill.workspace = true
+schemars.workspace = true
+heck.workspace = true
 
 # crates.io
 chrono.workspace = true
@@ -22,10 +26,15 @@ async-stream.workspace = true
 futures-core.workspace = true
 futures-util.workspace = true
 parking_lot.workspace = true
+serde.workspace = true
+dirs.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
+[features]
+default = ["native-tls"]
+native-tls = ["mcp/native-tls"]
+rustls = ["mcp/rustls"]
+
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-wcore = { workspace = true, features = ["testing"] }

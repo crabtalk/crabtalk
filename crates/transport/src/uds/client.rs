@@ -1,14 +1,11 @@
 //! Unix domain socket client for connecting to a crabtalk daemon.
 
+use crate::codec;
 use anyhow::Result;
 use futures_core::Stream;
+use proto::{ClientMessage, ErrorMsg, ServerMessage, client::Client, server_message};
 use std::path::{Path, PathBuf};
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
-use wcore::protocol::{
-    api::Client,
-    codec,
-    message::{ClientMessage, ErrorMsg, ServerMessage, server_message},
-};
 
 /// Client configuration for connecting to a crabtalk daemon.
 #[derive(Debug, Clone)]

@@ -18,15 +18,14 @@
 use crate::{Dispatch, Scope};
 use berm::{Capability, Config, Engine, Grants, Harness};
 use crabllm_core::Tool;
+use crabllm_core::{FunctionDef, ToolType};
+use runtime::{ToolDispatch, ToolFuture};
 use sha2::{Digest as _, Sha256};
 use std::{
     collections::BTreeMap,
     sync::{Arc, OnceLock, RwLock},
 };
-use wcore::{
-    AgentConfig, HarnessConfig, ToolDispatch, ToolFuture,
-    model::{FunctionDef, ToolType},
-};
+use store::{AgentConfig, AgentId, HarnessConfig};
 
 /// What names an image: a SHA-256 over the ELF and everything the sandbox is
 /// built with.
@@ -41,7 +40,7 @@ struct Registry {
     /// Digest to the image it names.
     images: BTreeMap<Digest, Arc<Harness>>,
     /// The images each agent's declarations resolved to, in declaration order.
-    agents: BTreeMap<String, Vec<Digest>>,
+    agents: BTreeMap<AgentId, Vec<Digest>>,
 }
 
 impl Registry {
@@ -54,7 +53,7 @@ impl Registry {
     }
 
     /// The images `agent` declared, in order.
-    fn of(&self, agent: &str) -> impl Iterator<Item = &Arc<Harness>> {
+    fn of(&self, agent: &AgentId) -> impl Iterator<Item = &Arc<Harness>> {
         self.agents
             .get(agent)
             .into_iter()
@@ -79,7 +78,7 @@ impl HarnessHook {
     /// which is a clearer failure than a call that waits for one.
     pub fn new(protocol: Arc<OnceLock<Dispatch>>) -> anyhow::Result<Self> {
         let mut config = Config::new();
-        config.cache_dir(wcore::paths::CONFIG_DIR.join("cache/berm"));
+        config.cache_dir(crabup::CONFIG_DIR.join("cache/berm"));
         Ok(Self {
             engine: Engine::new(&config)?,
             registry: RwLock::new(Registry::default()),
@@ -93,20 +92,20 @@ impl HarnessHook {
     ///
     /// The registry is held for the whole pass so two agents registering at
     /// once cannot compile the same image twice.
-    pub fn load(&self, agent: &str, config: &AgentConfig) {
+    pub fn load(&self, agent: &AgentId, config: &AgentConfig) {
         let mut registry = self.registry.write().expect("harness registry");
         let mut declared = Vec::new();
         for declaration in &config.harnesses {
             match self.image(&mut registry, agent, declaration, &config.skills) {
                 Ok(digest) => declared.push(digest),
                 Err(error) => tracing::warn!(
-                    agent,
+                    %agent,
                     harness = declaration.name,
                     "harness not loaded: {error:#}"
                 ),
             }
         }
-        registry.agents.insert(agent.to_owned(), declared);
+        registry.agents.insert(*agent, declared);
         registry.sweep();
     }
 
@@ -120,11 +119,11 @@ impl HarnessHook {
     fn image(
         &self,
         registry: &mut Registry,
-        agent: &str,
+        agent: &AgentId,
         declaration: &HarnessConfig,
         skills: &[String],
     ) -> anyhow::Result<Digest> {
-        let path = wcore::paths::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
+        let path = crate::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
         let elf = std::fs::read(&path).map_err(|e| {
             anyhow::anyhow!(
                 "{}: {e} — `make harness` installs images here",
@@ -147,7 +146,7 @@ impl HarnessHook {
             read,
             sessions,
             skills: skills.to_vec(),
-            agent: agent.to_owned(),
+            agent: *agent,
         });
         // The hosts are the grant, exactly as the root is: naming the
         // capability without naming where it may go reaches nothing.
@@ -180,7 +179,7 @@ impl HarnessHook {
     }
 
     /// The image serving `tool` for `agent`.
-    fn owner(&self, agent: &str, tool: &str) -> Option<Arc<Harness>> {
+    fn owner(&self, agent: &AgentId, tool: &str) -> Option<Arc<Harness>> {
         self.registry
             .read()
             .expect("harness registry")
@@ -190,7 +189,7 @@ impl HarnessHook {
     }
 
     /// Tool names an agent's declarations bring.
-    fn names(&self, agent: &str) -> Vec<String> {
+    fn names(&self, agent: &AgentId) -> Vec<String> {
         self.registry
             .read()
             .expect("harness registry")
@@ -222,7 +221,7 @@ fn digest(elf: &[u8], grants: &Grants, scope: Option<&Scope>, hosts: Option<&[St
         // Narrowing is per-agent, so two agents declaring the same session
         // harness are deliberately two images: sharing one would be sharing
         // the narrowing.
-        hasher.update(scope.agent.as_bytes());
+        hasher.update(scope.agent.to_string().as_bytes());
         hasher.update([0]);
         for skill in &scope.skills {
             hasher.update(skill.as_bytes());
@@ -272,7 +271,7 @@ impl runtime::Harness for HarnessHook {
     /// available without instantiating anything.
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
         for declaration in &config.harnesses {
-            let path = wcore::paths::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
+            let path = crate::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
             let usage = std::fs::read(&path)
                 .ok()
                 .and_then(|elf| berm::manifest(&elf).ok())
@@ -286,18 +285,18 @@ impl runtime::Harness for HarnessHook {
         config
     }
 
-    fn on_register_agent(&self, name: &str, config: &AgentConfig) {
-        self.load(name, config);
+    fn on_resolve_agent(&self, id: &AgentId, config: &AgentConfig) {
+        self.load(id, config);
     }
 
-    fn on_unregister_agent(&self, name: &str) {
+    fn on_forget_agent(&self, id: &AgentId) {
         let mut registry = self.registry.write().expect("harness registry");
-        registry.agents.remove(name);
+        registry.agents.remove(id);
         registry.sweep();
     }
 
     fn scoped_tools(&self, config: &AgentConfig) -> (Vec<String>, Option<String>) {
-        (self.names(&config.name), None)
+        (self.names(&config.id), None)
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {

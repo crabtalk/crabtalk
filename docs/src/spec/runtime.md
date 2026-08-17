@@ -10,11 +10,13 @@ A runtime is parameterized by a `Config` that names three associated types:
 
 | Type       | Responsibility                                      |
 |------------|-----------------------------------------------------|
-| `Storage`  | Persistence: agents, conversations, and config.     |
+| `Storage`  | The store: one `KVStorage` impl, and every interface built on it. |
 | `Provider` | LLM request and streaming.                          |
 | `Env`      | Node-specific capabilities and tool dispatch.       |
 
-A binary supplies one `Config`. The daemon's `Config` wires filesystem storage, a configured provider, and a node environment that owns harnesses and event broadcasting. Tests supply a `Config` with in-memory storage, a stub provider, and `()` as the environment.
+A binary supplies one `Config`. The shipped `Config` wires `crabdb`, a configured provider, and a node environment that owns harnesses and event broadcasting. Tests supply a `Config` with an in-memory store, a stub provider, and `()` as the environment.
+
+The runtime holds interfaces, never data. There is no agent registry and no memory handle: an agent is read from the store for the run that needs it, built, and dropped. Whether any of it is cached is the store's decision, which is what makes a different deployment a different implementation rather than a rewrite of the runtime. The exception is a live session, which holds a steering channel — a channel cannot be persisted, so it is genuinely per-process state.
 
 ## Responsibilities
 
@@ -35,7 +37,7 @@ live conversations; the protocol addresses them by `(agent, sender)`.
 
 ### Lifetime
 
-A conversation is created on first reference to a pair `(agent, sender)` that does not yet exist, and persists across daemon restarts. Persistence is delegated to the configured `Storage` backend.
+A conversation is created on first reference to a pair `(agent, sender)` that does not yet exist, and persists across daemon restarts. Persistence goes through the `Sessions` interface; the store behind it is the binary's choice.
 
 At most one conversation exists for any given `(agent, sender)` pair.
 

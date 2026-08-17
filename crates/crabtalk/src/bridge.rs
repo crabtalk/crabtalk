@@ -11,19 +11,20 @@
 //! There is no default set: the daemon cannot execute a client tool, so
 //! advertising one the client never claimed only buys a forward nobody
 //! answers — a hang until the timeout, not a fallback. Sets are kept per
-//! conversation, so clients with different capabilities can be connected
+//! session, so clients with different capabilities can be connected
 //! at once.
 //!
 //! Which tools those are is not this crate's business. It forwards the
 //! names it was handed and never inspects them.
 
+use crabllm_core::Tool;
 use parking_lot::Mutex;
+use runtime::{ToolDispatch, ToolFuture};
 use std::{
     collections::{HashMap, HashSet},
     time::Duration,
 };
 use tokio::sync::oneshot;
-use wcore::{ToolDispatch, ToolFuture, model::Tool};
 
 /// How long a forwarded call waits for a reply before failing.
 const FORWARD_TIMEOUT: Duration = Duration::from_secs(300);
@@ -38,42 +39,42 @@ type PendingKey = (u64, String);
 /// Bridge that forwards client-tool dispatches over the active stream.
 #[derive(Default)]
 pub struct ClientBridge {
-    /// Declared tool names per conversation. Only names are kept — the
+    /// Declared tool names per session. Only names are kept — the
     /// schemas go to the model, not through here.
-    conversations: Mutex<HashMap<u64, HashSet<String>>>,
+    sessions: Mutex<HashMap<u64, HashSet<String>>>,
     listeners: Mutex<HashSet<u64>>,
     pending: Mutex<HashMap<PendingKey, PendingState>>,
 }
 
 impl ClientBridge {
-    /// Record what the client declared for this conversation.
-    pub fn register_tools(&self, conversation_id: u64, tools: &[Tool]) {
+    /// Record what the client declared for this session.
+    pub fn register_tools(&self, session_id: u64, tools: &[Tool]) {
         let names = tools.iter().map(|t| t.function.name.clone()).collect();
-        self.conversations.lock().insert(conversation_id, names);
+        self.sessions.lock().insert(session_id, names);
     }
 
-    /// Whether `name` is a client tool for this conversation. False when
+    /// Whether `name` is a client tool for this session. False when
     /// nothing was declared — there is nowhere to forward it.
-    pub fn is_client_tool(&self, conversation_id: u64, name: &str) -> bool {
-        self.conversations
+    pub fn is_client_tool(&self, session_id: u64, name: &str) -> bool {
+        self.sessions
             .lock()
-            .get(&conversation_id)
+            .get(&session_id)
             .is_some_and(|names| names.contains(name))
     }
 
-    /// Mark `conversation_id` as having an active stream listener.
-    pub fn register_listener(&self, conversation_id: u64) {
-        self.listeners.lock().insert(conversation_id);
+    /// Mark `session_id` as having an active stream listener.
+    pub fn register_listener(&self, session_id: u64) {
+        self.listeners.lock().insert(session_id);
     }
 
-    /// Drop the listener and clean up per-conversation state.
-    pub fn unregister_listener(&self, conversation_id: u64) {
-        self.listeners.lock().remove(&conversation_id);
-        self.conversations.lock().remove(&conversation_id);
+    /// Drop the listener and clean up per-session state.
+    pub fn unregister_listener(&self, session_id: u64) {
+        self.listeners.lock().remove(&session_id);
+        self.sessions.lock().remove(&session_id);
         let mut pending = self.pending.lock();
         let keys: Vec<PendingKey> = pending
             .keys()
-            .filter(|(c, _)| *c == conversation_id)
+            .filter(|(c, _)| *c == session_id)
             .cloned()
             .collect();
         for key in keys {
@@ -86,13 +87,13 @@ impl ClientBridge {
     /// Resolve a forwarded call. Returns `false` on duplicate reply.
     pub fn try_resolve(
         &self,
-        conversation_id: u64,
+        session_id: u64,
         call_id: &str,
         output: String,
         is_error: bool,
     ) -> bool {
         let result = if is_error { Err(output) } else { Ok(output) };
-        let key = (conversation_id, call_id.to_owned());
+        let key = (session_id, call_id.to_owned());
         let mut pending = self.pending.lock();
         match pending.remove(&key) {
             Some(PendingState::AwaitingReply(tx)) => {
@@ -108,16 +109,16 @@ impl ClientBridge {
     }
 
     /// Dispatch a client tool call. Returns `None` if this bridge doesn't
-    /// own the tool for the given conversation.
+    /// own the tool for the given session.
     pub fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
-        let conv_id = call.conversation_id?;
+        let conv_id = call.session_id?;
         if !self.is_client_tool(conv_id, name) {
             return None;
         }
         Some(Box::pin(async move {
             if !self.listeners.lock().contains(&conv_id) {
                 return Err(format!(
-                    "no client connected to handle '{name}' for this conversation"
+                    "no client connected to handle '{name}' for this session"
                 ));
             }
             if call.call_id.is_empty() {

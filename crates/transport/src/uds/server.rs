@@ -1,16 +1,13 @@
 //! Unix domain socket server — accept loop and per-connection message handler.
 
 use crate::REPLY_CHANNEL_CAPACITY;
+use crate::codec;
+use proto::{ClientMessage, ServerMessage};
 use std::time::Duration;
 use tokio::{
     net::UnixListener,
     sync::{mpsc, oneshot},
 };
-use wcore::protocol::{
-    codec,
-    message::{ClientMessage, ServerMessage},
-};
-
 /// Backoff after an `accept()` error so EMFILE / ENFILE / etc. don't
 /// hot-spin the loop and flood the logs.
 const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(100);

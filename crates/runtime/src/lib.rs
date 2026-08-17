@@ -1,35 +1,49 @@
-mod conversation;
+//! The engine, and the agent it runs.
+//!
+//! What an agent *does* lives here. What one *is* — its config, and everything
+//! persisted about it — lives in `crabtalk-store`, which this crate reads.
+
+pub mod agent;
 mod engine;
 pub mod env;
-pub mod hook;
-pub mod sessions;
+pub mod harness;
+mod session;
 
-pub use conversation::Conversation;
-pub use engine::{Program, ProgramStep, Runtime, SharedMemory};
+pub use agent::{
+    Agent, AgentBuilder, Model,
+    event::{AgentEvent, AgentResponse, AgentStep, AgentStopReason},
+    tool::{
+        AsTool, BeforeRunHook, ToolDispatch, ToolDispatcher, ToolEntry, ToolFuture, ToolHandler,
+        ToolRegistry,
+    },
+};
+pub use engine::Runtime;
 pub use env::Env;
-pub use hook::Harness;
-pub use wcore::{MemoryConfig, TasksConfig};
+pub use harness::Harness;
+pub use session::{Session, Sessions, SharedSession};
 
-/// Opaque persistent handle to a conversation. Re-exported from the
-/// storage trait so runtime callers don't need to speak the storage
-/// layer's "session" vocabulary.
-pub type ConversationHandle = wcore::storage::SessionHandle;
+/// A session's persistent identity, re-exported so callers get it
+/// without depending on `storage` directly. No longer aliased to a
+/// runtime-local name — both layers say "session" now.
+pub use store::SessionHandle;
 
 use crabllm_core::Provider;
-use wcore::storage::Storage;
+use store::interface::Backend;
 
 /// Configuration trait bundling the associated types for a runtime.
 ///
 /// Each binary defines one `Config` impl that ties together the
 /// concrete storage, LLM provider, and env implementations.
 pub trait Config: Send + Sync + 'static {
-    /// Persistence backend (sessions, agents, memory, skills).
-    type Storage: Storage;
+    /// Persistence backend — the six interfaces, bundled. What satisfies
+    /// this decides residency and caching for itself; the runtime holds
+    /// the interfaces and none of the data behind them.
+    type Storage: Backend;
 
     /// LLM provider for agent execution.
     type Provider: Provider + 'static;
 
     /// Node environment — event broadcasting, instruction discovery,
     /// and composite hook for tool dispatch.
-    type Env: Env + wcore::ToolDispatcher + 'static;
+    type Env: Env + ToolDispatcher + 'static;
 }

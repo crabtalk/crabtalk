@@ -12,3 +12,6 @@ RFCs that have been replaced by newer designs. Kept for historical reference.
 | [0036](0036-skill.md) | Skill Loading | [0205 - Berm](0205-berm.md) |
 | [0043](0043-component.md) | Component System | [0205 - Berm](0205-berm.md) |
 | [0171](0171-topic-switching.md) | Topic Switching | [0185 - Session Search and Storage Primitives](0185-session-search.md) |
+| [0150](0150-memory-store.md) | Memory Store | [0207 - Store](0207-store.md) |
+| [0185](0185-session-search.md) | Session Search and Storage Primitives | [0207 - Store](0207-store.md) |
+| [0075](0075-hook.md) | Hook | [0207 - Store](0207-store.md) |

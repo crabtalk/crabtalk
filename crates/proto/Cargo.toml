@@ -1,0 +1,37 @@
+[package]
+name = "crabtalk-proto"
+description = "The Crabtalk wire protocol — generated message types, for the daemon and for a harness"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[features]
+default = []
+std = ["prost/std"]
+# The daemon's half of the route — a `ClientMessage` in, one typed handler out.
+server = [
+    "std",
+    "dep:anyhow",
+    "dep:async-stream",
+    "dep:futures-core",
+    "dep:futures-util",
+]
+# The caller's half — build the message, unwrap the reply.
+client = ["std", "dep:anyhow", "dep:futures-core", "dep:futures-util"]
+# Conversions to the LLM types the messages carry.
+llm = ["dep:crabllm-core", "dep:serde_json"]
+
+[dependencies]
+prost.workspace = true
+anyhow = { workspace = true, optional = true }
+async-stream = { workspace = true, optional = true }
+crabllm-core = { workspace = true, optional = true }
+futures-core = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[build-dependencies]
+prost-build.workspace = true

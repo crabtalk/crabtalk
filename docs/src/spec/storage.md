@@ -1,140 +1,102 @@
 # Storage
 
-The daemon persists through two mechanisms. The `Storage` trait covers agents,
-sessions, and configuration; a binary picks a backend, and the runtime holds it
-behind `Config::Storage` without learning which one it got. Two backends ship —
-SQLite and a filesystem tree — chosen at startup and not reconsidered on reload.
+The daemon persists through one primitive. A store implements `KVStorage` — `get`, `put`, `delete`, `scan_keys`, `scan` — and is thereby already an `Agents`, a `Sessions`, a `Memory`, a `Skills`, a `Harnesses` and a `TextSearch`, because each of those traits is bounded on `KVStorage`, carries its own method bodies, and is blanket-implemented for anything satisfying it.
 
-The memory store is the other, and it is not a `Storage` backend: a single file
-of its own, written by the memory hook. Both are in this chapter because the
-line between them is currently in the wrong place, and that is easier to see
-with both on the page.
+There is nothing to construct and nothing to wire. The runtime names one bound, `Config::Storage: Backend`, and never learns which store it got.
+
+```text
+KVStorage                          five methods, the only thing implemented
+  └─ TextSearch: KVStorage         BM25 over the keyspace
+       ├─ Agents                   blanket over KVStorage
+       ├─ Skills                   blanket over KVStorage
+       ├─ Harnesses                blanket over KVStorage
+       ├─ Memory                   blanket over KVStorage + TextSearch
+       └─ Sessions                 blanket over KVStorage + TextSearch
+```
+
+`crates/store` links no database and no search crate. Which store to run is a deployment decision, so it lives in the application: `apps/agent` is that wiring, and it is five methods over `lib/crabdb`.
+
+## The keyspace
+
+```text
+Agent    agent/{id}                              AgentConfig
+         idx/agent/{name}                        id
+Session  session/{handle}/meta                   SessionMeta
+         session/{handle}/archive                memory entry name
+         session/{handle}/msg/{idx:012}          HistoryEntry
+         session/{handle}/evt/{idx:012}          EventLine
+         idx/sess/{agent}/{by}/{created_at}/{h}  handle
+Memory   memory/{name}                           MemoryEntry
+Skill    skill/meta/{name}                       SkillSummary
+         skill/body/{name}                       SKILL.md
+Harness  image/{digest}                          ELF
+         name/{name}                             digest
+Config   default_agent                           id
+Text     idx/text/{ix}/doc/{key}                 len, weight, terms
+         idx/text/{ix}/term/{term}/{key}         term frequency
+         idx/text/{ix}/stats                     doc count, total length
+```
+
+`Column` — the left-hand names — is a hard partition: a scan in one never sees another's keys, and a backend may store one differently from the rest if it wants to.
+
+Every key opens with a realm. One realm is one store today, so it buys nothing; it is in the format from the first byte so a backend serving many is a different `KVStorage` implementation rather than a key migration, and so a read outside the realm is inexpressible rather than merely forbidden.
+
+## Indexes are keys
+
+An ordered lookup, a name resolution, a set membership — all of them are secondary indexes, and a secondary index is just more keys. Nothing here needs a query planner.
+
+`created_at` is RFC3339 and sorts lexicographically, so the newest session for an identity is the last key under its prefix: `find_latest_session` is a prefix scan and a `.last()`. `agent_ids` reads ids straight out of the name index, already sorted by name, without opening a single config. Message indices are zero-padded to twelve digits because keys sort as bytes, and `"10"` would otherwise come before `"2"`.
+
+Two key shapes appear, each chosen by its dominant access. A session's keys nest under its handle, so deleting one is a single prefix sweep. A skill's identity and its body are separate keys, so a listing reads names without touching markdown — a property of the layout rather than a rule each backend has to remember.
 
 ## Config, whole
 
-An agent is stored as its `AgentConfig`, serialized whole, with `name` as a
-column because lookup by name is a trait method.
+An agent is stored as its `AgentConfig`, serialized whole, with a separate `idx/agent/{name}` key pointing at its id.
 
-Nothing queries *inside* a config, so a column per field would buy no index and
-cost a migration every time the struct gains one — and it does gain them
-(`mcps` went from `Vec<String>` to full configs; `harnesses` arrived later).
-The one exception to that rule used to be `system_prompt`, which had a column of
-its own and a matching `prompt` parameter threaded through every write. It is
-gone: an agent's `description` **is** its system message, and it serializes with
-everything else.
+Nothing queries *inside* a config, so a field-per-column layout would buy no index and cost a migration every time the struct gains one — and it does gain them (`mcps` went from `Vec<String>` to full configs; `harnesses` arrived later). The name index exists because a person types names; everything else addresses an agent by id, which is why renaming one moves nothing but a label.
+
+The install's own `config.toml` is not in the store. It is hand-written and read from disk on every reload. The one value the daemon decides rather than reads — which agent is default — is store state under `Config`, because a field a program rewrites inside a file a person owns is two sources for one value.
 
 ## Sessions
 
-A session is a conversation's persistent form, addressed by a `SessionHandle`
-derived from `(agent, sender)`. It holds:
+A session is a conversation's persistent form, addressed by an opaque `SessionHandle`. The handle encodes nothing — not the agent, not the sender, not a date — so renaming an agent never orphans its transcripts.
 
-- **Messages** — the `HistoryEntry` stream, one row per entry, appended.
-- **Events** — the `EventLine` trace, indexed by kind so a rollup like
-  "total token usage for this session" is a query rather than a scan.
-- **Meta** — title, timestamps, message count, summary, and the archive pointer.
+- **Messages** — the `HistoryEntry` stream, one key per entry, appended.
+- **Events** — the `EventLine` trace.
+- **Meta** — title, timestamps, message count, summary.
+- **Archive** — a pointer to the memory entry holding a compacted prefix. The marker carries the pointer; the summary text lives in memory, never beside the session.
 
-Writes are appends. `truncate_session_messages` exists for compaction, which is
-the only operation that removes history, and `append_session_compact` records
-the boundary.
+Writes are appends. `truncate_session_messages` is the only operation that removes history, and `append_session_compact` records the boundary.
 
-## Migrations
+## Search
 
-There is no migration table. Every DDL statement is `IF NOT EXISTS`, so opening
-an existing database is a no-op and there is nothing to keep in step.
+Ranked full-text is the one lookup keys cannot answer, so it is the one thing built on top — though its index is keys too, since an inverted index is a map from term to documents and a map is what a keyspace is.
 
-That works for adding tables and indexes and does not work for renaming or
-dropping a column — which is a real constraint on schema changes, not an
-oversight to route around. A change that needs one either restructures to avoid
-it (folding a column into the config blob, so old databases keep a vestigial
-column nobody writes) or brings a migration mechanism with it.
+`TextSearch` is four operations that know nothing about what they index: a key, a string, and a number to weight by. Whoever wants a person's own words to outrank a tool's passes a larger weight; what a "role" is stays in `Sessions`.
 
-## Scaffold
+A document's record names its own terms, so retracting one touches its own postings rather than walking the index. A query term ending in `*` prefix-matches — free, when terms are keys — and is the nearest thing to stemming on offer: `deploy*` finds "deployment" and "deployed" where `deploy` finds neither. Phrase search is deliberately absent; it would need positional postings on every write, and the tokenizer drops stopwords, so a phrase query would be quietly wrong rather than unsupported.
 
-`scaffold` creates the layout and seeds a default agent on first run, so a
-fresh install has something to talk to. It is the only write the daemon makes
-that the user did not ask for.
+What may be indexed at all is decided by `HistoryEntry::indexable`. Tool results and tool-call arguments are excluded, because both carry credentials often enough that neither belongs in free text a query can reach; a tool-calling assistant contributes only its function names.
 
-## The memory store
+## crabdb
 
-Memory is a single-file entry store, shared by an agent across its conversations. It holds what an agent deliberately wrote down. Search is lexical (BM25); there are no embeddings.
+`lib/crabdb` is the shipped store: an append-only single file, no dependencies, and a bar of "better than a directory of files" rather than "beats a database."
 
-### Entries
+```text
+header   32 bytes, fixed, rewritable in place
+         "CRMEM\0" | version | flags | reserved | index_at | index_len
+record   op | col | key_len | key | val_len | value
+index    count | repeated { col | key_len | key | offset }
+```
 
-An entry has:
+Records are appended and never edited; the newest record for a key wins. A resident `BTreeMap<(col, key), offset>` makes a lookup one seek and a prefix scan an ordered walk. The map holds offsets rather than values, so residency tracks how many keys exist rather than how much has been written — a four-megabyte harness image costs the same entry as a four-byte posting.
 
-- `id` — monotonic integer, assigned on insert.
-- `name` — the entry's primary identifier. Unique within the memory.
-- `aliases` — alternative names that resolve to the same entry.
-- `content` — the entry's text.
-- `kind` — `Note` or `Archive`.
-- `created_at` — creation timestamp.
+The header is fixed and the index is not, so the header holds a pointer and the snapshot sits wherever it last fit. On open the snapshot loads and only records appended after it are replayed. A record torn by a crash ends the replay, with the append position reset to the last clean boundary so the fragment is overwritten. Compaction rewrites live records to a sibling file and renames, so a crash during compaction costs the work and nothing else.
 
-Entries are addressed by `name` or by any of their `aliases`. A name is rebindable through aliasing; the canonical `name` is whatever the agent most recently chose.
+Durability is stated rather than assumed: writes reach the OS immediately, so a process crash loses nothing; `fsync` happens on checkpoint and compaction, so a power loss can lose writes since the last one. That is what keeps posting writes cheap, and the text index writes many small records per message.
 
-### Kinds
+## Tuning
 
-`Note` entries are the agent's long-term store. The agent adds, renames, aliases, and rewrites them through memory operations.
+Ranking numbers are judgements, so the store is asked for them rather than having them fixed. `Sessions::config() -> Weights` carries role weights, title and summary boosts, and how many message matches to pull per requested hit. `TextSearch::bm25() -> Bm25` carries `k1` and `b`. Both have defaults, and because both traits are blanket-implemented the defaults are what every store gets today.
 
-`Archive` entries are produced by compaction. Their `content` is the summary of a compacted conversation prefix. Archive entries are not rewritten after creation.
-
-Both kinds share the same index and search path. A search over memory returns both, ranked by relevance.
-
-### Compaction
-
-Compaction compresses a prefix of a conversation's history into a summary and records a boundary in the history at the point of compression.
-
-When a conversation is compacted:
-
-1. The daemon summarizes the history prefix.
-2. The summary is written to the memory as an `Archive` entry with a generated `name`.
-3. A compact marker is appended to the conversation's history, carrying the `archive_name` and `archived_at` timestamp.
-
-On the next run, the history is replayed from the latest compact marker. Entries before the marker are dropped from the working context; the archive remains available through memory search and by explicit name.
-
-A conversation can be compacted any number of times. Each compaction leaves one additional marker and one additional archive entry.
-
-### Persistence
-
-The memory is a single file. The file holds all entries, all aliases, and the search index snapshot. A write operation mutates memory in RAM and writes an atomic snapshot of the file on each successful apply.
-
-Opening an existing path reads the snapshot into RAM. Opening a non-existent path creates an empty memory; the file is written on the first successful apply.
-
-### Search
-
-Search is BM25 over the tokenized content and name of each entry. Results include the entry and its score. The caller chooses the cutoff — the store does not filter by relevance.
-
-The token set is the union of tokens from `content` and `name`; aliases do not contribute tokens. Aliases are resolution, not search.
-
-### Operations
-
-Memory exposes a closed set of write operations:
-
-| Operation | Effect                                                 |
-|-----------|--------------------------------------------------------|
-| `Add`     | Create a new entry with a given name, content, and kind. |
-| `Rename`  | Change an entry's canonical name.                       |
-| `Alias`   | Bind an additional name to an existing entry.           |
-| `Write`   | Replace an entry's content.                             |
-| `Remove`  | Delete an entry and all its aliases.                    |
-
-Operations on `Archive` entries are permitted but not expected; the agent works with `Note` entries.
-
-### Surface
-
-The store is a feature, not lifecycle state, so its tools reach agents through a
-hook rather than through the runtime. That also makes them available to anyone
-embedding the runtime as a library, which a protocol message would not.
-
-## Archives are on the wrong side
-
-A compaction summary is written to the memory store as an `Archive` entry, and
-the sessions table holds a pointer to it by name. That is the coupling that
-forces `Runtime` to carry a memory handle: compaction and resume are lifetime
-operations, so if archives live in memory, the lifetime engine must hold the
-store.
-
-They should be session rows. Nothing *chose* to remember a compacted prefix —
-it is the conversation, compressed, and it is unreachable except through the
-session that points at it. Moving it leaves the memory store holding only what
-an agent deliberately wrote down, which is what it is for, and lets memory be
-an ordinary hook.
+See [RFC 0207](../rfcs/0207-store.md) for the design and the alternatives it rejected.
