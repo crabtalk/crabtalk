@@ -4,8 +4,8 @@ use super::CrabTalk;
 use crate::llm::Provider;
 use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
+use proto::ClientMessage;
 use proto::server::Server;
-use schema::protocol::message::ClientMessage;
 use schema::storage::Storage;
 #[cfg(unix)]
 use std::path::Path;
@@ -13,10 +13,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 
 fn dispatch_callback<P: Provider + 'static, S: Storage>(
     daemon: CrabTalk<P, S>,
-) -> impl Fn(ClientMessage, mpsc::Sender<schema::protocol::message::ServerMessage>)
-+ Clone
-+ Send
-+ 'static {
+) -> impl Fn(ClientMessage, mpsc::Sender<proto::ServerMessage>) + Clone + Send + 'static {
     move |msg, reply| {
         let daemon = daemon.clone();
         tokio::spawn(async move {

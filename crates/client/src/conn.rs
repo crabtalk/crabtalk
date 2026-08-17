@@ -14,9 +14,7 @@
 use anyhow::Result;
 use futures_util::StreamExt;
 use proto::api::Client as _;
-use schema::protocol::message::{
-    AgentEventMsg, ClientMessage, StreamEvent, StreamMsg, server_message, stream_event,
-};
+use proto::{AgentEventMsg, ClientMessage, StreamEvent, StreamMsg, server_message, stream_event};
 use std::net::{Ipv4Addr, SocketAddr};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};

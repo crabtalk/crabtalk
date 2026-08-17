@@ -13,6 +13,7 @@ berm.workspace = true
 crabllm-core.workspace = true
 runtime.workspace = true
 schema.workspace = true
+proto.workspace = true
 
 anyhow.workspace = true
 bytes.workspace = true

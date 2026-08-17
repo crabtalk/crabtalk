@@ -3,8 +3,9 @@
 //! [`AgentConfig`] is a serializable struct holding all agent parameters.
 //! Used by [`super::AgentBuilder`] to construct an [`super::Agent`].
 
-use crate::{AgentId, config::hooks::HooksConfig, model::ToolChoice, protocol::proto::AgentInfo};
+use crate::{AgentId, config::hooks::HooksConfig, model::ToolChoice};
 use crabllm_core::anthropic;
+use proto::AgentInfo;
 use serde::{Deserialize, Serialize};
 
 /// Default maximum iterations for agent execution.
@@ -30,14 +31,7 @@ pub struct AgentConfig {
     /// Agent name. Derived from TOML key, not stored in TOML.
     #[serde(skip)]
     pub name: String,
-    /// Who the agent is, in its own words — and the system message sent
-    /// before each LLM request. One field because they were always one
-    /// thing: a description that does not shape behaviour is decoration,
-    /// and a prompt that does not describe the agent is something else.
-    ///
-    /// The daemon adds nothing to it. What the model needs to know about
-    /// reaching for a tool is the tool's own description, or the `usage` its
-    /// harness declares.
+    /// Who the agent is.
     #[serde(default)]
     pub description: String,
     /// Model to use from the registry. Required — every agent runs against

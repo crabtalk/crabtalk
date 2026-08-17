@@ -12,6 +12,8 @@ keywords.workspace = true
 [dependencies]
 proto = { workspace = true, features = ["client", "server"] }
 schema.workspace = true
+prost = { workspace = true, features = ["std"] }
+
 # crates.io
 anyhow.workspace = true
 async-stream.workspace = true

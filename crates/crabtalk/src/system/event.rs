@@ -17,7 +17,7 @@ pub struct EventSubscription {
     pub once: bool,
 }
 
-impl From<&EventSubscription> for schema::protocol::message::SubscriptionInfo {
+impl From<&EventSubscription> for proto::SubscriptionInfo {
     fn from(sub: &EventSubscription) -> Self {
         Self {
             id: sub.id,

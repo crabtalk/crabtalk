@@ -4,7 +4,7 @@ use crate::llm::Provider;
 use crate::system::CrabTalk;
 use anyhow::Result;
 use proto::server::Server;
-use schema::protocol::message::*;
+use proto::*;
 use schema::storage::Storage;
 use serde_json::Value;
 

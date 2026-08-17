@@ -1,25 +1,10 @@
 //! Agent event types for step-based execution and streaming.
-//!
-//! Two-level design:
-//! - [`AgentStep`]: data record of one LLM round (response + tool dispatch).
-//! - [`AgentEvent`]: fine-grained streaming enum for real-time UI updates.
-//! - [`AgentResponse`]: final result after a full agent run.
-//! - [`AgentStopReason`]: why the agent stopped.
 
 use crate::model::HistoryEntry;
 use crabllm_core::{FinishReason, ToolCall, Usage, anthropic::Message};
+use proto::*;
 
 /// A fine-grained event emitted during agent execution.
-///
-/// Yielded by `Agent::run_stream()` or emitted via `Harness::on_event()`
-/// for real-time status reporting to clients.
-///
-/// Text and thinking deltas are bracketed by explicit
-/// `TextStart`/`TextEnd` and `ThinkingStart`/`ThinkingEnd` markers so
-/// clients can render coherent segments without inferring boundaries
-/// from neighboring events. Only one segment is open at a time —
-/// transitions emit the closing event of the previous segment before
-/// the opening of the next.
 #[derive(Debug, Clone)]
 pub enum AgentEvent {
     /// A text segment is starting; subsequent `TextDelta`s belong to it.
@@ -39,12 +24,6 @@ pub enum AgentEvent {
     /// Model is calling tools (with the complete tool calls).
     ToolCallsStart(Vec<ToolCall>),
     /// A single tool completed execution.
-    ///
-    /// `output` is `Ok` for normal tool output and `Err` for a failure —
-    /// either a dispatch-level error (no sender, channel closed) or a
-    /// handler-reported failure. The inner string carries the text in
-    /// both cases so UIs can render it; the distinction lets clients
-    /// style errors differently and lets agents make retry decisions.
     ToolResult {
         /// The tool call ID this result belongs to.
         call_id: String,
@@ -58,22 +37,92 @@ pub enum AgentEvent {
     /// User steering message injected at turn boundary.
     UserSteered { content: String },
     /// Token usage reported by the model after a completed step.
-    ///
-    /// Emitted once per LLM call so clients can track context pressure
-    /// in real time and decide when to call `compact_conversation`. The
-    /// daemon takes no action on this event — policy is the client's.
     ContextUsage { usage: Usage },
     /// Agent finished with final response.
     Done(AgentResponse),
 }
 
+impl AgentEvent {
+    /// Map one agent loop event to its wire `StreamEvent`. Shared by the
+    /// persisted and ephemeral stream paths; client-tool forwarding (which
+    /// only the persisted path can route) is handled by the caller.
+    pub fn to_stream(self, responding_agent: &str) -> StreamEvent {
+        let event = self;
+        use stream_event::Event;
+        let event = match event {
+            AgentEvent::TextStart => Event::TextStart(TextStartEvent {
+                agent: responding_agent.to_string(),
+            }),
+            AgentEvent::TextDelta(text) => Event::Chunk(StreamChunk { content: text }),
+            AgentEvent::TextEnd => Event::TextEnd(TextEndEvent {
+                agent: responding_agent.to_string(),
+            }),
+            AgentEvent::ThinkingStart => Event::ThinkingStart(ThinkingStartEvent {
+                agent: responding_agent.to_string(),
+            }),
+            AgentEvent::ThinkingDelta(text) => Event::Thinking(StreamThinking { content: text }),
+            AgentEvent::ThinkingEnd => Event::ThinkingEnd(ThinkingEndEvent {
+                agent: responding_agent.to_string(),
+            }),
+            AgentEvent::ToolCallsBegin(calls) => Event::ToolStart(ToolStartEvent {
+                calls: calls
+                    .into_iter()
+                    .map(|c| ToolCallInfo {
+                        name: c.function.name.to_string(),
+                        arguments: String::new(),
+                    })
+                    .collect(),
+            }),
+            AgentEvent::ToolCallsStart(calls) => Event::ToolStart(ToolStartEvent {
+                calls: calls
+                    .into_iter()
+                    .map(|c| ToolCallInfo {
+                        name: c.function.name.to_string(),
+                        arguments: c.function.arguments,
+                    })
+                    .collect(),
+            }),
+            AgentEvent::ToolResult {
+                call_id,
+                output,
+                duration_ms,
+            } => {
+                let is_error = output.is_err();
+                let output = match output {
+                    Ok(s) | Err(s) => s,
+                };
+                Event::ToolResult(ToolResultEvent {
+                    call_id: call_id.to_string(),
+                    output,
+                    duration_ms,
+                    is_error,
+                })
+            }
+            AgentEvent::ToolCallsComplete => Event::ToolsComplete(ToolsCompleteEvent {}),
+            AgentEvent::ContextUsage { usage } => Event::ContextUsage(ContextUsageEvent {
+                usage: Some((&usage).into()),
+            }),
+            AgentEvent::UserSteered { content } => Event::UserSteered(UserSteeredEvent { content }),
+            AgentEvent::Done(resp) => {
+                let error = if let crate::AgentStopReason::Error(ref e) = resp.stop_reason {
+                    e.clone()
+                } else {
+                    String::new()
+                };
+                let usage = Some(resp.usage());
+                Event::End(StreamEnd {
+                    agent: responding_agent.to_string(),
+                    error,
+                    model: resp.model,
+                    usage,
+                })
+            }
+        };
+        StreamEvent { event: Some(event) }
+    }
+}
+
 /// Data record of one LLM round (one model call + tool dispatch).
-///
-/// Carries only what downstream consumers actually read: the assistant
-/// message, token usage, the finish reason, and the tool calls / results.
-/// No synthesized wire response — the old `AgentStep.response: Response`
-/// field was a parallel type that only served to hold `usage` and the
-/// final text content. Those two fields are now on the step directly.
 #[derive(Debug, Clone)]
 pub struct AgentStep {
     /// The assistant message produced by this step.
@@ -129,6 +178,37 @@ pub enum AgentStopReason {
     MaxTokens,
     /// Error during execution.
     Error(String),
+}
+
+impl AgentResponse {
+    /// Total usage across every step of a run.
+    pub fn usage(&self) -> TokenUsage {
+        let mut prompt = 0u32;
+        let mut completion = 0u32;
+        let mut total = 0u32;
+        let mut cache_hit = 0u32;
+        let mut cache_miss = 0u32;
+        let mut reasoning = 0u32;
+
+        for step in &self.steps {
+            let u = &step.usage;
+            prompt += u.prompt_tokens();
+            completion += u.completion_tokens();
+            total += u.total_tokens();
+            cache_hit += u.cache_read_tokens;
+            cache_miss += u.cache_write_tokens;
+            reasoning += u.reasoning_tokens;
+        }
+
+        TokenUsage {
+            prompt_tokens: prompt,
+            completion_tokens: completion,
+            total_tokens: total,
+            cache_hit_tokens: (cache_hit > 0).then_some(cache_hit),
+            cache_miss_tokens: (cache_miss > 0).then_some(cache_miss),
+            reasoning_tokens: (reasoning > 0).then_some(reasoning),
+        }
+    }
 }
 
 impl std::fmt::Display for AgentStopReason {

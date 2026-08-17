@@ -12,9 +12,9 @@ pub const REPLY_CHANNEL_CAPACITY: usize = 256;
 
 use anyhow::Result;
 use futures_core::Stream;
-use proto::client::Client;
-use schema::protocol::message::{ClientMessage, ServerMessage};
+use proto::{ClientMessage, ServerMessage, client::Client};
 
+pub mod codec;
 pub mod tcp;
 #[cfg(unix)]
 pub mod uds;

@@ -1,12 +1,9 @@
 //! TCP client for connecting to a crabtalk daemon.
 
+use crate::codec;
 use anyhow::Result;
 use futures_core::Stream;
-use proto::client::Client;
-use schema::protocol::{
-    codec,
-    message::{ClientMessage, ErrorMsg, ServerMessage, server_message},
-};
+use proto::{ClientMessage, ErrorMsg, ServerMessage, client::Client, server_message};
 use std::net::SocketAddr;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 

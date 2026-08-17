@@ -13,6 +13,7 @@ keywords.workspace = true
 [dependencies]
 schema.workspace = true
 memory.workspace = true
+proto.workspace = true
 crabllm-core.workspace = true
 
 # crates.io

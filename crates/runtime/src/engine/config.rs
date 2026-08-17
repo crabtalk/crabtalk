@@ -2,7 +2,8 @@
 
 use super::Runtime;
 use crate::Config;
-use schema::{paths, protocol::message::ModelInfo, storage::Storage};
+use proto::ModelInfo;
+use schema::{paths, storage::Storage};
 
 impl<C: Config> Runtime<C> {
     /// The active model — defined as the default agent's `model` field.

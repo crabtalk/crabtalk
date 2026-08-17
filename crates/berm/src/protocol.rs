@@ -15,7 +15,7 @@
 
 use anyhow::{Result, bail};
 use prost::Message;
-use schema::protocol::message::{ClientMessage, ServerMessage, client_message, server_message};
+use proto::{ClientMessage, ServerMessage, client_message, server_message};
 use std::{
     future::Future,
     pin::Pin,

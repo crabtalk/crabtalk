@@ -2,11 +2,9 @@
 
 use crate::bridge::ClientBridge;
 use hooks::Hooks;
+use proto::{AgentEventKind, AgentEventMsg, ToolCallInfo};
 use runtime::{Env, Harness};
-use schema::{
-    AgentEvent, ToolDispatch,
-    protocol::message::{AgentEventKind, AgentEventMsg, ToolCallInfo},
-};
+use schema::{AgentEvent, ToolDispatch};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 

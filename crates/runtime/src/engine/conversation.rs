@@ -84,7 +84,7 @@ impl<C: Config> Runtime<C> {
         Ok(id)
     }
 
-    pub async fn list_active(&self) -> Vec<schema::protocol::message::ActiveConversationInfo> {
+    pub async fn list_active(&self) -> Vec<proto::ActiveConversationInfo> {
         // Snapshot the slot metadata and mutex handles first so the
         // outer read guard isn't held across per-conversation locks —
         // otherwise a slow conversation would block readers of the
@@ -99,7 +99,7 @@ impl<C: Config> Runtime<C> {
         let mut infos = Vec::with_capacity(slots.len());
         for (agent, sender, mutex) in slots {
             let c = mutex.lock().await;
-            infos.push(schema::protocol::message::ActiveConversationInfo {
+            infos.push(proto::ActiveConversationInfo {
                 agent,
                 sender,
                 message_count: c.history.len() as u64,

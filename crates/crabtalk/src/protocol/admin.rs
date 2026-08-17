@@ -5,8 +5,11 @@ use crate::{
     system::{CrabTalk, event::EventSubscription},
 };
 use anyhow::Result;
+use proto::{
+    AgentEventMsg, McpEventMsg, Stats, SubscribeEventMsg, SubscriptionInfo, SubscriptionList,
+};
 use runtime::Env;
-use schema::{protocol::message::*, storage::Storage};
+use schema::storage::Storage;
 use tokio::sync::broadcast::error::RecvError;
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {

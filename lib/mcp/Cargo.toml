@@ -11,7 +11,9 @@ keywords.workspace = true
 
 [dependencies]
 schema.workspace = true
+proto.workspace = true
 
+# crates-io
 anyhow.workspace = true
 chrono.workspace = true
 futures-util.workspace = true
@@ -20,6 +22,7 @@ serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["process", "io-util", "time"] }
 tracing.workspace = true
+
 
 # HTTP backends — pick exactly one of `reqwest` or `hyper`.
 reqwest = { workspace = true, optional = true }

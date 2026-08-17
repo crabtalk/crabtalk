@@ -3,10 +3,8 @@
 use super::Runtime;
 use crate::Config;
 use anyhow::Result;
-use schema::{
-    protocol::message::{ConversationHistory, ConversationInfo, ConversationMessage},
-    storage::{SessionHandle, SessionSummary, Storage},
-};
+use proto::{ConversationHistory, ConversationInfo, ConversationMessage};
+use schema::storage::{SessionHandle, SessionSummary, Storage};
 use std::collections::HashMap;
 
 impl<C: Config> Runtime<C> {

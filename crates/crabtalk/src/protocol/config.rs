@@ -3,7 +3,8 @@
 use crate::{llm::Provider, system::CrabTalk};
 use anyhow::{Context, Result};
 use mcp::McpServerState;
-use schema::{AgentConfig, protocol::message::*, storage::Storage};
+use proto::*;
+use schema::{AgentConfig, storage::Storage};
 use std::collections::BTreeMap;
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {

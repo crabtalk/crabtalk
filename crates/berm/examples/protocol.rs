@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use berm::{Config, Engine, Grants, Harness};
 use crabtalk_berm::Dispatch;
 
-use schema::protocol::message::{AgentInfo, AgentList, ServerMessage, server_message};
+use proto::{AgentInfo, AgentList, ServerMessage};
 use std::{
     fs,
     path::PathBuf,
@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     let dispatch: Dispatch = Arc::new(|_msg| {
         Box::pin(async {
             vec![ServerMessage {
-                msg: Some(server_message::Msg::AgentList(AgentList {
+                msg: Some(proto::server_message::Msg::AgentList(AgentList {
                     agents: vec![AgentInfo {
                         name: "reviewer".into(),
                         description: "reads diffs".into(),

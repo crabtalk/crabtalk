@@ -1,10 +1,8 @@
 //! TCP server — accept loop and per-connection message handler.
 
 use crate::REPLY_CHANNEL_CAPACITY;
-use schema::protocol::{
-    codec,
-    message::{ClientMessage, ServerMessage},
-};
+use crate::codec;
+use proto::{ClientMessage, ServerMessage};
 use std::{
     net::{Ipv4Addr, SocketAddr},
     time::Duration,

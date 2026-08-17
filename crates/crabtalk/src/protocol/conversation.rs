@@ -5,10 +5,9 @@ use crate::llm::Provider;
 use crate::system::CrabTalk;
 use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
+use proto::*;
 use runtime::sessions::SearchOptions;
-use schema::AgentEvent;
-use schema::protocol::message::*;
-use schema::storage::Storage;
+use schema::{AgentEvent, storage::Storage};
 use std::sync::Arc;
 
 /// Roles travel raw — a label like `tool:read` is presentation, and the

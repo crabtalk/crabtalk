@@ -5,7 +5,7 @@
 //! instruction discovery, and a composite Harness. Tests use `()`.
 
 use crate::Harness;
-use schema::{AgentEvent, ToolDispatch, ToolFuture, protocol::message};
+use schema::{AgentEvent, ToolDispatch, ToolFuture};
 use tokio::sync::broadcast;
 
 /// The runtime environment — combines server capabilities with tool dispatch.
@@ -36,7 +36,7 @@ pub trait Env: Send + Sync + 'static {
 
     /// Subscribe to agent events. Returns `None` if event broadcasting
     /// is not supported.
-    fn subscribe_events(&self) -> Option<broadcast::Receiver<message::AgentEventMsg>> {
+    fn subscribe_events(&self) -> Option<broadcast::Receiver<proto::AgentEventMsg>> {
         None
     }
 }
