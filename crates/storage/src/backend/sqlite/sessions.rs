@@ -15,7 +15,7 @@ impl SqliteStorage {
         agent: &str,
         created_by: &str,
     ) -> Result<SessionHandle> {
-        // Opaque identity, matching `FsStorage`: the handle encodes
+        // Opaque identity: the handle encodes
         // nothing, so renaming an agent never orphans its transcripts.
         let handle = ulid::Ulid::new().to_string();
         let now = chrono::Utc::now().to_rfc3339();
@@ -136,6 +136,20 @@ impl SqliteStorage {
             .bind(serde_json::to_string(entry)?)
             .execute(&mut *tx)
             .await?;
+            // Indexed in the same transaction as the write, so an append
+            // that is not searchable is not a state this can reach.
+            if let Some((body, role)) = super::search::indexable(entry) {
+                sqlx::query(
+                    "INSERT INTO session_search (body, session_handle, idx, role)
+                     VALUES (?, ?, ?, ?)",
+                )
+                .bind(body)
+                .bind(h)
+                .bind(next + offset as i64)
+                .bind(role)
+                .execute(&mut *tx)
+                .await?;
+            }
         }
         sqlx::query(
             "UPDATE sessions
@@ -264,13 +278,36 @@ impl SqliteStorage {
         .bind(handle.as_str())
         .execute(&self.pool)
         .await?;
+        // Title and summary rank the session as a whole; rewrite its one
+        // search document rather than trying to patch it.
+        sqlx::query("DELETE FROM session_meta_search WHERE session_handle = ?")
+            .bind(handle.as_str())
+            .execute(&self.pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO session_meta_search (title, summary, session_handle)
+             VALUES (?, ?, ?)",
+        )
+        .bind(&meta.title)
+        .bind(meta.summary.as_deref().unwrap_or(""))
+        .bind(handle.as_str())
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
     pub(super) async fn delete_session(&self, handle: &SessionHandle) -> Result<bool> {
-        // Messages and events go with it: both cascade on the FK.
+        let h = handle.as_str();
+        // Messages and events cascade on the FK. The FTS5 tables are
+        // virtual, so they have no foreign key to cascade along.
+        for table in ["session_search", "session_meta_search"] {
+            sqlx::query(&format!("DELETE FROM {table} WHERE session_handle = ?"))
+                .bind(h)
+                .execute(&self.pool)
+                .await?;
+        }
         let done = sqlx::query("DELETE FROM sessions WHERE handle = ?")
-            .bind(handle.as_str())
+            .bind(h)
             .execute(&self.pool)
             .await?;
         Ok(done.rows_affected() > 0)

@@ -4,7 +4,11 @@
 //! implementation per backend. Memory lives in its own `crabtalk-memory`
 //! crate and is not part of this trait.
 
-use crate::{AgentConfig, AgentId, Config, history::HistoryEntry};
+use crate::{
+    AgentConfig, AgentId, Config,
+    session::history::HistoryEntry,
+    session::{SearchOptions, SessionHit},
+};
 use anyhow::Result;
 use crabllm_core::Usage;
 use serde::{Deserialize, Serialize};
@@ -91,6 +95,20 @@ pub trait Storage: Send + Sync + 'static {
 
     /// Delete a session entirely.
     fn delete_session(&self, handle: &SessionHandle) -> impl Future<Output = Result<bool>> + Send;
+
+    // ── Session search ─────────────────────────────────────────────
+
+    /// Search conversation messages. Best hit per session, up to
+    /// `opts.limit`, each with a windowed excerpt.
+    ///
+    /// How a backend makes this fast is its own business — a resident
+    /// index, FTS5, a GIN index. The trait only says it is a query, which
+    /// means it awaits and it can fail.
+    fn search_sessions(
+        &self,
+        query: &str,
+        opts: &SearchOptions,
+    ) -> impl Future<Output = Result<Vec<SessionHit>>> + Send;
 
     // ── Agents ─────────────────────────────────────────────────────
 

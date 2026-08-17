@@ -3,7 +3,7 @@
 //! One database per tenant: sessions, agents, and the install config all
 //! live in a single file, so a tenant is a thing you can copy, move, or
 //! delete whole. Skills stay on the filesystem — they are content, not
-//! state, and are read through the same scan `FsStorage` uses.
+//! state, and are read by scanning the skill roots.
 //!
 //! Each entity's logic lives in inherent methods on [`SqliteStorage`],
 //! one file per concern; the `Storage` impl in `storage.rs` forwards to
@@ -21,13 +21,14 @@ mod agents;
 mod config;
 mod convert;
 mod schema;
+mod search;
 mod sessions;
 mod storage;
 
 /// A tenant's database, plus the roots its skills are read from.
 pub struct SqliteStorage {
     pool: SqlitePool,
-    /// Ordered skill roots to scan, same contract as `FsStorage`.
+    /// Ordered skill roots to scan.
     skill_roots: Vec<PathBuf>,
 }
 

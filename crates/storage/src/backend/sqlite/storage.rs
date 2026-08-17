@@ -8,6 +8,7 @@
 use crate::backend::sqlite::SqliteStorage;
 use crate::{
     AgentConfig, AgentId, Config, HistoryEntry,
+    session::{SearchOptions, SessionHit},
     storage::{
         ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary, Skill, Storage,
     },
@@ -16,6 +17,9 @@ use anyhow::Result;
 use skill::discover;
 
 impl Storage for SqliteStorage {
+    async fn search_sessions(&self, query: &str, opts: &SearchOptions) -> Result<Vec<SessionHit>> {
+        self.search_sessions(query, opts).await
+    }
     // Skills are markdown on disk for every backend; only sessions,
     // agents, and config live in the database.
     async fn list_skills(&self) -> Result<Vec<Skill>> {

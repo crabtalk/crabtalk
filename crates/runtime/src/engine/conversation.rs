@@ -20,18 +20,6 @@ impl<C: Config> Runtime<C> {
 
     /// Get or create a conversation for the given (agent, created_by)
     /// identity.
-    ///
-    /// Resolution order:
-    /// 1. An active in-memory slot for this `(agent, sender)` — reuse.
-    /// 2. The latest persisted session for this pair — resume via
-    ///    [`Self::load`], which hydrates history (and any compact
-    ///    archive) into a fresh in-memory slot.
-    /// 3. No prior session in storage — allocate a fresh id.
-    ///
-    /// Without (2), every process boot would begin a brand-new session
-    /// per agent and the on-disk history would never be threaded into
-    /// the working context — agents would lose memory across restarts
-    /// even though the bytes are still in storage.
     pub async fn get_or_create_conversation(&self, agent: &str, created_by: &str) -> Result<u64> {
         if !self.has_agent(agent) {
             bail!("agent '{agent}' not registered");
@@ -83,10 +71,6 @@ impl<C: Config> Runtime<C> {
     }
 
     pub async fn list_active(&self) -> Vec<proto::ActiveConversationInfo> {
-        // Snapshot the slot metadata and mutex handles first so the
-        // outer read guard isn't held across per-conversation locks —
-        // otherwise a slow conversation would block readers of the
-        // whole map.
         let slots: Vec<_> = {
             let conversations = self.conversations.read().await;
             conversations
@@ -205,16 +189,7 @@ impl<C: Config> Runtime<C> {
     /// `Archive` entry, drop a compact marker into the session, and
     /// replace the live history with a single user message carrying
     /// the summary. Returns the summary on success.
-    ///
-    /// All four steps are required for a coherent compact — without
-    /// the marker, a session reload can't find the resume boundary;
-    /// without the archive, the boundary points to nothing; without
-    /// the history replacement, the next request still ships the full
-    /// pre-compact context.
     pub async fn compact(&self, conversation_id: u64) -> Option<String> {
-        // Release the conversations read lock before the per-conversation
-        // mutex await — otherwise readers queue behind a potentially
-        // contended inner lock.
         let (agent_name, created_by, conversation_mutex) = {
             let conversations = self.conversations.read().await;
             let slot = conversations.get(&conversation_id)?;
@@ -444,21 +419,5 @@ impl<C: Config> Runtime<C> {
         }
         let meta = conversation.meta(agent, created_by);
         let _ = storage.update_session_meta(handle, &meta).await;
-
-        // Reflect the new entries into the search index so live work
-        // is findable without a process restart.
-        let mut index = self.session_index.write();
-        let session_id = index.ensure_session(
-            handle,
-            agent,
-            created_by,
-            &meta.title,
-            meta.summary.as_deref(),
-            &meta.created_at,
-            &meta.updated_at,
-        );
-        for entry in &new_entries {
-            index.insert_message(session_id, entry);
-        }
     }
 }

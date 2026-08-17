@@ -27,11 +27,11 @@ toml.workspace = true
 tracing.workspace = true
 ulid.workspace = true
 
-# Backends beyond the filesystem are opt-in: nothing that only needs
-# `FsStorage` should compile a SQL driver.
 sqlx = { workspace = true, optional = true }
 
 [features]
-default = ["fs", "sqlite"]
+default = ["sqlite"]
 sqlite = ["dep:sqlx"]
-fs = []
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

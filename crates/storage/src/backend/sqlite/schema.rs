@@ -43,6 +43,23 @@ pub(super) const DDL: &[&str] = &[
     )",
     "CREATE INDEX IF NOT EXISTS session_events_kind
         ON session_events(session_handle, kind)",
+    // Free-text search over messages. FTS5 ships `bm25()`, so the ranking
+    // is the database's rather than a resident index the process rebuilds
+    // at boot. `role` rides along unindexed so weighting is one CASE in the
+    // ORDER BY instead of a second pass in Rust.
+    "CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(
+        body,
+        session_handle UNINDEXED,
+        idx            UNINDEXED,
+        role           UNINDEXED
+    )",
+    // Title and summary rank a session as a whole, so they are their own
+    // documents rather than extra columns on every message.
+    "CREATE VIRTUAL TABLE IF NOT EXISTS session_meta_search USING fts5(
+        title,
+        summary,
+        session_handle UNINDEXED
+    )",
     // The config is stored whole rather than as a column per field.
     // Nothing queries inside an `AgentConfig`, and a column layout would
     // need a migration every time the struct gains a field — which it

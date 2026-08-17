@@ -28,7 +28,7 @@ impl SqliteStorage {
 
     /// Seed the built-in `crab` agent if the store holds none. The
     /// directory layout is not this backend's concern — a tenant is one
-    /// database file — so unlike `FsStorage` this creates no directories.
+    /// database file — so this creates no directories.
     pub(super) async fn scaffold(&self, default_model: &str) -> Result<()> {
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agents")
             .fetch_one(&self.pool)

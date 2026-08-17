@@ -7,7 +7,7 @@
 //! clone the agent, and run with the conversation's history.
 
 use crate::{Agent, ToolRegistry, agent::Model};
-use crate::{Config, Conversation, Env, Harness, sessions::SessionIndex};
+use crate::{Config, Conversation, Env, Harness};
 use memory::Memory;
 use std::{
     collections::BTreeMap,
@@ -20,10 +20,6 @@ mod config;
 mod conversation;
 mod execution;
 mod history;
-mod program;
-mod session_search;
-
-pub use program::{Program, ProgramStep};
 
 /// Shared handle to the standalone memory store. Used by compaction to
 /// write Archive entries and by session resume to pull their content
@@ -55,7 +51,6 @@ pub struct Runtime<C: Config> {
     memory: SharedMemory,
     agents: parking_lot::RwLock<BTreeMap<String, Agent<C::Provider>>>,
     conversations: RwLock<BTreeMap<u64, ConvSlot>>,
-    pub(super) session_index: parking_lot::RwLock<SessionIndex>,
     next_conversation_id: AtomicU64,
     pub tools: ToolRegistry,
     steering: RwLock<BTreeMap<u64, watch::Sender<Option<String>>>>,
@@ -80,7 +75,6 @@ impl<C: Config> Runtime<C> {
             memory,
             agents: parking_lot::RwLock::new(BTreeMap::new()),
             conversations: RwLock::new(BTreeMap::new()),
-            session_index: parking_lot::RwLock::new(SessionIndex::new()),
             next_conversation_id: AtomicU64::new(1),
             tools,
             steering: RwLock::new(BTreeMap::new()),

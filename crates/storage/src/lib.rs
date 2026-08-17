@@ -6,13 +6,10 @@
 //! `sqlite` feature exists only so a consumer that wants the filesystem
 //! doesn't build a SQL driver it will never call.
 //!
-//! [`FsStorage`] is the daemon's backend: TOML configs, markdown prompts,
-//! and JSON session files under `~/.crabtalk/`.
+//! [`SqliteStorage`](backend::SqliteStorage) is what ships here. The cloud
+//! runs postgres behind the same trait — crabtalk is daemon-first, so a
+//! store that answers queries beats a directory a process walks.
 
-/// Mutable settings file (daemon-owned, persisted under `local/`).
-pub const SETTINGS_FILE: &str = "local/settings.toml";
-/// Daemon-owned state directory.
-pub const LOCAL_DIR: &str = "local";
 /// Skills subdirectory.
 pub const SKILLS_DIR: &str = "local/skills";
 
@@ -21,14 +18,18 @@ pub use config::{
     CONFIG_FILE, Config, HarnessConfig, HooksConfig, LlmConfig, McpConfig, McpServerConfig,
     MemoryConfig, TasksConfig,
 };
-pub use history::HistoryEntry;
+pub use session::history::HistoryEntry;
 pub use storage::{
     ConversationMeta, EventLine, SessionHandle, SessionSnapshot, SessionSummary, Storage,
     ToolCallTrace, sender_slug, validate_table_name,
 };
 
+pub use session::{
+    MAX_HITS_PER_QUERY, MAX_SNIPPET_BYTES, MAX_WINDOW_ITEMS, SearchOptions, SessionHit, WindowItem,
+};
+
 pub mod agent;
 pub mod backend;
 pub mod config;
-pub mod history;
+pub mod session;
 pub mod storage;

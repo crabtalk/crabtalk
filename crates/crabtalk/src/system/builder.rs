@@ -58,17 +58,6 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .set(shared_runtime.clone())
             .unwrap_or_else(|_| panic!("runtime already initialized"));
 
-        // Rebuild the session search index in the background
-        {
-            let rebuild_runtime = shared_runtime.clone();
-            tokio::spawn(async move {
-                let rt = rebuild_runtime.read().await.clone();
-                if let Err(e) = rt.rebuild_session_index().await {
-                    tracing::warn!("session index rebuild failed: {e}");
-                }
-            });
-        }
-
         let fire_runtime = shared_runtime.clone();
         let fire: event::FireCallback = Arc::new(move |sub, payload| {
             let runtime = fire_runtime.clone();

@@ -4,11 +4,10 @@
 //! persisted about it — lives in `crabtalk-storage`, which this crate reads.
 
 pub mod agent;
-mod conversation;
 mod engine;
 pub mod env;
 pub mod harness;
-pub mod sessions;
+mod session;
 
 pub use agent::{
     Agent, AgentBuilder, Model,
@@ -18,10 +17,10 @@ pub use agent::{
         ToolRegistry,
     },
 };
-pub use conversation::Conversation;
-pub use engine::{Program, ProgramStep, Runtime, SharedMemory};
+pub use engine::{Runtime, SharedMemory};
 pub use env::Env;
 pub use harness::Harness;
+pub use session::Conversation;
 
 /// Opaque persistent handle to a conversation. Re-exported from the
 /// storage trait so runtime callers don't need to speak the storage

@@ -7,8 +7,8 @@ use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
 use proto::*;
 use runtime::AgentEvent;
-use runtime::sessions::SearchOptions;
 use std::sync::Arc;
+use storage::SearchOptions;
 use storage::Storage;
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
@@ -34,7 +34,9 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         };
 
         Ok(rt
+            .storage()
             .search_sessions(&req.query, &opts)
+            .await?
             .into_iter()
             .map(|hit| SessionHit {
                 session_handle: hit.session_handle.as_str().to_owned(),
