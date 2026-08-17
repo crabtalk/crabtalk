@@ -2,7 +2,7 @@
 
 use crabllm_core::{FinishReason, ToolCall, Usage, anthropic::Message};
 use proto::*;
-use storage::{EventLine, HistoryEntry, ToolCallTrace};
+use storage::{AgentId, EventLine, HistoryEntry, ToolCallTrace};
 
 /// A fine-grained event emitted during agent execution.
 #[derive(Debug, Clone)]
@@ -46,7 +46,7 @@ impl AgentEvent {
     /// Map one agent loop event to its wire `StreamEvent`. Shared by the
     /// persisted and ephemeral stream paths; client-tool forwarding (which
     /// only the persisted path can route) is handled by the caller.
-    pub fn to_stream(self, responding_agent: &str) -> StreamEvent {
+    pub fn to_stream(self, responding_agent: &AgentId) -> StreamEvent {
         let event = self;
         use stream_event::Event;
         let event = match event {

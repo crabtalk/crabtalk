@@ -129,7 +129,8 @@ pub trait Server: Sync {
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<crate::AgentInfo>>> + Send;
 
-    /// Handle `GetAgent` — return a single agent by name.
+    /// Handle `GetAgent` — resolve a name to an agent. The one
+    /// name-keyed agent RPC; every other one takes the ULID.
     fn get_agent(
         &self,
         name: String,
@@ -147,13 +148,14 @@ pub trait Server: Sync {
         req: crate::UpdateAgentMsg,
     ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send;
 
-    /// Handle `DeleteAgent` — remove an agent by name.
-    fn delete_agent(&self, name: String) -> impl std::future::Future<Output = Result<bool>> + Send;
+    /// Handle `DeleteAgent` — remove an agent and its sessions.
+    fn delete_agent(&self, agent: String)
+    -> impl std::future::Future<Output = Result<bool>> + Send;
 
     /// Handle `RenameAgent` — rename an agent in place.
     fn rename_agent(
         &self,
-        old_name: String,
+        agent: String,
         new_name: String,
     ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send;
 
@@ -411,17 +413,17 @@ pub trait Server: Sync {
                     };
                 }
                 client_message::Msg::DeleteAgent(req) => {
-                    yield match self.delete_agent(req.name.clone()).await {
+                    yield match self.delete_agent(req.agent.clone()).await {
                         Ok(true) => server_pong(),
                         Ok(false) => server_error(
                             404,
-                            format!("agent '{}' not found in local manifest", req.name),
+                            format!("agent '{}' not found in local manifest", req.agent),
                         ),
                         Err(e) => server_error(500, e.to_string()),
                     };
                 }
                 client_message::Msg::RenameAgent(req) => {
-                    yield match self.rename_agent(req.old_name, req.new_name).await {
+                    yield match self.rename_agent(req.agent, req.new_name).await {
                         Ok(info) => crate::ServerMessage {
                             msg: Some(server_message::Msg::AgentInfo(info)),
                         },

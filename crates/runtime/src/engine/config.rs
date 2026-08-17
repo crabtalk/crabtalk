@@ -6,14 +6,18 @@ use proto::ModelInfo;
 use storage::Storage;
 
 impl<C: Config> Runtime<C> {
+    /// The install's default agent, as configured. `None` before
+    /// scaffold, or if the config points at an agent that is gone.
+    pub async fn default_agent(&self) -> Option<storage::AgentConfig> {
+        let id = self.storage().load_config().await.ok()?.default_agent;
+        self.storage().load_agent(&id).await.ok().flatten()
+    }
+
     /// The active model — defined as the default agent's `model` field.
     /// Empty string if the default agent is missing (pre-scaffold).
     pub async fn active_model(&self) -> String {
-        self.storage()
-            .load_agent_by_name(storage::DEFAULT_AGENT)
+        self.default_agent()
             .await
-            .ok()
-            .flatten()
             .map(|c| c.model)
             .unwrap_or_default()
     }

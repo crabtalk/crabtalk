@@ -125,7 +125,8 @@ pub trait Client: Send {
         }
     }
 
-    /// Get a single agent by name.
+    /// Resolve an agent name to its record — the one name-keyed call.
+    /// Every other agent operation takes the ULID in the reply.
     fn get_agent(
         &mut self,
         name: String,
@@ -179,17 +180,17 @@ pub trait Client: Send {
         }
     }
 
-    /// Update an agent from JSON config and optional system prompt.
+    /// Update an agent from a JSON merge patch over its stored config.
     fn update_agent(
         &mut self,
-        name: String,
+        agent: String,
         config: String,
     ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send {
         async move {
             match self
                 .request(crate::ClientMessage {
                     msg: Some(client_message::Msg::UpdateAgent(crate::UpdateAgentMsg {
-                        name,
+                        agent,
                         config,
                     })),
                 })
@@ -208,16 +209,16 @@ pub trait Client: Send {
         }
     }
 
-    /// Delete an agent by name.
+    /// Delete an agent, and every session it owns.
     fn delete_agent(
         &mut self,
-        name: String,
+        agent: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
                 .request(crate::ClientMessage {
                     msg: Some(client_message::Msg::DeleteAgent(crate::DeleteAgentMsg {
-                        name,
+                        agent,
                     })),
                 })
                 .await?
@@ -238,14 +239,14 @@ pub trait Client: Send {
     /// Rename an agent. The agent's stored ULID stays stable.
     fn rename_agent(
         &mut self,
-        old_name: String,
+        agent: String,
         new_name: String,
     ) -> impl std::future::Future<Output = Result<crate::AgentInfo>> + Send {
         async move {
             match self
                 .request(crate::ClientMessage {
                     msg: Some(client_message::Msg::RenameAgent(crate::RenameAgentMsg {
-                        old_name,
+                        agent,
                         new_name,
                     })),
                 })
@@ -504,8 +505,8 @@ pub trait Client: Send {
         }
     }
 
-    /// Ranked excerpts from past conversations. `agent` and `sender` are
-    /// filters; empty means unrestricted.
+    /// Ranked excerpts from past conversations. `agent` and `sender`
+    /// are filters; empty means unrestricted.
     fn search_sessions(
         &mut self,
         req: crate::SearchSessionsMsg,

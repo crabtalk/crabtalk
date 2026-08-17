@@ -26,9 +26,10 @@ impl SqliteStorage {
         Ok(())
     }
 
-    /// Seed the built-in `crab` agent if the store holds none. The
-    /// directory layout is not this backend's concern — a tenant is one
-    /// database file — so this creates no directories.
+    /// Seed the built-in `crab` agent if the store holds none, and point
+    /// the install's default at it. The directory layout is not this
+    /// backend's concern — a tenant is one database file — so this
+    /// creates no directories.
     pub(super) async fn scaffold(&self, default_model: &str) -> Result<()> {
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agents")
             .fetch_one(&self.pool)
@@ -36,6 +37,10 @@ impl SqliteStorage {
         if count > 0 {
             return Ok(());
         }
-        self.upsert_agent(&AgentConfig::crab(default_model)).await
+        let crab = AgentConfig::crab(default_model);
+        let mut config = self.load_config().await?;
+        config.default_agent = crab.id;
+        self.save_config(&config).await?;
+        self.upsert_agent(&crab).await
     }
 }

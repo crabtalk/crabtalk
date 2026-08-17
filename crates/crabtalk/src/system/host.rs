@@ -6,6 +6,7 @@ use runtime::harness::Hooks;
 use runtime::{AgentEvent, ToolDispatch};
 use runtime::{Env, Harness};
 use std::sync::Arc;
+use storage::AgentId;
 use tokio::sync::broadcast;
 
 /// Tool result output is truncated to this many bytes in the broadcast.
@@ -29,7 +30,13 @@ impl Env for SystemEnv {
         &self.hook
     }
 
-    fn on_agent_event(&self, agent: &str, session_id: u64, ephemeral: bool, event: &AgentEvent) {
+    fn on_agent_event(
+        &self,
+        agent: &AgentId,
+        session_id: u64,
+        ephemeral: bool,
+        event: &AgentEvent,
+    ) {
         struct Payload {
             kind: AgentEventKind,
             content: String,
@@ -149,14 +156,14 @@ impl runtime::ToolDispatcher for SystemEnv {
         &'a self,
         name: &'a str,
         args: &'a str,
-        agent: &'a str,
+        agent: &'a AgentId,
         sender: &'a str,
         session_id: Option<u64>,
         call_id: &'a str,
     ) -> runtime::ToolFuture<'a> {
         let call = ToolDispatch {
             args: args.to_owned(),
-            agent: agent.to_owned(),
+            agent: *agent,
             sender: sender.to_owned(),
             session_id,
             call_id: call_id.to_owned(),

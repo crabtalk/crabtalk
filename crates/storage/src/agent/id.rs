@@ -2,8 +2,8 @@
 //!
 //! An [`AgentId`] is a ULID — Crockford base32, 26 characters, sortable
 //! by creation time. Agents get a fresh ULID when they're created and
-//! keep it across renames. Phase 5 introduces the field; later phases
-//! (agent CRUD via Storage, sessions) start keying on it.
+//! keep it across renames, which is why everything above storage keys on
+//! it and a name is only ever a label.
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -14,6 +14,11 @@ use ulid::Ulid;
 
 /// Stable identifier for an agent. Newtype over [`Ulid`] so callers can
 /// extend the type later without touching call sites.
+///
+/// The zero ULID is not a sentinel — it is the identity of the agent
+/// seeded by [`Storage::scaffold`](crate::Storage::scaffold), so
+/// [`Default`] names a real agent rather than a missing one. Absence is
+/// spelled `Option<AgentId>`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
 )]
@@ -24,19 +29,6 @@ impl AgentId {
     /// Generate a fresh ULID for a new agent.
     pub fn new() -> Self {
         Self(Ulid::new())
-    }
-
-    /// The nil/zero ID — used as a sentinel for "not yet backfilled".
-    /// Callers that see this on a registered agent should treat it as a
-    /// bug: the daemon's startup backfill is expected to replace any
-    /// missing `id` field before agents reach the runtime.
-    pub const fn nil() -> Self {
-        Self(Ulid::nil())
-    }
-
-    /// Is this the nil/zero sentinel?
-    pub fn is_nil(&self) -> bool {
-        self.0.is_nil()
     }
 }
 

@@ -110,7 +110,7 @@ mod tools {
         let _ = writeln!(
             out,
             "session: {} · agent: {} · sender: {}",
-            hit.session_handle, hit.agent, hit.sender
+            hit.session_handle, hit.agent_name, hit.sender
         );
         let _ = writeln!(
             out,

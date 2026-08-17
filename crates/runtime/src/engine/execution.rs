@@ -8,7 +8,7 @@ use async_stream::stream;
 use crabllm_core::{ToolChoice, anthropic};
 use futures_core::Stream;
 use futures_util::StreamExt;
-use storage::HistoryEntry;
+use storage::{AgentId, HistoryEntry};
 use tokio::sync::{mpsc, watch};
 
 impl<C: Config> Runtime<C> {
@@ -53,13 +53,13 @@ impl<C: Config> Runtime<C> {
         extra_tools: Vec<crabllm_core::Tool>,
     ) -> Result<AgentResponse> {
         let mut session = session.lock().await;
-        let agent_name = session.agent.clone();
+        let agent_id = session.agent;
         let session_id = session.id;
         let pre_run_len = session.history.len();
         self.prepare_history(&mut session, content, sender);
         let mut agent = self
-            .resolve_agent(&agent_name)
-            .ok_or_else(|| anyhow::anyhow!("agent '{}' not registered", agent_name))?;
+            .resolve_agent(&agent_id)
+            .ok_or_else(|| anyhow::anyhow!("agent '{agent_id}' not registered"))?;
         agent.extend_tools(extra_tools);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -67,9 +67,9 @@ impl<C: Config> Runtime<C> {
 
         let mut event_trace: Vec<storage::EventLine> = Vec::new();
         while let Ok(event) = rx.try_recv() {
-            self.env.hook().on_event(&agent_name, session_id, &event);
+            self.env.hook().on_event(&agent_id, session_id, &event);
             self.env
-                .on_agent_event(&agent_name, session_id, false, &event);
+                .on_agent_event(&agent_id, session_id, false, &event);
             if let Some(line) = event.to_event_line() {
                 event_trace.push(line);
             }
@@ -97,13 +97,13 @@ impl<C: Config> Runtime<C> {
         let sender = sender.to_owned();
         stream! {
             let mut session = session.lock().await;
-            let agent_name = session.agent.clone();
+            let agent_id = session.agent;
             let session_id = session.id;
             let pre_run_len = session.history.len();
             self.prepare_history(&mut session, &content, &sender);
-            let Some(mut agent) = self.resolve_agent(&agent_name) else {
+            let Some(mut agent) = self.resolve_agent(&agent_id) else {
                 yield AgentEvent::Done(AgentResponse::error(
-                    format!("agent '{}' not registered", agent_name),
+                    format!("agent '{agent_id}' not registered"),
                 ));
                 return;
             };
@@ -114,8 +114,8 @@ impl<C: Config> Runtime<C> {
             {
                 let mut event_stream = std::pin::pin!(agent.run_stream(&mut session.history, Some(session_id), steer, tool_choice));
                 while let Some(event) = event_stream.next().await {
-                    self.env.hook().on_event(&agent_name, session_id, &event);
-                    self.env.on_agent_event(&agent_name, session_id, false, &event);
+                    self.env.hook().on_event(&agent_id, session_id, &event);
+                    self.env.on_agent_event(&agent_id, session_id, false, &event);
                     if let Some(line) = event.to_event_line() {
                         event_trace.push(line);
                     }
@@ -149,7 +149,7 @@ impl<C: Config> Runtime<C> {
     /// round-trip tools have no listener to reply through.
     pub fn ephemeral_stream<'a>(
         &'a self,
-        agent_name: &'a str,
+        agent_id: &'a AgentId,
         content: &'a str,
         correlation_id: u64,
         tool_choice: Option<ToolChoice>,
@@ -157,9 +157,9 @@ impl<C: Config> Runtime<C> {
     ) -> impl Stream<Item = AgentEvent> + 'a {
         let content = content.to_owned();
         stream! {
-            let Some(mut agent) = self.resolve_agent(agent_name) else {
+            let Some(mut agent) = self.resolve_agent(agent_id) else {
                 yield AgentEvent::Done(AgentResponse::error(
-                    format!("agent '{agent_name}' not registered"),
+                    format!("agent '{agent_id}' not registered"),
                 ));
                 return;
             };
@@ -170,7 +170,7 @@ impl<C: Config> Runtime<C> {
                 std::pin::pin!(agent.run_stream(&mut history, None, None, tool_choice));
             while let Some(event) = event_stream.next().await {
                 self.env
-                    .on_agent_event(agent_name, correlation_id, true, &event);
+                    .on_agent_event(agent_id, correlation_id, true, &event);
                 yield event;
             }
         }
@@ -181,11 +181,11 @@ impl<C: Config> Runtime<C> {
         session: SharedSession,
         content: &str,
         sender: &str,
-        guest: &str,
+        guest: &AgentId,
     ) -> impl Stream<Item = AgentEvent> + '_ {
         let content = content.to_owned();
         let sender = sender.to_owned();
-        let guest = guest.to_owned();
+        let guest = *guest;
         stream! {
             let Some(guest_agent) = self.resolve_agent(&guest) else {
                 yield AgentEvent::Done(AgentResponse::error(
@@ -195,13 +195,13 @@ impl<C: Config> Runtime<C> {
             };
 
             let mut session = session.lock().await;
-            let agent_name = session.agent.clone();
+            let agent_id = session.agent;
             let pre_run_len = session.history.len();
 
             let content = self
                 .env
                 .hook()
-                .preprocess(&agent_name, &content)
+                .preprocess(&agent_id, &content)
                 .unwrap_or_else(|| content.clone());
             if sender.is_empty() {
                 session.history.push(HistoryEntry::user(&content));
@@ -213,11 +213,15 @@ impl<C: Config> Runtime<C> {
 
             session.history.retain(|e| !e.auto_injected);
 
+            let primary = self
+                .agent(&agent_id)
+                .map(|a| a.name)
+                .unwrap_or_else(|| agent_id.to_string());
             let framing = HistoryEntry::system(format!(
                 "You are joining a session as a guest. The primary agent is '{}'. \
                  Messages wrapped in <from agent=\"...\"> tags are from other agents. \
                  Respond as yourself to the user's latest message.",
-                agent_name
+                primary
             ))
             .auto_injected();
             let insert_pos = session.history.len().saturating_sub(1);
@@ -308,7 +312,10 @@ impl<C: Config> Runtime<C> {
                 Some(reasoning)
             };
             let mut response_entry = HistoryEntry::assistant(&response_text, reasoning, None);
-            response_entry.agent = guest.clone();
+            response_entry.agent = self
+                .agent(&guest)
+                .map(|a| a.name)
+                .unwrap_or_else(|| guest.to_string());
             session.history.push(response_entry);
 
             self.finalize_run(&mut session, pre_run_len, &[])

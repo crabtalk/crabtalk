@@ -1,5 +1,6 @@
 //! Top-level configuration loaded from `config.toml`.
 
+use crate::AgentId;
 use crate::config::{LlmConfig, mcp::McpConfig, system::TasksConfig};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,10 @@ pub const CONFIG_FILE: &str = "config.toml";
 /// [`crate::AgentConfig`].
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
+    /// The agent a surface talks to when it names none. Seeded at
+    /// scaffold with the zero ULID; repoint it at any other agent's id.
+    #[serde(default)]
+    pub default_agent: AgentId,
     /// LLM endpoint (`[llm]`) — single OpenAI-compatible endpoint.
     #[serde(default)]
     pub llm: LlmConfig,

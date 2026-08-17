@@ -31,14 +31,14 @@ pub trait Storage: Send + Sync + 'static {
     /// Create a new session. Returns an opaque handle.
     fn create_session(
         &self,
-        agent: &str,
+        agent: &AgentId,
         created_by: &str,
     ) -> impl Future<Output = Result<SessionHandle>> + Send;
 
     /// Find the latest session for an (agent, created_by) identity.
     fn find_latest_session(
         &self,
-        agent: &str,
+        agent: &AgentId,
         created_by: &str,
     ) -> impl Future<Output = Result<Option<SessionHandle>>> + Send;
 
@@ -95,6 +95,9 @@ pub trait Storage: Send + Sync + 'static {
 
     /// Delete a session entirely.
     fn delete_session(&self, handle: &SessionHandle) -> impl Future<Output = Result<bool>> + Send;
+
+    /// Delete every session belonging to an agent. Returns how many went.
+    fn delete_sessions_of(&self, agent: &AgentId) -> impl Future<Output = Result<usize>> + Send;
 
     // ── Session search ─────────────────────────────────────────────
 
@@ -204,7 +207,7 @@ pub struct SessionSummary {
 /// Metadata persisted alongside a session's messages.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionMeta {
-    pub agent: String,
+    pub agent: AgentId,
     pub created_by: String,
     pub created_at: String,
     #[serde(default)]

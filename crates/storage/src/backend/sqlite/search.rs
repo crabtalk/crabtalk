@@ -5,7 +5,7 @@
 //! where more-negative is a better match, so a weight above 1 promotes.
 
 use crate::{
-    HistoryEntry, SessionHandle,
+    AgentId, HistoryEntry, SessionHandle,
     backend::sqlite::SqliteStorage,
     session::{
         MAX_HITS_PER_QUERY, MAX_SNIPPET_BYTES, MAX_WINDOW_ITEMS, SearchOptions, SessionHit,
@@ -14,10 +14,22 @@ use crate::{
 };
 use anyhow::Result;
 use crabllm_core::{Role, anthropic::ContentBlock};
+use std::str::FromStr;
 
 /// One row of the hit query: handle, message index, score, then the
-/// session's own metadata.
-type HitRow = (String, i64, f64, String, String, String, String, String);
+/// session's own metadata, then the agent's name — left-joined, so it is
+/// empty for a session whose agent has since been deleted.
+type HitRow = (
+    String,
+    i64,
+    f64,
+    String,
+    String,
+    Option<String>,
+    String,
+    String,
+    String,
+);
 
 /// How much a title or summary match adds to a session's best message hit.
 const TITLE_BOOST: f64 = 2.0;
@@ -42,7 +54,7 @@ impl SqliteStorage {
         // materialised score, one nesting level out.
         let rows: Vec<HitRow> = sqlx::query_as(
             "SELECT h.session_handle, h.idx, h.score,
-                        s.title, s.agent, s.created_by, s.created_at, s.updated_at
+                        s.title, s.agent, a.name, s.created_by, s.created_at, s.updated_at
                  FROM (
                      SELECT session_handle, idx, score,
                             ROW_NUMBER() OVER (
@@ -60,6 +72,7 @@ impl SqliteStorage {
                      )
                  ) h
                  JOIN sessions s ON s.handle = h.session_handle
+                 LEFT JOIN agents a ON a.id = s.agent
                  WHERE h.rn = 1
                    AND (?2 IS NULL OR s.agent = ?2)
                    AND (?3 IS NULL OR s.created_by = ?3)
@@ -67,7 +80,7 @@ impl SqliteStorage {
                  LIMIT ?4",
         )
         .bind(&matcher)
-        .bind(opts.agent_filter.as_deref())
+        .bind(opts.agent_filter.map(|id| id.to_string()))
         .bind(opts.sender_filter.as_deref())
         .bind(limit)
         .fetch_all(&self.pool)
@@ -80,7 +93,7 @@ impl SqliteStorage {
         let summarised = self.meta_matches("summary", &matcher).await;
 
         let mut hits = Vec::with_capacity(rows.len());
-        for (handle, idx, score, title, agent, sender, created_at, updated_at) in rows {
+        for (handle, idx, score, title, agent, agent_name, sender, created_at, updated_at) in rows {
             let boost = titled.contains(&handle) as u8 as f64 * TITLE_BOOST
                 + summarised.contains(&handle) as u8 as f64 * SUMMARY_BOOST;
             let handle = SessionHandle::new(handle);
@@ -91,7 +104,8 @@ impl SqliteStorage {
                 // `bm25()` is negative-is-better; the wire wants the opposite.
                 score: -score + boost,
                 title,
-                agent,
+                agent: AgentId::from_str(&agent)?,
+                agent_name: agent_name.unwrap_or_default(),
                 sender,
                 created_at,
                 updated_at,

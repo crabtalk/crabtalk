@@ -13,7 +13,7 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use recall::Recall;
 use remember::Remember;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use storage::{AgentConfig, MemoryConfig};
+use storage::{AgentConfig, AgentId, MemoryConfig};
 
 mod forget;
 mod recall;
@@ -64,7 +64,7 @@ pub struct MemoryHook {
     /// Lives on the hook instead of being read from storage on every
     /// `before_run` so the sync hook callbacks don't need an async
     /// roundtrip.
-    configs: RwLock<BTreeMap<String, MemoryConfig>>,
+    configs: RwLock<BTreeMap<AgentId, MemoryConfig>>,
 }
 
 impl MemoryHook {
@@ -75,7 +75,7 @@ impl MemoryHook {
         }
     }
 
-    fn recall_limit(&self, agent: &str) -> usize {
+    fn recall_limit(&self, agent: &AgentId) -> usize {
         self.configs
             .read()
             .get(agent)
@@ -93,14 +93,14 @@ impl Harness for MemoryHook {
         Some(format!("\n\n{MEMORY_USAGE}"))
     }
 
-    fn on_register_agent(&self, name: &str, config: &AgentConfig) {
+    fn on_register_agent(&self, id: &AgentId, config: &AgentConfig) {
         self.configs
             .write()
-            .insert(name.to_owned(), config.hooks.memory.clone());
+            .insert(*id, config.hooks.memory.clone());
     }
 
-    fn on_unregister_agent(&self, name: &str) {
-        self.configs.write().remove(name);
+    fn on_unregister_agent(&self, id: &AgentId) {
+        self.configs.write().remove(id);
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {

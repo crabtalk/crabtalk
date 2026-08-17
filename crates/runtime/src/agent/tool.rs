@@ -9,7 +9,7 @@ use crabllm_core::{FunctionDef, Tool, ToolType};
 use heck::ToSnakeCase;
 use schemars::JsonSchema;
 use std::{collections::BTreeMap, future::Future, pin::Pin, sync::Arc};
-use storage::HistoryEntry;
+use storage::{AgentId, HistoryEntry};
 
 /// Boxed future returned by a [`ToolDispatcher::dispatch`] call.
 pub type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>>;
@@ -24,7 +24,7 @@ pub trait ToolDispatcher: Send + Sync + 'static {
         &'a self,
         name: &'a str,
         args: &'a str,
-        agent: &'a str,
+        agent: &'a AgentId,
         sender: &'a str,
         session_id: Option<u64>,
         call_id: &'a str,
@@ -36,8 +36,8 @@ pub trait ToolDispatcher: Send + Sync + 'static {
 pub struct ToolDispatch {
     /// JSON-encoded arguments string.
     pub args: String,
-    /// Name of the agent making this call.
-    pub agent: String,
+    /// The agent making this call.
+    pub agent: AgentId,
     /// Sender identity (empty for local/owner sessions).
     pub sender: String,
     /// Session ID, if running within a session.
@@ -180,7 +180,7 @@ impl ToolDispatcher for () {
         &'a self,
         name: &'a str,
         _args: &'a str,
-        _agent: &'a str,
+        _agent: &'a AgentId,
         _sender: &'a str,
         _session_id: Option<u64>,
         _call_id: &'a str,

@@ -6,12 +6,65 @@ use anyhow::Result;
 use crabllm_core::Role;
 use proto::{ConversationHistory, ConversationInfo, ConversationMessage};
 use std::collections::HashMap;
-use storage::{SessionHandle, SessionSummary, Storage};
+use storage::{AgentId, SessionHandle, Storage};
 
 impl<C: Config> Runtime<C> {
     /// List persisted sessions, optionally filtered by agent and sender.
-    pub async fn list_conversations(&self, agent: &str, sender: &str) -> Vec<ConversationInfo> {
-        scan_sessions(self.storage().as_ref(), agent, sender).await
+    /// Each entry carries the agent's name beside its id, because the
+    /// listing is read by a person.
+    pub async fn list_conversations(
+        &self,
+        agent: Option<AgentId>,
+        sender: &str,
+    ) -> Vec<ConversationInfo> {
+        let Ok(summaries) = self.storage().list_sessions().await else {
+            return Vec::new();
+        };
+
+        // Filtered on `meta`, the only place the association lives now that
+        // the handle is opaque.
+        let mut matched: Vec<_> = summaries
+            .into_iter()
+            .filter(|s| agent.is_none_or(|id| s.meta.agent == id))
+            .filter(|s| sender.is_empty() || s.meta.created_by == sender)
+            .collect();
+
+        // `seq` is the nth session of an (agent, sender) pair. It used to be
+        // read out of the path; it is derived here instead, by creation order
+        // within the pair, so nothing has to store it.
+        matched.sort_by(|a, b| {
+            (&a.meta.created_at, a.handle.as_str()).cmp(&(&b.meta.created_at, b.handle.as_str()))
+        });
+        let mut seqs: HashMap<(AgentId, &str), u32> = HashMap::new();
+        let mut results = Vec::with_capacity(matched.len());
+        for summary in &matched {
+            let meta = &summary.meta;
+            let seq = seqs
+                .entry((meta.agent, meta.created_by.as_str()))
+                .and_modify(|n| *n += 1)
+                .or_insert(1);
+            results.push(ConversationInfo {
+                agent_id: meta.agent.to_string(),
+                agent_name: self.agent(&meta.agent).map(|a| a.name).unwrap_or_default(),
+                sender: meta.created_by.clone(),
+                seq: *seq,
+                title: meta.title.clone(),
+                file_path: summary.handle.as_str().to_owned(),
+                message_count: meta.message_count,
+                // Wall-clock age between create and last update, in seconds.
+                // 0 marks "unknown" (no `updated_at` in pre-0185 meta files).
+                alive_secs: rfc3339_diff_secs(&meta.created_at, &meta.updated_at),
+                // Raw RFC3339; callers format for display.
+                date: meta.created_at.clone(),
+            });
+        }
+
+        results.sort_by(|a, b| {
+            b.seq
+                .cmp(&a.seq)
+                .then_with(|| a.agent_name.cmp(&b.agent_name))
+        });
+        results
     }
 
     /// Load a persisted session by slug, prepending the compacted archive
@@ -37,7 +90,8 @@ impl<C: Config> Runtime<C> {
         }
         Ok(ConversationHistory {
             title: meta.title,
-            agent: meta.agent,
+            agent_id: meta.agent.to_string(),
+            agent_name: self.agent(&meta.agent).map(|a| a.name).unwrap_or_default(),
             messages: messages
                 .into_iter()
                 .filter(|e| !matches!(e.role(), Role::System | Role::Tool))
@@ -58,61 +112,6 @@ impl<C: Config> Runtime<C> {
         }
         Ok(())
     }
-}
-
-async fn scan_sessions(storage: &impl Storage, agent: &str, sender: &str) -> Vec<ConversationInfo> {
-    let Ok(summaries) = storage.list_sessions().await else {
-        return Vec::new();
-    };
-
-    // Filtered on `meta`, the only place the association lives now that the
-    // directory name is opaque. Also an exact match, where slugifying both sides
-    // conflated agents whose names differ only in punctuation.
-    let mut matched: Vec<_> = summaries
-        .into_iter()
-        .filter(|s| agent.is_empty() || s.meta.agent == agent)
-        .filter(|s| sender.is_empty() || s.meta.created_by == sender)
-        .collect();
-
-    // `seq` is the nth session of an (agent, sender) pair. It used to be
-    // read out of the path; it is derived here instead, by creation order within
-    // the pair, so nothing has to store it.
-    matched.sort_by(|a, b| {
-        (&a.meta.created_at, a.handle.as_str()).cmp(&(&b.meta.created_at, b.handle.as_str()))
-    });
-    let mut seqs: HashMap<(&str, &str), u32> = HashMap::new();
-    let numbered: Vec<(u32, &SessionSummary)> = matched
-        .iter()
-        .map(|s| {
-            let seq = seqs
-                .entry((s.meta.agent.as_str(), s.meta.created_by.as_str()))
-                .and_modify(|n| *n += 1)
-                .or_insert(1);
-            (*seq, s)
-        })
-        .collect();
-
-    let mut results = Vec::new();
-    for (seq, summary) in numbered {
-        let slug = summary.handle.as_str().to_owned();
-        let meta = &summary.meta;
-        results.push(ConversationInfo {
-            agent: meta.agent.clone(),
-            sender: meta.created_by.clone(),
-            seq,
-            title: meta.title.clone(),
-            file_path: slug,
-            message_count: meta.message_count,
-            // Wall-clock age between create and last update, in seconds.
-            // 0 marks "unknown" (no `updated_at` in pre-0185 meta files).
-            alive_secs: rfc3339_diff_secs(&meta.created_at, &meta.updated_at),
-            // Raw RFC3339; callers format for display.
-            date: meta.created_at.clone(),
-        });
-    }
-
-    results.sort_by(|a, b| b.seq.cmp(&a.seq).then_with(|| a.agent.cmp(&b.agent)));
-    results
 }
 
 /// Wall-clock seconds between two RFC3339 timestamps. Returns 0 if

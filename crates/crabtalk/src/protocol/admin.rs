@@ -63,14 +63,15 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 
     pub(crate) async fn subscribe_event(&self, req: SubscribeEventMsg) -> Result<SubscriptionInfo> {
+        let target = crate::protocol::parse_agent(&req.target_agent)?;
         let rt = self.runtime.read().await.clone();
-        if rt.agent(&req.target_agent).is_none() {
-            anyhow::bail!("agent '{}' not found", req.target_agent);
+        if rt.agent(&target).is_none() {
+            anyhow::bail!("agent '{target}' not found");
         }
         let sub = EventSubscription {
             id: 0,
             source: req.source,
-            target_agent: req.target_agent,
+            target_agent: target,
             once: req.once,
         };
         let created = self.events.lock().subscribe(sub);

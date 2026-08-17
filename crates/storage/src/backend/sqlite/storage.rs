@@ -30,13 +30,13 @@ impl Storage for SqliteStorage {
         discover::load(&self.skill_roots, name).await
     }
 
-    async fn create_session(&self, agent: &str, created_by: &str) -> Result<SessionHandle> {
+    async fn create_session(&self, agent: &AgentId, created_by: &str) -> Result<SessionHandle> {
         self.create_session(agent, created_by).await
     }
 
     async fn find_latest_session(
         &self,
-        agent: &str,
+        agent: &AgentId,
         created_by: &str,
     ) -> Result<Option<SessionHandle>> {
         self.find_latest_session(agent, created_by).await
@@ -84,6 +84,10 @@ impl Storage for SqliteStorage {
 
     async fn delete_session(&self, handle: &SessionHandle) -> Result<bool> {
         self.delete_session(handle).await
+    }
+
+    async fn delete_sessions_of(&self, agent: &AgentId) -> Result<usize> {
+        self.delete_sessions_of(agent).await
     }
 
     async fn list_agents(&self) -> Result<Vec<AgentConfig>> {

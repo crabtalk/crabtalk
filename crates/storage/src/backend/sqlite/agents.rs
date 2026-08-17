@@ -23,9 +23,6 @@ impl SqliteStorage {
     }
 
     pub(super) async fn load_agent(&self, id: &AgentId) -> Result<Option<AgentConfig>> {
-        if id.is_nil() {
-            return Ok(None);
-        }
         let row = sqlx::query("SELECT name, config_json FROM agents WHERE id = ?")
             .bind(id.to_string())
             .fetch_optional(&self.pool)
@@ -42,9 +39,6 @@ impl SqliteStorage {
     }
 
     pub(super) async fn upsert_agent(&self, config: &AgentConfig) -> Result<()> {
-        if config.id.is_nil() {
-            anyhow::bail!("cannot upsert agent with nil ID");
-        }
         if config.name.is_empty() {
             anyhow::bail!("cannot upsert agent with empty name");
         }

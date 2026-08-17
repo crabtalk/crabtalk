@@ -7,6 +7,7 @@ use parking_lot::RwLock;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::{collections::BTreeMap, sync::Arc};
+use storage::AgentId;
 
 /// Call an MCP tool by name, or list available tools if no exact match.
 #[derive(Deserialize, JsonSchema)]
@@ -35,7 +36,7 @@ pub struct McpHook {
     /// Per-agent declared MCP names. Snapshot of what's currently
     /// registered; consulted to scope dispatch and to compute the set
     /// of MCPs to unregister when the agent's declarations change.
-    agent_mcps: RwLock<BTreeMap<String, Vec<String>>>,
+    agent_mcps: RwLock<BTreeMap<AgentId, Vec<String>>>,
 }
 
 impl McpHook {
@@ -67,12 +68,12 @@ impl Harness for McpHook {
         (tools, Some(line))
     }
 
-    fn on_register_agent(&self, name: &str, config: &storage::AgentConfig) {
+    fn on_register_agent(&self, id: &AgentId, config: &storage::AgentConfig) {
         let new_names: Vec<String> = config.mcps.iter().map(|m| m.name.clone()).collect();
         let prior = self
             .agent_mcps
             .write()
-            .insert(name.to_owned(), new_names.clone())
+            .insert(*id, new_names.clone())
             .unwrap_or_default();
 
         // Drop any MCPs that disappeared (e.g., agent updated with
@@ -81,7 +82,7 @@ impl Harness for McpHook {
         for old_name in prior {
             if !new_names.contains(&old_name) {
                 let handler = self.mcp.clone();
-                let agent = name.to_owned();
+                let agent = id.to_string();
                 tokio::spawn(async move {
                     handler.unregister_for_agent(&agent, &old_name).await;
                 });
@@ -96,20 +97,20 @@ impl Harness for McpHook {
                 effective.env.entry(k.clone()).or_insert_with(|| v.clone());
             }
             let handler = self.mcp.clone();
-            let agent = name.to_owned();
+            let agent = id.to_string();
             tokio::spawn(async move {
                 handler.register_for_agent(&agent, &effective).await;
             });
         }
     }
 
-    fn on_unregister_agent(&self, name: &str) {
-        let Some(names) = self.agent_mcps.write().remove(name) else {
+    fn on_unregister_agent(&self, id: &AgentId) {
+        let Some(names) = self.agent_mcps.write().remove(id) else {
             return;
         };
         for mcp_name in names {
             let handler = self.mcp.clone();
-            let agent = name.to_owned();
+            let agent = id.to_string();
             tokio::spawn(async move {
                 handler.unregister_for_agent(&agent, &mcp_name).await;
             });
@@ -127,7 +128,15 @@ impl Harness for McpHook {
                 .get(&call.agent)
                 .cloned()
                 .unwrap_or_default();
-            dispatch_mcp(&self.mcp, &call.agent, &call.args, &allowed_mcps).await
+            // `lib/mcp` knows nothing about agents beyond an opaque scope
+            // key, so identity crosses that seam as the ULID's text.
+            dispatch_mcp(
+                &self.mcp,
+                &call.agent.to_string(),
+                &call.args,
+                &allowed_mcps,
+            )
+            .await
         }))
     }
 }

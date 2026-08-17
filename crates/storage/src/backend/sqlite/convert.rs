@@ -5,14 +5,15 @@
 //! one module named for what they produce is the next best thing —
 //! `convert::meta(&row)` reads like the trait would.
 
-use crate::{EventLine, SessionMeta};
+use crate::{AgentId, EventLine, SessionMeta};
 use anyhow::Result;
 use sqlx::{Row, sqlite::SqliteRow};
+use std::str::FromStr;
 
 /// A session row's metadata.
 pub(super) fn meta(row: &SqliteRow) -> Result<SessionMeta> {
     Ok(SessionMeta {
-        agent: row.try_get("agent")?,
+        agent: AgentId::from_str(row.try_get("agent")?)?,
         created_by: row.try_get("created_by")?,
         created_at: row.try_get("created_at")?,
         title: row.try_get("title")?,

@@ -6,6 +6,7 @@
 
 use crate::Harness;
 use crate::{AgentEvent, ToolDispatch, ToolFuture};
+use storage::AgentId;
 use tokio::sync::broadcast;
 
 /// The runtime environment — combines server capabilities with tool dispatch.
@@ -27,7 +28,7 @@ pub trait Env: Send + Sync + 'static {
     /// real session.
     fn on_agent_event(
         &self,
-        _agent: &str,
+        _agent: &AgentId,
         _session_id: u64,
         _ephemeral: bool,
         _event: &AgentEvent,
@@ -47,14 +48,14 @@ pub fn dispatch_tool<'a, E: Env>(
     env: &'a E,
     name: &'a str,
     args: &'a str,
-    agent: &'a str,
+    agent: &'a AgentId,
     sender: &'a str,
     session_id: Option<u64>,
     call_id: &'a str,
 ) -> ToolFuture<'a> {
     let call = ToolDispatch {
         args: args.to_owned(),
-        agent: agent.to_owned(),
+        agent: *agent,
         sender: sender.to_owned(),
         session_id,
         call_id: call_id.to_owned(),

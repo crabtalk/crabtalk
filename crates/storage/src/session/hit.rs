@@ -2,7 +2,7 @@
 //! at construction so callers can't blow up context windows by
 //! requesting larger windows than the runtime is willing to return.
 
-use crate::SessionHandle;
+use crate::{AgentId, SessionHandle};
 use crabllm_core::Role;
 
 /// Maximum bytes per window item snippet. Long messages are truncated
@@ -23,7 +23,7 @@ pub struct SearchOptions {
     pub limit: usize,
     pub context_before: usize,
     pub context_after: usize,
-    pub agent_filter: Option<String>,
+    pub agent_filter: Option<AgentId>,
     pub sender_filter: Option<String>,
 }
 
@@ -49,7 +49,10 @@ pub struct SessionHit {
     pub msg_idx: u32,
     pub score: f64,
     pub title: String,
-    pub agent: String,
+    pub agent: AgentId,
+    /// The agent's name at query time, joined in for display. A hit is
+    /// read by a human or a model, and a bare ULID names nothing.
+    pub agent_name: String,
     pub sender: String,
     pub created_at: String,
     pub updated_at: String,

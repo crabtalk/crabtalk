@@ -13,26 +13,26 @@ impl<C: Config> Runtime<C> {
     }
 
     pub fn upsert_agent(&self, config: AgentConfig) -> AgentConfig {
-        let (name, agent) = self.build_agent(config);
+        let (id, agent) = self.build_agent(config);
         let registered = agent.config.clone();
         // Fire the hook before insert so the invariant "visible via .agent()
         // ⇒ tracked by hooks" holds. Same rationale in reverse for remove_agent.
-        self.env.hook().on_register_agent(&name, &registered);
-        self.agents.write().insert(name, agent);
+        self.env.hook().on_register_agent(&id, &registered);
+        self.agents.write().insert(id, agent);
         registered
     }
 
-    pub fn remove_agent(&self, name: &str) -> bool {
-        let removed = self.agents.write().remove(name).is_some();
+    pub fn remove_agent(&self, id: &AgentId) -> bool {
+        let removed = self.agents.write().remove(id).is_some();
         if removed {
-            self.env.hook().on_unregister_agent(name);
+            self.env.hook().on_unregister_agent(id);
         }
         removed
     }
 
-    fn build_agent(&self, config: AgentConfig) -> (String, Agent<C::Provider>) {
+    fn build_agent(&self, config: AgentConfig) -> (AgentId, Agent<C::Provider>) {
         let config = self.env.hook().on_build_agent(config);
-        let name = config.name.clone();
+        let id = config.id;
         let tools = self.tools.filtered_snapshot(&config.tools);
         let dispatcher: Arc<dyn ToolDispatcher> = self.env.clone();
         let agent = AgentBuilder::new(self.model.clone())
@@ -40,11 +40,22 @@ impl<C: Config> Runtime<C> {
             .tools(tools)
             .dispatcher(dispatcher)
             .build();
-        (name, agent)
+        (id, agent)
     }
 
-    pub fn agent(&self, name: &str) -> Option<AgentConfig> {
-        self.agents.read().get(name).map(|a| a.config.clone())
+    pub fn agent(&self, id: &AgentId) -> Option<AgentConfig> {
+        self.agents.read().get(id).map(|a| a.config.clone())
+    }
+
+    /// Resolve a name to the agent wearing it — the runtime's only
+    /// name lookup. A surface calls it once, then addresses everything
+    /// else by id.
+    pub fn agent_by_name(&self, name: &str) -> Option<AgentConfig> {
+        self.agents
+            .read()
+            .values()
+            .find(|a| a.config.name == name)
+            .map(|a| a.config.clone())
     }
 
     pub fn agents(&self) -> Vec<AgentConfig> {
@@ -55,12 +66,12 @@ impl<C: Config> Runtime<C> {
             .collect()
     }
 
-    pub(crate) fn resolve_agent(&self, name: &str) -> Option<Agent<C::Provider>> {
-        self.agents.read().get(name).cloned()
+    pub(crate) fn resolve_agent(&self, id: &AgentId) -> Option<Agent<C::Provider>> {
+        self.agents.read().get(id).cloned()
     }
 
-    pub(crate) fn has_agent(&self, name: &str) -> bool {
-        self.agents.read().contains_key(name)
+    pub(crate) fn has_agent(&self, id: &AgentId) -> bool {
+        self.agents.read().contains_key(id)
     }
 
     // --- Storage-backed CRUD ---
@@ -68,138 +79,60 @@ impl<C: Config> Runtime<C> {
     /// Create a new persisted agent. Writes storage, registers in the
     /// runtime, returns the registered config.
     pub async fn create_agent(&self, mut config: AgentConfig) -> Result<AgentConfig> {
-        validate_agent_name(&config.name)?;
-        if config.id.is_nil() {
-            config.id = AgentId::new();
-        }
+        // Identity is the daemon's to mint. An id arriving in the body
+        // would make `create` a way to address an agent that exists.
+        config.id = AgentId::new();
         let storage = self.storage();
         if storage.load_agent_by_name(&config.name).await?.is_some() {
             anyhow::bail!("agent '{}' already exists", config.name);
         }
         storage.upsert_agent(&config).await?;
-        self.load_and_register(&config.name).await
+        self.load_and_register(&config.id).await
     }
 
-    /// Update an existing persisted agent (or create if absent). Writes
-    /// storage, re-registers in the runtime, returns the registered config.
-    pub async fn update_agent(&self, mut config: AgentConfig) -> Result<AgentConfig> {
-        validate_agent_name(&config.name)?;
-        let storage = self.storage();
-        let existing = storage.load_agent_by_name(&config.name).await?;
-        if let Some(prev) = &existing {
-            if config.id.is_nil() {
-                config.id = prev.id;
-            }
-        } else if config.id.is_nil() {
-            config.id = AgentId::new();
-        }
-        storage.upsert_agent(&config).await?;
-        self.load_and_register(&config.name).await
+    /// Update an existing persisted agent. `id` is the identity — the
+    /// one on `config` is overwritten with it, so a stale or absent id
+    /// in a deserialized body cannot retarget the write.
+    pub async fn update_agent(&self, id: &AgentId, mut config: AgentConfig) -> Result<AgentConfig> {
+        config.id = *id;
+        self.storage().upsert_agent(&config).await?;
+        self.load_and_register(id).await
     }
 
     /// Purge a persisted agent — removes from storage AND unregisters from
     /// the runtime. Named distinctly from `Storage::delete_agent` (which is
-    /// storage-only and keyed by `AgentId`) to avoid confusion about which
-    /// layer cascades.
-    pub async fn purge_agent(&self, name: &str) -> Result<bool> {
+    /// storage-only) to say which layer cascades.
+    pub async fn purge_agent(&self, id: &AgentId) -> Result<bool> {
         let storage = self.storage();
-        let Some(existing) = storage.load_agent_by_name(name).await? else {
-            return Ok(false);
-        };
-        let removed = storage.delete_agent(&existing.id).await?;
+        let removed = storage.delete_agent(id).await?;
         if removed {
-            self.remove_agent(name);
-            // Sessions outlive the registry entry unless they are cascaded: they
-            // are found by `meta.agent`, so the next agent created under this
-            // name would resume a stranger's session.
-            let purged = self.drop_sessions_of(name).await?;
+            self.remove_agent(id);
+            // A session belongs to the agent by id, so nothing can reach
+            // these once it is gone — including an agent later created
+            // under the same name, which gets its own id.
+            let purged = storage.delete_sessions_of(id).await?;
             if purged > 0 {
-                tracing::info!("purged {purged} session(s) of deleted agent '{name}'");
+                tracing::info!("purged {purged} session(s) of deleted agent '{id}'");
             }
         }
         Ok(removed)
     }
 
-    /// Delete every persisted session belonging to `agent`.
-    async fn drop_sessions_of(&self, agent: &str) -> Result<usize> {
-        let storage = self.storage();
-        let mut removed = 0;
-        for summary in storage.list_sessions().await? {
-            if summary.meta.agent != agent {
-                continue;
-            }
-            if storage.delete_session(&summary.handle).await? {
-                removed += 1;
-            }
+    /// Rename a persisted agent. Nothing but the label moves: sessions
+    /// are keyed by the id, which the rename leaves alone.
+    pub async fn rename_agent(&self, id: &AgentId, new_name: &str) -> Result<AgentConfig> {
+        if !self.storage().rename_agent(id, new_name).await? {
+            anyhow::bail!("agent '{id}' not found");
         }
-        Ok(removed)
+        self.load_and_register(id).await
     }
 
-    /// Re-point every persisted session of `from` at `to`.
-    ///
-    /// A session is located by `meta.agent`, and [`Runtime::load`] refuses one
-    /// whose agent is not registered — so without this a renamed agent both
-    /// loses its history and cannot resume what it still has.
-    async fn reassign_sessions(&self, from: &str, to: &str) -> Result<usize> {
-        let storage = self.storage();
-        let mut moved = 0;
-        for summary in storage.list_sessions().await? {
-            if summary.meta.agent != from {
-                continue;
-            }
-            let mut meta = summary.meta;
-            meta.agent = to.to_owned();
-            storage.update_session_meta(&summary.handle, &meta).await?;
-            moved += 1;
-        }
-        Ok(moved)
-    }
-
-    /// Rename a persisted agent. Updates storage, re-registers under the
-    /// new name in the runtime.
-    pub async fn rename_agent(&self, old_name: &str, new_name: &str) -> Result<AgentConfig> {
-        validate_agent_name(new_name)?;
-        anyhow::ensure!(
-            old_name != storage::DEFAULT_AGENT,
-            "cannot rename the default agent '{old_name}'"
-        );
-        // Short-circuit rename-to-same: returns the in-memory config without
-        // round-tripping through storage. Callers that expected a storage
-        // refresh should do an explicit read.
-        if old_name == new_name {
-            return self
-                .agent(old_name)
-                .ok_or_else(|| anyhow::anyhow!("agent '{old_name}' not found"));
-        }
-        let storage = self.storage();
-        let existing = storage
-            .load_agent_by_name(old_name)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("agent '{old_name}' not found"))?;
-        storage.rename_agent(&existing.id, new_name).await?;
-        let moved = self.reassign_sessions(old_name, new_name).await?;
-        if moved > 0 {
-            tracing::info!("re-pointed {moved} session(s) from '{old_name}' to '{new_name}'");
-        }
-        self.remove_agent(old_name);
-        self.load_and_register(new_name).await
-    }
-
-    async fn load_and_register(&self, name: &str) -> Result<AgentConfig> {
+    async fn load_and_register(&self, id: &AgentId) -> Result<AgentConfig> {
         let config = self
             .storage()
-            .load_agent_by_name(name)
+            .load_agent(id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("agent '{name}' missing from storage after upsert"))?;
+            .ok_or_else(|| anyhow::anyhow!("agent '{id}' missing from storage after write"))?;
         Ok(self.upsert_agent(config))
     }
-}
-
-fn validate_agent_name(name: &str) -> Result<()> {
-    anyhow::ensure!(!name.is_empty(), "agent name cannot be empty");
-    anyhow::ensure!(
-        !name.contains('/') && !name.contains('\\') && !name.contains(".."),
-        "agent name '{name}' contains invalid characters"
-    );
-    Ok(())
 }

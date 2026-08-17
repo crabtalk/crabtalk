@@ -3,7 +3,7 @@
 
 use crate::backend::sqlite::{SqliteStorage, convert, schema::BEGIN_IMMEDIATE};
 use crate::{
-    HistoryEntry,
+    AgentId, HistoryEntry,
     storage::{EventLine, SessionHandle, SessionMeta, SessionSnapshot, SessionSummary},
 };
 use anyhow::Result;
@@ -12,7 +12,7 @@ use sqlx::Row;
 impl SqliteStorage {
     pub(super) async fn create_session(
         &self,
-        agent: &str,
+        agent: &AgentId,
         created_by: &str,
     ) -> Result<SessionHandle> {
         // Opaque identity: the handle encodes
@@ -24,7 +24,7 @@ impl SqliteStorage {
              VALUES (?, ?, ?, ?, ?)",
         )
         .bind(&handle)
-        .bind(agent)
+        .bind(agent.to_string())
         .bind(created_by)
         .bind(&now)
         .bind(&now)
@@ -37,7 +37,7 @@ impl SqliteStorage {
     /// query the `sessions_agent_creator` index exists for.
     pub(super) async fn find_latest_session(
         &self,
-        agent: &str,
+        agent: &AgentId,
         created_by: &str,
     ) -> Result<Option<SessionHandle>> {
         let handle: Option<String> = sqlx::query_scalar(
@@ -45,7 +45,7 @@ impl SqliteStorage {
              WHERE agent = ? AND created_by = ?
              ORDER BY created_at DESC LIMIT 1",
         )
-        .bind(agent)
+        .bind(agent.to_string())
         .bind(created_by)
         .fetch_optional(&self.pool)
         .await?;
@@ -268,7 +268,7 @@ impl SqliteStorage {
                  updated_at = ?, message_count = ?, summary = ?
              WHERE handle = ?",
         )
-        .bind(&meta.agent)
+        .bind(meta.agent.to_string())
         .bind(&meta.created_by)
         .bind(&meta.title)
         .bind(&meta.created_at)
@@ -294,6 +294,24 @@ impl SqliteStorage {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    /// Every session of one agent, dropped in one pass. The FTS5 tables
+    /// are virtual, so their rows are deleted by handle rather than
+    /// cascading off the `sessions` row.
+    pub(super) async fn delete_sessions_of(&self, agent: &AgentId) -> Result<usize> {
+        let handles: Vec<String> =
+            sqlx::query_scalar("SELECT handle FROM sessions WHERE agent = ?")
+                .bind(agent.to_string())
+                .fetch_all(&self.pool)
+                .await?;
+        let mut removed = 0;
+        for handle in handles {
+            if self.delete_session(&SessionHandle::new(handle)).await? {
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     pub(super) async fn delete_session(&self, handle: &SessionHandle) -> Result<bool> {

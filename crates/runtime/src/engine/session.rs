@@ -41,14 +41,14 @@ impl<C: Config> Runtime<C> {
         // The summarizing call is made with the lock released — it is a
         // full LLM round trip, and holding it would block every reader
         // of this session for its duration.
-        let (agent_name, history) = {
+        let (agent, history) = {
             let session = session.lock().await;
             if session.history.is_empty() {
                 return None;
             }
-            (session.agent.clone(), session.history.clone())
+            (session.agent, session.history.clone())
         };
-        let summary = self.resolve_agent(&agent_name)?.compact(&history).await?;
+        let summary = self.resolve_agent(&agent)?.compact(&history).await?;
 
         let mut session = session.lock().await;
         self.ensure_handle(&mut session).await;

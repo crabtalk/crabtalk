@@ -21,7 +21,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
 };
-use storage::Storage;
+use storage::{AgentId, Storage};
 use tokio::sync::{Mutex, watch};
 
 /// One live session.
@@ -31,7 +31,7 @@ use tokio::sync::{Mutex, watch};
 /// a whole agent run, so a lookup that waited on it would block behind
 /// an in-flight LLM call. Both are immutable, so the copy cannot drift.
 struct Live {
-    agent: String,
+    agent: AgentId,
     created_by: String,
     session: SharedSession,
     /// Sender half of the steering channel, present only while a stream
@@ -65,7 +65,7 @@ impl Sessions {
     pub async fn get_or_create<C: Config>(
         &self,
         rt: &Runtime<C>,
-        agent: &str,
+        agent: &AgentId,
         created_by: &str,
     ) -> Result<(u64, SharedSession)> {
         if let Some(found) = self.find(agent, created_by) {
@@ -83,10 +83,10 @@ impl Sessions {
     }
 
     /// Look up a live session by the identity clients address it by.
-    pub fn find(&self, agent: &str, created_by: &str) -> Option<(u64, SharedSession)> {
+    pub fn find(&self, agent: &AgentId, created_by: &str) -> Option<(u64, SharedSession)> {
         let live = self.live.read();
         live.iter()
-            .find(|(_, l)| l.agent == agent && l.created_by == created_by)
+            .find(|(_, l)| l.agent == *agent && l.created_by == created_by)
             .map(|(id, l)| (*id, l.session.clone()))
     }
 
@@ -103,7 +103,7 @@ impl Sessions {
     fn insert(&self, session: Session) -> (u64, SharedSession) {
         let id = session.id;
         let live = Live {
-            agent: session.agent.clone(),
+            agent: session.agent,
             created_by: session.created_by.clone(),
             session: Arc::new(Mutex::new(session)),
             steer: None,
@@ -161,18 +161,21 @@ impl Sessions {
         self.live.read().len()
     }
 
-    pub async fn list_active(&self) -> Vec<ActiveConversationInfo> {
+    /// The live sessions, as the wire describes them. `rt` is here to
+    /// put a name beside each id — the listing is read by a person.
+    pub async fn list_active<C: Config>(&self, rt: &Runtime<C>) -> Vec<ActiveConversationInfo> {
         let entries: Vec<_> = {
             let live = self.live.read();
             live.values()
-                .map(|l| (l.agent.clone(), l.created_by.clone(), l.session.clone()))
+                .map(|l| (l.agent, l.created_by.clone(), l.session.clone()))
                 .collect()
         };
         let mut infos = Vec::with_capacity(entries.len());
         for (agent, sender, session) in entries {
             let c = session.lock().await;
             infos.push(ActiveConversationInfo {
-                agent,
+                agent_id: agent.to_string(),
+                agent_name: rt.agent(&agent).map(|a| a.name).unwrap_or_default(),
                 sender,
                 message_count: c.history.len() as u64,
                 alive_secs: c.created_at.elapsed().as_secs(),

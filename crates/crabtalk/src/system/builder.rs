@@ -65,7 +65,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let fire: event::FireCallback = Arc::new(move |sub, payload| {
             let runtime = fire_runtime.clone();
             let sessions = fire_sessions.clone();
-            let target_agent = sub.target_agent.clone();
+            let target_agent = sub.target_agent;
             let source = sub.source.clone();
             let payload = payload.to_owned();
             tokio::spawn(async move {
@@ -235,7 +235,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         match HarnessHook::new(protocol) {
             Ok(harnesses) => {
                 for agent in storage.list_agents().await.unwrap_or_default() {
-                    harnesses.load(&agent.name, &agent);
+                    harnesses.load(&agent.id, &agent);
                 }
                 hooks.register_hook("harness", Arc::new(harnesses));
             }

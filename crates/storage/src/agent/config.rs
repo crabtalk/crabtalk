@@ -84,9 +84,11 @@ pub struct AgentConfig {
 }
 
 impl AgentConfig {
-    /// Construct the default `crab` agent with the given model.
+    /// Construct the default `crab` agent with the given model. Its id is
+    /// the zero ULID — the one agent whose identity is a constant.
     pub fn crab(model: impl Into<String>) -> Self {
         let mut cfg = AgentConfig::new(DEFAULT_AGENT);
+        cfg.id = AgentId::default();
         cfg.model = model.into();
         cfg.harnesses = vec![
             crate::HarnessConfig {
@@ -148,7 +150,7 @@ impl AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            id: AgentId::nil(),
+            id: AgentId::default(),
             name: String::new(),
             description: String::new(),
             model: String::new(),
@@ -171,6 +173,7 @@ impl From<AgentConfig> for AgentInfo {
     fn from(config: AgentConfig) -> Self {
         let conf = serde_json::to_string(&config).unwrap_or_default();
         Self {
+            id: config.id.to_string(),
             name: config.name,
             description: config.description,
             config: conf,

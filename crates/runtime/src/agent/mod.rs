@@ -256,7 +256,7 @@ impl<P: Provider + 'static> Agent<P> {
             ));
         };
         dispatcher
-            .dispatch(name, args, &self.config.name, sender, session_id, call_id)
+            .dispatch(name, args, &self.config.id, sender, session_id, call_id)
             .await
     }
 

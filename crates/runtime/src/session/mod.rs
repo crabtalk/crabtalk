@@ -6,7 +6,7 @@
 //! them — a session carries `storage`'s [`SessionHandle`] directly.
 
 use std::{sync::Arc, time::Instant};
-use storage::{HistoryEntry, SessionHandle, SessionMeta};
+use storage::{AgentId, HistoryEntry, SessionHandle, SessionMeta};
 use tokio::sync::Mutex;
 
 mod sessions;
@@ -27,7 +27,7 @@ pub struct Session {
     /// Unique session identifier (monotonic counter, runtime-only).
     pub id: u64,
     /// The agent this session is with. Immutable once constructed.
-    pub agent: String,
+    pub agent: AgentId,
     /// Who opened it. Immutable once constructed.
     pub created_by: String,
     /// Session history (the working context for the LLM).
@@ -52,10 +52,10 @@ pub struct Session {
 
 impl Session {
     /// Create a new session with an empty history.
-    pub fn new(id: u64, agent: &str, created_by: &str) -> Self {
+    pub fn new(id: u64, agent: &AgentId, created_by: &str) -> Self {
         Self {
             id,
-            agent: agent.to_owned(),
+            agent: *agent,
             created_by: created_by.to_owned(),
             history: Vec::new(),
             title: String::new(),
@@ -72,7 +72,7 @@ impl Session {
     /// `message_count` reflects the current history length.
     pub fn meta(&self) -> SessionMeta {
         SessionMeta {
-            agent: self.agent.clone(),
+            agent: self.agent,
             created_by: self.created_by.clone(),
             created_at: self.created_at_iso.clone(),
             title: self.title.clone(),

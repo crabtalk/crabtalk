@@ -13,7 +13,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
-use storage::AgentConfig;
+use storage::{AgentConfig, AgentId};
 
 pub use mcp::McpHook;
 pub use memory::{Memory, MemoryHook};
@@ -52,20 +52,20 @@ pub trait Harness: Send + Sync {
     /// descriptions) should record it here; the ordering guarantees that by
     /// the time the agent is visible via `Runtime::agent()`, hook state is
     /// already in place.
-    fn on_register_agent(&self, _name: &str, _config: &AgentConfig) {}
+    fn on_register_agent(&self, _id: &AgentId, _config: &AgentConfig) {}
 
     /// Called after an agent is removed from the runtime registry. Hooks
     /// should drop any per-agent state they own. Symmetric to
     /// `on_register_agent`: once the agent is invisible, hook state is
     /// cleaned up.
-    fn on_unregister_agent(&self, _name: &str) {}
+    fn on_unregister_agent(&self, _id: &AgentId) {}
 
     /// Called by Runtime after each agent step during execution.
-    fn on_event(&self, _agent: &str, _session_id: u64, _event: &AgentEvent) {}
+    fn on_event(&self, _agent: &AgentId, _session_id: u64, _event: &AgentEvent) {}
 
     /// Preprocess user content before it becomes a message.
     /// Return `Some(modified)` to transform, `None` to pass through.
-    fn preprocess(&self, _agent: &str, _content: &str) -> Option<String> {
+    fn preprocess(&self, _agent: &AgentId, _content: &str) -> Option<String> {
         None
     }
 
@@ -110,7 +110,7 @@ pub type EventSink = Arc<dyn Fn(&str, &str) + Send + Sync>;
 
 /// Aggregates all sub-hooks behind a single `Harness` impl.
 pub struct Hooks {
-    pub scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>,
+    pub scopes: Arc<RwLock<BTreeMap<AgentId, AgentScope>>>,
     hooks: BTreeMap<String, Arc<dyn Harness>>,
     /// Dispatchable but never advertised ambiently, so a surface's own tools
     /// can't leak into ordinary chat or unattended heartbeats.
@@ -123,7 +123,7 @@ pub struct Hooks {
 }
 
 impl Hooks {
-    pub fn new(scopes: Arc<RwLock<BTreeMap<String, AgentScope>>>) -> Self {
+    pub fn new(scopes: Arc<RwLock<BTreeMap<AgentId, AgentScope>>>) -> Self {
         Self {
             scopes,
             hooks: BTreeMap::new(),
@@ -224,26 +224,26 @@ impl Harness for Hooks {
         config
     }
 
-    fn on_register_agent(&self, name: &str, config: &AgentConfig) {
+    fn on_register_agent(&self, id: &AgentId, config: &AgentConfig) {
         self.scopes.write().insert(
-            name.to_owned(),
+            *id,
             AgentScope {
                 tools: config.tools.clone(),
             },
         );
         for hook in self.hooks.values() {
-            hook.on_register_agent(name, config);
+            hook.on_register_agent(id, config);
         }
     }
 
-    fn on_unregister_agent(&self, name: &str) {
-        self.scopes.write().remove(name);
+    fn on_unregister_agent(&self, id: &AgentId) {
+        self.scopes.write().remove(id);
         for hook in self.hooks.values() {
-            hook.on_unregister_agent(name);
+            hook.on_unregister_agent(id);
         }
     }
 
-    fn on_event(&self, agent: &str, session_id: u64, event: &AgentEvent) {
+    fn on_event(&self, agent: &AgentId, session_id: u64, event: &AgentEvent) {
         for hook in self.hooks.values() {
             hook.on_event(agent, session_id, event);
         }
@@ -257,7 +257,7 @@ impl Harness for Hooks {
         }
     }
 
-    fn preprocess(&self, agent: &str, content: &str) -> Option<String> {
+    fn preprocess(&self, agent: &AgentId, content: &str) -> Option<String> {
         for hook in self.hooks.values() {
             if let Some(result) = hook.preprocess(agent, content) {
                 return Some(result);

@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
                     read: true,
                     sessions: false,
                     skills: Vec::new(),
-                    agent: "example".to_owned(),
+                    agent: storage::AgentId::default(),
                 };
                 Arc::new(move |request| crabtalk_berm::protocol_call(&protocol, request, &scope))
             },

@@ -1,7 +1,7 @@
 //! Session search, end to end against a real SQLite database.
 
 use crabllm_core::anthropic::Message;
-use crabtalk_storage::{HistoryEntry, SearchOptions, Storage, backend::SqliteStorage};
+use crabtalk_storage::{AgentId, HistoryEntry, SearchOptions, Storage, backend::SqliteStorage};
 
 async fn store() -> SqliteStorage {
     SqliteStorage::open_in_memory().await.unwrap()
@@ -9,7 +9,7 @@ async fn store() -> SqliteStorage {
 
 async fn seed(
     s: &SqliteStorage,
-    agent: &str,
+    agent: &AgentId,
     sender: &str,
     msgs: &[&str],
 ) -> crabtalk_storage::SessionHandle {
@@ -32,14 +32,15 @@ async fn seed(
 #[tokio::test]
 async fn finds_a_message_and_ranks_it() {
     let s = store().await;
+    let crab = AgentId::default();
     seed(
         &s,
-        "crab",
+        &crab,
         "me",
         &["the quick brown fox", "unrelated chatter"],
     )
     .await;
-    seed(&s, "crab", "me", &["nothing of interest here"]).await;
+    seed(&s, &crab, "me", &["nothing of interest here"]).await;
 
     let hits = s
         .search_sessions("quick", &SearchOptions::default())
@@ -53,7 +54,13 @@ async fn finds_a_message_and_ranks_it() {
 #[tokio::test]
 async fn window_surrounds_the_match() {
     let s = store().await;
-    seed(&s, "crab", "me", &["one", "two", "needle", "four", "five"]).await;
+    seed(
+        &s,
+        &AgentId::default(),
+        "me",
+        &["one", "two", "needle", "four", "five"],
+    )
+    .await;
     let hits = s
         .search_sessions("needle", &SearchOptions::default())
         .await
@@ -67,16 +74,18 @@ async fn window_surrounds_the_match() {
 #[tokio::test]
 async fn filters_by_agent_and_sender() {
     let s = store().await;
-    seed(&s, "crab", "alice", &["shared keyword"]).await;
-    seed(&s, "other", "bob", &["shared keyword"]).await;
+    let crab = AgentId::default();
+    let other = AgentId::new();
+    seed(&s, &crab, "alice", &["shared keyword"]).await;
+    seed(&s, &other, "bob", &["shared keyword"]).await;
 
     let by_agent = SearchOptions {
-        agent_filter: Some("crab".into()),
+        agent_filter: Some(crab),
         ..Default::default()
     };
     let hits = s.search_sessions("keyword", &by_agent).await.unwrap();
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].agent, "crab");
+    assert_eq!(hits[0].agent, crab);
 
     let by_sender = SearchOptions {
         sender_filter: Some("bob".into()),
@@ -90,7 +99,13 @@ async fn filters_by_agent_and_sender() {
 #[tokio::test]
 async fn punctuation_is_terms_not_syntax() {
     let s = store().await;
-    seed(&s, "crab", "me", &["call resolve_dirs(config) please"]).await;
+    seed(
+        &s,
+        &AgentId::default(),
+        "me",
+        &["call resolve_dirs(config) please"],
+    )
+    .await;
     // Would be an FTS5 parse error unquoted.
     let hits = s
         .search_sessions("resolve_dirs(config)", &SearchOptions::default())
@@ -102,7 +117,7 @@ async fn punctuation_is_terms_not_syntax() {
 #[tokio::test]
 async fn deleting_a_session_drops_it_from_search() {
     let s = store().await;
-    let h = seed(&s, "crab", "me", &["distinctive marker"]).await;
+    let h = seed(&s, &AgentId::default(), "me", &["distinctive marker"]).await;
     assert_eq!(
         s.search_sessions("distinctive", &SearchOptions::default())
             .await
@@ -123,7 +138,7 @@ async fn deleting_a_session_drops_it_from_search() {
 #[tokio::test]
 async fn empty_query_returns_nothing() {
     let s = store().await;
-    seed(&s, "crab", "me", &["anything"]).await;
+    seed(&s, &AgentId::default(), "me", &["anything"]).await;
     assert!(
         s.search_sessions("   ", &SearchOptions::default())
             .await

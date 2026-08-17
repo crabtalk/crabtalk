@@ -1,7 +1,7 @@
 //! Crabtalk client — sugar layer over `crates/transport`. Apps (TUI,
 //! telegram, …) connect to the daemon through this crate.
 
-use std::{collections::HashSet, path::Path, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 use tokio::sync::RwLock;
 
 pub mod command;
@@ -28,21 +28,4 @@ pub enum StreamResult {
     Ok,
     ConversationError,
     Failed,
-}
-
-/// Read the agents directory and return the first agent name found,
-/// falling back to [`storage::DEFAULT_AGENT`].
-pub fn resolve_default_agent(agents_dir: &Path) -> String {
-    let Ok(entries) = std::fs::read_dir(agents_dir) else {
-        return storage::DEFAULT_AGENT.to_owned();
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "md")
-            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-        {
-            return stem.to_owned();
-        }
-    }
-    storage::DEFAULT_AGENT.to_owned()
 }

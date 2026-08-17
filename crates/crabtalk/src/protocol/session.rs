@@ -2,14 +2,14 @@
 //! routing. Pure-runtime ops live on `Runtime<C>` directly.
 
 use crate::llm::Provider;
+use crate::protocol::parse_agent;
 use crate::system::CrabTalk;
 use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
 use proto::*;
 use runtime::{AgentEvent, Sessions};
 use std::sync::Arc;
-use storage::SearchOptions;
-use storage::Storage;
+use storage::{AgentId, SearchOptions, Storage};
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     /// Ranked excerpts from past sessions.
@@ -29,7 +29,10 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             context_after: req
                 .context_after
                 .map_or(defaults.context_after, |n| n as usize),
-            agent_filter: (!req.agent.is_empty()).then_some(req.agent),
+            agent_filter: match req.agent.as_str() {
+                "" => None,
+                raw => Some(parse_agent(raw)?),
+            },
             sender_filter: (!req.sender.is_empty()).then_some(req.sender),
         };
 
@@ -43,7 +46,8 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                 msg_idx: hit.msg_idx,
                 score: hit.score,
                 title: hit.title,
-                agent: hit.agent,
+                agent_id: hit.agent.to_string(),
+                agent_name: hit.agent_name,
                 sender: hit.sender,
                 created_at: hit.created_at,
                 updated_at: hit.updated_at,
@@ -63,13 +67,11 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     }
 
     pub(crate) async fn send(&self, req: SendMsg) -> Result<SendResponse> {
+        let agent = parse_agent(&req.agent)?;
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
         let created_by = if sender.is_empty() { "user" } else { sender };
-        let (session_id, session) = self
-            .sessions
-            .get_or_create(&rt, &req.agent, created_by)
-            .await?;
+        let (session_id, session) = self.sessions.get_or_create(&rt, &agent, created_by).await?;
         let tool_choice = req
             .tool_choice
             .map(|s| crabllm_core::ToolChoice::from(s.as_str()));
@@ -79,7 +81,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             .await?;
         let usage = Some(response.usage());
         Ok(SendResponse {
-            agent: req.agent,
+            agent: agent.to_string(),
             content: response.final_response.unwrap_or_default(),
             model: response.model,
             usage,
@@ -104,6 +106,11 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let ephemeral = req.ephemeral;
         let correlation_id = req.correlation_id.unwrap_or(0);
         async_stream::try_stream! {
+            let agent = parse_agent(&agent)?;
+            let guest = match guest.as_str() {
+                "" => None,
+                raw => Some(parse_agent(raw)?),
+            };
             let rt: Arc<_> = runtime.read().await.clone();
 
             // Anonymous, unpersisted turn: no session, no bridge
@@ -111,7 +118,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
             // unsupported here, so only the agent's own (daemon-side)
             // tools run.
             if ephemeral {
-                yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: agent.clone() })) };
+                yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: agent.to_string() })) };
                 let stream = rt.ephemeral_stream(&agent, &content, correlation_id, tool_choice, vec![]);
                 pin_mut!(stream);
                 while let Some(event) = stream.next().await {
@@ -120,7 +127,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                     if is_done { return; }
                 }
                 yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd {
-                    agent: agent.clone(), error: String::new(), model: String::new(), usage: None,
+                    agent: agent.to_string(), error: String::new(), model: String::new(), usage: None,
                 })) };
                 return;
             }
@@ -140,16 +147,17 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                 ListenerGuard::new(bridge.clone(), sessions.clone(), session_id);
             let client_tools = resolve_client_tools(&bridge, session_id, req_tools);
 
-            let responding_agent = if guest.is_empty() { agent.clone() } else { guest.clone() };
-            yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.clone() })) };
+            let responding_agent = guest.unwrap_or(agent);
+            yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.to_string() })) };
 
-            let stream: std::pin::Pin<Box<dyn futures_core::Stream<Item = runtime::AgentEvent> + Send + '_>> = if guest.is_empty() {
+            let stream: std::pin::Pin<Box<dyn futures_core::Stream<Item = runtime::AgentEvent> + Send + '_>> = match guest {
                 // Only this path reads a steer. Opening the channel for a
                 // guest turn too would accept a steer nobody delivers.
-                let steer = sessions.begin_stream(session_id);
-                Box::pin(rt.stream_to(session, &content, &sender, tool_choice, client_tools, steer))
-            } else {
-                Box::pin(rt.guest_stream_to(session, &content, &sender, &guest))
+                None => {
+                    let steer = sessions.begin_stream(session_id);
+                    Box::pin(rt.stream_to(session, &content, &sender, tool_choice, client_tools, steer))
+                }
+                Some(guest) => Box::pin(rt.guest_stream_to(session, &content, &sender, &guest)),
             };
             pin_mut!(stream);
             while let Some(event) = stream.next().await {
@@ -178,7 +186,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
                 if is_done { return; }
             }
             yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd {
-                agent: responding_agent,
+                agent: responding_agent.to_string(),
                 error: String::new(),
                 model: String::new(),
                 usage: None,
@@ -186,7 +194,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         }
     }
 
-    pub(crate) async fn kill_conversation(&self, agent: &str, sender: &str) -> Result<bool> {
+    pub(crate) async fn kill_conversation(&self, agent: &AgentId, sender: &str) -> Result<bool> {
         let Some((session_id, _)) = self.sessions.find(agent, sender) else {
             return Ok(false);
         };

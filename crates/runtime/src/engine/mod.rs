@@ -11,6 +11,7 @@ use crate::{Agent, ToolRegistry, agent::Model};
 use crate::{Config, Env, Harness};
 use memory::Memory;
 use std::{collections::BTreeMap, sync::Arc};
+use storage::AgentId;
 
 mod agents;
 mod config;
@@ -29,7 +30,7 @@ pub struct Runtime<C: Config> {
     pub env: Arc<C::Env>,
     storage: Arc<C::Storage>,
     memory: SharedMemory,
-    agents: parking_lot::RwLock<BTreeMap<String, Agent<C::Provider>>>,
+    agents: parking_lot::RwLock<BTreeMap<AgentId, Agent<C::Provider>>>,
     pub tools: ToolRegistry,
     /// Model names advertised by the LLM endpoint — populated by the
     /// daemon builder from a `/v1/models` fetch at startup / reload.

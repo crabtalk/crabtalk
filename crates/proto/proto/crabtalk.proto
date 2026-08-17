@@ -91,6 +91,7 @@ message ClientMessage {
 }
 
 message SendMsg {
+  // The agent's ULID. Resolve a name with GetAgent.
   string agent = 1;
   string content = 2;
   optional string sender = 4;
@@ -99,7 +100,10 @@ message SendMsg {
   // `content` themselves.
   reserved 5;
   reserved "cwd";
-  optional string guest = 6;
+  // Tag 6 was `guest` — no handler ever read it, and only the streaming
+  // path runs a guest turn.
+  reserved 6;
+  reserved "guest";
   optional string tool_choice = 7;
   // Client-provided tool schemas: the tools this client can execute
   // locally. The daemon merges them with system tool schemas for the LLM
@@ -110,11 +114,14 @@ message SendMsg {
 }
 
 message StreamMsg {
+  // The agent's ULID. Resolve a name with GetAgent.
   string agent = 1;
   string content = 2;
   optional string sender = 4;
   reserved 5;
   reserved "cwd";
+  // The agent answering this turn in the primary's session, if not the
+  // primary itself.
   optional string guest = 6;
   optional string tool_choice = 7;
   // Client-provided tool schemas — see SendMsg.tools.
@@ -192,6 +199,8 @@ message CompactMsg {
 
 message ListAgentsMsg {}
 
+// The one name-keyed agent RPC: it *is* the name→id resolver. Every
+// other agent operation takes the ULID this returns.
 message GetAgentMsg {
   string name = 1;
 }
@@ -207,18 +216,30 @@ message CreateAgentMsg {
 }
 
 message UpdateAgentMsg {
-  string name = 1;
+  // Tag 1 was `name`: an agent was addressed by one. It is the ULID now.
+  reserved 1;
+  reserved "name";
+  string agent = 4;
+  // Merge patch over the stored config. An `id` inside it is ignored —
+  // identity comes from `agent`, never from the body.
   string config = 2;
   reserved 3;
   reserved "prompt";
 }
 
 message DeleteAgentMsg {
-  string name = 1;
+  // Tag 1 was `name`.
+  reserved 1;
+  reserved "name";
+  string agent = 2;
 }
 
 message RenameAgentMsg {
-  string old_name = 1;
+  // Tag 1 was `old_name`: the rename addressed the agent by the name it
+  // was losing. It is the ULID now, which the rename leaves alone.
+  reserved 1;
+  reserved "old_name";
+  string agent = 3;
   string new_name = 2;
 }
 
@@ -242,7 +263,10 @@ message ConversationMessage {
 message ConversationHistory {
   repeated ConversationMessage messages = 1;
   string title = 2;
-  string agent = 3;
+  reserved 3;
+  reserved "agent";
+  string agent_id = 4;
+  string agent_name = 5;
 }
 
 enum SourceKind {
@@ -253,6 +277,7 @@ enum SourceKind {
 }
 
 message ListConversationsMsg {
+  // Empty means unrestricted.
   string agent = 1;
   string sender = 2;
 }
@@ -287,7 +312,12 @@ message SessionHit {
   uint32 msg_idx = 2;
   double score = 3;
   string title = 4;
-  string agent = 5;
+  reserved 5;
+  reserved "agent";
+  string agent_id = 10;
+  // The agent's name at query time. A hit is rendered to a human or a
+  // model, and a bare ULID names nothing. Empty if the agent is gone.
+  string agent_name = 11;
   string sender = 6;
   string created_at = 7;
   string updated_at = 8;
@@ -483,6 +513,7 @@ message ContextUsageEvent {
   TokenUsage usage = 1;
 }
 
+// Tag 1 on each of these was `agent`, an agent name.
 message TextStartEvent {
   string agent = 1;
 }
@@ -571,7 +602,10 @@ message ErrorMsg {
 }
 
 message ActiveConversationInfo {
-  string agent = 1;
+  reserved 1;
+  reserved "agent";
+  string agent_id = 6;
+  string agent_name = 7;
   string sender = 2;
   uint64 message_count = 3;
   uint64 alive_secs = 4;
@@ -623,6 +657,8 @@ message ConfigMsg {
 }
 
 message AgentInfo {
+  // The agent's ULID — what every other agent RPC takes.
+  string id = 12;
   string name = 1;
   string description = 2;
   string config = 3; // full AgentConfig as JSON — round-trip with CreateAgentMsg/UpdateAgentMsg
@@ -678,7 +714,10 @@ message DeleteConversationMsg {
 }
 
 message ConversationInfo {
-  string agent = 1;
+  reserved 1;
+  reserved "agent";
+  string agent_id = 9;
+  string agent_name = 10;
   string sender = 2;
   uint32 seq = 3;
   string title = 4;
@@ -741,9 +780,10 @@ message McpEventMsg {
   // Populated for FAILED.
   string error = 4;
   string timestamp = 5;
-  // The agent whose declaration produced this event. Identical configs
-  // across agents share one peer, but events still fire per (agent, name)
-  // so consumers see lifecycle from each owner's point of view.
+  // The ULID of the agent whose declaration produced this event.
+  // Identical configs across agents share one peer, but events still fire
+  // per (agent, name) so consumers see lifecycle from each owner's point
+  // of view.
   string agent = 6;
 }
 
