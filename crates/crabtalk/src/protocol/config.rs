@@ -2,10 +2,9 @@
 
 use crate::{llm::Provider, system::CrabTalk};
 use anyhow::{Context, Result};
-use hooks::default_crab;
 use mcp::McpServerState;
 use std::collections::BTreeMap;
-use wcore::{protocol::message::*, storage::Storage};
+use wcore::{AgentConfig, protocol::message::*, storage::Storage};
 
 impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
     pub(crate) async fn set_active_model(&self, model: String) -> Result<()> {
@@ -19,7 +18,7 @@ impl<P: Provider + 'static, S: Storage> CrabTalk<P, S> {
         let mut crab = storage
             .load_agent_by_name(wcore::paths::DEFAULT_AGENT)
             .await?
-            .unwrap_or_else(|| default_crab(&model));
+            .unwrap_or_else(|| AgentConfig::crab(&model));
         crab.model = model;
         storage.upsert_agent(&crab).await?;
         self.reload().await

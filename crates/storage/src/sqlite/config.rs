@@ -36,6 +36,6 @@ impl SqliteStorage {
         if count > 0 {
             return Ok(());
         }
-        self.upsert_agent(&hooks::default_crab(default_model)).await
+        self.upsert_agent(&AgentConfig::crab(default_model)).await
     }
 }

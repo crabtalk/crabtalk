@@ -3,8 +3,8 @@
 
 use crate::fs::FsStorage;
 use anyhow::Result;
-use hooks::default_crab;
 use tokio::fs;
+use wcore::AgentConfig;
 
 impl FsStorage {
     pub(super) async fn scaffold(&self, default_model: &str) -> Result<()> {
@@ -16,7 +16,7 @@ impl FsStorage {
 
         let file = self.read_settings().await?;
         if file.agents.is_empty() {
-            self.upsert_agent(&default_crab(default_model)).await?;
+            self.upsert_agent(&AgentConfig::crab(default_model)).await?;
         }
         Ok(())
     }

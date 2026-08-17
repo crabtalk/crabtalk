@@ -85,45 +85,28 @@ pub struct AgentConfig {
     pub hooks: HooksConfig,
 }
 
-fn default_max_iterations() -> usize {
-    DEFAULT_MAX_ITERATIONS
-}
-
-fn default_max_tokens() -> u32 {
-    crabllm_core::anthropic::DEFAULT_MAX_TOKENS
-}
-
-fn default_thinking_budget() -> u32 {
-    DEFAULT_THINKING_BUDGET
-}
-
-fn default_compact_tool_max_len() -> usize {
-    DEFAULT_COMPACT_TOOL_MAX_LEN
-}
-
-impl Default for AgentConfig {
-    fn default() -> Self {
-        Self {
-            id: AgentId::nil(),
-            name: String::new(),
-            description: String::new(),
-            model: String::new(),
-            max_iterations: DEFAULT_MAX_ITERATIONS,
-            tool_choice: ToolChoice::Auto,
-            thinking: false,
-            max_tokens: crabllm_core::anthropic::DEFAULT_MAX_TOKENS,
-            thinking_budget: DEFAULT_THINKING_BUDGET,
-            skills: Vec::new(),
-            harnesses: Vec::new(),
-            mcps: Vec::new(),
-            tools: Vec::new(),
-            compact_tool_max_len: DEFAULT_COMPACT_TOOL_MAX_LEN,
-            hooks: HooksConfig::default(),
-        }
-    }
-}
-
 impl AgentConfig {
+    /// Construct the default `crab` agent with the given model.
+    pub fn crab(model: impl Into<String>) -> Self {
+        let mut cfg = AgentConfig::new(crate::paths::DEFAULT_AGENT);
+        cfg.model = model.into();
+        cfg.harnesses = vec![
+            crate::HarnessConfig {
+                name: "os".to_owned(),
+                capabilities: vec!["fs".to_owned(), "exec".to_owned()],
+                root: dirs::home_dir(),
+                hosts: Vec::new(),
+            },
+            crate::HarnessConfig {
+                name: "sessions".to_owned(),
+                capabilities: vec!["protocol:sessions".to_owned()],
+                root: None,
+                hosts: Vec::new(),
+            },
+        ];
+        cfg
+    }
+
     /// Create a new config with the given name, a fresh ULID, and
     /// defaults for everything else.
     pub fn new(name: impl Into<String>) -> Self {
@@ -164,6 +147,28 @@ impl AgentConfig {
     }
 }
 
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            id: AgentId::nil(),
+            name: String::new(),
+            description: String::new(),
+            model: String::new(),
+            max_iterations: DEFAULT_MAX_ITERATIONS,
+            tool_choice: ToolChoice::Auto,
+            thinking: false,
+            max_tokens: crabllm_core::anthropic::DEFAULT_MAX_TOKENS,
+            thinking_budget: DEFAULT_THINKING_BUDGET,
+            skills: Vec::new(),
+            harnesses: Vec::new(),
+            mcps: Vec::new(),
+            tools: Vec::new(),
+            compact_tool_max_len: DEFAULT_COMPACT_TOOL_MAX_LEN,
+            hooks: HooksConfig::default(),
+        }
+    }
+}
+
 impl From<AgentConfig> for AgentInfo {
     fn from(config: AgentConfig) -> Self {
         let conf = serde_json::to_string(&config).unwrap_or_default();
@@ -179,4 +184,20 @@ impl From<AgentConfig> for AgentInfo {
             compact_tool_max_len: config.compact_tool_max_len as u32,
         }
     }
+}
+
+fn default_max_iterations() -> usize {
+    DEFAULT_MAX_ITERATIONS
+}
+
+fn default_max_tokens() -> u32 {
+    crabllm_core::anthropic::DEFAULT_MAX_TOKENS
+}
+
+fn default_thinking_budget() -> u32 {
+    DEFAULT_THINKING_BUDGET
+}
+
+fn default_compact_tool_max_len() -> usize {
+    DEFAULT_COMPACT_TOOL_MAX_LEN
 }

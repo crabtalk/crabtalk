@@ -17,15 +17,11 @@ use wcore::{AgentConfig, AgentEvent, ToolDispatch, ToolFuture};
 pub mod mcp;
 #[cfg(feature = "memory")]
 pub mod memory;
-#[cfg(feature = "memory")]
-mod utils;
 
 #[cfg(feature = "mcp")]
 pub use mcp::McpHook;
 #[cfg(feature = "memory")]
 pub use memory::{Memory, MemoryHook};
-#[cfg(feature = "memory")]
-pub use utils::default_crab;
 
 /// Per-agent scope for dispatch enforcement. An empty vec is unrestricted.
 #[derive(Default)]
