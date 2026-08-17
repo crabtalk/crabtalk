@@ -687,23 +687,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crabtalk-cli"
-version = "0.0.23"
-dependencies = [
- "anyhow",
- "clap",
- "crabtalk-client",
- "crabtalk-core",
- "crabtalk-proto",
- "serde",
- "serde_json",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "crabtalk-client"
 version = "0.0.23"
 dependencies = [
@@ -895,19 +878,6 @@ dependencies = [
  "futures-util",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "crabtalkd"
-version = "0.0.23"
-dependencies = [
- "anyhow",
- "crabtalk",
- "crabtalk-core",
- "crabtalk-storage",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

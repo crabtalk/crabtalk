@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/*", "berm/*", "crates/*", "harness/*", "lib/*"]
+members = ["berm/*", "crates/*", "harness/*", "lib/*"]
 
 [workspace.package]
 version = "0.0.23"
@@ -12,7 +12,6 @@ keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
 client = { path = "crates/client", package = "crabtalk-client", version = "0.0.23" }
-cli = { path = "apps/cli", package = "crabtalk-cli", version = "0.0.23" }
 crabtalk = { path = "crates/crabtalk", package = "crabtalk", version = "0.0.23", default-features = false }
 crabtalkd = { path = "apps/daemon", package = "crabtalkd", version = "0.0.23" }
 crabup = { path = "apps/crabup", package = "crabup", version = "0.0.23" }
