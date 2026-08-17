@@ -142,10 +142,17 @@ impl<T: KVStorage> KVStorage for std::sync::Arc<T> {
     }
 }
 
+/// A key qualified by its column.
+///
+/// Column first so the map's ordering groups by column before key, which
+/// is what lets [`MemoryDb::scan_keys`] answer a prefix scan with one
+/// range instead of a filter over everything.
+type ColumnKey = (u8, Vec<u8>);
+
 /// In-RAM [`KVStorage`]. Independent per instance; nothing is persisted.
 #[derive(Debug, Default)]
 pub struct MemoryDb {
-    entries: RwLock<BTreeMap<(u8, Vec<u8>), Vec<u8>>>,
+    entries: RwLock<BTreeMap<ColumnKey, Vec<u8>>>,
 }
 
 impl MemoryDb {
