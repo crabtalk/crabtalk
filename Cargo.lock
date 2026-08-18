@@ -834,7 +834,6 @@ dependencies = [
  "crabtalk-proto",
  "crabtalk-skill",
  "dirs",
- "parking_lot",
  "serde",
  "serde_json",
  "serde_yml",

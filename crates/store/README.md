@@ -11,7 +11,7 @@ is nothing to construct and nothing to wire.
 Secondary indexes are keys too, ranked full-text included, so nothing here
 needs a query planner. This crate links no database and no search engine —
 which store to run is the application's choice, and `apps/agent` is five
-methods over `lib/crabdb`. `MemoryDb` is the in-RAM one, for tests.
+methods over `lib/crabdb`.
 
 The keyspace and the search design are specified in
 [Storage](../../docs/src/spec/storage.md); the reasoning is

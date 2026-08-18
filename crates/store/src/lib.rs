@@ -25,7 +25,7 @@ pub use interface::{
     Agents, Backend, Harnesses, Memory, MemoryEntry, Sessions, Skill, SkillSummary, Skills,
     Weights, validate_table_name,
 };
-pub use kv::{Column, KVStorage, MemoryDb, Realm};
+pub use kv::{Column, KVStorage, Realm};
 pub use session::{
     EventLine, HistoryEntry, MAX_HITS_PER_QUERY, MAX_SNIPPET_BYTES, MAX_WINDOW_ITEMS,
     SearchOptions, SessionHandle, SessionHit, SessionMeta, SessionSnapshot, ToolCallTrace,
