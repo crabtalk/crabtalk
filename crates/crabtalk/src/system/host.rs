@@ -1,6 +1,5 @@
 //! SystemEnv — the runtime environment implementation.
 
-use crate::bridge::ClientBridge;
 use proto::{AgentEventKind, AgentEventMsg, ToolCallInfo};
 use runtime::harness::Hooks;
 use runtime::{AgentEvent, ToolDispatch};
@@ -19,8 +18,6 @@ pub struct SystemEnv {
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
     /// Root hook owning all sub-hooks and shared state.
     pub(crate) hook: Arc<Hooks>,
-    /// Client-tool bridge — forwards dispatches to the connected client.
-    pub(crate) bridge: Arc<ClientBridge>,
 }
 
 impl Env for SystemEnv {
@@ -170,12 +167,7 @@ impl runtime::ToolDispatcher for SystemEnv {
         };
 
         // System tools — daemon-side hooks (memory, sessions, skill, mcp).
-        if let Some(fut) = self.hook.dispatch(name, call.clone()) {
-            return fut;
-        }
-
-        // Client tools — forwarded to the connected client via the bridge.
-        if let Some(fut) = self.bridge.dispatch(name, call) {
+        if let Some(fut) = self.hook.dispatch(name, call) {
             return fut;
         }
 

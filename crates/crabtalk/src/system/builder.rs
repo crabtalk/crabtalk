@@ -3,7 +3,6 @@
 use crate::llm::Provider;
 use crate::{
     CrabTalk,
-    bridge::ClientBridge,
     system::RuntimeHandle,
     system::{event, host::SystemEnv, provider::DefaultProvider},
 };
@@ -44,7 +43,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>> = Arc::new(OnceLock::new());
         let protocol: Arc<OnceLock<crabtalk_berm::Dispatch>> = Arc::new(OnceLock::new());
         let hooks = Hooks::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
-        let (runtime, mcp, hooks, bridge) =
+        let (runtime, mcp, hooks) =
             Self::build_all(config, storage, &build_provider, protocol.clone(), hooks).await?;
         let shared_runtime: RuntimeHandle<P, S> = Arc::new(RwLock::new(Arc::new(runtime)));
         runtime_once
@@ -97,7 +96,6 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             events,
             build_provider,
             mcp,
-            bridge,
             sessions,
         };
         Self::connect_protocol(&protocol, daemon.clone());
@@ -117,7 +115,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let storage = self.runtime.read().await.storage().clone();
 
         let protocol: Arc<OnceLock<crabtalk_berm::Dispatch>> = Arc::new(OnceLock::new());
-        let (new_runtime, _mcp, new_hook, _bridge) = Self::build_all(
+        let (new_runtime, _mcp, new_hook) = Self::build_all(
             &config,
             storage,
             &self.build_provider,
@@ -162,7 +160,6 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         Runtime<crate::system::SystemCfg<P, S>>,
         Arc<McpHandler>,
         Arc<Hooks>,
-        Arc<ClientBridge>,
     )> {
         // Ask the endpoint what it serves; an empty list is survivable, so a
         // failure only warns and the next reload retries.
@@ -181,7 +178,6 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             std::time::Duration::from_secs(config.mcp.idle_timeout),
         ));
         mcp_handler.spawn_reaper();
-        let bridge = Arc::new(ClientBridge::default());
         Self::register_hooks(
             &mut hooks,
             storage.clone(),
@@ -195,7 +191,6 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let env = Arc::new(SystemEnv {
             events_tx,
             hook: hooks.clone(),
-            bridge: bridge.clone(),
         });
 
         let mut tools = runtime::ToolRegistry::new();
@@ -205,7 +200,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let runtime = Runtime::new(model, env, storage, tools);
         runtime.set_models(models);
         let runtime = runtime;
-        Ok((runtime, mcp_handler, hooks, bridge))
+        Ok((runtime, mcp_handler, hooks))
     }
 
     fn register_hooks(

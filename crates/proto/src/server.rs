@@ -107,17 +107,6 @@ pub trait Server: Sync {
         sender: String,
     ) -> impl std::future::Future<Output = Result<String>> + Send;
 
-    /// Handle `ReplyToTool` — deliver a client-side tool result for a
-    /// pending forwarded call. Resolves the pending entry keyed by
-    /// `(conversation_id, call_id)`.
-    fn reply_to_tool(
-        &self,
-        conversation_id: u64,
-        call_id: String,
-        output: String,
-        is_error: bool,
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
-
     /// Handle `SteerSession` — inject a user message into an active stream.
     fn steer_session(
         &self,
@@ -318,15 +307,6 @@ pub trait Server: Sync {
                     yield match self.reload().await {
                         Ok(()) => server_pong(),
                         Err(e) => server_error(500, e.to_string()),
-                    };
-                }
-                client_message::Msg::ReplyToAsk(_) => {
-                    yield server_error(410, "ReplyToAsk removed — use ReplyToTool".into());
-                }
-                client_message::Msg::ReplyToTool(msg) => {
-                    yield match self.reply_to_tool(msg.conversation_id, msg.call_id, msg.output, msg.is_error).await {
-                        Ok(()) => server_pong(),
-                        Err(e) => server_error(404, e.to_string()),
                     };
                 }
                 client_message::Msg::SteerSession(req) => {

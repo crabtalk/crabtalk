@@ -1,6 +1,5 @@
 //! CrabTalk — the core struct composing runtime, hooks, and protocol.
 
-use crate::bridge::ClientBridge;
 use crate::llm::Provider;
 use anyhow::Result;
 use runtime::{Runtime, Sessions};
@@ -55,7 +54,6 @@ pub struct CrabTalk<P: Provider + 'static, S: Backend> {
     pub(crate) build_provider: BuildProvider<P>,
     pub(crate) mcp: Arc<mcp::McpHandler>,
     /// Forwards client-tool dispatches to the connected client.
-    pub(crate) bridge: Arc<ClientBridge>,
     /// Live sessions. Owned here, not by the runtime, because
     /// `reload()` replaces the runtime and sessions survive it.
     pub(crate) sessions: Arc<Sessions>,
@@ -71,7 +69,6 @@ impl<P: Provider + 'static, S: Backend> Clone for CrabTalk<P, S> {
             events: self.events.clone(),
             build_provider: Arc::clone(&self.build_provider),
             mcp: self.mcp.clone(),
-            bridge: self.bridge.clone(),
             sessions: self.sessions.clone(),
         }
     }

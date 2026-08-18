@@ -37,7 +37,6 @@ message ClientMessage {
     // Execution
     SendMsg send = 1;
     StreamMsg stream = 2;
-    ReplyToAsk reply_to_ask = 3;
     // Conversation management
     ListActiveConversationsMsg list_active_conversations = 4;
     KillMsg kill = 5;
@@ -83,11 +82,11 @@ message ClientMessage {
     SteerSessionMsg steer_session = 44;
     // MCP lifecycle event subscription
     SubscribeMcpEventsMsg subscribe_mcp_events = 52;
-    // Client-tool reply (response to ToolCallForwardEvent)
-    ReplyToTool reply_to_tool = 53;
     // Extension point for downstream products.
     bytes extension = 100;
   }
+  // Client-tool forwarding, removed.
+  reserved 3, 53;
 }
 
 message SendMsg {
@@ -105,12 +104,8 @@ message SendMsg {
   reserved 6;
   reserved "guest";
   optional string tool_choice = 7;
-  // Client-provided tool schemas: the tools this client can execute
-  // locally. The daemon merges them with system tool schemas for the LLM
-  // request and forwards calls back to the client. There is no default
-  // set — an undeclared tool is never offered, because a forward nobody
-  // answers is a hang rather than a fallback.
-  repeated ToolDef tools = 8;
+  reserved 8;
+  reserved "tools";
 }
 
 message StreamMsg {
@@ -124,26 +119,17 @@ message StreamMsg {
   // primary itself.
   optional string guest = 6;
   optional string tool_choice = 7;
-  // Client-provided tool schemas — see SendMsg.tools.
-  repeated ToolDef tools = 8;
+  reserved 8;
+  reserved "tools";
   // Run an anonymous, unpersisted turn: no conversation is created and
   // nothing reaches session storage. Events stream back normally and are
-  // broadcast tagged `ephemeral` under `correlation_id`. Client round-trip
-  // tools are unsupported on this path.
+  // broadcast tagged `ephemeral` under `correlation_id`.
   bool ephemeral = 9;
   // Caller-chosen id used to tag the ephemeral broadcast so observers can
   // group its events. Ignored unless `ephemeral` is set.
   optional uint64 correlation_id = 10;
 }
 
-// A tool the client can execute. The daemon advertises these schemas
-// to the LLM and forwards invocations back to the client.
-message ToolDef {
-  string name = 1;
-  string description = 2;
-  // JSON Schema object describing the tool's parameters.
-  string parameters_schema = 3;
-}
 
 message Ping {}
 message SubscribeEvents {}
@@ -468,42 +454,18 @@ message StreamEvent {
     ToolResultEvent tool_result = 5;
     ToolsCompleteEvent tools_complete = 6;
     StreamEnd end = 7;
-    AskUserEvent ask_user = 8;
     UserSteeredEvent user_steered = 9;
     TextStartEvent text_start = 10;
     TextEndEvent text_end = 11;
     ThinkingStartEvent thinking_start = 12;
     ThinkingEndEvent thinking_end = 13;
     ContextUsageEvent context_usage = 14;
-    ToolCallForwardEvent tool_call_forward = 15;
   }
+  // Client-tool forwarding, removed.
+  reserved 8, 15;
 }
 
-// Daemon → client: forwarded tool invocation. The daemon emits this when
-// an agent calls a tool whose execution belongs on the client side (e.g.
-// the OS tool set). The client dispatches locally and replies with a
-// `ReplyToTool` echoing both `conversation_id` and `call_id` on a fresh
-// connection.
-//
-// `conversation_id` is an opaque routing token from the client's
-// perspective — it does not need to be interpreted, only echoed. The
-// daemon needs it to disambiguate `call_id`s, which come from the LLM
-// and are not globally unique across conversations.
-message ToolCallForwardEvent {
-  string call_id = 1;
-  string name = 2;
-  string arguments = 3;
-  uint64 conversation_id = 4;
-}
 
-// Client → daemon: response to a `ToolCallForwardEvent`. Resolves the
-// daemon-side pending entry keyed by `(conversation_id, call_id)`.
-message ReplyToTool {
-  string call_id = 1;
-  string output = 2;
-  bool is_error = 3;
-  uint64 conversation_id = 4;
-}
 
 // Real token counts reported by the provider after a completed step.
 // Emitted once per LLM call so clients can detect context pressure
@@ -564,27 +526,9 @@ message StreamEnd {
   reserved "provider";
 }
 
-message AskUserEvent {
-  repeated AskQuestion questions = 1;
-}
 
-message AskQuestion {
-  string question = 1;
-  string header = 2;
-  repeated AskOption options = 3;
-  bool multi_select = 4;
-}
 
-message AskOption {
-  string label = 1;
-  string description = 2;
-}
 
-message ReplyToAsk {
-  string agent = 1;
-  string sender = 2;
-  string content = 3;
-}
 
 message SteerSessionMsg {
   string agent = 1;

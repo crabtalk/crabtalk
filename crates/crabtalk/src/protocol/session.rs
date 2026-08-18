@@ -71,13 +71,12 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
         let created_by = if sender.is_empty() { "user" } else { sender };
-        let (session_id, session) = self.sessions.get_or_create(&rt, &agent, created_by).await?;
+        let (_, session) = self.sessions.get_or_create(&rt, &agent, created_by).await?;
         let tool_choice = req
             .tool_choice
             .map(|s| crabllm_core::ToolChoice::from(s.as_str()));
-        let client_tools = resolve_client_tools(&self.bridge, session_id, req.tools);
         let response = rt
-            .send_to(&session, &req.content, sender, tool_choice, client_tools)
+            .send_to(&session, &req.content, sender, tool_choice, vec![])
             .await?;
         let usage = Some(response.usage());
         Ok(SendResponse {
@@ -93,7 +92,6 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         req: StreamMsg,
     ) -> impl futures_core::Stream<Item = Result<StreamEvent>> + Send + 'a {
         let runtime = self.runtime.clone();
-        let bridge = self.bridge.clone();
         let sessions = self.sessions.clone();
         let agent = req.agent;
         let content = req.content;
@@ -102,7 +100,6 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let tool_choice = req
             .tool_choice
             .map(|s| crabllm_core::ToolChoice::from(s.as_str()));
-        let req_tools = req.tools;
         let ephemeral = req.ephemeral;
         let correlation_id = req.correlation_id.unwrap_or(0);
         async_stream::try_stream! {
@@ -135,17 +132,11 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
             let (session_id, session) =
                 sessions.get_or_create(&rt, &agent, created_by.as_str()).await?;
-            // Register this session as having a stream listener so the
-            // bridge will forward dispatches here, and open its steering
-            // channel. The guard tears both down on any exit path — stream
-            // end, early return on Done, or consumer dropping the stream —
-            // failing any pending forwarded calls so they don't sit until
-            // timeout, and closing the steering channel so a later steer
-            // reports "no active stream" instead of being swallowed.
-            bridge.register_listener(session_id);
-            let _listener_guard =
-                ListenerGuard::new(bridge.clone(), sessions.clone(), session_id);
-            let client_tools = resolve_client_tools(&bridge, session_id, req_tools);
+            // Closes the steering channel on any exit path — stream end,
+            // early return on Done, or the consumer dropping the stream —
+            // so a later steer reports "no active stream" instead of
+            // being swallowed.
+            let _listener_guard = ListenerGuard::new(sessions.clone(), session_id);
 
             let responding_agent = guest.unwrap_or(agent);
             yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.to_string() })) };
@@ -155,34 +146,14 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
                 // guest turn too would accept a steer nobody delivers.
                 None => {
                     let steer = sessions.begin_stream(session_id);
-                    Box::pin(rt.stream_to(session, &content, &sender, tool_choice, client_tools, steer))
+                    Box::pin(rt.stream_to(session, &content, &sender, tool_choice, vec![], steer))
                 }
                 Some(guest) => Box::pin(rt.guest_stream_to(session, &content, &sender, &guest)),
             };
             pin_mut!(stream);
             while let Some(event) = stream.next().await {
-                // Client-tool forwards only exist on the persisted path,
-                // where a bridge listener can carry the reply back.
-                let forwards: Vec<ToolCallForwardEvent> = if let AgentEvent::ToolCallsStart(ref calls) = event {
-                    calls
-                        .iter()
-                        .filter(|c| bridge.is_client_tool(session_id, &c.function.name))
-                        .map(|c| ToolCallForwardEvent {
-                            call_id: c.id.to_string(),
-                            name: c.function.name.to_string(),
-                            arguments: c.function.arguments.clone(),
-                            // The wire still says "conversation".
-                            conversation_id: session_id,
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                };
                 let is_done = matches!(event, AgentEvent::Done(_));
                 yield event.to_stream(&responding_agent);
-                for fwd in forwards {
-                    yield StreamEvent { event: Some(stream_event::Event::ToolCallForward(fwd)) };
-                }
                 if is_done { return; }
             }
             yield StreamEvent { event: Some(stream_event::Event::End(StreamEnd {
@@ -198,73 +169,25 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let Some((session_id, _)) = self.sessions.find(agent, sender) else {
             return Ok(false);
         };
-        // The session's client-tool state is keyed by the same id and
-        // outlives it otherwise: a kill mid-stream would leave forwarded
-        // calls parked until their 300s timeout.
-        self.bridge.unregister_listener(session_id);
         Ok(self.sessions.close(session_id))
-    }
-
-    pub(crate) async fn reply_to_tool(
-        &self,
-        session_id: u64,
-        call_id: &str,
-        output: String,
-        is_error: bool,
-    ) -> Result<()> {
-        // No retry needed: `try_resolve` accepts replies that arrive
-        // before the agent's dispatch parks (stashed as `EarlyReply`),
-        // so the dispatch/reply race is handled symmetrically inside
-        // the bridge rather than via sleep-and-pray here.
-        if self
-            .bridge
-            .try_resolve(session_id, call_id, output, is_error)
-        {
-            Ok(())
-        } else {
-            anyhow::bail!("duplicate reply for call_id '{call_id}'")
-        }
     }
 }
 
-/// RAII guard that synchronously tears down everything keyed to a
-/// stream: the client-tool listener and its pending forwarded calls, and
-/// the session's steering channel.
+/// RAII guard that closes the session's steering channel on every exit
+/// path out of a stream.
 struct ListenerGuard {
-    bridge: Arc<crate::bridge::ClientBridge>,
     sessions: Arc<Sessions>,
     conv_id: u64,
 }
 
 impl ListenerGuard {
-    fn new(
-        bridge: Arc<crate::bridge::ClientBridge>,
-        sessions: Arc<Sessions>,
-        conv_id: u64,
-    ) -> Self {
-        Self {
-            bridge,
-            sessions,
-            conv_id,
-        }
+    fn new(sessions: Arc<Sessions>, conv_id: u64) -> Self {
+        Self { sessions, conv_id }
     }
 }
 
 impl Drop for ListenerGuard {
     fn drop(&mut self) {
-        self.bridge.unregister_listener(self.conv_id);
         self.sessions.end_stream(self.conv_id);
     }
-}
-
-fn resolve_client_tools(
-    bridge: &crate::bridge::ClientBridge,
-    session_id: u64,
-    proto_tools: Vec<ToolDef>,
-) -> Vec<crate::llm::Tool> {
-    let tools: Vec<crate::llm::Tool> = proto_tools.into_iter().map(Into::into).collect();
-    // Registered even when empty: a client that declares nothing has no
-    // client tools, which is a different thing from having not been asked.
-    bridge.register_tools(session_id, &tools);
-    tools
 }

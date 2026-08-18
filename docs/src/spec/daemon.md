@@ -16,7 +16,7 @@ The daemon owns:
 
 The daemon does not interpret tool semantics. Tool dispatch is the runtime's responsibility, routed through the composite.
 
-The daemon owns no tools of its own. `bash`, `read` and `edit` are a harness an agent declares; `ask_user` is a client tool the daemon forwards and never answers. What the daemon supplies is the socket, the runtime, and the state — not a set of capabilities it decided every agent should have.
+The daemon owns no tools of its own. `bash`, `read` and `edit` are a harness an agent declares. What the daemon supplies is the socket, the runtime, and the state — not a set of capabilities it decided every agent should have.
 
 ## Process model
 

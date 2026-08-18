@@ -81,17 +81,6 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
         Ok(())
     }
 
-    async fn reply_to_tool(
-        &self,
-        session_id: u64,
-        call_id: String,
-        output: String,
-        is_error: bool,
-    ) -> Result<()> {
-        self.reply_to_tool(session_id, &call_id, output, is_error)
-            .await
-    }
-
     async fn steer_session(&self, req: SteerSessionMsg) -> Result<()> {
         let sender = if req.sender.is_empty() {
             "user".to_owned()
