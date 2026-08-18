@@ -127,6 +127,7 @@ tokio = { version = "1", features = [
     "sync",
     "time",
 ] }
+tokio-util = { version = "0.7", features = ["rt"] }
 textwrap = "0.16"
 toml = "0.8"
 tracing = "0.1"

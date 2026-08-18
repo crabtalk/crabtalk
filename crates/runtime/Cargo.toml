@@ -30,6 +30,7 @@ serde.workspace = true
 dirs.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
 
 [features]

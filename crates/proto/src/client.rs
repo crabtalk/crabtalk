@@ -866,20 +866,18 @@ pub trait Client: Send {
         })
     }
 
-    /// Inject a user message into an active stream (steering).
-    fn steer_session(
+    /// Cancel the in-flight stream for a session.
+    fn cancel_stream(
         &mut self,
         agent: String,
         sender: String,
-        content: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
                 .request(crate::ClientMessage {
-                    msg: Some(client_message::Msg::SteerSession(crate::SteerSessionMsg {
+                    msg: Some(client_message::Msg::CancelStream(crate::CancelStreamMsg {
                         agent,
                         sender,
-                        content,
                     })),
                 })
                 .await?
@@ -891,6 +889,29 @@ pub trait Client: Send {
                     msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Steer a session: cancel its in-flight stream, then start a new
+    /// turn with `content`. Nothing running isn't an error — the cancel
+    /// no-ops and the message streams normally.
+    fn steer_session(
+        &mut self,
+        agent: String,
+        sender: String,
+        content: String,
+    ) -> impl Stream<Item = Result<stream_event::Event>> + Send + '_ {
+        async_stream::stream! {
+            let _ = self.cancel_stream(agent.clone(), sender.clone()).await;
+            let mut stream = std::pin::pin!(self.stream(crate::StreamMsg {
+                agent,
+                content,
+                sender: Some(sender),
+                ..Default::default()
+            }));
+            while let Some(event) = stream.next().await {
+                yield event;
             }
         }
     }

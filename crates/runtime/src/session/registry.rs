@@ -4,7 +4,7 @@ use std::{
     sync::atomic::{AtomicU64, AtomicUsize},
 };
 use store::AgentId;
-use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 /// What a client addresses a session by, and what the registry is keyed
 /// on. The id is the wire's routing token, not an identity.
@@ -52,10 +52,10 @@ impl Registry {
 pub struct Live {
     pub identity: Identity,
     pub session: SharedSession,
-    /// Sender half of the steering channel, present only while a stream
-    /// is running. Kept beside the session rather than in a map of
+    /// Cancellation token for the in-flight stream, present only while
+    /// one is running. Kept beside the session rather than in a map of
     /// its own so closing one cannot leave the other behind.
-    pub steer: Option<watch::Sender<Option<String>>>,
+    pub cancel: Option<CancellationToken>,
     /// Tick of the most recent lookup, for choosing what to evict.
     pub touched: AtomicU64,
     /// History size as of the last time this was readable. A session

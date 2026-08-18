@@ -15,9 +15,9 @@ The pair is a conversation's only externally addressable name. **The wire carrie
 |---------|--------|
 | `StreamMsg` | Append user content, run the agent, stream the response. |
 | `SendMsg` | The same, returning one complete response rather than a stream. |
-| `KillMsg` | Cancel the in-flight run, if any. |
+| `KillMsg` | Drop the live conversation, if any. |
 | `CompactMsg` | Compact the current history into an archive. |
-| `SteerSessionMsg` | Inject user content into a run already in flight. |
+| `CancelStreamMsg` | Stop the in-flight run, if any. Steering is a client composition of cancel + stream. |
 
 `StreamMsg.sender` is optional; when omitted the daemon resolves a default determined by the transport. `StreamMsg.guest` selects who speaks on this turn without changing whose conversation it is.
 

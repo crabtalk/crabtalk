@@ -32,6 +32,10 @@ message ClientMessage {
   // Removed — package management moved out of the daemon into crabup.
   reserved 20, 21, 22, 37;
   reserved "install_plugin", "uninstall_plugin", "list_plugins", "search_plugins";
+  // Tag 44 was SteerSessionMsg. Steering is a client composition of
+  // cancel_stream + stream; the wire only carries the cancel.
+  reserved 44;
+  reserved "steer_session";
 
   oneof msg {
     // Execution
@@ -78,8 +82,8 @@ message ClientMessage {
     UnsubscribeEventMsg unsubscribe_event = 41;
     ListSubscriptionsMsg list_subscriptions = 42;
     PublishEventMsg publish_event = 43;
-    // Steering
-    SteerSessionMsg steer_session = 44;
+    // Cancel the in-flight stream for a session.
+    CancelStreamMsg cancel_stream = 57;
     // MCP lifecycle event subscription
     SubscribeMcpEventsMsg subscribe_mcp_events = 52;
     // Extension point for downstream products.
@@ -142,6 +146,11 @@ message GetConfig {}
 message GetStats {}
 
 message KillMsg {
+  string agent = 1;
+  string sender = 2;
+}
+
+message CancelStreamMsg {
   string agent = 1;
   string sender = 2;
 }
@@ -454,7 +463,6 @@ message StreamEvent {
     ToolResultEvent tool_result = 5;
     ToolsCompleteEvent tools_complete = 6;
     StreamEnd end = 7;
-    UserSteeredEvent user_steered = 9;
     TextStartEvent text_start = 10;
     TextEndEvent text_end = 11;
     ThinkingStartEvent thinking_start = 12;
@@ -463,6 +471,8 @@ message StreamEvent {
   }
   // Client-tool forwarding, removed.
   reserved 8, 15;
+  // UserSteered, removed with the steering RPC.
+  reserved 9;
 }
 
 
@@ -529,16 +539,6 @@ message StreamEnd {
 
 
 
-
-message SteerSessionMsg {
-  string agent = 1;
-  string sender = 2;
-  string content = 3;
-}
-
-message UserSteeredEvent {
-  string content = 1;
-}
 
 message ErrorMsg {
   uint32 code = 1;

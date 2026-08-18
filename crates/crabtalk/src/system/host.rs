@@ -113,10 +113,6 @@ impl Env for SystemEnv {
                 Payload::of(AgentEventKind::ToolsComplete)
             }
             AgentEvent::ContextUsage { .. } => return,
-            AgentEvent::UserSteered { content } => {
-                tracing::info!(%agent, content_len = content.len(), "user steered session");
-                return;
-            }
             AgentEvent::Done(response) => {
                 tracing::info!(
                     %agent,

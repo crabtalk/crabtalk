@@ -34,8 +34,6 @@ pub enum AgentEvent {
     },
     /// All tools completed, continuing to next iteration.
     ToolCallsComplete,
-    /// User steering message injected at turn boundary.
-    UserSteered { content: String },
     /// Token usage reported by the model after a completed step.
     ContextUsage { usage: Usage },
     /// Agent finished with final response.
@@ -102,7 +100,6 @@ impl AgentEvent {
             AgentEvent::ContextUsage { usage } => Event::ContextUsage(ContextUsageEvent {
                 usage: Some((&usage).into()),
             }),
-            AgentEvent::UserSteered { content } => Event::UserSteered(UserSteeredEvent { content }),
             AgentEvent::Done(resp) => {
                 let error = if let crate::AgentStopReason::Error(ref e) = resp.stop_reason {
                     e.clone()
@@ -178,6 +175,8 @@ pub enum AgentStopReason {
     MaxTokens,
     /// Error during execution.
     Error(String),
+    /// The run was cancelled mid-stream.
+    Cancelled,
 }
 
 impl AgentResponse {
@@ -219,6 +218,7 @@ impl std::fmt::Display for AgentStopReason {
             Self::NoAction => write!(f, "no_action"),
             Self::MaxTokens => write!(f, "max_tokens"),
             Self::Error(msg) => write!(f, "error: {msg}"),
+            Self::Cancelled => write!(f, "cancelled"),
         }
     }
 }
@@ -254,10 +254,6 @@ impl AgentEvent {
                 iterations: resp.iterations,
                 stop_reason: resp.stop_reason.to_string(),
                 usage: sum_step_usage(&resp.steps),
-                ts,
-            }),
-            AgentEvent::UserSteered { content } => Some(EventLine::UserSteered {
-                content: content.clone(),
                 ts,
             }),
             _ => None,

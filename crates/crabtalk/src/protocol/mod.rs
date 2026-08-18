@@ -81,7 +81,7 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
         Ok(())
     }
 
-    async fn steer_session(&self, req: SteerSessionMsg) -> Result<()> {
+    async fn cancel_stream(&self, req: CancelStreamMsg) -> Result<()> {
         let sender = if req.sender.is_empty() {
             "user".to_owned()
         } else {
@@ -91,7 +91,7 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
         let (id, _) = self.sessions.find(&agent, &sender).ok_or_else(|| {
             anyhow::anyhow!("session not found for agent='{agent}' sender='{sender}'")
         })?;
-        self.sessions.steer(id, req.content)
+        self.sessions.cancel(id)
     }
 
     async fn list_agents(&self) -> Result<Vec<AgentInfo>> {

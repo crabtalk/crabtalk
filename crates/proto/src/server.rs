@@ -107,10 +107,10 @@ pub trait Server: Sync {
         sender: String,
     ) -> impl std::future::Future<Output = Result<String>> + Send;
 
-    /// Handle `SteerSession` — inject a user message into an active stream.
-    fn steer_session(
+    /// Handle `CancelStream` — stop the in-flight stream for a session.
+    fn cancel_stream(
         &self,
-        req: crate::SteerSessionMsg,
+        req: crate::CancelStreamMsg,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Handle `ListAgents` — return all registered agents.
@@ -309,8 +309,8 @@ pub trait Server: Sync {
                         Err(e) => server_error(500, e.to_string()),
                     };
                 }
-                client_message::Msg::SteerSession(req) => {
-                    yield match self.steer_session(req).await {
+                client_message::Msg::CancelStream(req) => {
+                    yield match self.cancel_stream(req).await {
                         Ok(()) => server_pong(),
                         Err(e) => server_error(500, e.to_string()),
                     };

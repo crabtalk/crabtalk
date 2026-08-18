@@ -67,8 +67,7 @@ impl StreamAccumulator {
                 }
                 self.done = true;
             }
-            stream_event::Event::UserSteered(_)
-            | stream_event::Event::ContextUsage(_)
+            stream_event::Event::ContextUsage(_)
             | stream_event::Event::TextStart(_)
             | stream_event::Event::TextEnd(_)
             | stream_event::Event::ThinkingStart(_)
@@ -155,7 +154,7 @@ pub fn spawn_stream(
 
 /// Run a [`StreamMsg`] on `transport` and translate `stream_event::Event`
 /// into UI-friendly [`OutputChunk`]s. Filters telemetry-only events
-/// (`Start`, `End`, `ContextUsage`, `UserSteered`).
+/// (`Start`, `End`, `ContextUsage`).
 pub fn stream_chunks<'a>(
     transport: &'a mut Transport,
     req: StreamMsg,
@@ -183,7 +182,6 @@ pub fn stream_chunks<'a>(
                 Ok(stream_event::Event::ThinkingStart(_)) => Some(Ok(OutputChunk::ThinkingStart)),
                 Ok(stream_event::Event::ThinkingEnd(_)) => Some(Ok(OutputChunk::ThinkingEnd)),
                 Ok(stream_event::Event::Start(_))
-                | Ok(stream_event::Event::UserSteered(_))
                 | Ok(stream_event::Event::ContextUsage(_))
                 | Ok(stream_event::Event::End(_)) => None,
                 Err(e) => Some(Err(e)),

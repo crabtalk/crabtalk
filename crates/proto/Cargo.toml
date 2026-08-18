@@ -20,7 +20,13 @@ server = [
     "dep:futures-util",
 ]
 # The caller's half — build the message, unwrap the reply.
-client = ["std", "dep:anyhow", "dep:futures-core", "dep:futures-util"]
+client = [
+    "std",
+    "dep:anyhow",
+    "dep:async-stream",
+    "dep:futures-core",
+    "dep:futures-util",
+]
 # Conversions to the LLM types the messages carry.
 llm = ["dep:crabllm-core", "dep:serde_json"]
 

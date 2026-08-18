@@ -1,15 +1,17 @@
 //! Execution — message sending and streaming through agents.
 
 use super::Runtime;
-use crate::{AgentEvent, AgentResponse, AgentStopReason};
-use crate::{Config, Env, Harness, Session, SharedSession};
+use crate::{
+    AgentEvent, AgentResponse, AgentStopReason, Config, Env, Harness, Session, SharedSession,
+};
 use anyhow::Result;
 use async_stream::stream;
 use crabllm_core::{ToolChoice, anthropic};
 use futures_core::Stream;
 use futures_util::StreamExt;
 use store::{AgentId, HistoryEntry};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 impl<C: Config> Runtime<C> {
     fn prepare_history(&self, session: &mut Session, content: &str, sender: &str) {
@@ -81,10 +83,8 @@ impl<C: Config> Runtime<C> {
         Ok(response)
     }
 
-    /// Stream a turn. `steer` is the receiving half of the session's
-    /// steering channel — its sender belongs to whoever registered this
-    /// stream, so a steer that arrives after the stream is gone has
-    /// nowhere to land rather than resolving against a stale session.
+    /// Stream a turn. `cancel` is the session's cancellation token —
+    /// whoever registered the stream fires it to stop the run mid-flight.
     pub fn stream_to(
         &self,
         session: SharedSession,
@@ -92,7 +92,7 @@ impl<C: Config> Runtime<C> {
         sender: &str,
         tool_choice: Option<ToolChoice>,
         extra_tools: Vec<crabllm_core::Tool>,
-        steer: Option<watch::Receiver<Option<String>>>,
+        cancel: Option<CancellationToken>,
     ) -> impl Stream<Item = AgentEvent> + '_ {
         let content = content.to_owned();
         let sender = sender.to_owned();
@@ -113,7 +113,7 @@ impl<C: Config> Runtime<C> {
             let mut done_event: Option<AgentEvent> = None;
             let mut event_trace: Vec<store::EventLine> = Vec::new();
             {
-                let mut event_stream = std::pin::pin!(agent.run_stream(&mut session.history, Some(session_id), steer, tool_choice));
+                let mut event_stream = std::pin::pin!(agent.run_stream(&mut session.history, Some(session_id), cancel, tool_choice));
                 while let Some(event) = event_stream.next().await {
                     self.env.hook().on_event(&agent_id, session_id, &event);
                     self.env.on_agent_event(&agent_id, session_id, false, &event);

@@ -1,17 +1,17 @@
 //! Live sessions — the registry, and the three fields it replaces.
 //!
-//! `id -> session`, `id -> steering sender` and the id counter were
+//! `id -> session`, `id -> cancellation token` and the id counter were
 //! three [`Runtime`] fields keyed by the same id, agreeing only by
-//! convention: a close that missed the steering map leaked a sender, a
-//! steer for a dead id sent into nothing. They are one structure here.
+//! convention: a close that missed the token map leaked a token, a
+//! cancel for a dead id went nowhere. They are one structure here.
 //!
 //! It is not a `Runtime` field itself because a session outlives
 //! the runtime that serves it — `reload` throws the `Runtime` away and
 //! builds a new one, and nobody talking to the daemon should notice. The
 //! runtime is handed a session to run against; which ones are live,
-//! under what id, and who may steer them is this.
+//! under what id, and who may cancel them is this.
 //!
-//! What lives here is what the store cannot hold: a steering channel, a
+//! What lives here is what the store cannot hold: a cancellation token, a
 //! lock that serializes runs against one session, and the id the wire
 //! routes tool replies by. The history hanging off each one is a cache
 //! of store content, which is why [`Sessions::max_live`] can drop it.
@@ -27,7 +27,8 @@ use std::sync::{
     atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 use store::{AgentId, interface::Sessions as _};
-use tokio::sync::{Mutex, watch};
+use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
 /// The daemon's live sessions.
 ///
@@ -138,7 +139,7 @@ impl Sessions {
         let live = Live {
             identity: (session.agent, session.created_by.clone()),
             session: Arc::new(Mutex::new(session)),
-            steer: None,
+            cancel: None,
             touched: AtomicU64::new(self.tick.fetch_add(1, Ordering::Relaxed)),
             bytes: AtomicUsize::new(bytes),
         };
@@ -172,7 +173,7 @@ impl Sessions {
             let victim = registry
                 .by_id
                 .iter()
-                .filter(|(_, live)| live.steer.is_none() && Arc::strong_count(&live.session) == 1)
+                .filter(|(_, live)| live.cancel.is_none() && Arc::strong_count(&live.session) == 1)
                 .min_by_key(|(_, live)| live.touched.load(Ordering::Relaxed))
                 .map(|(id, _)| *id);
             // Everything left is in flight. The bound gives way rather
@@ -182,39 +183,38 @@ impl Sessions {
         }
     }
 
-    /// Drop a session from the registry. Its steering channel goes
-    /// with it, so a steer that arrives afterwards fails rather than
-    /// disappearing into a sender nobody reads.
+    /// Drop a session from the registry. Its cancellation token goes
+    /// with it, so a cancel that arrives afterwards fails rather than
+    /// disappearing into a token nobody reads.
     pub fn close(&self, id: u64) -> bool {
         self.registry.write().remove(id).is_some()
     }
 
-    /// Open this session's steering channel and hand back the
-    /// receiving half for the stream about to run.
-    pub fn begin_stream(&self, id: u64) -> Option<watch::Receiver<Option<String>>> {
-        let (tx, rx) = watch::channel(None);
+    /// Open this session's cancellation token and hand back a clone
+    /// for the stream about to run.
+    pub fn begin_stream(&self, id: u64) -> Option<CancellationToken> {
+        let token = CancellationToken::new();
         let mut registry = self.registry.write();
-        registry.by_id.get_mut(&id)?.steer = Some(tx);
-        Some(rx)
+        registry.by_id.get_mut(&id)?.cancel = Some(token.clone());
+        Some(token)
     }
 
-    /// Close the steering channel. Safe to call for an id that is already
-    /// gone — a killed session takes its channel with it.
+    /// Clear the cancellation token. Safe to call for an id that is
+    /// already gone — a killed session takes its token with it.
     pub fn end_stream(&self, id: u64) {
         if let Some(live) = self.registry.write().by_id.get_mut(&id) {
-            live.steer = None;
+            live.cancel = None;
         }
     }
 
-    pub fn steer(&self, id: u64, content: String) -> Result<()> {
+    pub fn cancel(&self, id: u64) -> Result<()> {
         let registry = self.registry.read();
-        let tx = registry
+        let token = registry
             .by_id
             .get(&id)
-            .and_then(|l| l.steer.as_ref())
+            .and_then(|l| l.cancel.as_ref())
             .ok_or_else(|| anyhow::anyhow!("no active stream for session {id}"))?;
-        tx.send(Some(content))
-            .map_err(|_| anyhow::anyhow!("steering channel closed"))?;
+        token.cancel();
         Ok(())
     }
 

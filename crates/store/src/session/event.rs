@@ -30,8 +30,6 @@ pub enum EventLine {
         usage: Usage,
         ts: String,
     },
-    /// User steered the agent mid-stream.
-    UserSteered { content: String, ts: String },
 }
 
 /// Compact tool call info for [`EventLine::ToolStart`].

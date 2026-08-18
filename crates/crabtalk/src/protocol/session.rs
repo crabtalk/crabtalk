@@ -132,9 +132,9 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
             let (session_id, session) =
                 sessions.get_or_create(&rt, &agent, created_by.as_str()).await?;
-            // Closes the steering channel on any exit path — stream end,
+            // Clears the cancellation token on any exit path — stream end,
             // early return on Done, or the consumer dropping the stream —
-            // so a later steer reports "no active stream" instead of
+            // so a later cancel reports "no active stream" instead of
             // being swallowed.
             let _listener_guard = ListenerGuard::new(sessions.clone(), session_id);
 
@@ -142,11 +142,11 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.to_string() })) };
 
             let stream: std::pin::Pin<Box<dyn futures_core::Stream<Item = runtime::AgentEvent> + Send + '_>> = match guest {
-                // Only this path reads a steer. Opening the channel for a
-                // guest turn too would accept a steer nobody delivers.
+                // Only this path is cancellable. Opening the token for a
+                // guest turn too would accept a cancel nobody delivers.
                 None => {
-                    let steer = sessions.begin_stream(session_id);
-                    Box::pin(rt.stream_to(session, &content, &sender, tool_choice, vec![], steer))
+                    let cancel = sessions.begin_stream(session_id);
+                    Box::pin(rt.stream_to(session, &content, &sender, tool_choice, vec![], cancel))
                 }
                 Some(guest) => Box::pin(rt.guest_stream_to(session, &content, &sender, &guest)),
             };
@@ -173,7 +173,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     }
 }
 
-/// RAII guard that closes the session's steering channel on every exit
+/// RAII guard that clears the session's cancellation token on every exit
 /// path out of a stream.
 struct ListenerGuard {
     sessions: Arc<Sessions>,

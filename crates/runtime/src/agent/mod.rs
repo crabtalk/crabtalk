@@ -22,7 +22,8 @@ pub use model::Model;
 use std::sync::Arc;
 use store::HistoryEntry;
 pub use store::{AgentConfig, AgentId};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 pub use tool::{AsTool, ToolDispatcher};
 
 mod builder;
@@ -30,6 +31,16 @@ mod compact;
 pub mod event;
 pub mod model;
 pub mod tool;
+
+/// Resolves when the session's cancellation token fires, or never when
+/// `None` (plain sends and ephemeral turns).
+async fn cancelled_fut(cancel: &Option<CancellationToken>) {
+    if let Some(token) = cancel {
+        token.cancelled().await;
+    } else {
+        std::future::pending::<()>().await;
+    }
+}
 
 /// Extract sender from the last user entry in history.
 fn last_sender(history: &[HistoryEntry]) -> String {
@@ -307,7 +318,7 @@ impl<P: Provider + 'static> Agent<P> {
         &'a self,
         history: &'a mut Vec<HistoryEntry>,
         session_id: Option<u64>,
-        mut steer_rx: Option<watch::Receiver<Option<String>>>,
+        cancel: Option<CancellationToken>,
         tool_choice: Option<ToolChoice>,
     ) -> impl Stream<Item = AgentEvent> + 'a {
         stream! {
@@ -316,17 +327,6 @@ impl<P: Provider + 'static> Agent<P> {
             let model_name = self.model_name();
 
             for _ in 0..max {
-                // Check for pending steering message before the next model call.
-                // Scope the borrow so the !Send guard is dropped before yield.
-                let steer_content = steer_rx.as_mut().and_then(|rx| {
-                    rx.has_changed().ok()?.then(|| rx.borrow_and_update().clone())?
-                });
-                if let Some(content) = steer_content {
-                    let sender = last_sender(history);
-                    history.push(HistoryEntry::user_with_sender(&content, &sender));
-                    yield AgentEvent::UserSteered { content };
-                }
-
                 let request = self.build_request(history, tool_choice.as_ref());
 
                 let mut builder = MessageBuilder::new();
@@ -343,62 +343,95 @@ impl<P: Provider + 'static> Agent<P> {
 
 
                     let mut event_stream = std::pin::pin!(self.model.stream(request));
-                    while let Some(result) = event_stream.next().await {
-                        match result {
-                            Ok(ref event) => {
-                                match event {
-                                    anthropic::StreamEvent::ContentBlockDelta { delta, .. } => {
-                                        match delta {
-                                            anthropic::BlockDelta::Text { text } => {
-                                                if open != OpenSegment::Text {
-                                                    if open == OpenSegment::Thinking {
-                                                        yield AgentEvent::ThinkingEnd;
-                                                    }
-                                                    yield AgentEvent::TextStart;
-                                                    open = OpenSegment::Text;
-                                                }
-                                                yield AgentEvent::TextDelta(text.clone());
-                                            }
-                                            anthropic::BlockDelta::Thinking { thinking } => {
-                                                if !thinking.is_empty() {
-                                                    if open != OpenSegment::Thinking {
-                                                        if open == OpenSegment::Text {
-                                                            yield AgentEvent::TextEnd;
-                                                        }
-                                                        yield AgentEvent::ThinkingStart;
-                                                        open = OpenSegment::Thinking;
-                                                    }
-                                                    yield AgentEvent::ThinkingDelta(thinking.clone());
-                                                }
-                                            }
-                                            anthropic::BlockDelta::InputJson { .. } => {}
-                                        }
-                                    }
-                                    anthropic::StreamEvent::MessageDelta { delta, usage } => {
-                                        finish_reason = delta.stop_reason.as_deref().map(anthropic::finish_reason);
-                                        last_usage = Some(Usage::from(usage));
-                                    }
-                                    _ => {}
-                                }
-                                builder.accept(event);
-                                if !tool_begin_emitted {
-                                    let calls = builder.tool_calls();
-                                    if !calls.is_empty() {
-                                        tool_begin_emitted = true;
-                                        yield AgentEvent::ToolCallsBegin(calls);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                stream_error = Some(e.to_string());
+                    let mut cancelled = false;
+                    loop {
+                        tokio::select! {
+                            biased;
+                            _ = cancelled_fut(&cancel) => {
+                                cancelled = true;
                                 break;
                             }
+                            result = event_stream.next() => match result {
+                                Some(Ok(ref event)) => {
+                                    match event {
+                                        anthropic::StreamEvent::ContentBlockDelta { delta, .. } => {
+                                            match delta {
+                                                anthropic::BlockDelta::Text { text } => {
+                                                    if open != OpenSegment::Text {
+                                                        if open == OpenSegment::Thinking {
+                                                            yield AgentEvent::ThinkingEnd;
+                                                        }
+                                                        yield AgentEvent::TextStart;
+                                                        open = OpenSegment::Text;
+                                                    }
+                                                    yield AgentEvent::TextDelta(text.clone());
+                                                }
+                                                anthropic::BlockDelta::Thinking { thinking } => {
+                                                    if !thinking.is_empty() {
+                                                        if open != OpenSegment::Thinking {
+                                                            if open == OpenSegment::Text {
+                                                                yield AgentEvent::TextEnd;
+                                                            }
+                                                            yield AgentEvent::ThinkingStart;
+                                                            open = OpenSegment::Thinking;
+                                                        }
+                                                        yield AgentEvent::ThinkingDelta(thinking.clone());
+                                                    }
+                                                }
+                                                anthropic::BlockDelta::InputJson { .. } => {}
+                                            }
+                                        }
+                                        anthropic::StreamEvent::MessageDelta { delta, usage } => {
+                                            finish_reason = delta.stop_reason.as_deref().map(anthropic::finish_reason);
+                                            last_usage = Some(Usage::from(usage));
+                                        }
+                                        _ => {}
+                                    }
+                                    builder.accept(event);
+                                    if !tool_begin_emitted {
+                                        let calls = builder.tool_calls();
+                                        if !calls.is_empty() {
+                                            tool_begin_emitted = true;
+                                            yield AgentEvent::ToolCallsBegin(calls);
+                                        }
+                                    }
+                                }
+                                Some(Err(e)) => {
+                                    stream_error = Some(e.to_string());
+                                    break;
+                                }
+                                None => break,
+                            },
                         }
                     }
                     match open {
                         OpenSegment::Text => yield AgentEvent::TextEnd,
                         OpenSegment::Thinking => yield AgentEvent::ThinkingEnd,
                         OpenSegment::None => {}
+                    }
+                    if cancelled {
+                        // A steer lands mid-sentence; keep the partial text so
+                        // the next turn can react to it. Half-streamed tool
+                        // calls are dropped — a tool_use without a tool_result
+                        // orphans the history.
+                        let message = builder.build();
+                        let text = message.text().unwrap_or("");
+                        if !text.is_empty() {
+                            let reasoning = message.thinking().map(str::to_owned);
+                            history.push(HistoryEntry::from_message(anthropic::Message::assistant_parts(
+                                text,
+                                reasoning,
+                                &[],
+                            )));
+                        }
+                        yield AgentEvent::Done(AgentResponse {
+                            final_response: None,
+                            iterations: steps.len(),
+                            stop_reason: AgentStopReason::Cancelled,
+                            steps,
+                            model: model_name.clone(),
+                        });
+                        return;
                     }
                 }
                 if let Some(e) = stream_error {
@@ -504,17 +537,40 @@ impl<P: Provider + 'static> Agent<P> {
 
                     let mut buffered: Vec<Option<Result<String, String>>> =
                         vec![None; tool_calls.len()];
-                    while let Some((idx, output, duration_ms)) = pending.next().await {
-                        let call_id = tool_calls[idx].id.clone();
-                        // Clone into the event; the owned Result lands in
-                        // `buffered[idx]` so the drain-loop tail can append
-                        // history entries in original call order.
-                        yield AgentEvent::ToolResult {
-                            call_id,
-                            output: output.clone(),
-                            duration_ms,
-                        };
-                        buffered[idx] = Some(output);
+                    let mut cancelled = false;
+                    loop {
+                        tokio::select! {
+                            biased;
+                            _ = cancelled_fut(&cancel) => {
+                                cancelled = true;
+                                break;
+                            }
+                            item = pending.next() => match item {
+                                Some((idx, output, duration_ms)) => {
+                                    let call_id = tool_calls[idx].id.clone();
+                                    // Clone into the event; the owned Result lands in
+                                    // `buffered[idx]` so the drain-loop tail can append
+                                    // history entries in original call order.
+                                    yield AgentEvent::ToolResult {
+                                        call_id,
+                                        output: output.clone(),
+                                        duration_ms,
+                                    };
+                                    buffered[idx] = Some(output);
+                                }
+                                None => break,
+                            },
+                        }
+                    }
+                    if cancelled {
+                        yield AgentEvent::Done(AgentResponse {
+                            final_response: None,
+                            iterations: steps.len(),
+                            stop_reason: AgentStopReason::Cancelled,
+                            steps,
+                            model: model_name.clone(),
+                        });
+                        return;
                     }
 
                     // Atomic commit: push assistant + tool_results with no
