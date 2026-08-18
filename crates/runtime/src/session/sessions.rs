@@ -191,8 +191,8 @@ impl Sessions {
     }
 
     /// Open this session's cancellation token and hand back a clone
-    /// for the stream about to run.
-    pub fn begin_stream(&self, id: u64) -> Option<CancellationToken> {
+    /// for the cancellable operation about to run (a stream or a compact).
+    pub fn begin_cancel(&self, id: u64) -> Option<CancellationToken> {
         let token = CancellationToken::new();
         let mut registry = self.registry.write();
         registry.by_id.get_mut(&id)?.cancel = Some(token.clone());
@@ -201,7 +201,7 @@ impl Sessions {
 
     /// Clear the cancellation token. Safe to call for an id that is
     /// already gone — a killed session takes its token with it.
-    pub fn end_stream(&self, id: u64) {
+    pub fn end_cancel(&self, id: u64) {
         if let Some(live) = self.registry.write().by_id.get_mut(&id) {
             live.cancel = None;
         }
@@ -213,7 +213,7 @@ impl Sessions {
             .by_id
             .get(&id)
             .and_then(|l| l.cancel.as_ref())
-            .ok_or_else(|| anyhow::anyhow!("no active stream for session {id}"))?;
+            .ok_or_else(|| anyhow::anyhow!("no cancellable operation for session {id}"))?;
         token.cancel();
         Ok(())
     }

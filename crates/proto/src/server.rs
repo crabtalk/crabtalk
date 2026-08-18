@@ -98,10 +98,13 @@ pub trait Server: Sync {
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Handle `Compact` — compact a conversation's history into a summary.
+    /// `prompt` is the client-supplied summarization instruction; the
+    /// daemon holds no built-in one.
     fn compact_conversation(
         &self,
         agent: String,
         sender: String,
+        prompt: String,
     ) -> impl std::future::Future<Output = Result<String>> + Send;
 
     /// Handle `CancelStream` — stop the in-flight stream for a session.
@@ -344,7 +347,10 @@ pub trait Server: Sync {
                     };
                 }
                 client_message::Msg::Compact(req) => {
-                    yield match self.compact_conversation(req.agent, req.sender).await {
+                    yield match self
+                        .compact_conversation(req.agent, req.sender, req.prompt)
+                        .await
+                    {
                         Ok(summary) => crate::ServerMessage {
                             msg: Some(server_message::Msg::Compact(crate::CompactResponse { summary })),
                         },

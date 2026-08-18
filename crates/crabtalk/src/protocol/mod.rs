@@ -3,7 +3,9 @@
 use crate::{llm::Provider, system::CrabTalk};
 use anyhow::Result;
 use proto::{server::Server, *};
+use runtime::Sessions;
 use serde_json::Value;
+use std::sync::Arc;
 use store::{AgentId, interface::Backend};
 
 mod admin;
@@ -22,13 +24,20 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
         self.stream(req)
     }
 
-    async fn compact_conversation(&self, agent: String, sender: String) -> Result<String> {
+    async fn compact_conversation(
+        &self,
+        agent: String,
+        sender: String,
+        prompt: String,
+    ) -> Result<String> {
         let agent = parse_agent(&agent)?;
         let rt = self.runtime.read().await.clone();
-        let (_, session) = self.sessions.find(&agent, &sender).ok_or_else(|| {
+        let (id, session) = self.sessions.find(&agent, &sender).ok_or_else(|| {
             anyhow::anyhow!("session not found for agent='{agent}' sender='{sender}'")
         })?;
-        rt.compact(&session)
+        let cancel = self.sessions.begin_cancel(id);
+        let _cancel_guard = CancelGuard::new(self.sessions.clone(), id);
+        rt.compact(&session, &prompt, cancel)
             .await
             .ok_or_else(|| anyhow::anyhow!("compact failed for agent='{agent}' sender='{sender}'"))
     }
@@ -206,6 +215,29 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
     async fn list_models(&self) -> Result<Vec<ModelInfo>> {
         let rt = self.runtime.read().await.clone();
         Ok(rt.list_models().await)
+    }
+}
+
+/// RAII guard that clears a session's cancellation token on every exit
+/// path out of the cancellable operation it guards — stream end, early
+/// return, compact's completion, or the caller's future being dropped.
+pub(crate) struct CancelGuard {
+    sessions: Arc<Sessions>,
+    session_id: u64,
+}
+
+impl CancelGuard {
+    pub(crate) fn new(sessions: Arc<Sessions>, session_id: u64) -> Self {
+        Self {
+            sessions,
+            session_id,
+        }
+    }
+}
+
+impl Drop for CancelGuard {
+    fn drop(&mut self) {
+        self.sessions.end_cancel(self.session_id);
     }
 }
 

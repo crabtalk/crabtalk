@@ -754,11 +754,14 @@ pub trait Client: Send {
         }
     }
 
-    /// Compact a conversation's history into a summary.
+    /// Compact a conversation's history into a summary. `prompt` is the
+    /// summarization instruction to give the model — the daemon carries
+    /// no built-in one.
     fn compact_conversation(
         &mut self,
         agent: String,
         sender: String,
+        prompt: String,
     ) -> impl std::future::Future<Output = Result<String>> + Send {
         async move {
             match self
@@ -766,6 +769,7 @@ pub trait Client: Send {
                     msg: Some(client_message::Msg::Compact(crate::CompactMsg {
                         agent,
                         sender,
+                        prompt,
                     })),
                 })
                 .await?

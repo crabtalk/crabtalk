@@ -1,23 +1,27 @@
 //! Context compaction — summarize session history and replace it.
 
+use crate::agent::cancelled_fut;
 use crabllm_core::{
     Provider,
     anthropic::{self, ContentBlock, ToolResultContent},
 };
 use store::HistoryEntry;
-
-pub(crate) const COMPACT_PROMPT: &str = include_str!("../../prompts/compact.md");
+use tokio_util::sync::CancellationToken;
 
 impl<P: Provider + 'static> super::Agent<P> {
     /// Summarize the session history using the LLM.
     ///
-    /// Builds the base compact prompt, lets the `compact_hook` (if any) enrich
-    /// it, then sends the history with the enriched prompt as system message.
-    /// Returns the summary text, or `None` if the model produces no content.
-    pub async fn compact(&self, history: &[HistoryEntry]) -> Option<String> {
+    /// `prompt` is the caller-supplied summarization instruction, sent as
+    /// the system message alongside the history. Returns the summary text,
+    /// or `None` if the model produces no content or `cancel` fires before
+    /// the model responds.
+    pub async fn compact(
+        &self,
+        history: &[HistoryEntry],
+        prompt: &str,
+        cancel: Option<CancellationToken>,
+    ) -> Option<String> {
         let model_name = self.config.model.clone();
-        let prompt = COMPACT_PROMPT.to_owned();
-
         let mut messages = Vec::with_capacity(1 + history.len());
         if !self.config.description.is_empty() {
             messages.push(anthropic::Message {
@@ -49,7 +53,7 @@ impl<P: Provider + 'static> super::Agent<P> {
             model: model_name,
             messages,
             max_tokens: anthropic::DEFAULT_MAX_TOKENS,
-            system: Some(anthropic::System::Text(prompt)),
+            system: (!prompt.is_empty()).then(|| anthropic::System::Text(prompt.to_owned())),
             temperature: None,
             top_p: None,
             stream: None,
@@ -58,7 +62,12 @@ impl<P: Provider + 'static> super::Agent<P> {
             stop_sequences: None,
             thinking: None,
         };
-        match self.model.send(request).await {
+        let response = tokio::select! {
+            biased;
+            _ = cancelled_fut(&cancel) => return None,
+            result = self.model.send(request) => result,
+        };
+        match response {
             Ok(response) => response.content.iter().find_map(|b| match b {
                 ContentBlock::Text { text, .. } if !text.is_empty() => Some(text.to_owned()),
                 _ => None,

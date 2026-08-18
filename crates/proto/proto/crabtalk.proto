@@ -191,6 +191,9 @@ message SubscriptionList {
 message CompactMsg {
   string agent = 1;
   string sender = 2;
+  // Summarization instructions for the compaction LLM call. The daemon
+  // carries no built-in prompt — the client decides how a summary reads.
+  string prompt = 3;
 }
 
 message ListAgentsMsg {}

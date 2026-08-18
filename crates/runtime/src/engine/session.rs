@@ -8,6 +8,7 @@ use store::{
     HistoryEntry, MemoryEntry,
     interface::{Memory, Sessions},
 };
+use tokio_util::sync::CancellationToken;
 
 impl<C: Config> Runtime<C> {
     /// Rebuild a persisted session into a live one under `id`.
@@ -40,8 +41,15 @@ impl<C: Config> Runtime<C> {
     /// agent's compact LLM, write the summary to memory as an
     /// `Archive` entry, drop a compact marker into the session, and
     /// replace the live history with a single user message carrying
-    /// the summary. Returns the summary on success.
-    pub async fn compact(&self, session: &SharedSession) -> Option<String> {
+    /// the summary. `prompt` is the caller-supplied summarization
+    /// instruction. Returns the summary on success, or `None` if
+    /// `cancel` fires before the summary comes back.
+    pub async fn compact(
+        &self,
+        session: &SharedSession,
+        prompt: &str,
+        cancel: Option<CancellationToken>,
+    ) -> Option<String> {
         // Held across the summarizing round trip, the way a run holds it.
         // Releasing it for the call would let a send land messages the
         // summary does not cover, which the truncation below then deletes.
@@ -50,7 +58,7 @@ impl<C: Config> Runtime<C> {
             return None;
         }
         let agent = self.resolve_agent(&session.agent).await?;
-        let summary = agent.compact(&session.history).await?;
+        let summary = agent.compact(&session.history, prompt, cancel).await?;
 
         self.ensure_handle(&mut session).await;
         let handle = session.handle.clone()?;

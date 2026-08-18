@@ -1,11 +1,15 @@
 //! Session operations: send/stream, kill, and ask/tool reply
 //! routing. Pure-runtime ops live on `Runtime<C>` directly.
 
-use crate::{llm::Provider, protocol::parse_agent, system::CrabTalk};
+use crate::{
+    llm::Provider,
+    protocol::{CancelGuard, parse_agent},
+    system::CrabTalk,
+};
 use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
 use proto::*;
-use runtime::{AgentEvent, Sessions};
+use runtime::AgentEvent;
 use std::sync::Arc;
 use store::{AgentId, SearchOptions, interface::Backend};
 
@@ -132,9 +136,9 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
                 sessions.get_or_create(&rt, &agent, created_by.as_str()).await?;
             // Clears the cancellation token on any exit path — stream end,
             // early return on Done, or the consumer dropping the stream —
-            // so a later cancel reports "no active stream" instead of
+            // so a later cancel reports "no cancellable operation" instead of
             // being swallowed.
-            let _listener_guard = ListenerGuard::new(sessions.clone(), session_id);
+            let _cancel_guard = CancelGuard::new(sessions.clone(), session_id);
 
             let responding_agent = guest.unwrap_or(agent);
             yield StreamEvent { event: Some(stream_event::Event::Start(StreamStart { agent: responding_agent.to_string() })) };
@@ -143,7 +147,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
                 // Only this path is cancellable. Opening the token for a
                 // guest turn too would accept a cancel nobody delivers.
                 None => {
-                    let cancel = sessions.begin_stream(session_id);
+                    let cancel = sessions.begin_cancel(session_id);
                     Box::pin(rt.stream_to(session, &content, &sender, tool_choice, vec![], cancel))
                 }
                 Some(guest) => Box::pin(rt.guest_stream_to(session, &content, &sender, &guest)),
@@ -168,24 +172,5 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             return Ok(false);
         };
         Ok(self.sessions.close(session_id))
-    }
-}
-
-/// RAII guard that clears the session's cancellation token on every exit
-/// path out of a stream.
-struct ListenerGuard {
-    sessions: Arc<Sessions>,
-    conv_id: u64,
-}
-
-impl ListenerGuard {
-    fn new(sessions: Arc<Sessions>, conv_id: u64) -> Self {
-        Self { sessions, conv_id }
-    }
-}
-
-impl Drop for ListenerGuard {
-    fn drop(&mut self) {
-        self.sessions.end_stream(self.conv_id);
     }
 }
