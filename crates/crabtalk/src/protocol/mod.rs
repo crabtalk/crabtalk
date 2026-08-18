@@ -1,10 +1,8 @@
 //! Server trait implementation — thin delegates to domain modules.
 
-use crate::llm::Provider;
-use crate::system::CrabTalk;
+use crate::{llm::Provider, system::CrabTalk};
 use anyhow::Result;
-use proto::server::Server;
-use proto::*;
+use proto::{server::Server, *};
 use serde_json::Value;
 use store::{AgentId, interface::Backend};
 
@@ -54,10 +52,6 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
 
     fn subscribe_mcp_events(&self) -> impl futures_core::Stream<Item = Result<McpEventMsg>> + Send {
         self.subscribe_mcp_events()
-    }
-
-    async fn reload(&self) -> Result<()> {
-        self.reload().await
     }
 
     async fn get_stats(&self) -> Result<Stats> {

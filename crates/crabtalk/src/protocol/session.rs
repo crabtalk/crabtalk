@@ -1,9 +1,7 @@
 //! Session operations: send/stream, kill, and ask/tool reply
 //! routing. Pure-runtime ops live on `Runtime<C>` directly.
 
-use crate::llm::Provider;
-use crate::protocol::parse_agent;
-use crate::system::CrabTalk;
+use crate::{llm::Provider, protocol::parse_agent, system::CrabTalk};
 use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
 use proto::*;

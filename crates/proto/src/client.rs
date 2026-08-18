@@ -801,26 +801,6 @@ pub trait Client: Send {
         }
     }
 
-    /// Hot-reload daemon runtime from disk.
-    fn reload(&mut self) -> impl std::future::Future<Output = Result<()>> + Send {
-        async move {
-            match self
-                .request(crate::ClientMessage {
-                    msg: Some(client_message::Msg::Reload(crate::ReloadMsg {})),
-                })
-                .await?
-            {
-                crate::ServerMessage {
-                    msg: Some(server_message::Msg::Pong(_)),
-                } => Ok(()),
-                crate::ServerMessage {
-                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
-                } => anyhow::bail!("server error ({code}): {message}"),
-                other => anyhow::bail!("unexpected response: {other:?}"),
-            }
-        }
-    }
-
     /// Subscribe to all agent events. Returns a stream that ends when the
     /// connection drops.
     fn subscribe_events(&mut self) -> impl Stream<Item = Result<crate::AgentEventMsg>> + Send + '_ {

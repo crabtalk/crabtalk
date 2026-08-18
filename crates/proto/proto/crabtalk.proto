@@ -36,6 +36,10 @@ message ClientMessage {
   // cancel_stream + stream; the wire only carries the cancel.
   reserved 44;
   reserved "steer_session";
+  // Tag 32 was ReloadMsg. Config is not edited on a live daemon —
+  // model changes go through set_active_model.
+  reserved 32;
+  reserved "reload";
 
   oneof msg {
     // Execution
@@ -74,7 +78,6 @@ message ClientMessage {
     // Daemon lifecycle
     Ping ping = 30;
     GetConfig get_config = 31;
-    ReloadMsg reload = 32;
     GetStats get_stats = 33;
     SubscribeEvents subscribe_events = 34;
     // Event bus
@@ -154,8 +157,6 @@ message CancelStreamMsg {
   string agent = 1;
   string sender = 2;
 }
-
-message ReloadMsg {}
 
 // ── Event Bus ───────────────────────────────────────────────────
 

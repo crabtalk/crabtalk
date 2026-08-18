@@ -4,8 +4,7 @@ use super::CrabTalk;
 use crate::llm::Provider;
 use anyhow::Result;
 use futures_util::{StreamExt, pin_mut};
-use proto::ClientMessage;
-use proto::server::Server;
+use proto::{ClientMessage, server::Server};
 #[cfg(unix)]
 use std::path::Path;
 use store::interface::Backend;

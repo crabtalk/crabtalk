@@ -777,7 +777,6 @@ dependencies = [
  "async-stream",
  "chrono",
  "crabllm-core",
- "crabtalk-mcp",
  "crabtalk-proto",
  "crabtalk-skill",
  "crabtalk-store",

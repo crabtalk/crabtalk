@@ -74,9 +74,6 @@ pub trait Server: Sync {
     /// Handle `SubscribeMcpEvents` — stream MCP lifecycle events.
     fn subscribe_mcp_events(&self) -> impl Stream<Item = Result<crate::McpEventMsg>> + Send;
 
-    /// Handle `Reload` — hot-reload runtime from disk.
-    fn reload(&self) -> impl std::future::Future<Output = Result<()>> + Send;
-
     /// Handle `GetStats` — return runtime stats.
     fn get_stats(&self) -> impl std::future::Future<Output = Result<crate::Stats>> + Send;
 
@@ -302,12 +299,6 @@ pub trait Server: Sync {
                     while let Some(result) = s.next().await {
                         yield result_to_msg(result);
                     }
-                }
-                client_message::Msg::Reload(_) => {
-                    yield match self.reload().await {
-                        Ok(()) => server_pong(),
-                        Err(e) => server_error(500, e.to_string()),
-                    };
                 }
                 client_message::Msg::CancelStream(req) => {
                     yield match self.cancel_stream(req).await {

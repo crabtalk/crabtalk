@@ -1,7 +1,7 @@
 //! `forget` — delete a memory entry by name.
 
-use crate::ToolDispatch;
-use crate::harness::memory::MemoryHook;
+use super::MemoryHarness;
+use runtime::ToolDispatch;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use store::interface::Memory;
@@ -13,7 +13,7 @@ pub struct Forget {
     pub name: String,
 }
 
-impl<M: Memory> MemoryHook<M> {
+impl<M: Memory> MemoryHarness<M> {
     pub async fn forget(&self, name: &str) -> String {
         match self.memory.remove_memory(name).await {
             Ok(true) => format!("forgot: {name}"),

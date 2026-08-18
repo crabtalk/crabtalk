@@ -1,24 +1,12 @@
 //! MCP tool — as a Harness implementation.
 
-use crate::Harness;
-use crate::{ToolDispatch, ToolFuture, agent::AsTool};
 use mcp::{McpHandler, dispatch::dispatch_mcp};
 use parking_lot::RwLock;
+use runtime::{Harness, ToolDispatch, ToolFuture, agent::AsTool};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::{collections::BTreeMap, sync::Arc};
 use store::AgentId;
-
-/// Call an MCP tool by name, or list available tools if no exact match.
-#[derive(Deserialize, JsonSchema)]
-pub struct Mcp {
-    /// Tool name to call. If no exact match, returns fuzzy matches.
-    /// Leave empty to list all available MCP tools.
-    pub name: String,
-    /// JSON-encoded arguments string (only used when calling a tool).
-    #[serde(default)]
-    pub args: Option<String>,
-}
 
 /// MCP subsystem: routes tool calls to MCP servers per agent.
 ///
@@ -28,8 +16,8 @@ pub struct Mcp {
 /// or reconnected when the agent appears, and dispatch is scoped to the
 /// MCPs the calling agent owns. Identical configs across agents share
 /// one peer process — see `McpHandler::register_for_agent`.
-pub struct McpHook {
-    mcp: Arc<McpHandler>,
+pub struct McpHarness {
+    pub handler: Arc<McpHandler>,
     /// Daemon-wide env overlay applied on top of each MCP's own env at
     /// register time.
     env_overlay: BTreeMap<String, String>,
@@ -39,17 +27,17 @@ pub struct McpHook {
     agent_mcps: RwLock<BTreeMap<AgentId, Vec<String>>>,
 }
 
-impl McpHook {
-    pub fn new(mcp: Arc<McpHandler>, env_overlay: BTreeMap<String, String>) -> Self {
+impl McpHarness {
+    pub fn new(handler: Arc<McpHandler>, env_overlay: BTreeMap<String, String>) -> Self {
         Self {
-            mcp,
+            handler,
             env_overlay,
             agent_mcps: RwLock::new(BTreeMap::new()),
         }
     }
 }
 
-impl Harness for McpHook {
+impl Harness for McpHarness {
     fn schema(&self) -> Vec<crabllm_core::Tool> {
         vec![Mcp::as_tool()]
     }
@@ -81,7 +69,7 @@ impl Harness for McpHook {
         // a peer shared with another agent won't actually be torn down.
         for old_name in prior {
             if !new_names.contains(&old_name) {
-                let handler = self.mcp.clone();
+                let handler = self.handler.clone();
                 let agent = id.to_string();
                 tokio::spawn(async move {
                     handler.unregister_for_agent(&agent, &old_name).await;
@@ -96,7 +84,7 @@ impl Harness for McpHook {
             for (k, v) in &self.env_overlay {
                 effective.env.entry(k.clone()).or_insert_with(|| v.clone());
             }
-            let handler = self.mcp.clone();
+            let handler = self.handler.clone();
             let agent = id.to_string();
             tokio::spawn(async move {
                 handler.register_for_agent(&agent, &effective).await;
@@ -109,7 +97,7 @@ impl Harness for McpHook {
             return;
         };
         for mcp_name in names {
-            let handler = self.mcp.clone();
+            let handler = self.handler.clone();
             let agent = id.to_string();
             tokio::spawn(async move {
                 handler.unregister_for_agent(&agent, &mcp_name).await;
@@ -131,7 +119,7 @@ impl Harness for McpHook {
             // `lib/mcp` knows nothing about agents beyond an opaque scope
             // key, so identity crosses that seam as the ULID's text.
             dispatch_mcp(
-                &self.mcp,
+                &self.handler,
                 &call.agent.to_string(),
                 &call.args,
                 &allowed_mcps,
@@ -139,4 +127,15 @@ impl Harness for McpHook {
             .await
         }))
     }
+}
+
+/// Call an MCP tool by name, or list available tools if no exact match.
+#[derive(Deserialize, JsonSchema)]
+pub struct Mcp {
+    /// Tool name to call. If no exact match, returns fuzzy matches.
+    /// Leave empty to list all available MCP tools.
+    pub name: String,
+    /// JSON-encoded arguments string (only used when calling a tool).
+    #[serde(default)]
+    pub args: Option<String>,
 }

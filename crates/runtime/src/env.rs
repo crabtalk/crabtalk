@@ -4,8 +4,7 @@
 //! `crabtalk`'s `SystemEnv` is the shipped one, bundling event
 //! broadcasting and a composite Harness. Tests use `()`.
 
-use crate::Harness;
-use crate::{AgentEvent, ToolDispatch, ToolFuture};
+use crate::{AgentEvent, Harness};
 use store::AgentId;
 use tokio::sync::broadcast;
 
@@ -39,31 +38,6 @@ pub trait Env: Send + Sync + 'static {
     /// is not supported.
     fn subscribe_events(&self) -> Option<broadcast::Receiver<proto::AgentEventMsg>> {
         None
-    }
-}
-
-/// Dispatch a tool call through an Env's hook. Utility for Env
-/// implementors building their ToolDispatcher impl.
-pub fn dispatch_tool<'a, E: Env>(
-    env: &'a E,
-    name: &'a str,
-    args: &'a str,
-    agent: &'a AgentId,
-    sender: &'a str,
-    session_id: Option<u64>,
-    call_id: &'a str,
-) -> ToolFuture<'a> {
-    let call = ToolDispatch {
-        args: args.to_owned(),
-        agent: *agent,
-        sender: sender.to_owned(),
-        session_id,
-        call_id: call_id.to_owned(),
-    };
-
-    match env.hook().dispatch(name, call) {
-        Some(fut) => fut,
-        None => Box::pin(async move { Err(format!("tool not registered: {name}")) }),
     }
 }
 

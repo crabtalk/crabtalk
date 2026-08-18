@@ -49,7 +49,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     pub(crate) fn subscribe_mcp_events(
         &self,
     ) -> impl futures_core::Stream<Item = Result<McpEventMsg>> + Send {
-        let mcp = self.mcp.clone();
+        let mcp = self.registry.mcp.handler.clone();
         async_stream::try_stream! {
             let mut rx = mcp.subscribe();
             loop {

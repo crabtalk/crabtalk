@@ -1,7 +1,7 @@
 //! `remember` — upsert a memory entry.
 
-use crate::ToolDispatch;
-use crate::harness::memory::MemoryHook;
+use super::MemoryHarness;
+use runtime::ToolDispatch;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use store::{MemoryEntry, interface::Memory};
@@ -18,7 +18,7 @@ pub struct Remember {
     pub aliases: Vec<String>,
 }
 
-impl<M: Memory> MemoryHook<M> {
+impl<M: Memory> MemoryHarness<M> {
     /// Upsert. `created_at` is preserved when the entry already exists,
     /// so re-remembering does not reset when it was first learned.
     pub async fn remember(&self, name: String, content: String, aliases: Vec<String>) -> String {

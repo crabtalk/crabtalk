@@ -8,11 +8,13 @@
 //! [`Harness::on_resolve_agent`](crate::Harness::on_resolve_agent) must
 //! be idempotent.
 
-use crate::engine::Runtime;
-use crate::{Agent, AgentBuilder, Config, Env, Harness, ToolDispatcher};
+use crate::{Agent, AgentBuilder, Config, Env, Harness, ToolDispatcher, engine::Runtime};
 use anyhow::Result;
 use std::sync::Arc;
-use store::{AgentConfig, AgentId, interface::Agents, interface::Sessions};
+use store::{
+    AgentConfig, AgentId,
+    interface::{Agents, Sessions},
+};
 
 impl<C: Config> Runtime<C> {
     /// One agent's config, or `None` if storage has no such agent.
