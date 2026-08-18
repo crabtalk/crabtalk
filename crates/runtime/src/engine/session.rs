@@ -53,6 +53,9 @@ impl<C: Config> Runtime<C> {
         // Held across the summarizing round trip, the way a run holds it.
         // Releasing it for the call would let a send land messages the
         // summary does not cover, which the truncation below then deletes.
+        if prompt.is_empty() {
+            return None;
+        }
         let mut session = session.lock().await;
         if session.history.is_empty() {
             return None;

@@ -12,9 +12,11 @@ impl<P: Provider + 'static> super::Agent<P> {
     /// Summarize the session history using the LLM.
     ///
     /// `prompt` is the caller-supplied summarization instruction, sent as
-    /// the system message alongside the history. Returns the summary text,
-    /// or `None` if the model produces no content or `cancel` fires before
-    /// the model responds.
+    /// the closing user turn — the same shape a normal turn gives its
+    /// history plus its new message (see [`super::Agent::build_request`]),
+    /// so this request's prefix can hit the cache the live conversation
+    /// already warmed. Returns the summary text, or `None` if the model
+    /// produces no content or `cancel` fires before the model responds.
     pub async fn compact(
         &self,
         history: &[HistoryEntry],
@@ -22,17 +24,19 @@ impl<P: Provider + 'static> super::Agent<P> {
         cancel: Option<CancellationToken>,
     ) -> Option<String> {
         let model_name = self.config.model.clone();
-        let mut messages = Vec::with_capacity(1 + history.len());
-        if !self.config.description.is_empty() {
-            messages.push(anthropic::Message {
-                role: "user".to_string(),
-                content: anthropic::Content::Text(format!(
-                    "Agent system prompt (preserve identity/profile info):\n{}",
-                    self.config.description
-                )),
-            });
-        }
+        let system = if self.config.description.is_empty() {
+            None
+        } else {
+            Some(anthropic::System::Blocks(vec![
+                anthropic::ContentBlock::Text {
+                    text: self.config.description.clone(),
+                    cache_control: Some(serde_json::json!({"type": "ephemeral"})),
+                },
+            ]))
+        };
+
         let max_len = self.config.compact_tool_max_len;
+        let mut messages = Vec::with_capacity(history.len() + 1);
         for entry in history {
             let mut msg = entry.to_wire_message();
             for block in msg.blocks_mut().into_iter().flatten() {
@@ -48,12 +52,16 @@ impl<P: Provider + 'static> super::Agent<P> {
             }
             messages.push(msg);
         }
+        messages.push(anthropic::Message {
+            role: "user".to_string(),
+            content: anthropic::Content::Text(prompt.to_owned()),
+        });
 
         let request = anthropic::Request {
             model: model_name,
             messages,
             max_tokens: anthropic::DEFAULT_MAX_TOKENS,
-            system: (!prompt.is_empty()).then(|| anthropic::System::Text(prompt.to_owned())),
+            system,
             temperature: None,
             top_p: None,
             stream: None,
