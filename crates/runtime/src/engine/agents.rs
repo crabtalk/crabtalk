@@ -43,6 +43,16 @@ impl<C: Config> Runtime<C> {
         self.agent(id).await.is_some()
     }
 
+    /// Every agent's id and name, for listings that put a name beside an
+    /// id. Reads each config once, however many rows are being labelled.
+    pub async fn agent_names(&self) -> std::collections::HashMap<AgentId, String> {
+        self.agents()
+            .await
+            .into_iter()
+            .map(|config| (config.id, config.name))
+            .collect()
+    }
+
     /// Build the agent for a run.
     ///
     /// The hook fires before the `Agent` exists, so anything tracking

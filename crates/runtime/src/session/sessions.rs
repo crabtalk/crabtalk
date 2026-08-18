@@ -170,12 +170,13 @@ impl Sessions {
                 .map(|l| (l.agent, l.created_by.clone(), l.session.clone()))
                 .collect()
         };
+        let names = rt.agent_names().await;
         let mut infos = Vec::with_capacity(entries.len());
         for (agent, sender, session) in entries {
             let c = session.lock().await;
             infos.push(ActiveConversationInfo {
                 agent_id: agent.to_string(),
-                agent_name: rt.agent(&agent).await.map(|a| a.name).unwrap_or_default(),
+                agent_name: names.get(&agent).cloned().unwrap_or_default(),
                 sender,
                 message_count: c.history.len() as u64,
                 alive_secs: c.created_at.elapsed().as_secs(),

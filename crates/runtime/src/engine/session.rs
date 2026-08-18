@@ -42,19 +42,16 @@ impl<C: Config> Runtime<C> {
     /// replace the live history with a single user message carrying
     /// the summary. Returns the summary on success.
     pub async fn compact(&self, session: &SharedSession) -> Option<String> {
-        // The summarizing call is made with the lock released — it is a
-        // full LLM round trip, and holding it would block every reader
-        // of this session for its duration.
-        let (agent, history) = {
-            let session = session.lock().await;
-            if session.history.is_empty() {
-                return None;
-            }
-            (session.agent, session.history.clone())
-        };
-        let summary = self.resolve_agent(&agent).await?.compact(&history).await?;
-
+        // Held across the summarizing round trip, the way a run holds it.
+        // Releasing it for the call would let a send land messages the
+        // summary does not cover, which the truncation below then deletes.
         let mut session = session.lock().await;
+        if session.history.is_empty() {
+            return None;
+        }
+        let agent = self.resolve_agent(&session.agent).await?;
+        let summary = agent.compact(&session.history).await?;
+
         self.ensure_handle(&mut session).await;
         let handle = session.handle.clone()?;
         let archive_name = self.write_archive(handle.as_str(), summary.clone()).await?;
@@ -153,11 +150,10 @@ impl<C: Config> Runtime<C> {
         // by a name, and both hold the same session's summary.
         let next_seq = self
             .storage()
-            .memory_names()
+            .memory_names_under(&prefix)
             .await
             .unwrap_or_default()
             .iter()
-            .filter(|name| name.starts_with(&prefix))
             .filter_map(|name| {
                 let suffix = &name[prefix.len()..];
                 let n: u32 = suffix.parse().ok()?;

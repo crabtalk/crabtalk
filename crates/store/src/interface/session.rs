@@ -264,15 +264,27 @@ pub trait Sessions: KVStorage + TextSearch {
         }
     }
 
+    /// Update the mutable half of a session's metadata: title, summary,
+    /// timestamps.
+    ///
+    /// `message_count` is not the caller's to set. It counts message
+    /// keys, `append` and `truncate` maintain it, and a caller sending
+    /// its own would be sending a live history length — which counts the
+    /// archive prefix and per-run framing, neither of which is a message
+    /// key. So the stored value wins over whatever arrives here.
     fn update_session_meta(
         &self,
         handle: &SessionHandle,
         meta: &SessionMeta,
     ) -> impl Future<Output = Result<()>> + Send {
         async move {
-            self.put_json(Column::Session, &self.meta_key(handle), meta)
+            let mut meta = meta.clone();
+            if let Some(stored) = self.session_meta(handle).await? {
+                meta.message_count = stored.message_count;
+            }
+            self.put_json(Column::Session, &self.meta_key(handle), &meta)
                 .await?;
-            self.index_meta_text(handle, meta).await
+            self.index_meta_text(handle, &meta).await
         }
     }
 

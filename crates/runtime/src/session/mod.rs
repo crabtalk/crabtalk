@@ -68,8 +68,11 @@ impl Session {
 
     /// Build a [`SessionMeta`] snapshot from this session's current
     /// state. `created_at` is sourced from the persisted ISO string
-    /// (immutable across writes); `updated_at` is stamped now;
-    /// `message_count` reflects the current history length.
+    /// (immutable across writes) and `updated_at` is stamped now.
+    ///
+    /// `message_count` is the live history length, which counts the
+    /// archive prefix and per-run framing — neither of which is a
+    /// stored message. The store discards it and keeps its own.
     pub fn meta(&self) -> SessionMeta {
         SessionMeta {
             agent: self.agent,

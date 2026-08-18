@@ -38,6 +38,10 @@ impl<C: Config> Runtime<C> {
         matched.sort_by(|(ah, am), (bh, bm)| {
             (&am.created_at, ah.as_str()).cmp(&(&bm.created_at, bh.as_str()))
         });
+        // One read per agent, not per session — there are few of the
+        // former and no bound on the latter.
+        let names = self.agent_names().await;
+
         let mut seqs: HashMap<(AgentId, &str), u32> = HashMap::new();
         let mut results = Vec::with_capacity(matched.len());
         for (handle, meta) in &matched {
@@ -47,11 +51,7 @@ impl<C: Config> Runtime<C> {
                 .or_insert(1);
             results.push(ConversationInfo {
                 agent_id: meta.agent.to_string(),
-                agent_name: self
-                    .agent(&meta.agent)
-                    .await
-                    .map(|a| a.name)
-                    .unwrap_or_default(),
+                agent_name: names.get(&meta.agent).cloned().unwrap_or_default(),
                 sender: meta.created_by.clone(),
                 seq: *seq,
                 title: meta.title.clone(),
