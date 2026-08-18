@@ -51,7 +51,9 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             .set(shared_runtime.clone())
             .unwrap_or_else(|_| panic!("runtime already initialized"));
 
-        let sessions = Arc::new(Sessions::default());
+        let sessions = Arc::new(Sessions::new(
+            config.cache.sessions.map(|mb| mb * 1024 * 1024),
+        ));
 
         let fire_runtime = shared_runtime.clone();
         let fire_sessions = sessions.clone();

@@ -18,8 +18,8 @@
 
 pub use agent::{AgentConfig, AgentId, DEFAULT_AGENT};
 pub use config::{
-    CONFIG_FILE, Config, HarnessConfig, HooksConfig, LlmConfig, McpConfig, McpServerConfig,
-    MemoryConfig, TasksConfig,
+    CONFIG_FILE, CacheConfig, Config, HarnessConfig, HooksConfig, LlmConfig, McpConfig,
+    McpServerConfig, MemoryConfig, TasksConfig,
 };
 pub use interface::{
     Agents, Backend, Harnesses, Memory, MemoryEntry, Sessions, Skill, SkillSummary, Skills,

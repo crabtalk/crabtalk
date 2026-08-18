@@ -8,10 +8,13 @@
 use std::{sync::Arc, time::Instant};
 use store::{AgentId, HistoryEntry, SessionHandle, SessionMeta};
 use tokio::sync::Mutex;
+pub use {
+    registry::{Live, Registry},
+    sessions::Sessions,
+};
 
+mod registry;
 mod sessions;
-
-pub use sessions::Sessions;
 
 /// A session shared between the registry that owns it and the engine
 /// that runs it. The lock is held for a whole agent run — that is what
@@ -51,6 +54,14 @@ pub struct Session {
 }
 
 impl Session {
+    /// Roughly what this session's history costs resident. What the live
+    /// registry's bound is spent on, and the reason that bound is bytes:
+    /// a fresh session is nothing and one at full context is megabytes,
+    /// so a count of them says little about the memory they hold.
+    pub fn bytes(&self) -> usize {
+        self.history.iter().map(HistoryEntry::bytes).sum()
+    }
+
     /// Create a new session with an empty history.
     pub fn new(id: u64, agent: &AgentId, created_by: &str) -> Self {
         Self {
