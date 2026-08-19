@@ -14,8 +14,10 @@
 //! the host it is embedded in can do.
 
 use anyhow::{Context, Result, bail};
+pub use manifest::{Manifest, ToolSpec};
 use object::{Object, ObjectSection};
 use rvtime::{Caller, Linker, Module, Store, TypedFunc};
+pub use rvtime::{Config, Engine};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 pub mod abi;
@@ -25,11 +27,6 @@ mod manifest;
 mod root;
 mod watchdog;
 pub mod wire;
-
-pub use manifest::{Manifest, ToolSpec};
-// An embedder configures and caches compiled code through these; re-exported
-// so embedding berm does not mean also depending on rvtime by name.
-pub use rvtime::{Config, Engine};
 
 /// A guest entry point: takes nothing, returns a pointer and a length.
 type Export = TypedFunc<(), (u64, u64)>;

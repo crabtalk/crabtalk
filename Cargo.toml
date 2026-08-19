@@ -24,7 +24,7 @@ embed = { path = "lib/embed", package = "crabtalk-embed", version = "0.0.23" }
 mcp = { path = "lib/mcp", package = "crabtalk-mcp", version = "0.0.23", default-features = false }
 search = { path = "lib/search", package = "crabtalk-search", version = "0.0.23", default-features = false }
 skill = { path = "lib/skill", package = "crabtalk-skill", version = "0.0.23" }
-berm = { path = "berm/engine", version = "0.0.23" }
+berm = { path = "berm/berm", version = "0.0.23" }
 berm-sdk = { path = "berm/sdk", version = "0.0.23" }
 berm-codegen = { path = "berm/codegen", version = "0.0.23" }
 
