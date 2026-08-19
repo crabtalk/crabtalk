@@ -16,7 +16,7 @@
 //! pool rather than running it on an async worker.
 
 use crate::{Dispatch, Scope};
-use berm::{Capability, Config, Engine, Grants, Harness};
+use berm::{Capability, Config, Engine, Grants, Harness, Manifest};
 use crabllm_core::{FunctionDef, Tool, ToolType};
 use runtime::{ToolDispatch, ToolFuture};
 use sha2::{Digest as _, Sha256};
@@ -273,7 +273,7 @@ impl runtime::Harness for BermHarness {
             let path = crate::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
             let usage = std::fs::read(&path)
                 .ok()
-                .and_then(|elf| berm::manifest(&elf).ok())
+                .and_then(|elf| Manifest::from_elf(&elf).ok())
                 .map(|manifest| manifest.usage)
                 .unwrap_or_default();
             if !usage.is_empty() {

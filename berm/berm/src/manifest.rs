@@ -6,7 +6,10 @@
 //! author wants — which is documentation, not a grant.
 
 use anyhow::{Context, Result, bail};
+use object::{Object, ObjectSection};
 use serde::Deserialize;
+
+use crate::abi;
 
 /// The ABI this host speaks. A harness built against a different one is
 /// refused rather than dispatched into a capability its author did not mean.
@@ -28,15 +31,25 @@ pub struct Manifest {
     pub usage: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct ToolSpec {
-    pub name: String,
-    pub description: String,
-    /// JSON Schema for the tool's arguments, as the model receives it.
-    pub parameters: serde_json::Value,
-}
-
 impl Manifest {
+    /// Pull the manifest out of the ELF. This runs before anything is compiled,
+    /// let alone executed — a harness gets to describe itself without being given
+    /// a turn.
+    /// Read what an ELF claims to be, without compiling or running it.
+    ///
+    /// This is what the section is *for* (RFC 0205): learning a harness's tools,
+    /// wants, and usage must not mean instantiating it. An embedder assembling a
+    /// prompt or listing a registry needs exactly this and nothing else.
+    pub fn from_elf(elf: &[u8]) -> Result<Self> {
+        let file = object::File::parse(elf).context("harness is not a readable ELF")?;
+        let section = file
+            .section_by_name(abi::ABI_SECTION)
+            .with_context(|| format!("harness has no {} section", abi::ABI_SECTION))?;
+        let bytes = section.data().context("harness manifest is unreadable")?;
+        let json = String::from_utf8(bytes.to_vec()).context("harness manifest is not UTF-8")?;
+        Self::parse(&json)
+    }
+
     pub fn parse(json: &str) -> Result<Self> {
         let manifest: Manifest =
             serde_json::from_str(json).context("harness manifest is not valid JSON")?;
@@ -48,4 +61,12 @@ impl Manifest {
         }
         Ok(manifest)
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ToolSpec {
+    pub name: String,
+    pub description: String,
+    /// JSON Schema for the tool's arguments, as the model receives it.
+    pub parameters: serde_json::Value,
 }

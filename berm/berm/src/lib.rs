@@ -15,7 +15,6 @@
 
 use anyhow::{Context, Result, bail};
 pub use manifest::{Manifest, ToolSpec};
-use object::{Object, ObjectSection};
 use rvtime::{Caller, Linker, Module, Store, TypedFunc};
 pub use rvtime::{Config, Engine};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
@@ -31,57 +30,9 @@ pub mod wire;
 /// A guest entry point: takes nothing, returns a pointer and a length.
 type Export = TypedFunc<(), (u64, u64)>;
 
-/// What a harness may reach.
-///
-/// A capability missing here is missing from the [`Linker`], and that absence
-/// is the enforcement — there is no check to write and no check to forget.
-/// `root` is the argument to both `fs` and `exec`, and the grant is the
-/// argument: without it neither is registered, so an under-specified
-/// declaration reaches nothing rather than everything.
-#[derive(Debug, Default, Clone)]
-pub struct Grants {
-    /// The subtree `fs` and `exec` are bounded by.
-    pub root: Option<PathBuf>,
-    /// Read and write files.
-    pub fs: bool,
-    /// Run commands.
-    pub exec: bool,
-}
-
 /// What a capability does: request bytes in, result bytes out. An `Err`
 /// reaches the guest as a failure message on the same wire as a result.
 pub type Call = Arc<dyn Fn(&[u8]) -> Result<Vec<u8>> + Send + Sync>;
-
-/// A capability the embedder implements.
-///
-/// berm knows `fs` and `exec` because they are about the machine, which every
-/// host has. Anything about the *host* — its own API, its storage, whatever it
-/// is — is supplied as one of these instead, so embedding berm never means
-/// patching it.
-///
-/// The name is hashed to the number the guest puts in `a7`, exactly as the
-/// built-in capabilities are, so an embedder's capability is not a second
-/// class of thing.
-#[derive(Clone)]
-pub struct Capability {
-    /// What the guest calls it, e.g. `crabtalk.protocol.call`.
-    pub name: String,
-    /// What it does.
-    pub call: Call,
-}
-
-/// Guest state for one invocation. Memory is per-invocation; anything a
-/// harness needs to survive belongs in a storage capability, not here.
-pub struct Invocation {
-    args: Vec<u8>,
-    /// The last capability call's result, waiting for the guest to pull it.
-    /// Staged rather than pushed because its size is not known until the work
-    /// is done, and doing the work twice to measure it is not an option.
-    result: Vec<u8>,
-    /// Set when the guest reports failure, which is how a tool that failed is
-    /// told apart from one that returned the word "error".
-    failure: Option<String>,
-}
 
 /// A compiled harness. Compilation is paid once per ELF; every invocation
 /// gets a fresh [`Store`] so no guest state crosses between calls.
@@ -172,7 +123,7 @@ impl Harness {
                 linker.func_wrap(
                     abi::HOST_FS_READ,
                     move |caller: Caller<'_, Invocation>, ptr, len| {
-                        stage(caller, ptr, len, |request| fs::read(&read, request))
+                        Invocation::stage(caller, ptr, len, |request| fs::read(&read, request))
                     },
                 )?;
 
@@ -180,7 +131,7 @@ impl Harness {
                 linker.func_wrap(
                     abi::HOST_FS_WRITE,
                     move |caller: Caller<'_, Invocation>, ptr, len| {
-                        stage(caller, ptr, len, |request| fs::write(&write, request))
+                        Invocation::stage(caller, ptr, len, |request| fs::write(&write, request))
                     },
                 )?;
             }
@@ -189,7 +140,7 @@ impl Harness {
                 linker.func_wrap(
                     abi::HOST_EXEC_RUN,
                     move |caller: Caller<'_, Invocation>, ptr, len| {
-                        stage(caller, ptr, len, |request| exec::run(&root, request))
+                        Invocation::stage(caller, ptr, len, |request| exec::run(&root, request))
                     },
                 )?;
             }
@@ -201,7 +152,7 @@ impl Harness {
                 abi::hash(&capability.name),
                 move |caller: Caller<'_, Invocation>, ptr, len| {
                     let call = call.clone();
-                    stage(caller, ptr, len, move |request| call(request))
+                    Invocation::stage(caller, ptr, len, move |request| call(request))
                 },
             )?;
         }
@@ -228,7 +179,7 @@ impl Harness {
         // dispatch, on a model's turn, as a missing symbol. The symbol table
         // and the manifest are both in hand here, so disagreement is caught
         // before the harness is ever offered.
-        let manifest = Manifest::parse(&section(elf)?)?;
+        let manifest = Manifest::from_elf(elf)?;
         for tool in &manifest.tools {
             if !tools.contains_key(&tool.name) {
                 bail!(
@@ -281,7 +232,11 @@ impl Harness {
         if let Some(failure) = store.data_mut().failure.take() {
             return Ok(Err(failure));
         }
-        Ok(Ok(read(&store, ptr, len)?))
+
+        let result = store.read(ptr, len)?;
+        Ok(Ok(
+            String::from_utf8(result.to_vec()).context("harness returned invalid UTF-8")?
+        ))
     }
 
     /// A store with the guest mapped into it and its heap handed over.
@@ -299,6 +254,19 @@ impl Harness {
     }
 }
 
+/// Guest state for one invocation. Memory is per-invocation; anything a
+/// harness needs to survive belongs in a storage capability, not here.
+pub struct Invocation {
+    args: Vec<u8>,
+    /// The last capability call's result, waiting for the guest to pull it.
+    /// Staged rather than pushed because its size is not known until the work
+    /// is done, and doing the work twice to measure it is not an option.
+    result: Vec<u8>,
+    /// Set when the guest reports failure, which is how a tool that failed is
+    /// told apart from one that returned the word "error".
+    failure: Option<String>,
+}
+
 impl Invocation {
     fn empty() -> Self {
         Self {
@@ -307,52 +275,61 @@ impl Invocation {
             failure: None,
         }
     }
+
+    /// Run one capability and leave its bytes for the guest to pull.
+    ///
+    /// Failure rides on the same return value: the [`abi::ERROR`] bit says the
+    /// staged bytes are a message. A capability that fails therefore costs the
+    /// guest nothing extra to find out about, and an empty result cannot be
+    /// mistaken for one.
+    pub fn stage(
+        mut caller: Caller<'_, Self>,
+        ptr: u64,
+        len: u64,
+        capability: impl FnOnce(&[u8]) -> Result<Vec<u8>>,
+    ) -> Result<u64> {
+        let request = caller.read(ptr, len)?.to_vec();
+        let (staged, outcome) = match capability(&request) {
+            Ok(result) => (result, 0),
+            Err(error) => (error.to_string().into_bytes(), abi::ERROR),
+        };
+        let length = staged.len() as u64;
+        caller.data_mut().result = staged;
+        Ok(length | outcome)
+    }
 }
 
-/// Run one capability and leave its bytes for the guest to pull.
+/// What a harness may reach.
 ///
-/// Failure rides on the same return value: the [`abi::ERROR`] bit says the
-/// staged bytes are a message. A capability that fails therefore costs the
-/// guest nothing extra to find out about, and an empty result cannot be
-/// mistaken for one.
-fn stage(
-    mut caller: Caller<'_, Invocation>,
-    ptr: u64,
-    len: u64,
-    capability: impl FnOnce(&[u8]) -> Result<Vec<u8>>,
-) -> Result<u64> {
-    let request = caller.read(ptr, len)?.to_vec();
-    let (staged, outcome) = match capability(&request) {
-        Ok(result) => (result, 0),
-        Err(error) => (error.to_string().into_bytes(), abi::ERROR),
-    };
-    let length = staged.len() as u64;
-    caller.data_mut().result = staged;
-    Ok(length | outcome)
+/// A capability missing here is missing from the [`Linker`], and that absence
+/// is the enforcement — there is no check to write and no check to forget.
+/// `root` is the argument to both `fs` and `exec`, and the grant is the
+/// argument: without it neither is registered, so an under-specified
+/// declaration reaches nothing rather than everything.
+#[derive(Debug, Default, Clone)]
+pub struct Grants {
+    /// The subtree `fs` and `exec` are bounded by.
+    pub root: Option<PathBuf>,
+    /// Read and write files.
+    pub fs: bool,
+    /// Run commands.
+    pub exec: bool,
 }
 
-/// Pull the manifest out of the ELF. This runs before anything is compiled,
-/// let alone executed — a harness gets to describe itself without being given
-/// a turn.
-/// Read what an ELF claims to be, without compiling or running it.
+/// A capability the embedder implements.
 ///
-/// This is what the section is *for* (RFC 0205): learning a harness's tools,
-/// wants, and usage must not mean instantiating it. An embedder assembling a
-/// prompt or listing a registry needs exactly this and nothing else.
-pub fn manifest(elf: &[u8]) -> Result<Manifest> {
-    Manifest::parse(&section(elf)?)
-}
-
-fn section(elf: &[u8]) -> Result<String> {
-    let file = object::File::parse(elf).context("harness is not a readable ELF")?;
-    let section = file
-        .section_by_name(abi::ABI_SECTION)
-        .with_context(|| format!("harness has no {} section", abi::ABI_SECTION))?;
-    let bytes = section.data().context("harness manifest is unreadable")?;
-    String::from_utf8(bytes.to_vec()).context("harness manifest is not UTF-8")
-}
-
-fn read(store: &Store<Invocation>, ptr: u64, len: u64) -> Result<String> {
-    let bytes = store.read(ptr, len)?;
-    String::from_utf8(bytes.to_vec()).context("harness returned invalid UTF-8")
+/// berm knows `fs` and `exec` because they are about the machine, which every
+/// host has. Anything about the *host* — its own API, its storage, whatever it
+/// is — is supplied as one of these instead, so embedding berm never means
+/// patching it.
+///
+/// The name is hashed to the number the guest puts in `a7`, exactly as the
+/// built-in capabilities are, so an embedder's capability is not a second
+/// class of thing.
+#[derive(Clone)]
+pub struct Capability {
+    /// What the guest calls it, e.g. `crabtalk.protocol.call`.
+    pub name: String,
+    /// What it does.
+    pub call: Call,
 }
