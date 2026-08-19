@@ -66,15 +66,16 @@ pub trait Sessions: KVStorage + TextSearch {
         Weights::default()
     }
 
+    /// Persist a brand-new session under `handle` — chosen by the
+    /// caller, not minted here. The handle encodes nothing, so renaming
+    /// an agent never orphans its transcripts.
     fn create_session(
         &self,
+        handle: &SessionHandle,
         agent: &AgentId,
         created_by: &str,
-    ) -> impl Future<Output = Result<SessionHandle>> + Send {
+    ) -> impl Future<Output = Result<()>> + Send {
         async move {
-            // Opaque identity: the handle encodes nothing, so renaming an
-            // agent never orphans its transcripts.
-            let handle = SessionHandle::new(ulid::Ulid::new().to_string());
             let now = chrono::Utc::now().to_rfc3339();
             let meta = SessionMeta {
                 agent: *agent,
@@ -85,33 +86,15 @@ pub trait Sessions: KVStorage + TextSearch {
                 message_count: 0,
                 summary: None,
             };
-            self.put_json(Column::Session, &self.meta_key(&handle), &meta)
+            self.put_json(Column::Session, &self.meta_key(handle), &meta)
                 .await?;
             self.put(
                 Column::Session,
-                &self.session_index_key(&meta, &handle),
+                &self.session_index_key(&meta, handle),
                 handle.as_str().as_bytes(),
             )
             .await?;
-            Ok(handle)
-        }
-    }
-
-    /// The newest session for an identity is the last key under its
-    /// prefix — `created_at` is RFC3339 and sorts lexicographically, so
-    /// this is a scan and a `last()`, not a query.
-    fn find_latest_session(
-        &self,
-        agent: &AgentId,
-        created_by: &str,
-    ) -> impl Future<Output = Result<Option<SessionHandle>>> + Send {
-        async move {
-            let prefix = self.prefix(&["idx", "sess", &agent.to_string(), created_by]);
-            let rows = self.scan(Column::Session, &prefix).await?;
-            Ok(rows
-                .last()
-                .and_then(|(_, handle)| String::from_utf8(handle.clone()).ok())
-                .map(SessionHandle::new))
+            Ok(())
         }
     }
 
@@ -433,7 +416,7 @@ pub trait Sessions: KVStorage + TextSearch {
     }
 
     /// `(agent, created_by, created_at)` → handle. Ordered by
-    /// construction, which is what makes `find_latest_session` a scan.
+    /// construction, which is what makes `indexed_handles` a scan.
     fn session_index_key(&self, meta: &SessionMeta, handle: &SessionHandle) -> Vec<u8> {
         self.key(&[
             "idx",

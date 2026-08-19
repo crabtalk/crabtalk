@@ -26,7 +26,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicU64, AtomicUsize, Ordering},
 };
-use store::{AgentId, interface::Sessions as _};
+use store::{AgentId, SessionHandle, interface::Sessions as _};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -60,16 +60,18 @@ impl Sessions {
         }
     }
 
-    /// The live session for an (agent, created_by) identity,
-    /// resuming that identity's latest persisted session on first touch
-    /// and starting an empty one if it has none.
-    pub async fn get_or_create<C: Config>(
+    /// Open a session by handle: a live hit returns immediately; a miss
+    /// loads it from storage if it exists there, or creates it fresh
+    /// under exactly this handle if it doesn't. The caller picks the
+    /// handle — this only ever answers "is this one already something."
+    pub async fn open<C: Config>(
         &self,
         rt: &Runtime<C>,
+        handle: SessionHandle,
         agent: &AgentId,
         created_by: &str,
     ) -> Result<(u64, SharedSession)> {
-        if let Some(found) = self.find(agent, created_by) {
+        if let Some(found) = self.find_by_handle(&handle) {
             // A session grows during its runs, and this is the only
             // moment one is both known and idle. Re-pricing it here is
             // what keeps the bound honest between inserts — otherwise a
@@ -78,21 +80,28 @@ impl Sessions {
             self.reprice(found.0);
             return Ok(found);
         }
-        if rt.agent(agent).await.is_none() {
-            anyhow::bail!("agent '{agent}' not registered");
-        }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let session = match rt.storage().find_latest_session(agent, created_by).await? {
-            Some(handle) => rt.load(handle, id).await?,
-            None => Session::new(id, agent, created_by),
+        let session = match rt.load(handle.clone(), id).await? {
+            Some(session) => session,
+            None => {
+                if rt.agent(agent).await.is_none() {
+                    anyhow::bail!("agent '{agent}' not registered");
+                }
+                rt.storage()
+                    .create_session(&handle, agent, created_by)
+                    .await?;
+                let mut session = Session::new(id, agent, created_by);
+                session.handle = Some(handle);
+                session
+            }
         };
         Ok(self.insert(session))
     }
 
-    /// Look up a live session by the identity clients address it by.
-    pub fn find(&self, agent: &AgentId, created_by: &str) -> Option<(u64, SharedSession)> {
+    /// Look up a live session by the handle clients address it by.
+    pub fn find_by_handle(&self, handle: &SessionHandle) -> Option<(u64, SharedSession)> {
         let registry = self.registry.read();
-        let id = *registry.by_identity.get(&(*agent, created_by.to_owned()))?;
+        let id = *registry.by_handle.get(handle)?;
         let live = registry.by_id.get(&id)?;
         self.touch(live);
         Some((id, live.session.clone()))
@@ -136,8 +145,12 @@ impl Sessions {
     fn insert(&self, session: Session) -> (u64, SharedSession) {
         let id = session.id;
         let bytes = session.bytes();
+        let handle = session
+            .handle
+            .clone()
+            .expect("session registered live without a handle");
         let live = Live {
-            identity: (session.agent, session.created_by.clone()),
+            handle,
             session: Arc::new(Mutex::new(session)),
             cancel: None,
             touched: AtomicU64::new(self.tick.fetch_add(1, Ordering::Relaxed)),
@@ -243,20 +256,21 @@ impl Sessions {
             registry
                 .by_id
                 .values()
-                .map(|l| (l.identity.clone(), l.session.clone()))
+                .map(|l| (l.handle.clone(), l.session.clone()))
                 .collect()
         };
         let names = rt.agent_names().await;
         let mut infos = Vec::with_capacity(entries.len());
-        for ((agent, sender), session) in entries {
+        for (handle, session) in entries {
             let c = session.lock().await;
             infos.push(ActiveConversationInfo {
-                agent_id: agent.to_string(),
-                agent_name: names.get(&agent).cloned().unwrap_or_default(),
-                sender,
+                agent_id: c.agent.to_string(),
+                agent_name: names.get(&c.agent).cloned().unwrap_or_default(),
+                sender: c.created_by.clone(),
                 message_count: c.history.len() as u64,
                 alive_secs: c.created_at.elapsed().as_secs(),
                 title: c.title.clone(),
+                session_handle: handle.as_str().to_owned(),
             });
         }
         infos

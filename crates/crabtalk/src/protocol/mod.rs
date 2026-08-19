@@ -6,7 +6,7 @@ use proto::{server::Server, *};
 use runtime::Sessions;
 use serde_json::Value;
 use std::sync::Arc;
-use store::{AgentId, interface::Backend};
+use store::{AgentId, SessionHandle, interface::Backend};
 
 mod admin;
 mod config;
@@ -24,22 +24,18 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
         self.stream(req)
     }
 
-    async fn compact_conversation(
-        &self,
-        agent: String,
-        sender: String,
-        prompt: String,
-    ) -> Result<String> {
-        let agent = parse_agent(&agent)?;
+    async fn compact_conversation(&self, session_handle: String, prompt: String) -> Result<String> {
         let rt = self.runtime.read().await.clone();
-        let (id, session) = self.sessions.find(&agent, &sender).ok_or_else(|| {
-            anyhow::anyhow!("session not found for agent='{agent}' sender='{sender}'")
-        })?;
+        let handle = SessionHandle::new(session_handle.as_str());
+        let (id, session) = self
+            .sessions
+            .find_by_handle(&handle)
+            .ok_or_else(|| anyhow::anyhow!("session not found for handle='{session_handle}'"))?;
         let cancel = self.sessions.begin_cancel(id);
         let _cancel_guard = CancelGuard::new(self.sessions.clone(), id);
         rt.compact(&session, &prompt, cancel)
             .await
-            .ok_or_else(|| anyhow::anyhow!("compact failed for agent='{agent}' sender='{sender}'"))
+            .ok_or_else(|| anyhow::anyhow!("compact failed for handle='{session_handle}'"))
     }
 
     async fn ping(&self) -> Result<()> {
@@ -51,8 +47,8 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
         Ok(self.sessions.list_active(&rt).await)
     }
 
-    async fn kill_conversation(&self, agent: String, sender: String) -> Result<bool> {
-        self.kill_conversation(&parse_agent(&agent)?, &sender).await
+    async fn kill_conversation(&self, session_handle: String) -> Result<bool> {
+        self.kill_conversation(&session_handle).await
     }
 
     fn subscribe_events(&self) -> impl futures_core::Stream<Item = Result<AgentEventMsg>> + Send {
@@ -85,14 +81,9 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
     }
 
     async fn cancel_stream(&self, req: CancelStreamMsg) -> Result<()> {
-        let sender = if req.sender.is_empty() {
-            "user".to_owned()
-        } else {
-            req.sender
-        };
-        let agent = parse_agent(&req.agent)?;
-        let (id, _) = self.sessions.find(&agent, &sender).ok_or_else(|| {
-            anyhow::anyhow!("session not found for agent='{agent}' sender='{sender}'")
+        let handle = SessionHandle::new(req.session_handle.as_str());
+        let (id, _) = self.sessions.find_by_handle(&handle).ok_or_else(|| {
+            anyhow::anyhow!("session not found for handle='{}'", req.session_handle)
         })?;
         self.sessions.cancel(id)
     }

@@ -71,7 +71,7 @@ Text     idx/text/{ix}/doc/{key}                 len, weight, terms
          idx/text/{ix}/stats                     doc count, total length
 ```
 
-Ordering is load-bearing rather than incidental. `created_at` is RFC3339 and sorts lexicographically, so the newest session for an identity is the last key under its prefix and `find_latest_session` is a scan and a `.last()`. `agent_ids` reads ids straight out of the name index, already name-sorted, touching no configs. Message indices are zero-padded to twelve digits because keys sort as bytes and `"10"` would otherwise precede `"2"`.
+Ordering is load-bearing rather than incidental. `created_at` is RFC3339 and sorts lexicographically, so `indexed_handles` reads an agent's sessions newest-last with no separate sort step. `agent_ids` reads ids straight out of the name index, already name-sorted, touching no configs. Message indices are zero-padded to twelve digits because keys sort as bytes and `"10"` would otherwise precede `"2"`.
 
 Two shapes appear, each chosen by its dominant access. A session's keys nest under its handle so deleting one is a single prefix sweep. A skill's metadata and body are separate keys so a listing reads names without touching markdown — that property is structural rather than a convention each backend must remember.
 

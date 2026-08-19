@@ -11,16 +11,15 @@ use store::{
 use tokio_util::sync::CancellationToken;
 
 impl<C: Config> Runtime<C> {
-    /// Rebuild a persisted session into a live one under `id`.
+    /// Rebuild a persisted session into a live one under `id`. `Ok(None)`
+    /// if `handle` names no persisted session.
     ///
     /// Registering it is the caller's business; this only reads storage
     /// and replays the archived prefix.
-    pub async fn load(&self, handle: SessionHandle, id: u64) -> Result<Session> {
-        let snapshot = self
-            .storage()
-            .load_session(&handle)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("session '{}' not found", handle.as_str()))?;
+    pub async fn load(&self, handle: SessionHandle, id: u64) -> Result<Option<Session>> {
+        let Some(snapshot) = self.storage().load_session(&handle).await? else {
+            return Ok(None);
+        };
         if !self.has_agent(&snapshot.meta.agent).await {
             bail!("agent '{}' not found", snapshot.meta.agent);
         }
@@ -34,7 +33,7 @@ impl<C: Config> Runtime<C> {
         }
         session.summary = snapshot.meta.summary;
         session.handle = Some(handle);
-        Ok(session)
+        Ok(Some(session))
     }
 
     /// Compact a session in-place: summarize history with the
@@ -63,7 +62,6 @@ impl<C: Config> Runtime<C> {
         let agent = self.resolve_agent(&session.agent).await?;
         let summary = agent.compact(&session.history, prompt, cancel).await?;
 
-        self.ensure_handle(&mut session).await;
         let handle = session.handle.clone()?;
         let archive_name = self.write_archive(handle.as_str(), summary.clone()).await?;
 
@@ -193,35 +191,21 @@ impl<C: Config> Runtime<C> {
         }
     }
 
-    /// Ensure the session has a persistent handle, creating one via
-    /// the repo if needed. Sessions persist unconditionally — every
-    /// session reaches storage on first persist call.
-    async fn ensure_handle(&self, session: &mut Session) {
-        if session.handle.is_some() {
-            return;
-        }
-        let storage = self.storage();
-        match storage
-            .create_session(&session.agent, &session.created_by)
-            .await
-        {
-            Ok(handle) => session.handle = Some(handle),
-            Err(e) => tracing::warn!("failed to create session: {e}"),
-        }
-    }
-
     /// Post-run tail shared by `send_to`, `stream_to`, and
     /// `guest_stream_to`: persist messages and event trace. Also threads
     /// each newly persisted entry into the session search index so
     /// `search_sessions` finds live work without waiting for a process
     /// restart.
+    ///
+    /// Every live session already has a handle — `Sessions::open`
+    /// creates or loads one before registering it — so the guard below
+    /// is a defensive no-op, not the normal path.
     pub(crate) async fn finalize_run(
         &self,
         session: &mut Session,
         pre_run_len: usize,
         event_trace: &[store::EventLine],
     ) {
-        self.ensure_handle(session).await;
         let Some(ref handle) = session.handle else {
             return;
         };

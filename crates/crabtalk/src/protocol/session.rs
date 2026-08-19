@@ -11,7 +11,7 @@ use futures_util::{StreamExt, pin_mut};
 use proto::*;
 use runtime::AgentEvent;
 use std::sync::Arc;
-use store::{AgentId, SearchOptions, interface::Backend};
+use store::{SearchOptions, SessionHandle, interface::Backend};
 
 impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     /// Ranked excerpts from past sessions.
@@ -69,11 +69,15 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     }
 
     pub(crate) async fn send(&self, req: SendMsg) -> Result<SendResponse> {
+        if req.session_handle.is_empty() {
+            anyhow::bail!("session_handle is required");
+        }
         let agent = parse_agent(&req.agent)?;
         let rt: Arc<_> = self.runtime.read().await.clone();
         let sender = req.sender.as_deref().unwrap_or("");
         let created_by = if sender.is_empty() { "user" } else { sender };
-        let (_, session) = self.sessions.get_or_create(&rt, &agent, created_by).await?;
+        let handle = SessionHandle::new(req.session_handle);
+        let (_, session) = self.sessions.open(&rt, handle, &agent, created_by).await?;
         let tool_choice = req
             .tool_choice
             .map(|s| crabllm_core::ToolChoice::from(s.as_str()));
@@ -104,6 +108,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             .map(|s| crabllm_core::ToolChoice::from(s.as_str()));
         let ephemeral = req.ephemeral;
         let correlation_id = req.correlation_id.unwrap_or(0);
+        let session_handle = req.session_handle;
         async_stream::try_stream! {
             let agent = parse_agent(&agent)?;
             let guest = match guest.as_str() {
@@ -131,9 +136,13 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
                 return;
             }
 
+            if session_handle.is_empty() {
+                Err(anyhow::anyhow!("session_handle is required"))?;
+            }
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
-            let (session_id, session) =
-                sessions.get_or_create(&rt, &agent, created_by.as_str()).await?;
+            let (session_id, session) = sessions
+                .open(&rt, SessionHandle::new(session_handle), &agent, created_by.as_str())
+                .await?;
             // Clears the cancellation token on any exit path — stream end,
             // early return on Done, or the consumer dropping the stream —
             // so a later cancel reports "no cancellable operation" instead of
@@ -167,8 +176,9 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         }
     }
 
-    pub(crate) async fn kill_conversation(&self, agent: &AgentId, sender: &str) -> Result<bool> {
-        let Some((session_id, _)) = self.sessions.find(agent, sender) else {
+    pub(crate) async fn kill_conversation(&self, session_handle: &str) -> Result<bool> {
+        let handle = SessionHandle::new(session_handle);
+        let Some((session_id, _)) = self.sessions.find_by_handle(&handle) else {
             return Ok(false);
         };
         Ok(self.sessions.close(session_id))

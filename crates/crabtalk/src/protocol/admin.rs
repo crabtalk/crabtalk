@@ -73,6 +73,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             source: req.source,
             target_agent: target,
             once: req.once,
+            session_handle: ulid::Ulid::new().to_string(),
         };
         let created = self.events.lock().subscribe(sub);
         Ok(SubscriptionInfo::from(&created))

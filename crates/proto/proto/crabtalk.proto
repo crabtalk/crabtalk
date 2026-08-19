@@ -100,6 +100,8 @@ message SendMsg {
   // The agent's ULID. Resolve a name with GetAgent.
   string agent = 1;
   string content = 2;
+  // Attribution for a session, read only the first time `session_handle`
+  // is seen — an existing session's identity doesn't change after.
   optional string sender = 4;
   // tag 5 was `cwd` — removed. The daemon does not read the user's
   // filesystem. Clients render local instructions (e.g. Crab.md) into
@@ -113,12 +115,18 @@ message SendMsg {
   optional string tool_choice = 7;
   reserved 8;
   reserved "tools";
+  // Addresses the session this call runs against — the caller picks it
+  // (any opaque, unique string). A handle the daemon has never seen
+  // starts a new session under exactly that handle.
+  string session_handle = 9;
 }
 
 message StreamMsg {
   // The agent's ULID. Resolve a name with GetAgent.
   string agent = 1;
   string content = 2;
+  // Attribution for a session, read only the first time `session_handle`
+  // is seen — an existing session's identity doesn't change after.
   optional string sender = 4;
   reserved 5;
   reserved "cwd";
@@ -135,6 +143,11 @@ message StreamMsg {
   // Caller-chosen id used to tag the ephemeral broadcast so observers can
   // group its events. Ignored unless `ephemeral` is set.
   optional uint64 correlation_id = 10;
+  // Addresses the session this call runs against — the caller picks it
+  // (any opaque, unique string). A handle the daemon has never seen
+  // starts a new session under exactly that handle. Ignored when
+  // `ephemeral` is set.
+  string session_handle = 11;
 }
 
 
@@ -149,13 +162,17 @@ message GetConfig {}
 message GetStats {}
 
 message KillMsg {
-  string agent = 1;
-  string sender = 2;
+  // An (agent, sender) pair only ever named the one live session that
+  // identity could resolve to. A handle names the session directly.
+  reserved 1, 2;
+  reserved "agent", "sender";
+  string session_handle = 3;
 }
 
 message CancelStreamMsg {
-  string agent = 1;
-  string sender = 2;
+  reserved 1, 2;
+  reserved "agent", "sender";
+  string session_handle = 3;
 }
 
 // ── Event Bus ───────────────────────────────────────────────────
@@ -189,11 +206,12 @@ message SubscriptionList {
 }
 
 message CompactMsg {
-  string agent = 1;
-  string sender = 2;
+  reserved 1, 2;
+  reserved "agent", "sender";
   // Summarization instructions for the compaction LLM call. The daemon
   // carries no built-in prompt — the client decides how a summary reads.
   string prompt = 3;
+  string session_handle = 4;
 }
 
 message ListAgentsMsg {}
@@ -558,6 +576,7 @@ message ActiveConversationInfo {
   uint64 message_count = 3;
   uint64 alive_secs = 4;
   string title = 5;
+  string session_handle = 8;
 }
 
 enum AgentEventKind {

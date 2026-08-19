@@ -70,19 +70,23 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             let runtime = fire_runtime.clone();
             let sessions = fire_sessions.clone();
             let target_agent = sub.target_agent;
-            let source = sub.source.clone();
+            let created_by = format!("event:{}", sub.source);
+            let handle = store::SessionHandle::new(sub.session_handle.clone());
             let payload = payload.to_owned();
             tokio::spawn(async move {
                 let rt = runtime.read().await.clone();
-                let sender = format!("event:{source}");
-                let session = match sessions.get_or_create(&rt, &target_agent, &sender).await {
-                    Ok((_, session)) => session,
-                    Err(e) => {
-                        tracing::warn!("event fire: session(agent='{target_agent}'): {e}");
-                        return;
-                    }
-                };
-                if let Err(e) = rt.send_to(&session, &payload, &sender, None, vec![]).await {
+                let (_, session) =
+                    match sessions.open(&rt, handle, &target_agent, &created_by).await {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::warn!("event fire: session(agent='{target_agent}'): {e}");
+                            return;
+                        }
+                    };
+                if let Err(e) = rt
+                    .send_to(&session, &payload, &created_by, None, vec![])
+                    .await
+                {
                     tracing::warn!("event fire: send_to(agent='{target_agent}'): {e}");
                 }
             });

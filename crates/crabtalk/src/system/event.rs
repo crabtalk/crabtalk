@@ -16,6 +16,11 @@ pub struct EventSubscription {
     pub target_agent: AgentId,
     #[serde(default)]
     pub once: bool,
+    /// The session recurring fires land in. Minted when the subscription
+    /// is created — there is no client turn on a later fire to hand a
+    /// fresh handle back to, so it has to already exist by then.
+    #[serde(default)]
+    pub session_handle: String,
 }
 
 impl From<&EventSubscription> for proto::SubscriptionInfo {

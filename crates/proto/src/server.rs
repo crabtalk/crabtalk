@@ -61,11 +61,10 @@ pub trait Server: Sync {
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<crate::ActiveConversationInfo>>> + Send;
 
-    /// Handle `Kill` — close a conversation by (agent, sender).
+    /// Handle `Kill` — close a conversation by session handle.
     fn kill_conversation(
         &self,
-        agent: String,
-        sender: String,
+        session_handle: String,
     ) -> impl std::future::Future<Output = Result<bool>> + Send;
 
     /// Handle `SubscribeEvents` — stream agent events.
@@ -102,8 +101,7 @@ pub trait Server: Sync {
     /// daemon holds no built-in one.
     fn compact_conversation(
         &self,
-        agent: String,
-        sender: String,
+        session_handle: String,
         prompt: String,
     ) -> impl std::future::Future<Output = Result<String>> + Send;
 
@@ -277,11 +275,11 @@ pub trait Server: Sync {
                     };
                 }
                 client_message::Msg::Kill(kill_msg) => {
-                    yield match self.kill_conversation(kill_msg.agent.clone(), kill_msg.sender.clone()).await {
+                    yield match self.kill_conversation(kill_msg.session_handle.clone()).await {
                         Ok(true) => server_pong(),
                         Ok(false) => server_error(
                             404,
-                            format!("conversation not found for agent='{}' sender='{}'", kill_msg.agent, kill_msg.sender),
+                            format!("conversation not found for handle='{}'", kill_msg.session_handle),
                         ),
                         Err(e) => server_error(500, e.to_string()),
                     };
@@ -348,7 +346,7 @@ pub trait Server: Sync {
                 }
                 client_message::Msg::Compact(req) => {
                     yield match self
-                        .compact_conversation(req.agent, req.sender, req.prompt)
+                        .compact_conversation(req.session_handle, req.prompt)
                         .await
                     {
                         Ok(summary) => crate::ServerMessage {

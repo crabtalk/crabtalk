@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// It encodes nothing — not the agent, not the sender, not a date — so
 /// renaming an agent never orphans its transcripts.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SessionHandle(String);
 
 impl SessionHandle {
