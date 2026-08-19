@@ -7,14 +7,12 @@
 //! time it allocates. A harness that never allocates never asks, which is why
 //! there is nothing to declare.
 
-use crate::{abi::hash, sys};
+use crate::{
+    abi::{HOST_HEAP_SIZE, HOST_HEAP_START},
+    sys,
+};
 use core::alloc::{GlobalAlloc, Layout};
 use linked_list_allocator::LockedHeap;
-
-/// Where this guest's heap starts.
-const HOST_HEAP_START: u64 = hash("berm.heap.start");
-/// How many bytes of it there are.
-const HOST_HEAP_SIZE: u64 = hash("berm.heap.size");
 
 #[global_allocator]
 static ALLOCATOR: Heap = Heap(LockedHeap::empty());

@@ -48,17 +48,11 @@ extern crate alloc;
 // own crate. That only resolves in here if the crate can name itself.
 extern crate self as berm_lang;
 
-/// The wire between a harness and its host. Public because `harnesses!` emits
-/// `abi::hash` for every name it generates.
+/// The wire between a harness and its host: call numbers, framing, and the one
+/// call path. Public because `harnesses!` emits `abi::hash` for every name it
+/// generates, and hidden inside because the rest is reached only by generated
+/// code — an expansion lands in the harness's crate, not this one.
 pub mod abi;
-/// One call path shared by every system harness. Needs a heap: a result whose
-/// size the guest learns at runtime has nowhere else to go.
-///
-/// Reached only by generated code, which is why it is hidden rather than
-/// private: an expansion lands in the harness's crate, not this one.
-#[cfg(feature = "alloc")]
-#[doc(hidden)]
-pub mod host;
 // Installing a global allocator is something only the whole program may do,
 // so like the panic handler it happens on the guest's target and nowhere else.
 #[cfg(all(feature = "alloc", target_arch = "riscv64"))]
@@ -71,10 +65,6 @@ pub mod test;
 /// Argument parsing and failure reporting, shared by every tool body.
 #[cfg(feature = "alloc")]
 mod tool;
-/// Request framing, on the same terms as [`host`].
-#[cfg(feature = "alloc")]
-#[doc(hidden)]
-pub mod wire;
 
 // One boundary for the whole crate: `riscv.rs` makes real host calls, and
 // `stub.rs` is a host a test can stand in for. The split is about behaviour
@@ -155,14 +145,4 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         abi::log(location.file());
     }
     rvtime_guest::abort()
-}
-
-#[doc(hidden)]
-pub fn read_args(buffer: &mut [u8]) -> usize {
-    abi::read_args(buffer)
-}
-
-#[doc(hidden)]
-pub fn fail(message: &[u8]) -> Buf {
-    abi::fail(message)
 }

@@ -392,14 +392,14 @@ impl Declaration {
         // Fixed fields first, then the tail flattened in place, so the host
         // sees one sequence and never has to know where the split was.
         let build = match &call.tail {
-            None => quote!(let request = ::berm_lang::wire::request(&[#(#fields),*]);),
+            None => quote!(let request = ::berm_lang::abi::wire::request(&[#(#fields),*]);),
             Some(tail) => {
                 let tail = &tail.name;
                 quote! {
-                    let mut request = ::berm_lang::wire::request(&[#(#fields),*]);
+                    let mut request = ::berm_lang::abi::wire::request(&[#(#fields),*]);
                     for (key, value) in #tail {
-                        ::berm_lang::wire::field(&mut request, key.as_bytes());
-                        ::berm_lang::wire::field(&mut request, value.as_bytes());
+                        ::berm_lang::abi::wire::field(&mut request, key.as_bytes());
+                        ::berm_lang::abi::wire::field(&mut request, value.as_bytes());
                     }
                 }
             }
@@ -409,7 +409,7 @@ impl Declaration {
             Reply::Nothing => (
                 quote!(),
                 quote!(()),
-                quote!(::berm_lang::host::call(#konst, &request).map(|_| ())),
+                quote!(::berm_lang::abi::host::call(#konst, &request).map(|_| ())),
             ),
             // Staged raw: one blob needs no framing to be told apart from the
             // rest of itself, and `fs::read` would pay four bytes per file for
@@ -417,7 +417,7 @@ impl Declaration {
             Reply::One(Ty::Bytes) => (
                 quote!(),
                 quote!(::alloc::vec::Vec<u8>),
-                quote!(::berm_lang::host::call(#konst, &request)),
+                quote!(::berm_lang::abi::host::call(#konst, &request)),
             ),
             Reply::One(ty) => {
                 let owned = ty.owned();
@@ -426,7 +426,7 @@ impl Declaration {
                     quote!(),
                     owned,
                     quote! {
-                        let reply = ::berm_lang::host::call(#konst, &request)?;
+                        let reply = ::berm_lang::abi::host::call(#konst, &request)?;
                         ::core::result::Result::Ok(#decode)
                     },
                 )
@@ -451,9 +451,9 @@ impl Declaration {
                     },
                     quote!(#ty),
                     quote! {
-                        let reply = ::berm_lang::host::call(#konst, &request)?;
+                        let reply = ::berm_lang::abi::host::call(#konst, &request)?;
                         let ::core::option::Option::Some(parts) =
-                            ::berm_lang::wire::fields(&reply)
+                            ::berm_lang::abi::wire::fields(&reply)
                         else {
                             return ::core::result::Result::Err(::alloc::string::String::from(
                                 "the host framed a reply this harness cannot read",

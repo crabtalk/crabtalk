@@ -10,8 +10,22 @@
 //! host call rather than reaching the wrong system harness.
 //!
 //! Whether a call reaches a host at all is `sys`'s business, not this file's.
+//!
+//! Nothing here is for a harness author to read: [`host`] and [`wire`] are
+//! reached by generated code, and the numbers below by this module's own
+//! functions. What an author writes against is the crate root.
 
 use crate::sys;
+
+/// One call path shared by every system harness. Needs a heap: a result whose
+/// size the guest learns at runtime has nowhere else to go.
+#[cfg(feature = "alloc")]
+#[doc(hidden)]
+pub mod host;
+/// Request framing, on the same terms as [`host`].
+#[cfg(feature = "alloc")]
+#[doc(hidden)]
+pub mod wire;
 
 /// Write a UTF-8 message to the host log.
 pub const HOST_LOG: u64 = hash("berm.log");
@@ -23,6 +37,11 @@ pub const HOST_ARG_READ: u64 = hash("berm.args.read");
 pub const HOST_FAIL: u64 = hash("berm.fail");
 /// Copy the last system harness call's staged result into guest memory.
 pub const HOST_RESULT_READ: u64 = hash("berm.result.read");
+/// Where this guest's heap starts. Asked for on the first allocation, from
+/// inside the entry the guest is already in.
+pub const HOST_HEAP_START: u64 = hash("berm.heap.start");
+/// How many bytes of it there are.
+pub const HOST_HEAP_SIZE: u64 = hash("berm.heap.size");
 
 /// Set on the length a system harness returns when the staged bytes are an error
 /// message rather than a result. A length never reaches this bit on its own,

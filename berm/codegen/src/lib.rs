@@ -179,9 +179,9 @@ pub fn harness(args: TokenStream, item: TokenStream) -> TokenStream {
             #[unsafe(no_mangle)]
             pub extern "C" fn #symbol() -> ::berm_lang::Buf {
                 let arguments = unsafe { &mut *::core::ptr::addr_of_mut!(_CRABTALK_ARGS) };
-                let length = ::berm_lang::read_args(arguments);
+                let length = ::berm_lang::abi::read_args(arguments);
                 if length > _CRABTALK_BUFFER {
-                    return ::berm_lang::fail(b"arguments exceeded the input buffer");
+                    return ::berm_lang::abi::fail(b"arguments exceeded the input buffer");
                 }
                 let arguments = &arguments[..length];
 
@@ -190,11 +190,11 @@ pub fn harness(args: TokenStream, item: TokenStream) -> TokenStream {
 
                 match #module_ident::#ident(arguments, &mut out) {
                     Ok(()) if out.overflowed() => {
-                        ::berm_lang::fail(b"result exceeded the output buffer")
+                        ::berm_lang::abi::fail(b"result exceeded the output buffer")
                     }
                     Ok(()) => out.finish(),
                     Err(::berm_lang::Failed) => {
-                        ::berm_lang::fail(out.written())
+                        ::berm_lang::abi::fail(out.written())
                     }
                 }
             }
