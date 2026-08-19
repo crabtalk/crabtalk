@@ -67,10 +67,7 @@ impl StreamAccumulator {
                 }
                 self.done = true;
             }
-            stream_event::Event::AskUser(_)
-            | stream_event::Event::ToolCallForward(_)
-            | stream_event::Event::UserSteered(_)
-            | stream_event::Event::ContextUsage(_)
+            stream_event::Event::ContextUsage(_)
             | stream_event::Event::TextStart(_)
             | stream_event::Event::TextEnd(_)
             | stream_event::Event::ThinkingStart(_)
@@ -126,15 +123,6 @@ pub enum OutputChunk {
     ToolResult(String, String),
     /// Tool execution completed (true = success, false = failure).
     ToolDone(bool),
-    /// Daemon forwarded a tool call for the client to dispatch locally.
-    /// The client must respond by sending `ReplyToTool` on a fresh
-    /// connection, echoing both `conversation_id` and `call_id`.
-    ToolCallForward {
-        conversation_id: u64,
-        call_id: String,
-        name: String,
-        arguments: String,
-    },
 }
 
 /// Open a fresh connection from `conn_info` and stream chunks for `req` over
@@ -166,7 +154,7 @@ pub fn spawn_stream(
 
 /// Run a [`StreamMsg`] on `transport` and translate `stream_event::Event`
 /// into UI-friendly [`OutputChunk`]s. Filters telemetry-only events
-/// (`Start`, `End`, `ContextUsage`, `UserSteered`).
+/// (`Start`, `End`, `ContextUsage`).
 pub fn stream_chunks<'a>(
     transport: &'a mut Transport,
     req: StreamMsg,
@@ -189,21 +177,11 @@ pub fn stream_chunks<'a>(
                     Some(Ok(OutputChunk::ToolResult(tr.call_id, tr.output)))
                 }
                 Ok(stream_event::Event::ToolsComplete(_)) => Some(Ok(OutputChunk::ToolDone(true))),
-                Ok(stream_event::Event::ToolCallForward(fwd)) => {
-                    Some(Ok(OutputChunk::ToolCallForward {
-                        conversation_id: fwd.conversation_id,
-                        call_id: fwd.call_id,
-                        name: fwd.name,
-                        arguments: fwd.arguments,
-                    }))
-                }
                 Ok(stream_event::Event::TextStart(_)) => Some(Ok(OutputChunk::TextStart)),
                 Ok(stream_event::Event::TextEnd(_)) => Some(Ok(OutputChunk::TextEnd)),
                 Ok(stream_event::Event::ThinkingStart(_)) => Some(Ok(OutputChunk::ThinkingStart)),
                 Ok(stream_event::Event::ThinkingEnd(_)) => Some(Ok(OutputChunk::ThinkingEnd)),
                 Ok(stream_event::Event::Start(_))
-                | Ok(stream_event::Event::AskUser(_))
-                | Ok(stream_event::Event::UserSteered(_))
                 | Ok(stream_event::Event::ContextUsage(_))
                 | Ok(stream_event::Event::End(_)) => None,
                 Err(e) => Some(Err(e)),

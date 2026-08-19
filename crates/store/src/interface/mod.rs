@@ -6,9 +6,8 @@
 //! [`TextSearch`](crate::TextSearch) and *is* an `Agents`, a `Sessions`,
 //! a `Memory` — there is nothing to construct and nothing to wire.
 //!
-//! That is the whole design. Nine methods stand between a new store and
+//! That is the whole design. Five methods stand between a new store and
 //! a working daemon, and everything above them is written once.
-
 //!
 //! Nothing here returns a collection of bodies. Every listing is
 //! identities or summaries, and the body is a second call for the one

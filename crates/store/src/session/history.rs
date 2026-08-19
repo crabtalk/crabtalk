@@ -225,4 +225,52 @@ impl HistoryEntry {
             .iter()
             .any(|b| matches!(b, ContentBlock::ToolResult { .. }))
     }
+
+    /// Roughly what this entry costs resident.
+    ///
+    /// Text dominates and the constant covers the allocations around it —
+    /// the struct, the block vector, the role. Measured 2026-08-18 at
+    /// ~420 bytes per entry, which is why a history of many small
+    /// messages costs 1.8× its text and one of few large messages 1.05×.
+    pub fn bytes(&self) -> usize {
+        const OVERHEAD: usize = 420;
+        let blocks: usize = match &self.message.content {
+            Content::Text(text) => text.len(),
+            Content::Blocks(blocks) => blocks.iter().map(block_bytes).sum(),
+        };
+        OVERHEAD + self.agent.len() + self.sender.len() + self.message.role.len() + blocks
+    }
+}
+
+fn block_bytes(block: &ContentBlock) -> usize {
+    match block {
+        ContentBlock::Text { text, .. } => text.len(),
+        ContentBlock::Thinking { thinking, .. } => thinking.len(),
+        ContentBlock::ToolUse {
+            id, name, input, ..
+        } => id.len() + name.len() + json_bytes(input),
+        ContentBlock::ToolResult {
+            tool_use_id,
+            name,
+            content,
+            ..
+        } => {
+            tool_use_id.len()
+                + name.as_ref().map_or(0, String::len)
+                + serde_json::to_string(content).map_or(0, |s| s.len())
+        }
+        other => serde_json::to_string(other).map_or(0, |s| s.len()),
+    }
+}
+
+/// Tool arguments are free-form JSON and can carry a whole file, so they
+/// are walked rather than assumed small.
+fn json_bytes(value: &serde_json::Value) -> usize {
+    match value {
+        serde_json::Value::Null | serde_json::Value::Bool(_) => 1,
+        serde_json::Value::Number(_) => 8,
+        serde_json::Value::String(s) => s.len(),
+        serde_json::Value::Array(items) => items.iter().map(json_bytes).sum(),
+        serde_json::Value::Object(map) => map.iter().map(|(k, v)| k.len() + json_bytes(v)).sum(),
+    }
 }

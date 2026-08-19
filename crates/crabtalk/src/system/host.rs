@@ -1,12 +1,10 @@
 //! SystemEnv — the runtime environment implementation.
 
-use crate::bridge::ClientBridge;
+use crate::harness::HarnessRegistry;
 use proto::{AgentEventKind, AgentEventMsg, ToolCallInfo};
-use runtime::harness::Hooks;
-use runtime::{AgentEvent, ToolDispatch};
-use runtime::{Env, Harness};
+use runtime::{AgentEvent, Env, Harness, ToolDispatch};
 use std::sync::Arc;
-use store::AgentId;
+use store::{AgentId, interface::Backend};
 use tokio::sync::broadcast;
 
 /// Tool result output is truncated to this many bytes in the broadcast.
@@ -14,19 +12,17 @@ const MAX_TOOL_OUTPUT_BROADCAST: usize = 2048;
 
 /// Runtime environment — event broadcasting and tool dispatch.
 #[derive(Clone)]
-pub struct SystemEnv {
+pub struct SystemEnv<S: Backend> {
     /// Broadcast channel for agent events (console subscription).
     pub(crate) events_tx: broadcast::Sender<AgentEventMsg>,
-    /// Root hook owning all sub-hooks and shared state.
-    pub(crate) hook: Arc<Hooks>,
-    /// Client-tool bridge — forwards dispatches to the connected client.
-    pub(crate) bridge: Arc<ClientBridge>,
+    /// The composite harness owning all subsystems and shared state.
+    pub(crate) hook: Arc<HarnessRegistry<S>>,
 }
 
-impl Env for SystemEnv {
-    type Hook = Hooks;
+impl<S: Backend> Env for SystemEnv<S> {
+    type Hook = HarnessRegistry<S>;
 
-    fn hook(&self) -> &Hooks {
+    fn hook(&self) -> &HarnessRegistry<S> {
         &self.hook
     }
 
@@ -116,10 +112,6 @@ impl Env for SystemEnv {
                 Payload::of(AgentEventKind::ToolsComplete)
             }
             AgentEvent::ContextUsage { .. } => return,
-            AgentEvent::UserSteered { content } => {
-                tracing::info!(%agent, content_len = content.len(), "user steered session");
-                return;
-            }
             AgentEvent::Done(response) => {
                 tracing::info!(
                     %agent,
@@ -151,7 +143,7 @@ impl Env for SystemEnv {
     }
 }
 
-impl runtime::ToolDispatcher for SystemEnv {
+impl<S: Backend> runtime::ToolDispatcher for SystemEnv<S> {
     fn dispatch<'a>(
         &'a self,
         name: &'a str,
@@ -170,12 +162,7 @@ impl runtime::ToolDispatcher for SystemEnv {
         };
 
         // System tools — daemon-side hooks (memory, sessions, skill, mcp).
-        if let Some(fut) = self.hook.dispatch(name, call.clone()) {
-            return fut;
-        }
-
-        // Client tools — forwarded to the connected client via the bridge.
-        if let Some(fut) = self.bridge.dispatch(name, call) {
+        if let Some(fut) = self.hook.dispatch(name, call) {
             return fut;
         }
 

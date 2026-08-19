@@ -16,7 +16,7 @@ A runtime is parameterized by a `Config` that names three associated types:
 
 A binary supplies one `Config`. The shipped `Config` wires `crabdb`, a configured provider, and a node environment that owns harnesses and event broadcasting. Tests supply a `Config` with an in-memory store, a stub provider, and `()` as the environment.
 
-The runtime holds interfaces, never data. There is no agent registry and no memory handle: an agent is read from the store for the run that needs it, built, and dropped. Whether any of it is cached is the store's decision, which is what makes a different deployment a different implementation rather than a rewrite of the runtime. The exception is a live session, which holds a steering channel — a channel cannot be persisted, so it is genuinely per-process state.
+The runtime holds interfaces, never data. There is no agent registry and no memory handle: an agent is read from the store for the run that needs it, built, and dropped. Whether any of it is cached is the store's decision, which is what makes a different deployment a different implementation rather than a rewrite of the runtime. The exception is a live session, which holds a cancellation token — a token cannot be persisted, so it is genuinely per-process state.
 
 ## Responsibilities
 

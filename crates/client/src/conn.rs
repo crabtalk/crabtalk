@@ -116,26 +116,11 @@ impl ConnectionInfo {
         })
     }
 
-    /// Open a fresh connection, deliver a client-side tool result for the
-    /// pending forwarded call keyed by `(conversation_id, call_id)`, and
-    /// close.
-    pub async fn reply_to_tool(
-        &self,
-        conversation_id: u64,
-        call_id: String,
-        output: String,
-        is_error: bool,
-    ) -> Result<()> {
-        let mut t = connect_from(self).await?;
-        t.reply_to_tool(conversation_id, call_id, output, is_error)
-            .await
-    }
-
     /// Open a fresh connection, kill the active conversation for
-    /// `(agent, sender)`, and close. Returns `true` if it existed.
-    pub async fn kill_conversation(&self, agent: String, sender: String) -> Result<bool> {
+    /// `session_handle`, and close. Returns `true` if it existed.
+    pub async fn kill_conversation(&self, session_handle: String) -> Result<bool> {
         let mut t = connect_from(self).await?;
-        t.kill_conversation(agent, sender).await
+        t.kill_conversation(session_handle).await
     }
 
     /// Open a fresh connection, subscribe to all agent events, and forward

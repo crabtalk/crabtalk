@@ -1,19 +1,16 @@
 //! CrabTalk construction and lifecycle methods.
 
-use crate::llm::Provider;
 use crate::{
     CrabTalk,
-    bridge::ClientBridge,
-    system::RuntimeHandle,
-    system::{event, host::SystemEnv, provider::DefaultProvider},
+    harness::{AgentScope, EventSink, HarnessRegistry, McpHarness, MemoryHarness},
+    llm::Provider,
+    system::{RuntimeHandle, event, host::SystemEnv, provider::DefaultProvider},
 };
 use anyhow::Result;
-use crabtalk_berm::HarnessHook;
+use crabtalk_berm::BermHarness;
 use mcp::McpHandler;
 use proto::server::Server;
-use runtime::agent::Model;
-use runtime::harness::{EventSink, Hooks, McpHook, MemoryHook};
-use runtime::{Harness, Runtime, Sessions};
+use runtime::{Harness, Runtime, Sessions, agent::Model};
 use std::{
     collections::BTreeMap,
     path::Path,
@@ -40,18 +37,28 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         config_dir: &Path,
         storage: Arc<S>,
         build_provider: BuildProvider<P>,
+        harnesses: Vec<Arc<dyn Harness>>,
     ) -> Result<Self> {
         let runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>> = Arc::new(OnceLock::new());
         let protocol: Arc<OnceLock<crabtalk_berm::Dispatch>> = Arc::new(OnceLock::new());
-        let hooks = Hooks::new(Arc::new(parking_lot::RwLock::new(BTreeMap::new())));
-        let (runtime, mcp, hooks, bridge) =
-            Self::build_all(config, storage, &build_provider, protocol.clone(), hooks).await?;
+        let scopes = Arc::new(parking_lot::RwLock::new(BTreeMap::new()));
+        let (runtime, registry) = Self::build_all(
+            config,
+            storage,
+            &build_provider,
+            protocol.clone(),
+            scopes,
+            harnesses,
+        )
+        .await?;
         let shared_runtime: RuntimeHandle<P, S> = Arc::new(RwLock::new(Arc::new(runtime)));
         runtime_once
             .set(shared_runtime.clone())
             .unwrap_or_else(|_| panic!("runtime already initialized"));
 
-        let sessions = Arc::new(Sessions::default());
+        let sessions = Arc::new(Sessions::new(
+            config.cache.sessions.map(|mb| mb * 1024 * 1024),
+        ));
 
         let fire_runtime = shared_runtime.clone();
         let fire_sessions = sessions.clone();
@@ -59,19 +66,23 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             let runtime = fire_runtime.clone();
             let sessions = fire_sessions.clone();
             let target_agent = sub.target_agent;
-            let source = sub.source.clone();
+            let created_by = format!("event:{}", sub.source);
+            let handle = store::SessionHandle::new(sub.session_handle.clone());
             let payload = payload.to_owned();
             tokio::spawn(async move {
                 let rt = runtime.read().await.clone();
-                let sender = format!("event:{source}");
-                let session = match sessions.get_or_create(&rt, &target_agent, &sender).await {
-                    Ok((_, session)) => session,
-                    Err(e) => {
-                        tracing::warn!("event fire: session(agent='{target_agent}'): {e}");
-                        return;
-                    }
-                };
-                if let Err(e) = rt.send_to(&session, &payload, &sender, None, vec![]).await {
+                let (_, session) =
+                    match sessions.open(&rt, handle, &target_agent, &created_by).await {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::warn!("event fire: session(agent='{target_agent}'): {e}");
+                            return;
+                        }
+                    };
+                if let Err(e) = rt
+                    .send_to(&session, &payload, &created_by, None, vec![])
+                    .await
+                {
                     tracing::warn!("event fire: send_to(agent='{target_agent}'): {e}");
                 }
             });
@@ -84,56 +95,20 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             let sink: EventSink = Arc::new(move |source: &str, payload: &str| {
                 events_for_sink.lock().publish(source, payload);
             });
-            hooks.set_event_sink(sink);
+            registry.set_event_sink(sink);
         }
 
         let daemon = Self {
             runtime: shared_runtime,
-            hook: hooks,
+            registry,
             config_dir: config_dir.to_path_buf(),
             started_at: std::time::Instant::now(),
             events,
             build_provider,
-            mcp,
-            bridge,
             sessions,
         };
         Self::connect_protocol(&protocol, daemon.clone());
         Ok(daemon)
-    }
-
-    pub async fn reload(&self) -> Result<()> {
-        let config = store::Config::load(&self.config_dir.join(store::CONFIG_FILE))?;
-        let runtime_once: Arc<OnceLock<RuntimeHandle<P, S>>> = Arc::new(OnceLock::new());
-        runtime_once
-            .set(self.runtime.clone())
-            .unwrap_or_else(|_| panic!("runtime_once already set"));
-
-        let hooks = Hooks::new(self.hook.scopes.clone());
-        // Reload rebuilds the runtime around the same store — the backend
-        // was the caller's choice at startup and isn't reconsidered here.
-        let storage = self.runtime.read().await.storage().clone();
-
-        let protocol: Arc<OnceLock<crabtalk_berm::Dispatch>> = Arc::new(OnceLock::new());
-        let (new_runtime, _mcp, new_hook, _bridge) = Self::build_all(
-            &config,
-            storage,
-            &self.build_provider,
-            protocol.clone(),
-            hooks,
-        )
-        .await?;
-        Self::connect_protocol(&protocol, self.clone());
-        {
-            let events_for_sink = self.events.clone();
-            let sink: EventSink = Arc::new(move |source: &str, payload: &str| {
-                events_for_sink.lock().publish(source, payload);
-            });
-            new_hook.set_event_sink(sink);
-        }
-        *self.runtime.write().await = Arc::new(new_runtime);
-        tracing::info!("configuration reloaded");
-        Ok(())
     }
 
     /// Open the protocol door for harnesses, now that there is something
@@ -149,21 +124,20 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let _ = protocol.set(dispatch);
     }
 
-    /// Build Hooks, SystemEnv, and Runtime in one shot.
+    /// Build the registry, SystemEnv, and Runtime in one shot.
     async fn build_all(
         config: &store::Config,
         storage: Arc<S>,
         build_provider: &BuildProvider<P>,
         protocol: Arc<OnceLock<crabtalk_berm::Dispatch>>,
-        mut hooks: Hooks,
+        scopes: Arc<parking_lot::RwLock<BTreeMap<store::AgentId, AgentScope>>>,
+        harnesses: Vec<Arc<dyn Harness>>,
     ) -> Result<(
         Runtime<crate::system::SystemCfg<P, S>>,
-        Arc<McpHandler>,
-        Arc<Hooks>,
-        Arc<ClientBridge>,
+        Arc<HarnessRegistry<S>>,
     )> {
         // Ask the endpoint what it serves; an empty list is survivable, so a
-        // failure only warns and the next reload retries.
+        // failure only warns.
         let models = match config.llm.kind.is_none() && config.llm.base_url.is_empty() {
             true => {
                 tracing::warn!("no llm.base_url configured in config.toml — model list is empty");
@@ -179,54 +153,45 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             std::time::Duration::from_secs(config.mcp.idle_timeout),
         ));
         mcp_handler.spawn_reaper();
-        let bridge = Arc::new(ClientBridge::default());
-        Self::register_hooks(
-            &mut hooks,
-            storage.clone(),
-            mcp_handler.clone(),
-            config.env.clone(),
-            protocol,
-        )?;
-        let hooks = Arc::new(hooks);
-
-        let (events_tx, _) = broadcast::channel(256);
-        let env = Arc::new(SystemEnv {
-            events_tx,
-            hook: hooks.clone(),
-            bridge: bridge.clone(),
-        });
-
-        let mut tools = runtime::ToolRegistry::new();
-        for schema in Harness::schema(hooks.as_ref()) {
-            tools.insert(schema);
-        }
-        let runtime = Runtime::new(model, env, storage, tools);
-        runtime.set_models(models);
-        let runtime = runtime;
-        Ok((runtime, mcp_handler, hooks, bridge))
-    }
-
-    fn register_hooks(
-        hooks: &mut Hooks,
-        storage: Arc<S>,
-        mcp_handler: Arc<McpHandler>,
-        env_overlay: BTreeMap<String, String>,
-        protocol: Arc<OnceLock<crabtalk_berm::Dispatch>>,
-    ) -> Result<()> {
-        hooks.register_hook("memory", Arc::new(MemoryHook::new(storage)));
-        hooks.register_hook("mcp", Arc::new(McpHook::new(mcp_handler, env_overlay)));
 
         // No agents are pre-loaded: a harness is acquired for the agent
         // that is running, on the run, through `on_resolve_agent`.
         // Loading every agent's images at startup is what made residency
         // here proportional to how many agents exist rather than how many
         // are working.
-        match HarnessHook::new(protocol) {
-            Ok(harnesses) => hooks.register_hook("harness", Arc::new(harnesses)),
-            Err(error) => tracing::warn!("harness engine unavailable: {error:#}"),
+        let berm = match BermHarness::new(protocol) {
+            Ok(harnesses) => Some(Arc::new(harnesses)),
+            Err(error) => {
+                tracing::warn!("harness engine unavailable: {error:#}");
+                None
+            }
+        };
+        let mut registry = HarnessRegistry::new(
+            scopes,
+            berm,
+            Arc::new(McpHarness::new(mcp_handler.clone(), config.env.clone())),
+            Arc::new(MemoryHarness::new(storage.clone())),
+        )
+        .map_err(anyhow::Error::msg)?;
+        for harness in harnesses {
+            registry.register(harness).map_err(anyhow::Error::msg)?;
         }
+        let registry = Arc::new(registry);
 
-        Ok(())
+        let (events_tx, _) = broadcast::channel(256);
+        let env = Arc::new(SystemEnv {
+            events_tx,
+            hook: registry.clone(),
+        });
+
+        let mut tools = runtime::ToolRegistry::new();
+        for schema in Harness::schema(registry.as_ref()) {
+            tools.insert(schema);
+        }
+        let runtime = Runtime::new(model, env, storage, tools);
+        runtime.set_models(models);
+        let runtime = runtime;
+        Ok((runtime, registry))
     }
 
     /// Seed the built-in `crab` agent on a fresh install and point the

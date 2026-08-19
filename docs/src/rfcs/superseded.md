@@ -15,3 +15,13 @@ RFCs that have been replaced by newer designs. Kept for historical reference.
 | [0150](0150-memory-store.md) | Memory Store | [0207 - Store](0207-store.md) |
 | [0185](0185-session-search.md) | Session Search and Storage Primitives | [0207 - Store](0207-store.md) |
 | [0075](0075-hook.md) | Hook | [0207 - Store](0207-store.md) |
+| [0203](0203-client-side-orchestration.md) | Client-Side Orchestration | [0205 - Berm](0205-berm.md) |
+
+## Reversed without a replacement
+
+A decision can stop holding without another RFC arriving to say so. These are
+the ones a reader would otherwise take as current.
+
+| RFC | What no longer holds |
+|-----|----------------------|
+| [0205](0205-berm.md) | "`ask_user` stays a forwarded client tool, and so does `delegate` until it becomes a harness of its own." Client-side tool forwarding was removed whole on 2026-08-18: `SendMsg.tools`, `StreamMsg.tools`, `ToolCallForwardEvent` and `ReplyToTool` are reserved field numbers, and there is no bridge behind them. A tool runs where the runtime does. |

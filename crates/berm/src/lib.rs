@@ -5,7 +5,7 @@
 //! exists — and it must not, because the same sandbox runs elsewhere. This
 //! crate is everything that knowledge lives in:
 //!
-//! - [`HarnessHook`], which surfaces a harness's tools to the runtime and
+//! - [`BermHarness`], which surfaces a harness's tools to the runtime and
 //!   dispatches calls to them
 //! - the `crabtalk.protocol.call` capability, which is a [`berm::Capability`]
 //!   like any other an embedder supplies
@@ -22,7 +22,7 @@ mod harness;
 mod http;
 mod protocol;
 
-pub use harness::HarnessHook;
+pub use harness::BermHarness;
 pub use http::call as http_fetch;
 pub use protocol::{Dispatch, Scope, call as protocol_call};
 

@@ -32,12 +32,19 @@ message ClientMessage {
   // Removed — package management moved out of the daemon into crabup.
   reserved 20, 21, 22, 37;
   reserved "install_plugin", "uninstall_plugin", "list_plugins", "search_plugins";
+  // Tag 44 was SteerSessionMsg. Steering is a client composition of
+  // cancel_stream + stream; the wire only carries the cancel.
+  reserved 44;
+  reserved "steer_session";
+  // Tag 32 was ReloadMsg. Config is not edited on a live daemon —
+  // model changes go through set_active_model.
+  reserved 32;
+  reserved "reload";
 
   oneof msg {
     // Execution
     SendMsg send = 1;
     StreamMsg stream = 2;
-    ReplyToAsk reply_to_ask = 3;
     // Conversation management
     ListActiveConversationsMsg list_active_conversations = 4;
     KillMsg kill = 5;
@@ -71,7 +78,6 @@ message ClientMessage {
     // Daemon lifecycle
     Ping ping = 30;
     GetConfig get_config = 31;
-    ReloadMsg reload = 32;
     GetStats get_stats = 33;
     SubscribeEvents subscribe_events = 34;
     // Event bus
@@ -79,21 +85,23 @@ message ClientMessage {
     UnsubscribeEventMsg unsubscribe_event = 41;
     ListSubscriptionsMsg list_subscriptions = 42;
     PublishEventMsg publish_event = 43;
-    // Steering
-    SteerSessionMsg steer_session = 44;
+    // Cancel the in-flight stream for a session.
+    CancelStreamMsg cancel_stream = 57;
     // MCP lifecycle event subscription
     SubscribeMcpEventsMsg subscribe_mcp_events = 52;
-    // Client-tool reply (response to ToolCallForwardEvent)
-    ReplyToTool reply_to_tool = 53;
     // Extension point for downstream products.
     bytes extension = 100;
   }
+  // Client-tool forwarding, removed.
+  reserved 3, 53;
 }
 
 message SendMsg {
   // The agent's ULID. Resolve a name with GetAgent.
   string agent = 1;
   string content = 2;
+  // Attribution for a session, read only the first time `session_handle`
+  // is seen — an existing session's identity doesn't change after.
   optional string sender = 4;
   // tag 5 was `cwd` — removed. The daemon does not read the user's
   // filesystem. Clients render local instructions (e.g. Crab.md) into
@@ -105,18 +113,20 @@ message SendMsg {
   reserved 6;
   reserved "guest";
   optional string tool_choice = 7;
-  // Client-provided tool schemas: the tools this client can execute
-  // locally. The daemon merges them with system tool schemas for the LLM
-  // request and forwards calls back to the client. There is no default
-  // set — an undeclared tool is never offered, because a forward nobody
-  // answers is a hang rather than a fallback.
-  repeated ToolDef tools = 8;
+  reserved 8;
+  reserved "tools";
+  // Addresses the session this call runs against — the caller picks it
+  // (any opaque, unique string). A handle the daemon has never seen
+  // starts a new session under exactly that handle.
+  string session_handle = 9;
 }
 
 message StreamMsg {
   // The agent's ULID. Resolve a name with GetAgent.
   string agent = 1;
   string content = 2;
+  // Attribution for a session, read only the first time `session_handle`
+  // is seen — an existing session's identity doesn't change after.
   optional string sender = 4;
   reserved 5;
   reserved "cwd";
@@ -124,26 +134,22 @@ message StreamMsg {
   // primary itself.
   optional string guest = 6;
   optional string tool_choice = 7;
-  // Client-provided tool schemas — see SendMsg.tools.
-  repeated ToolDef tools = 8;
+  reserved 8;
+  reserved "tools";
   // Run an anonymous, unpersisted turn: no conversation is created and
   // nothing reaches session storage. Events stream back normally and are
-  // broadcast tagged `ephemeral` under `correlation_id`. Client round-trip
-  // tools are unsupported on this path.
+  // broadcast tagged `ephemeral` under `correlation_id`.
   bool ephemeral = 9;
   // Caller-chosen id used to tag the ephemeral broadcast so observers can
   // group its events. Ignored unless `ephemeral` is set.
   optional uint64 correlation_id = 10;
+  // Addresses the session this call runs against — the caller picks it
+  // (any opaque, unique string). A handle the daemon has never seen
+  // starts a new session under exactly that handle. Ignored when
+  // `ephemeral` is set.
+  string session_handle = 11;
 }
 
-// A tool the client can execute. The daemon advertises these schemas
-// to the LLM and forwards invocations back to the client.
-message ToolDef {
-  string name = 1;
-  string description = 2;
-  // JSON Schema object describing the tool's parameters.
-  string parameters_schema = 3;
-}
 
 message Ping {}
 message SubscribeEvents {}
@@ -156,11 +162,18 @@ message GetConfig {}
 message GetStats {}
 
 message KillMsg {
-  string agent = 1;
-  string sender = 2;
+  // An (agent, sender) pair only ever named the one live session that
+  // identity could resolve to. A handle names the session directly.
+  reserved 1, 2;
+  reserved "agent", "sender";
+  string session_handle = 3;
 }
 
-message ReloadMsg {}
+message CancelStreamMsg {
+  reserved 1, 2;
+  reserved "agent", "sender";
+  string session_handle = 3;
+}
 
 // ── Event Bus ───────────────────────────────────────────────────
 
@@ -193,8 +206,12 @@ message SubscriptionList {
 }
 
 message CompactMsg {
-  string agent = 1;
-  string sender = 2;
+  reserved 1, 2;
+  reserved "agent", "sender";
+  // Summarization instructions for the compaction LLM call. The daemon
+  // carries no built-in prompt — the client decides how a summary reads.
+  string prompt = 3;
+  string session_handle = 4;
 }
 
 message ListAgentsMsg {}
@@ -468,42 +485,19 @@ message StreamEvent {
     ToolResultEvent tool_result = 5;
     ToolsCompleteEvent tools_complete = 6;
     StreamEnd end = 7;
-    AskUserEvent ask_user = 8;
-    UserSteeredEvent user_steered = 9;
     TextStartEvent text_start = 10;
     TextEndEvent text_end = 11;
     ThinkingStartEvent thinking_start = 12;
     ThinkingEndEvent thinking_end = 13;
     ContextUsageEvent context_usage = 14;
-    ToolCallForwardEvent tool_call_forward = 15;
   }
+  // Client-tool forwarding, removed.
+  reserved 8, 15;
+  // UserSteered, removed with the steering RPC.
+  reserved 9;
 }
 
-// Daemon → client: forwarded tool invocation. The daemon emits this when
-// an agent calls a tool whose execution belongs on the client side (e.g.
-// the OS tool set). The client dispatches locally and replies with a
-// `ReplyToTool` echoing both `conversation_id` and `call_id` on a fresh
-// connection.
-//
-// `conversation_id` is an opaque routing token from the client's
-// perspective — it does not need to be interpreted, only echoed. The
-// daemon needs it to disambiguate `call_id`s, which come from the LLM
-// and are not globally unique across conversations.
-message ToolCallForwardEvent {
-  string call_id = 1;
-  string name = 2;
-  string arguments = 3;
-  uint64 conversation_id = 4;
-}
 
-// Client → daemon: response to a `ToolCallForwardEvent`. Resolves the
-// daemon-side pending entry keyed by `(conversation_id, call_id)`.
-message ReplyToTool {
-  string call_id = 1;
-  string output = 2;
-  bool is_error = 3;
-  uint64 conversation_id = 4;
-}
 
 // Real token counts reported by the provider after a completed step.
 // Emitted once per LLM call so clients can detect context pressure
@@ -564,37 +558,9 @@ message StreamEnd {
   reserved "provider";
 }
 
-message AskUserEvent {
-  repeated AskQuestion questions = 1;
-}
 
-message AskQuestion {
-  string question = 1;
-  string header = 2;
-  repeated AskOption options = 3;
-  bool multi_select = 4;
-}
 
-message AskOption {
-  string label = 1;
-  string description = 2;
-}
 
-message ReplyToAsk {
-  string agent = 1;
-  string sender = 2;
-  string content = 3;
-}
-
-message SteerSessionMsg {
-  string agent = 1;
-  string sender = 2;
-  string content = 3;
-}
-
-message UserSteeredEvent {
-  string content = 1;
-}
 
 message ErrorMsg {
   uint32 code = 1;
@@ -610,6 +576,7 @@ message ActiveConversationInfo {
   uint64 message_count = 3;
   uint64 alive_secs = 4;
   string title = 5;
+  string session_handle = 8;
 }
 
 enum AgentEventKind {

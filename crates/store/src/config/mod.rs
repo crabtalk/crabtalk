@@ -1,5 +1,6 @@
 //! Shared configuration types used across crates.
 
+pub mod cache;
 pub mod crabtalk;
 pub mod harness;
 pub mod hooks;
@@ -7,6 +8,7 @@ pub mod llm;
 pub mod mcp;
 pub mod system;
 
+pub use cache::CacheConfig;
 pub use crabtalk::{CONFIG_FILE, Config};
 pub use harness::HarnessConfig;
 pub use hooks::{HooksConfig, MemoryConfig};

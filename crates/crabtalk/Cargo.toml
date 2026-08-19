@@ -44,12 +44,10 @@ default = ["native-tls"]
 native-tls = [
     "crabllm-provider/native-tls",
     "crabllm-sdk/native-tls",
-    "runtime/native-tls",
     "mcp/native-tls",
 ]
 rustls = [
     "crabllm-provider/rustls",
     "crabllm-sdk/rustls",
-    "runtime/rustls",
     "mcp/rustls",
 ]

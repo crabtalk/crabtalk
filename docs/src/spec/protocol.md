@@ -15,14 +15,15 @@ The pair is a conversation's only externally addressable name. **The wire carrie
 |---------|--------|
 | `StreamMsg` | Append user content, run the agent, stream the response. |
 | `SendMsg` | The same, returning one complete response rather than a stream. |
-| `KillMsg` | Cancel the in-flight run, if any. |
+| `KillMsg` | Drop the live conversation, if any. |
 | `CompactMsg` | Compact the current history into an archive. |
-| `SteerSessionMsg` | Inject user content into a run already in flight. |
-| `ReplyToTool` | Supply the result of a forwarded client-side tool call. |
+| `CancelStreamMsg` | Stop the in-flight run, if any. Steering is a client composition of cancel + stream. |
 
 `StreamMsg.sender` is optional; when omitted the daemon resolves a default determined by the transport. `StreamMsg.guest` selects who speaks on this turn without changing whose conversation it is.
 
 There is no working directory on the wire. `StreamMsg.cwd` was removed: the daemon does not read the user's filesystem, and a client that wants local context renders it into `content` itself.
+
+A client declares no tools either. `SendMsg.tools` and `StreamMsg.tools` carried schemas the daemon advertised to the model and invoked back over the stream; both are reserved field numbers now, along with the forward event and its reply. A tool runs where the runtime does, which is what a harness is for.
 
 ## Capability groups
 
@@ -59,7 +60,7 @@ The function is defined once in the core `Server` trait. Any implementor — the
 
 There is no serializing queue, no `DaemonEvent` enum, and no actor that owns mutation. Operations reach into shared state directly and hold locks for the duration of the critical section.
 
-Shared state is protected by `parking_lot::Mutex` or `parking_lot::RwLock`. Event bus subscriptions, conversation working-directory overrides, and pending `ask_user` replies each live behind their own lock. Locks are acquired, the work is done, and the lock is released. Ordering between operations is whatever Tokio's scheduler produces.
+Shared state is protected by `parking_lot::Mutex` or `parking_lot::RwLock`. Event bus subscriptions and the live session registry each live behind their own lock. Locks are acquired, the work is done, and the lock is released. Ordering between operations is whatever Tokio's scheduler produces.
 
 ## Ordering guarantees
 

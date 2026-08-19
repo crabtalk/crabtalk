@@ -15,23 +15,25 @@ const SKILL_PAGE: usize = 200;
 impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     pub(crate) async fn set_active_model(&self, model: String) -> Result<()> {
         let rt = self.runtime.read().await.clone();
-        let storage = rt.storage();
         let known = rt.list_models().await;
         if !known.is_empty() && !known.iter().any(|m| m.name == model) {
             anyhow::bail!("model '{model}' not advertised by the LLM endpoint");
         }
 
+        // The next run resolves the agent fresh from storage, so the
+        // swap takes effect without rebuilding the daemon.
         let mut default = match rt.default_agent().await {
             Some(config) => config,
             None => AgentConfig::crab(&model),
         };
         default.model = model;
-        storage.upsert_agent(&default).await?;
-        self.reload().await
+        let id = default.id;
+        rt.update_agent(&id, default).await?;
+        Ok(())
     }
 
     pub(crate) async fn list_mcps(&self, agent: Option<AgentId>) -> Result<Vec<McpInfo>> {
-        let states = self.mcp.states();
+        let states = self.registry.mcp.handler.states();
         let rt = self.runtime.read().await.clone();
         let mut out: Vec<McpInfo> = Vec::new();
         let configs = match agent {
@@ -68,7 +70,9 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             existing.mcps.push(cfg);
         }
         rt.update_agent(&agent, existing).await?;
-        self.mcp
+        self.registry
+            .mcp
+            .handler
             .ensure_connected(&agent.to_string(), std::slice::from_ref(&mcp_name))
             .await;
 
@@ -98,7 +102,9 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     /// the handler reconnects from the config the peer is already running,
     /// so this is the answer to a dead connection, not to a stale one.
     pub(crate) async fn reconnect_mcp(&self, agent: AgentId, name: String) -> Result<McpInfo> {
-        self.mcp
+        self.registry
+            .mcp
+            .handler
             .reconnect_for_agent(&agent.to_string(), &name)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;

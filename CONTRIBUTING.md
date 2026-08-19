@@ -9,32 +9,35 @@ map: which directory the code goes in once you know.
 
 ```
 lib/                    Standalone libraries. They know nothing about the
-  ├─ memory             runtime and would make sense without it.
+  ├─ crabdb             runtime and would make sense without it.
   ├─ mcp
   ├─ embed
-  └─ search
+  ├─ search
+  └─ skill
 
 crates/                 The framework and its assembly.
   ├─ proto              The wire schema and its generated types — `std` for
   │                     the daemon, `no_std` for a harness
-  ├─ schema             Agent, Session, Protocol, Storage, ToolDispatcher
+  ├─ store              The keyspace: one KV primitive, and every interface
+  │                     the runtime programs against, written over it
   ├─ runtime            The engine and the `Harness` seam — what you import to
   │                     build on crabtalk as a library
-  ├─ storage            Storage backends; config scaffolding, SKILL.md parsing
   ├─ transport          UDS + TCP socket layers, shared Transport enum
   ├─ client             Connection, typed RPC sugars, stream adapters
   ├─ crabtalk           Assembly: protocol handlers, composition, builder
   └─ berm               Crabtalk's side of berm — image loading, capabilities
 
 apps/                   Products.
-  ├─ daemon             crabtalkd — the default agent: a showcase, personal,
-  │                     deployable. *A* product of the framework, not the
+  ├─ agent              The backend a general install runs — five KV methods
+  │                     over crabdb. *A* product of the framework, not the
   │                     architecture.
-  ├─ cli                Daemon management commands
   └─ crabup             Version manager for the ecosystem
 
 harness/                One crate per harness, built two ways: `no_std` for
-  └─ os                 RV64 as a sandboxed ELF, `std` as compiled in.
+  ├─ os                 RV64 as a sandboxed ELF, `std` as compiled in.
+  ├─ peers
+  ├─ sessions
+  └─ skill
 ```
 
 Beside all of it sits `berm/` — the sandbox harnesses run in, plus its SDK
@@ -49,24 +52,22 @@ together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 | Would it make sense as a library without crabtalk? | lib/ |
 | Does it shape an agent? | harness/ |
 | Does it change a wire message? | crates/proto |
-| Does it define agent behavior or tool schemas? | crates/schema |
+| Does it define what is persisted, or how it is keyed? | crates/store |
 | Does it change execution, dispatch, or the `Harness` seam? | crates/runtime |
-| Does it add a persistence backend? | crates/storage |
+| Does it add a persistence backend? | the application — see apps/agent |
 | Does it add a wire transport? | crates/transport |
 | Does it need network I/O, scheduling, or process lifecycle? | crates/crabtalk (system) |
 | Does it adapt a platform or speak to the daemon as a client? | crates/client |
-| Does it add a daemon admin command (over the socket)? | apps/daemon |
-| Does it add a management subcommand to the `crabtalk` binary? | apps/cli |
 | Does it install or update a crabtalk binary? | apps/crabup |
 | **If none of these fit, challenge whether the feature should exist.** | |
 
 ## Boundary Contracts
 
 - **Runtime** — never initiates I/O. It only responds. No sockets, timers, or listeners.
-- **Runtime owns mechanics, clients own UX.** The runtime exposes session primitives (`new_session`, `append_message`, `list_sessions`, `list_messages`, `get_session_meta`, `search_sessions`) and runs auto-compaction only as a context-window safety net. Discretionary lifecycle — `/clear`, `/new`, `/compact`, session selection, archival browsing, saved searches — is composed in the client from those primitives. See [RFC 0185](docs/src/rfcs/0185-session-search.md).
+- **Runtime owns mechanics, clients own UX.** The store exposes session primitives (`create_session`, `append_session_messages`, `list_sessions`, `session_meta`, `search_sessions`), and the runtime exposes compaction and cancellation as mechanics the client invokes explicitly over the protocol — neither fires on its own. Discretionary lifecycle — `/clear`, `/new`, `/compact`, session selection, archival browsing, saved searches — is composed in the client from those primitives. See [RFC 0207](docs/src/rfcs/0207-store.md).
 - **Crabtalk (library)** — never interprets tool semantics. It only routes. Cron and config are system concerns (process-lifetime, not session-lifetime).
 - **Client** — no dependency on runtime or model. Adapter-centric, not agent-centric.
-- **Schema** — defines traits and types only. If a schema change pulls in runtime or daemon deps, the abstraction is wrong.
+- **Store** — the keyspace and the interfaces over it, and no engine. If it links a database or a search crate, the abstraction is wrong: which store to run is the application's choice.
 
 `Env` is the seam between the library and the runtime engine. The library
 constructs the runtime, feeds it messages, and receives tool calls back
@@ -85,9 +86,9 @@ Client (CLI/ACP/Desktop) → UDS/TCP or in-process → CrabTalk
 - `Agent<P: Provider>` — immutable definition + execution (step/run/run_stream)
 - `Session` — conversation history container
 - `Runtime<C: Config>` — agents + sessions + tool dispatch
-- `Env` — engine environment: skills, MCP, memory, tool routing
-- `Storage` — schema trait; pluggable KV backend reached through `Config::Storage`
-- `ToolDispatcher` — schema trait the agent calls to execute a tool
+- `Env` — engine environment: event broadcasting and the composite `Harness`
+- `KVStorage` — the five methods a store implements; `Backend` bundles what the runtime needs, reached through `Config::Storage`
+- `ToolDispatcher` — the trait the agent calls to execute a tool
 - Protocol — `ClientMessage` / `ServerMessage` (protobuf)
 
 ## External Dependencies

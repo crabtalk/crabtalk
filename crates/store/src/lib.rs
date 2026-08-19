@@ -9,21 +9,23 @@
 //! bodies, so implementing the primitives *is* implementing the
 //! interfaces — there is no wrapper to build and nothing to wire.
 //!
-//! A backend implements nine methods and gets everything above them for
+//! A backend implements five methods and gets everything above them for
 //! free — which is what makes a different deployment a different
 //! implementation rather than a rewrite of anything here.
-//! `crabtalk-agent` is one such backend: sqlite behind both.
+//! `crabtalk-agent` is one such backend, over [`crabdb`].
+//!
+//! [`crabdb`]: https://docs.rs/crabtalk-crabdb
 
 pub use agent::{AgentConfig, AgentId, DEFAULT_AGENT};
 pub use config::{
-    CONFIG_FILE, Config, HarnessConfig, HooksConfig, LlmConfig, McpConfig, McpServerConfig,
-    MemoryConfig, TasksConfig,
+    CONFIG_FILE, CacheConfig, Config, HarnessConfig, HooksConfig, LlmConfig, McpConfig,
+    McpServerConfig, MemoryConfig, TasksConfig,
 };
 pub use interface::{
     Agents, Backend, Harnesses, Memory, MemoryEntry, Sessions, Skill, SkillSummary, Skills,
     Weights, validate_table_name,
 };
-pub use kv::{Column, KVStorage, MemoryDb, Realm};
+pub use kv::{Column, KVStorage, Realm};
 pub use session::{
     EventLine, HistoryEntry, MAX_HITS_PER_QUERY, MAX_SNIPPET_BYTES, MAX_WINDOW_ITEMS,
     SearchOptions, SessionHandle, SessionHit, SessionMeta, SessionSnapshot, ToolCallTrace,

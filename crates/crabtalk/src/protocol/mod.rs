@@ -1,12 +1,12 @@
 //! Server trait implementation — thin delegates to domain modules.
 
-use crate::llm::Provider;
-use crate::system::CrabTalk;
+use crate::{llm::Provider, system::CrabTalk};
 use anyhow::Result;
-use proto::server::Server;
-use proto::*;
+use proto::{server::Server, *};
+use runtime::Sessions;
 use serde_json::Value;
-use store::{AgentId, interface::Backend};
+use std::sync::Arc;
+use store::{AgentId, SessionHandle, interface::Backend};
 
 mod admin;
 mod config;
@@ -24,15 +24,18 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
         self.stream(req)
     }
 
-    async fn compact_conversation(&self, agent: String, sender: String) -> Result<String> {
-        let agent = parse_agent(&agent)?;
+    async fn compact_conversation(&self, session_handle: String, prompt: String) -> Result<String> {
         let rt = self.runtime.read().await.clone();
-        let (_, session) = self.sessions.find(&agent, &sender).ok_or_else(|| {
-            anyhow::anyhow!("session not found for agent='{agent}' sender='{sender}'")
-        })?;
-        rt.compact(&session)
+        let handle = SessionHandle::new(session_handle.as_str());
+        let (id, session) = self
+            .sessions
+            .find_by_handle(&handle)
+            .ok_or_else(|| anyhow::anyhow!("session not found for handle='{session_handle}'"))?;
+        let cancel = self.sessions.begin_cancel(id);
+        let _cancel_guard = CancelGuard::new(self.sessions.clone(), id);
+        rt.compact(&session, &prompt, cancel)
             .await
-            .ok_or_else(|| anyhow::anyhow!("compact failed for agent='{agent}' sender='{sender}'"))
+            .ok_or_else(|| anyhow::anyhow!("compact failed for handle='{session_handle}'"))
     }
 
     async fn ping(&self) -> Result<()> {
@@ -44,8 +47,8 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
         Ok(self.sessions.list_active(&rt).await)
     }
 
-    async fn kill_conversation(&self, agent: String, sender: String) -> Result<bool> {
-        self.kill_conversation(&parse_agent(&agent)?, &sender).await
+    async fn kill_conversation(&self, session_handle: String) -> Result<bool> {
+        self.kill_conversation(&session_handle).await
     }
 
     fn subscribe_events(&self) -> impl futures_core::Stream<Item = Result<AgentEventMsg>> + Send {
@@ -54,10 +57,6 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
 
     fn subscribe_mcp_events(&self) -> impl futures_core::Stream<Item = Result<McpEventMsg>> + Send {
         self.subscribe_mcp_events()
-    }
-
-    async fn reload(&self) -> Result<()> {
-        self.reload().await
     }
 
     async fn get_stats(&self) -> Result<Stats> {
@@ -81,28 +80,12 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
         Ok(())
     }
 
-    async fn reply_to_tool(
-        &self,
-        session_id: u64,
-        call_id: String,
-        output: String,
-        is_error: bool,
-    ) -> Result<()> {
-        self.reply_to_tool(session_id, &call_id, output, is_error)
-            .await
-    }
-
-    async fn steer_session(&self, req: SteerSessionMsg) -> Result<()> {
-        let sender = if req.sender.is_empty() {
-            "user".to_owned()
-        } else {
-            req.sender
-        };
-        let agent = parse_agent(&req.agent)?;
-        let (id, _) = self.sessions.find(&agent, &sender).ok_or_else(|| {
-            anyhow::anyhow!("session not found for agent='{agent}' sender='{sender}'")
+    async fn cancel_stream(&self, req: CancelStreamMsg) -> Result<()> {
+        let handle = SessionHandle::new(req.session_handle.as_str());
+        let (id, _) = self.sessions.find_by_handle(&handle).ok_or_else(|| {
+            anyhow::anyhow!("session not found for handle='{}'", req.session_handle)
         })?;
-        self.sessions.steer(id, req.content)
+        self.sessions.cancel(id)
     }
 
     async fn list_agents(&self) -> Result<Vec<AgentInfo>> {
@@ -223,6 +206,29 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
     async fn list_models(&self) -> Result<Vec<ModelInfo>> {
         let rt = self.runtime.read().await.clone();
         Ok(rt.list_models().await)
+    }
+}
+
+/// RAII guard that clears a session's cancellation token on every exit
+/// path out of the cancellable operation it guards — stream end, early
+/// return, compact's completion, or the caller's future being dropped.
+pub(crate) struct CancelGuard {
+    sessions: Arc<Sessions>,
+    session_id: u64,
+}
+
+impl CancelGuard {
+    pub(crate) fn new(sessions: Arc<Sessions>, session_id: u64) -> Self {
+        Self {
+            sessions,
+            session_id,
+        }
+    }
+}
+
+impl Drop for CancelGuard {
+    fn drop(&mut self) {
+        self.sessions.end_cancel(self.session_id);
     }
 }
 

@@ -698,36 +698,6 @@ pub trait Client: Send {
         }
     }
 
-    /// Deliver a client-side tool result for a pending forwarded call. The
-    /// daemon resolves the pending entry keyed by `(conversation_id, call_id)`.
-    fn reply_to_tool(
-        &mut self,
-        conversation_id: u64,
-        call_id: String,
-        output: String,
-        is_error: bool,
-    ) -> impl std::future::Future<Output = Result<()>> + Send {
-        async move {
-            let msg = crate::ClientMessage {
-                msg: Some(client_message::Msg::ReplyToTool(crate::ReplyToTool {
-                    conversation_id,
-                    call_id,
-                    output,
-                    is_error,
-                })),
-            };
-            match self.request(msg).await? {
-                crate::ServerMessage {
-                    msg: Some(server_message::Msg::Pong(_)),
-                } => Ok(()),
-                crate::ServerMessage {
-                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
-                } => anyhow::bail!("server error ({code}): {message}"),
-                other => anyhow::bail!("unexpected response: {other:?}"),
-            }
-        }
-    }
-
     /// List active (in-memory) conversations on the daemon.
     fn list_active_conversations(
         &mut self,
@@ -757,16 +727,15 @@ pub trait Client: Send {
         }
     }
 
-    /// Kill an active conversation by (agent, sender). Returns true if it existed.
+    /// Kill an active conversation by session handle. Returns true if it existed.
     fn kill_conversation(
         &mut self,
-        agent: String,
-        sender: String,
+        session_handle: String,
     ) -> impl std::future::Future<Output = Result<bool>> + Send {
         async move {
             match self
                 .request(crate::ClientMessage {
-                    msg: Some(client_message::Msg::Kill(crate::KillMsg { agent, sender })),
+                    msg: Some(client_message::Msg::Kill(crate::KillMsg { session_handle })),
                 })
                 .await?
             {
@@ -784,18 +753,20 @@ pub trait Client: Send {
         }
     }
 
-    /// Compact a conversation's history into a summary.
+    /// Compact a conversation's history into a summary. `prompt` is the
+    /// summarization instruction to give the model — the daemon carries
+    /// no built-in one.
     fn compact_conversation(
         &mut self,
-        agent: String,
-        sender: String,
+        session_handle: String,
+        prompt: String,
     ) -> impl std::future::Future<Output = Result<String>> + Send {
         async move {
             match self
                 .request(crate::ClientMessage {
                     msg: Some(client_message::Msg::Compact(crate::CompactMsg {
-                        agent,
-                        sender,
+                        session_handle,
+                        prompt,
                     })),
                 })
                 .await?
@@ -823,26 +794,6 @@ pub trait Client: Send {
                 crate::ServerMessage {
                     msg: Some(server_message::Msg::Config(crate::ConfigMsg { config })),
                 } => Ok(config),
-                crate::ServerMessage {
-                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
-                } => anyhow::bail!("server error ({code}): {message}"),
-                other => anyhow::bail!("unexpected response: {other:?}"),
-            }
-        }
-    }
-
-    /// Hot-reload daemon runtime from disk.
-    fn reload(&mut self) -> impl std::future::Future<Output = Result<()>> + Send {
-        async move {
-            match self
-                .request(crate::ClientMessage {
-                    msg: Some(client_message::Msg::Reload(crate::ReloadMsg {})),
-                })
-                .await?
-            {
-                crate::ServerMessage {
-                    msg: Some(server_message::Msg::Pong(_)),
-                } => Ok(()),
                 crate::ServerMessage {
                     msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
@@ -896,20 +847,16 @@ pub trait Client: Send {
         })
     }
 
-    /// Inject a user message into an active stream (steering).
-    fn steer_session(
+    /// Cancel the in-flight stream for a session.
+    fn cancel_stream(
         &mut self,
-        agent: String,
-        sender: String,
-        content: String,
+        session_handle: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             match self
                 .request(crate::ClientMessage {
-                    msg: Some(client_message::Msg::SteerSession(crate::SteerSessionMsg {
-                        agent,
-                        sender,
-                        content,
+                    msg: Some(client_message::Msg::CancelStream(crate::CancelStreamMsg {
+                        session_handle,
                     })),
                 })
                 .await?
@@ -921,6 +868,29 @@ pub trait Client: Send {
                     msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
                 } => anyhow::bail!("server error ({code}): {message}"),
                 other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
+    /// Steer a session: cancel its in-flight stream, then start a new
+    /// turn with `content` in the same session. Nothing running isn't an
+    /// error — the cancel no-ops and the message streams normally.
+    fn steer_session(
+        &mut self,
+        agent: String,
+        session_handle: String,
+        content: String,
+    ) -> impl Stream<Item = Result<stream_event::Event>> + Send + '_ {
+        async_stream::stream! {
+            let _ = self.cancel_stream(session_handle.clone()).await;
+            let mut stream = std::pin::pin!(self.stream(crate::StreamMsg {
+                agent,
+                content,
+                session_handle,
+                ..Default::default()
+            }));
+            while let Some(event) = stream.next().await {
+                yield event;
             }
         }
     }

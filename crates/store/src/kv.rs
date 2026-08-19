@@ -2,19 +2,18 @@
 //!
 //! Everything addressable by a key you already hold lives here: agent
 //! configs, skill bodies, memory entries, session blobs, harness images.
-//! [`SqlIndex`](crate::SqlIndex) sits beside it holding only what a
-//! lookup needs to *find* one of these — ordering fields, FTS terms, set
-//! membership — and never content. That asymmetry is the whole design:
-//! the index is derived, so it can be rebuilt by scanning a column, and
-//! no write ever needs a transaction spanning the two stores.
+//! What a lookup needs to *find* one of these — ordering, name
+//! resolution, set membership — is more keys, filed under an `idx/`
+//! prefix and holding a primary key rather than content. Those indexes
+//! are derived, so any of them can be rebuilt by scanning the column it
+//! points into, and no write ever needs a transaction.
 //!
 //! The surface is deliberately small. A query engine would let a caller
-//! ask for anything, including something that crosses a realm; four
+//! ask for anything, including something that crosses a realm; five
 //! methods over a prefixed keyspace cannot express that.
 
 use anyhow::Result;
-use parking_lot::RwLock;
-use std::{collections::BTreeMap, future::Future};
+use std::future::Future;
 
 /// A hard partition of the keyspace. A scan in one column never sees
 /// another's keys, so a prefix cannot collide across kinds.
@@ -152,63 +151,5 @@ pub trait KVStorage: Send + Sync + 'static {
         value: &V,
     ) -> impl Future<Output = Result<()>> + Send {
         async move { self.put(col, key, &serde_json::to_vec(value)?).await }
-    }
-}
-
-/// A key qualified by its column.
-///
-/// Column first so the map's ordering groups by column before key, which
-/// is what lets [`MemoryDb::scan_keys`] answer a prefix scan with one
-/// range instead of a filter over everything.
-type ColumnKey = (u8, Vec<u8>);
-
-/// In-RAM [`KVStorage`]. Independent per instance; nothing is persisted.
-#[derive(Debug, Default)]
-pub struct MemoryDb {
-    entries: RwLock<BTreeMap<ColumnKey, Vec<u8>>>,
-}
-
-impl MemoryDb {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl KVStorage for MemoryDb {
-    async fn get(&self, col: Column, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        Ok(self.entries.read().get(&(col as u8, key.to_vec())).cloned())
-    }
-
-    async fn put(&self, col: Column, key: &[u8], value: &[u8]) -> Result<()> {
-        self.entries
-            .write()
-            .insert((col as u8, key.to_vec()), value.to_vec());
-        Ok(())
-    }
-
-    async fn delete(&self, col: Column, key: &[u8]) -> Result<bool> {
-        Ok(self
-            .entries
-            .write()
-            .remove(&(col as u8, key.to_vec()))
-            .is_some())
-    }
-
-    async fn scan_keys(&self, col: Column, prefix: &[u8]) -> Result<Vec<Vec<u8>>> {
-        let entries = self.entries.read();
-        Ok(entries
-            .range((col as u8, prefix.to_vec())..)
-            .take_while(|((c, key), _)| *c == col as u8 && key.starts_with(prefix))
-            .map(|((_, key), _)| key.clone())
-            .collect())
-    }
-
-    async fn scan(&self, col: Column, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        let entries = self.entries.read();
-        Ok(entries
-            .range((col as u8, prefix.to_vec())..)
-            .take_while(|((c, key), _)| *c == col as u8 && key.starts_with(prefix))
-            .map(|((_, key), value)| (key.clone(), value.clone()))
-            .collect())
     }
 }

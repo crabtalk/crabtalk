@@ -4,11 +4,9 @@
 //! handlers are registered by the caller at construction. Execution
 //! methods (`send_to`, `stream_to`) are handed the session to run
 //! against; which sessions are live, and under what id, is the
-//! caller's bookkeeping — the runtime is rebuilt on every config reload
-//! and a session outlives that.
+//! caller's bookkeeping.
 
-use crate::{Config, Env, Harness};
-use crate::{ToolRegistry, agent::Model};
+use crate::{Config, ToolRegistry, agent::Model};
 use std::sync::Arc;
 
 mod agents;
@@ -55,11 +53,5 @@ impl<C: Config> Runtime<C> {
     /// Access the persistence backend.
     pub fn storage(&self) -> &Arc<C::Storage> {
         &self.storage
-    }
-
-    /// How a surface opts into capabilities held out of the ambient tool set,
-    /// passed as a stream's `extra_tools`.
-    pub fn scoped_tools(&self, names: &[String]) -> Vec<crabllm_core::Tool> {
-        self.env.hook().scoped_schema(names)
     }
 }

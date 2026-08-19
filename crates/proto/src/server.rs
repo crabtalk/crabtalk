@@ -61,11 +61,10 @@ pub trait Server: Sync {
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<crate::ActiveConversationInfo>>> + Send;
 
-    /// Handle `Kill` — close a conversation by (agent, sender).
+    /// Handle `Kill` — close a conversation by session handle.
     fn kill_conversation(
         &self,
-        agent: String,
-        sender: String,
+        session_handle: String,
     ) -> impl std::future::Future<Output = Result<bool>> + Send;
 
     /// Handle `SubscribeEvents` — stream agent events.
@@ -73,9 +72,6 @@ pub trait Server: Sync {
 
     /// Handle `SubscribeMcpEvents` — stream MCP lifecycle events.
     fn subscribe_mcp_events(&self) -> impl Stream<Item = Result<crate::McpEventMsg>> + Send;
-
-    /// Handle `Reload` — hot-reload runtime from disk.
-    fn reload(&self) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Handle `GetStats` — return runtime stats.
     fn get_stats(&self) -> impl std::future::Future<Output = Result<crate::Stats>> + Send;
@@ -101,27 +97,18 @@ pub trait Server: Sync {
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Handle `Compact` — compact a conversation's history into a summary.
+    /// `prompt` is the client-supplied summarization instruction; the
+    /// daemon holds no built-in one.
     fn compact_conversation(
         &self,
-        agent: String,
-        sender: String,
+        session_handle: String,
+        prompt: String,
     ) -> impl std::future::Future<Output = Result<String>> + Send;
 
-    /// Handle `ReplyToTool` — deliver a client-side tool result for a
-    /// pending forwarded call. Resolves the pending entry keyed by
-    /// `(conversation_id, call_id)`.
-    fn reply_to_tool(
+    /// Handle `CancelStream` — stop the in-flight stream for a session.
+    fn cancel_stream(
         &self,
-        conversation_id: u64,
-        call_id: String,
-        output: String,
-        is_error: bool,
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
-
-    /// Handle `SteerSession` — inject a user message into an active stream.
-    fn steer_session(
-        &self,
-        req: crate::SteerSessionMsg,
+        req: crate::CancelStreamMsg,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Handle `ListAgents` — return all registered agents.
@@ -288,11 +275,11 @@ pub trait Server: Sync {
                     };
                 }
                 client_message::Msg::Kill(kill_msg) => {
-                    yield match self.kill_conversation(kill_msg.agent.clone(), kill_msg.sender.clone()).await {
+                    yield match self.kill_conversation(kill_msg.session_handle.clone()).await {
                         Ok(true) => server_pong(),
                         Ok(false) => server_error(
                             404,
-                            format!("conversation not found for agent='{}' sender='{}'", kill_msg.agent, kill_msg.sender),
+                            format!("conversation not found for handle='{}'", kill_msg.session_handle),
                         ),
                         Err(e) => server_error(500, e.to_string()),
                     };
@@ -314,23 +301,8 @@ pub trait Server: Sync {
                         yield result_to_msg(result);
                     }
                 }
-                client_message::Msg::Reload(_) => {
-                    yield match self.reload().await {
-                        Ok(()) => server_pong(),
-                        Err(e) => server_error(500, e.to_string()),
-                    };
-                }
-                client_message::Msg::ReplyToAsk(_) => {
-                    yield server_error(410, "ReplyToAsk removed — use ReplyToTool".into());
-                }
-                client_message::Msg::ReplyToTool(msg) => {
-                    yield match self.reply_to_tool(msg.conversation_id, msg.call_id, msg.output, msg.is_error).await {
-                        Ok(()) => server_pong(),
-                        Err(e) => server_error(404, e.to_string()),
-                    };
-                }
-                client_message::Msg::SteerSession(req) => {
-                    yield match self.steer_session(req).await {
+                client_message::Msg::CancelStream(req) => {
+                    yield match self.cancel_stream(req).await {
                         Ok(()) => server_pong(),
                         Err(e) => server_error(500, e.to_string()),
                     };
@@ -373,7 +345,10 @@ pub trait Server: Sync {
                     };
                 }
                 client_message::Msg::Compact(req) => {
-                    yield match self.compact_conversation(req.agent, req.sender).await {
+                    yield match self
+                        .compact_conversation(req.session_handle, req.prompt)
+                        .await
+                    {
                         Ok(summary) => crate::ServerMessage {
                             msg: Some(server_message::Msg::Compact(crate::CompactResponse { summary })),
                         },

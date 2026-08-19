@@ -46,6 +46,10 @@ impl Default for Options {
     }
 }
 
+/// A store: one file, and the key index over it.
+///
+/// One mutex, so operations serialize — reads included, since a read
+/// seeks the same handle a write appends to.
 pub struct CrabDb {
     inner: Mutex<Inner>,
 }
@@ -61,6 +65,7 @@ struct Inner {
 }
 
 impl CrabDb {
+    /// Open with [`Options::default`].
     pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
         Self::open_with(path, Options::default())
     }
@@ -158,6 +163,7 @@ impl CrabDb {
         })
     }
 
+    /// The value at `key`. One index lookup and one seek.
     pub fn get(&self, col: u8, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let mut inner = self.inner.lock();
         let Some(offset) = inner.index.get(&(col, key.to_vec())).copied() else {
@@ -166,6 +172,8 @@ impl CrabDb {
         inner.read_value(offset)
     }
 
+    /// Write `value` at `key`. The superseded record is dead bytes until
+    /// a compaction reclaims it, which this call may trigger.
     pub fn put(&self, col: u8, key: &[u8], value: &[u8]) -> Result<()> {
         let mut inner = self.inner.lock();
         let offset = inner.append(Op::Put, col, key, value)?;
@@ -207,6 +215,7 @@ impl CrabDb {
         Ok(out)
     }
 
+    /// Live keys, off the resident index rather than a scan.
     pub fn len(&self) -> usize {
         self.inner.lock().index.len()
     }

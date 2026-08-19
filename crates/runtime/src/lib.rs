@@ -35,7 +35,7 @@ use store::interface::Backend;
 /// Each binary defines one `Config` impl that ties together the
 /// concrete storage, LLM provider, and env implementations.
 pub trait Config: Send + Sync + 'static {
-    /// Persistence backend — the six interfaces, bundled. What satisfies
+    /// Persistence backend — the five interfaces, bundled. What satisfies
     /// this decides residency and caching for itself; the runtime holds
     /// the interfaces and none of the data behind them.
     type Storage: Backend;

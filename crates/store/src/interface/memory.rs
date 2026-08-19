@@ -44,6 +44,18 @@ pub trait Memory: KVStorage + TextSearch {
         }
     }
 
+    /// Names beginning with `stem`. Bounded by the stem rather than the
+    /// column, for callers that file entries under a shared one — no
+    /// trailing separator, so `foo-` reaches `foo-1` and `foo-2`.
+    fn memory_names_under(&self, stem: &str) -> impl Future<Output = Result<Vec<String>>> + Send {
+        async move {
+            let keys = self
+                .scan_keys(Column::Memory, &self.key(&["memory", stem]))
+                .await?;
+            Ok(keys.iter().filter_map(|k| last_segment(k)).collect())
+        }
+    }
+
     fn put_memory(&self, entry: &MemoryEntry) -> impl Future<Output = Result<()>> + Send {
         async move {
             let key = self.key(&["memory", &entry.name]);

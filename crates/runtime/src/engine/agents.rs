@@ -8,11 +8,13 @@
 //! [`Harness::on_resolve_agent`](crate::Harness::on_resolve_agent) must
 //! be idempotent.
 
-use crate::engine::Runtime;
-use crate::{Agent, AgentBuilder, Config, Env, Harness, ToolDispatcher};
+use crate::{Agent, AgentBuilder, Config, Env, Harness, ToolDispatcher, engine::Runtime};
 use anyhow::Result;
 use std::sync::Arc;
-use store::{AgentConfig, AgentId, interface::Agents, interface::Sessions};
+use store::{
+    AgentConfig, AgentId,
+    interface::{Agents, Sessions},
+};
 
 impl<C: Config> Runtime<C> {
     /// One agent's config, or `None` if storage has no such agent.
@@ -41,6 +43,16 @@ impl<C: Config> Runtime<C> {
 
     pub(crate) async fn has_agent(&self, id: &AgentId) -> bool {
         self.agent(id).await.is_some()
+    }
+
+    /// Every agent's id and name, for listings that put a name beside an
+    /// id. Reads each config once, however many rows are being labelled.
+    pub async fn agent_names(&self) -> std::collections::HashMap<AgentId, String> {
+        self.agents()
+            .await
+            .into_iter()
+            .map(|config| (config.id, config.name))
+            .collect()
     }
 
     /// Build the agent for a run.

@@ -665,6 +665,7 @@ dependencies = [
  "crabtalk-store",
  "tokio",
  "tracing",
+ "ulid",
 ]
 
 [[package]]
@@ -777,7 +778,6 @@ dependencies = [
  "async-stream",
  "chrono",
  "crabllm-core",
- "crabtalk-mcp",
  "crabtalk-proto",
  "crabtalk-skill",
  "crabtalk-store",
@@ -790,6 +790,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -834,7 +835,6 @@ dependencies = [
  "crabtalk-proto",
  "crabtalk-skill",
  "dirs",
- "parking_lot",
  "serde",
  "serde_json",
  "serde_yml",
@@ -4047,6 +4047,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

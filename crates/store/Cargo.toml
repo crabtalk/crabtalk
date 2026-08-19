@@ -18,7 +18,6 @@ skill.workspace = true
 
 anyhow.workspace = true
 chrono.workspace = true
-parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yml.workspace = true

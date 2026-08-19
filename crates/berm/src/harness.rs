@@ -17,8 +17,7 @@
 
 use crate::{Dispatch, Scope};
 use berm::{Capability, Config, Engine, Grants, Harness};
-use crabllm_core::Tool;
-use crabllm_core::{FunctionDef, ToolType};
+use crabllm_core::{FunctionDef, Tool, ToolType};
 use runtime::{ToolDispatch, ToolFuture};
 use sha2::{Digest as _, Sha256};
 use std::{
@@ -62,7 +61,7 @@ impl Registry {
     }
 }
 
-pub struct HarnessHook {
+pub struct BermHarness {
     engine: Engine,
     registry: RwLock<Registry>,
     /// The runtime's own door, connected once the daemon that implements it
@@ -70,7 +69,7 @@ pub struct HarnessHook {
     protocol: Arc<OnceLock<Dispatch>>,
 }
 
-impl HarnessHook {
+impl BermHarness {
     /// An engine whose generated code is cached under the config directory, so
     /// a restart pays ~3ms per image instead of ~15ms.
     /// `protocol` is filled by the daemon once it exists. Until then a granted
@@ -236,7 +235,7 @@ fn digest(elf: &[u8], grants: &Grants, scope: Option<&Scope>, hosts: Option<&[St
     hasher.finalize().into()
 }
 
-impl runtime::Harness for HarnessHook {
+impl runtime::Harness for BermHarness {
     /// Every harness tool, for the schema catalogue. What an agent may
     /// actually call is [`runtime::Harness::scoped_tools`].
     fn schema(&self) -> Vec<Tool> {

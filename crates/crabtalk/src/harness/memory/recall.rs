@@ -1,7 +1,7 @@
 //! `recall` — ranked search over memory entries.
 
-use crate::ToolDispatch;
-use crate::harness::memory::MemoryHook;
+use super::MemoryHarness;
+use runtime::ToolDispatch;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use store::interface::Memory;
@@ -18,7 +18,7 @@ pub struct Recall {
     pub limit: Option<usize>,
 }
 
-impl<M: Memory> MemoryHook<M> {
+impl<M: Memory> MemoryHarness<M> {
     /// Search, then read back only the entries that ranked. The index
     /// returns names; bodies are fetched for the handful kept, so a
     /// broad query never drags the whole store into the reply.

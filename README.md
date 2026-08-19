@@ -5,11 +5,10 @@
 [![Discord][discord-badge]][discord]
 
 > [!WARNING]
-> **Heavy refactor in progress.** The persistence layer is being rebuilt
-> around two primitives — a key-value store for content and an index for
-> lookups — and the runtime is being emptied of everything it used to hold
-> resident. Crate layout, APIs and docs are all moving; treat anything
-> written about internals as out of date until this settles.
+> **Heavy refactor in progress.** The daemon and the CLI are being redesigned
+> and are not in the tree; there is no install story until they land. Crate
+> layout and APIs are moving with them — treat anything written about
+> internals as out of date until this settles.
 
 **Agent daemon.** Runs agents, dispatches tools, connects to MCP servers.
 Start it, talk to it, extend it with packages.
@@ -18,27 +17,17 @@ Start it, talk to it, extend it with packages.
 curl -fsSL https://crabtalk.ai/install.sh | sh
 ```
 
-Or `cargo install crabup` and use it to fetch the rest. See the [installation guide][install] for details.
+That installs [`crabup`](apps/crabup), the version manager. See the
+[installation guide][install] for details.
 
-## Quick Start
-
-```bash
-cargo install crabup         # one-time: install the package manager
-crabup install daemon        # fetch the daemon binary
-crabup install cli           # fetch the CLI client
-crabup daemon start          # install the service unit and start it
-crabtalk                     # chat
-```
-
-Set `llm.base_url` in `~/.crabtalk/config.toml` before the first chat — the
-daemon scaffolds the file on first run and warns if the endpoint is unset.
-
-Full config reference: [`crates/storage/config.toml`](crates/storage/config.toml).
+Config reference: [`crates/store/src/config/`](crates/store/src/config/).
 
 ## How It Works
 
-The daemon ships with built-in tools (shell, task delegation, memory),
-MCP server integration, and skills (Markdown prompt files).
+The daemon owns no tools of its own. Shell, file access, skills and session
+search are [harnesses](docs/src/spec/harness.md) an agent declares — one RV64
+ELF each, reaching only what that declaration granted. MCP is a capability,
+not a harness: calling another program is not shaping an agent.
 
 [Apps](apps/) are agent-powered experiences and standalone services
 built on top of the daemon — independent binaries that connect via
@@ -47,7 +36,7 @@ auto-discovery.
 ## Learn More
 
 - [The Crabtalk Book][book] — architecture and design RFCs
-- [Configuration](crates/storage/config.toml) — config.toml reference
+- [Architecture](docs/src/arch.md) — harnesses, capabilities, and where a thing goes
 - [Contributing](CONTRIBUTING.md) — architecture, layering, and data flow
 
 ## License
