@@ -21,11 +21,11 @@ extern crate alloc;
 #[berm_lang::harness(usage_file = "usage.md", buffer = 262144)]
 mod tools {
     use alloc::string::String;
-    use berm_lang::{
-        Failed, Out, parse,
+    use berm_crabtalk::{
         proto::{ClientMessage, SearchSessionsMsg, SessionHit, client_message, server_message},
         protocol,
     };
+    use berm_lang::{Failed, Out, parse};
     use core::fmt::Write;
 
     /// Search past conversations by keyword.

@@ -91,7 +91,9 @@ impl Parse for Declaration {
 
         // A path rather than the text, for the reason `usage_file` takes one: a
         // proc macro never sees an `include_str!` expanded, so it reads the file
-        // itself. Both sides naming the same path is what makes them one source.
+        // itself. Both sides naming the same path is what makes them one source,
+        // which holds only while at most one of them is published — a path
+        // leaving the crate root is a file `cargo package` omits.
         let body: Body = if input.peek(Token![,]) {
             input.parse::<Token![,]>()?;
             let path: LitStr = input.parse()?;
@@ -311,6 +313,19 @@ impl Ty {
         }
     }
 
+    /// The owned type a host implementation answers with. [`Ty::owned`]'s
+    /// counterpart: the guest reaches these through `alloc`, a host through
+    /// std.
+    fn host_owned(&self) -> TokenStream {
+        match self {
+            Ty::Text => quote!(::std::string::String),
+            Ty::Bytes => quote!(::std::vec::Vec<u8>),
+            Ty::Int(16) => quote!(u16),
+            Ty::Int(32) => quote!(u32),
+            _ => quote!(u64),
+        }
+    }
+
     /// The borrowed type a parameter takes.
     fn borrowed(&self) -> TokenStream {
         match self {
@@ -471,14 +486,186 @@ impl Declaration {
         }
     }
 
-    /// The name a host registers under. The implementation is the embedder's.
+    /// The constructor a host serves a name with.
+    ///
+    /// It takes the implementation and returns the registrable `Harness`, so
+    /// the fields the guest built are read back by generated code rather than
+    /// by an index written out per call — which is where a system harness
+    /// actually goes wrong.
     fn host(&self, module: &Module, call: &Call) -> TokenStream {
         let wire = format!("{}.{}.{}", self.namespace, module.name, call.name);
+        let ident = &call.name;
         let docs = doc(&call.docs);
         let konst = konst(call);
+        let fixed = call.params.len();
+
+        let takes = call
+            .params
+            .iter()
+            .chain(&call.tail)
+            .map(|p| p.ty.borrowed())
+            .collect::<Vec<_>>();
+
+        let reads = call.params.iter().enumerate().map(|(at, p)| {
+            let binding = &p.name;
+            let what = p.name.to_string();
+            let value = match p.ty {
+                Ty::Text => quote!(::berm::wire::text(&fields, #at, #what)?),
+                Ty::Bytes => quote!(fields[#at]),
+                Ty::Int(_) => {
+                    let ty = p.ty.borrowed();
+                    quote! {
+                        ::core::str::from_utf8(fields[#at])
+                            .ok()
+                            .and_then(|text| text.parse::<#ty>().ok())
+                            .ok_or_else(|| {
+                                ::berm::anyhow::anyhow!(concat!(#what, " is not a number"))
+                            })?
+                    }
+                }
+                Ty::Pairs => unreachable!("pairs are the tail, read below"),
+            };
+            quote!(let #binding = #value;)
+        });
+
+        // The tail has no terminator, so its arity is the only thing that says
+        // it is well formed: everything past the fixed fields is a key and a
+        // value, and an odd count means one of them is missing.
+        let (arity, pairs, names) = match &call.tail {
+            None => (
+                quote! {
+                    if fields.len() != #fixed {
+                        ::berm::anyhow::bail!(
+                            concat!(#wire, " takes ", stringify!(#fixed), " fields, the request has {}"),
+                            fields.len()
+                        );
+                    }
+                },
+                quote!(),
+                call.params.iter().map(|p| &p.name).collect::<Vec<_>>(),
+            ),
+            Some(tail) => {
+                let binding = &tail.name;
+                let what = tail.name.to_string();
+                let mut names = call.params.iter().map(|p| &p.name).collect::<Vec<_>>();
+                names.push(binding);
+                (
+                    quote! {
+                        if fields.len() < #fixed {
+                            ::berm::anyhow::bail!(
+                                concat!(#wire, " takes at least ", stringify!(#fixed), " fields, the request has {}"),
+                                fields.len()
+                            );
+                        }
+                    },
+                    quote! {
+                        let trailing = &fields[#fixed..];
+                        if trailing.len() % 2 != 0 {
+                            ::berm::anyhow::bail!(concat!(#what, " has a key with no value"));
+                        }
+                        let mut #binding = ::std::vec::Vec::with_capacity(trailing.len() / 2);
+                        for pair in trailing.chunks(2) {
+                            #binding.push((
+                                ::core::str::from_utf8(pair[0])?,
+                                ::core::str::from_utf8(pair[1])?,
+                            ));
+                        }
+                        let #binding = &#binding[..];
+                    },
+                    names,
+                )
+            }
+        };
+
+        let (returns, reply, answer) = match &call.reply {
+            Reply::Nothing => (
+                quote!(()),
+                quote!(),
+                quote! {
+                    serve(#(#names),*)?;
+                    ::core::result::Result::Ok(::std::vec::Vec::new())
+                },
+            ),
+            // Staged raw, exactly as the guest reads it back.
+            Reply::One(Ty::Bytes) => (
+                quote!(::std::vec::Vec<u8>),
+                quote!(),
+                quote!(serve(#(#names),*)),
+            ),
+            Reply::One(ty) => {
+                let owned = ty.host_owned();
+                let into = match ty {
+                    Ty::Text => quote!(.into_bytes()),
+                    _ => quote!(.to_string().into_bytes()),
+                };
+                (
+                    owned,
+                    quote!(),
+                    quote!(::core::result::Result::Ok(serve(#(#names),*)? #into)),
+                )
+            }
+            Reply::Many(fields) => {
+                let ty = format_ident!("{}", pascal(&call.name.to_string()));
+                let declared = fields.iter().map(|f| {
+                    let name = &f.name;
+                    let owned = f.ty.host_owned();
+                    quote!(pub #name: #owned)
+                });
+                // An int field needs somewhere to live as text for as long as
+                // the frame borrows it, which is what these bindings are.
+                let staged = fields.iter().map(|f| {
+                    let name = &f.name;
+                    match f.ty {
+                        Ty::Int(_) => quote!(let #name = reply.#name.to_string();),
+                        _ => quote!(),
+                    }
+                });
+                let borrowed = fields.iter().map(|f| {
+                    let name = &f.name;
+                    match f.ty {
+                        Ty::Text => quote!(reply.#name.as_bytes()),
+                        Ty::Bytes => quote!(&reply.#name[..]),
+                        Ty::Int(_) => quote!(#name.as_bytes()),
+                        Ty::Pairs => unreachable!("a reply is never pairs"),
+                    }
+                });
+                (
+                    quote!(#ty),
+                    quote! {
+                        #docs
+                        pub struct #ty { #(#declared),* }
+                    },
+                    quote! {
+                        let reply = serve(#(#names),*)?;
+                        #(#staged)*
+                        ::core::result::Result::Ok(::berm::wire::frame(&[#(#borrowed),*]))
+                    },
+                )
+            }
+        };
+
         quote! {
+            #reply
+
             #docs
             pub const #konst: &str = #wire;
+
+            #docs
+            pub fn #ident(
+                serve: impl Fn(#(#takes),*) -> ::berm::anyhow::Result<#returns>
+                    + Send + Sync + 'static,
+            ) -> ::berm::Harness {
+                ::berm::Harness {
+                    name: ::std::string::String::from(#konst),
+                    call: ::std::sync::Arc::new(move |request: &[u8]| {
+                        let fields = ::berm::wire::fields(request)?;
+                        #arity
+                        #(#reads)*
+                        #pairs
+                        #answer
+                    }),
+                }
+            }
         }
     }
 }

@@ -61,11 +61,15 @@ working without a flag.
 
 The resulting ELF is the whole artifact: one file, every platform.
 
-## Not the client
+## Reaching a runtime
 
-This is not [`crabtalk-client`](https://crates.io/crates/crabtalk-client), which
-connects to the daemon over a socket. Both speak the same protocol; only this
-one runs inside the sandbox.
+This crate is the sandbox, and its system set is the machine: files and
+commands, the things a no_std RV64 guest cannot do for itself. It knows nothing
+about any particular host's API.
+
+A harness that talks to the Crabtalk daemon adds
+[`berm-crabtalk`](https://crates.io/crates/berm-crabtalk), which declares the
+`crabtalk` namespace and carries the message types.
 
 ## Design
 

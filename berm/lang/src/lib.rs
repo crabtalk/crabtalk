@@ -28,9 +28,10 @@
 //! `-Clink-arg=--emit-relocs`; the template's `.cargo/config.toml` carries
 //! both, and neither is optional.
 //!
-//! This is not [`crabtalk-client`](https://crates.io/crates/crabtalk-client),
-//! which connects to the daemon over a socket. Both speak the same protocol;
-//! only this one runs inside the sandbox.
+//! The system set here is the machine — files and commands, the things a
+//! no_std RV64 guest cannot do for itself. A harness that talks to the Crabtalk
+//! daemon adds [`berm-crabtalk`](https://crates.io/crates/berm-crabtalk), which
+//! declares that namespace and carries the message types.
 
 #![no_std]
 
@@ -58,9 +59,6 @@ pub mod abi;
 #[cfg(feature = "alloc")]
 #[doc(hidden)]
 pub mod host;
-/// The runtime, over `ClientMessage`. Granted as `protocol:<group>`.
-#[cfg(feature = "protocol")]
-pub mod protocol;
 // Installing a global allocator is something only the whole program may do,
 // so like the panic handler it happens on the guest's target and nowhere else.
 #[cfg(all(feature = "alloc", target_arch = "riscv64"))]
@@ -86,11 +84,14 @@ pub mod wire;
 #[cfg_attr(not(target_arch = "riscv64"), path = "sys/stub.rs")]
 mod sys;
 
-// The guest half of the system harnesses berm names. Declared here rather than
-// in a file berm reads too: both crates are published, and a proc macro cannot
-// read a dependency's files, so a shared path would leave one package without
-// it. A misspelling on either side hashes to a number nothing is registered
-// for, which `cargo run --example os -p berm` trips on the first call.
+// The guest half of berm's system set. berm declares the host half of the same
+// thing, in its own crate: both are published, and a proc macro cannot read a
+// dependency's files, so a shared path would leave one package without it.
+//
+// Drift is caught rather than prevented. A renamed call hashes to a number
+// nothing is registered for, and a changed field count fails the arity check
+// the host expansion emits — both loud, on the first call, which
+// `cargo run --example os -p berm` makes.
 #[cfg(feature = "alloc")]
 harnesses!(guest {
     namespace = "berm";
@@ -123,9 +124,6 @@ pub use tool::{failed, system};
 // which only resolves if the author can reach serde through us — and an author
 // who had to depend on it directly could pick a version that disagrees with
 // the one the derive was generated against.
-/// The daemon's message types, for a harness holding a `protocol:*` grant.
-#[cfg(feature = "protocol")]
-pub use ::proto;
 #[cfg(feature = "args")]
 pub use serde_guest as serde;
 #[cfg(feature = "args")]

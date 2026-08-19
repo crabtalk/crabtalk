@@ -27,8 +27,42 @@ pub mod exec;
 pub mod fs;
 mod manifest;
 mod root;
+/// The host half of berm's system set: one constructor per name, taking the
+/// implementation and returning the [`Harness`] that serves it.
+///
+/// `berm-lang` declares the guest half of the same thing in its own crate.
+/// Both are published, so neither can hold a file the other reads.
+pub mod system {
+    berm_codegen::harnesses!(host {
+        namespace = "berm";
+
+        /// Files, bounded by a granted root.
+        mod fs {
+            /// Read a file whole.
+            fn read(path: &str) -> Vec<u8>;
+            /// Write a file, replacing what was there.
+            fn write(path: &str, content: &[u8]);
+        }
+
+        /// Commands, under the same root `fs` is bounded by.
+        mod exec {
+            /// Run a command through a shell, in `cwd` relative to the root.
+            fn run(command: &str, cwd: &str, env: &[(&str, &str)]) -> Vec<u8>;
+        }
+    });
+}
 mod watchdog;
 pub mod wire;
+
+// `harnesses!` emits `::berm::` paths so an expansion works in an embedder's
+// own crate. That only resolves in here if the crate can name itself.
+extern crate self as berm;
+
+// Reached by the host expansion, and re-exported for the reason `berm-lang`
+// re-exports serde: an embedder depends on this crate and nothing else, and
+// cannot pick a version the generated code disagrees with.
+pub use anyhow;
+pub use berm_codegen::harnesses;
 
 /// A guest entry point: takes nothing, returns a pointer and a length.
 type Export = TypedFunc<(), (u64, u64)>;

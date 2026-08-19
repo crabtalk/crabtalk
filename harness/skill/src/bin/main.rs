@@ -21,11 +21,11 @@ extern crate alloc;
 #[berm_lang::harness(buffer = 262144)]
 mod tools {
     use alloc::{string::String, vec::Vec};
-    use berm_lang::{
-        Failed, Out, parse,
+    use berm_crabtalk::{
         proto::{ClientMessage, GetSkillMsg, ListSkillsMsg, client_message, server_message},
         protocol,
     };
+    use berm_lang::{Failed, Out, parse};
     use core::fmt::Write;
 
     /// Load a skill by name, or list what is available.

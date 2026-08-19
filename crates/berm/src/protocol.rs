@@ -22,11 +22,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 use store::AgentId;
-
-/// What the harness calls to reach the runtime. Named `crabtalk.` rather than
-/// `berm.` because only crabtalk implements it — a different embedder has its
-/// own API and would name a system harness after that.
-pub(crate) const CALL: &str = "crabtalk.protocol.call";
+use tokio::runtime::Handle;
 
 /// How a harness reaches the runtime.
 ///
@@ -118,50 +114,76 @@ pub(crate) fn redact(mut reply: ServerMessage) -> ServerMessage {
     reply
 }
 
-/// Decode one `ClientMessage`, check it against the allowlist, dispatch it,
-/// and encode the reply.
-///
-/// The dispatcher arrives after the harnesses do — the daemon that implements
-/// it is built on top of them — so it is read through a `OnceLock` rather than
-/// held. A call before it is connected fails rather than waiting.
-pub fn call(protocol: &OnceLock<Dispatch>, request: &[u8], scope: &Scope) -> Result<Vec<u8>> {
-    let mut message = ClientMessage::decode(request)?;
-    let Some(inner) = message.msg.as_ref() else {
-        bail!("empty client message");
-    };
-    if !scope.allows(inner) {
-        bail!("this message type is in no group this harness was granted");
-    }
-    // Refused here rather than filtered out of the reply, so asking for a
-    // skill outside the declaration costs nothing and says so.
-    if let client_message::Msg::GetSkill(msg) = inner
-        && !scope.may_use(&msg.name)
-    {
-        bail!("skill not available: {}", msg.name);
-    }
+/// What one declaration's `protocol:*` grant is served by.
+pub struct Protocol {
+    /// The dispatcher arrives after the harnesses do — the daemon that
+    /// implements it is built on top of them — so it is read through a
+    /// `OnceLock` rather than held. A call before it is connected fails
+    /// rather than waiting.
+    dispatch: Arc<OnceLock<Dispatch>>,
+    /// Held rather than looked up per call, for the reason [`crate::Http`]
+    /// holds one: the runtime is async, the sandbox is sync, and which
+    /// reactor bridges them is the embedder's to decide once.
+    reactor: Handle,
+    scope: Scope,
+}
 
-    // Overwritten rather than checked: the agent filter is not the harness's to
-    // choose, and refusing a wrong one would only teach it to send the right
-    // one. `sender` stays free — an agent's own conversations span every
-    // partner it has, and it can already resume any of them.
-    if let Some(client_message::Msg::SearchSessions(msg)) = message.msg.as_mut() {
-        msg.agent = scope.agent.to_string();
+impl Protocol {
+    pub fn new(dispatch: Arc<OnceLock<Dispatch>>, reactor: Handle, scope: Scope) -> Self {
+        Self {
+            dispatch,
+            reactor,
+            scope,
+        }
     }
 
-    let Some(dispatch) = protocol.get() else {
-        bail!("the protocol is not connected yet");
-    };
-    let handle = tokio::runtime::Handle::try_current()
-        .map_err(|_| anyhow::anyhow!("the protocol needs a running reactor"))?;
-    let replies = handle.block_on(dispatch(message));
+    /// The harness serving `crabtalk.protocol.call`. The name comes from the
+    /// declaration `berm-crabtalk` builds its stub from, so there is no string
+    /// here for the two sides to disagree about.
+    pub fn harness(self) -> berm::Harness {
+        crate::system::protocol::call(move |message| self.call(message))
+    }
 
-    // Every message in a read group is request-response. Streaming ones are
-    // in no group a harness can hold, so one reply is the whole answer.
-    let Some(reply) = replies.into_iter().next() else {
-        bail!("the runtime returned no reply");
-    };
+    /// Decode one `ClientMessage`, check it against the allowlist, dispatch
+    /// it, and encode the reply.
+    pub fn call(&self, request: &[u8]) -> Result<Vec<u8>> {
+        let mut message = ClientMessage::decode(request)?;
+        let Some(inner) = message.msg.as_ref() else {
+            bail!("empty client message");
+        };
+        if !self.scope.allows(inner) {
+            bail!("this message type is in no group this harness was granted");
+        }
+        // Refused here rather than filtered out of the reply, so asking for a
+        // skill outside the declaration costs nothing and says so.
+        if let client_message::Msg::GetSkill(msg) = inner
+            && !self.scope.may_use(&msg.name)
+        {
+            bail!("skill not available: {}", msg.name);
+        }
 
-    let mut encoded = Vec::new();
-    scope.narrow(redact(reply)).encode(&mut encoded)?;
-    Ok(encoded)
+        // Overwritten rather than checked: the agent filter is not the
+        // harness's to choose, and refusing a wrong one would only teach it to
+        // send the right one. `sender` stays free — an agent's own
+        // conversations span every partner it has, and it can already resume
+        // any of them.
+        if let Some(client_message::Msg::SearchSessions(msg)) = message.msg.as_mut() {
+            msg.agent = self.scope.agent.to_string();
+        }
+
+        let Some(dispatch) = self.dispatch.get() else {
+            bail!("the protocol is not connected yet");
+        };
+        let replies = self.reactor.block_on(dispatch(message));
+
+        // Every message in a read group is request-response. Streaming ones are
+        // in no group a harness can hold, so one reply is the whole answer.
+        let Some(reply) = replies.into_iter().next() else {
+            bail!("the runtime returned no reply");
+        };
+
+        let mut encoded = Vec::new();
+        self.scope.narrow(redact(reply)).encode(&mut encoded)?;
+        Ok(encoded)
+    }
 }

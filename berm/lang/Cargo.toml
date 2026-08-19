@@ -18,17 +18,12 @@ test = false
 # Installs an allocator that takes its heap from the host on first use.
 default = ["alloc", "args"]
 alloc = ["dep:linked_list_allocator"]
-# The protocol types are generated a second time for the guest, so a harness
-# that never talks to the runtime does not link them.
-protocol = ["alloc", "dep:proto", "dep:prost"]
 # Typed tool arguments. On by default because a tool that takes none is the
 # exception; a harness like `peers` can turn it off.
 args = ["alloc", "dep:serde_guest", "dep:serde_json_guest"]
 
 [dependencies]
 berm-codegen.workspace = true
-proto = { workspace = true, optional = true }
-prost = { workspace = true, optional = true }
 rvtime-guest.workspace = true
 serde_guest = { workspace = true, optional = true }
 serde_json_guest = { workspace = true, optional = true }

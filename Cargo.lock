@@ -181,6 +181,7 @@ name = "berm"
 version = "0.0.23"
 dependencies = [
  "anyhow",
+ "berm-codegen",
  "object 0.40.0",
  "rvtime",
  "serde",
@@ -199,6 +200,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "berm-crabtalk"
+version = "0.0.23"
+dependencies = [
+ "berm-lang",
+ "crabtalk-proto",
+ "prost",
+]
+
+[[package]]
 name = "berm-fixture"
 version = "0.0.23"
 dependencies = [
@@ -210,9 +220,7 @@ name = "berm-lang"
 version = "0.0.23"
 dependencies = [
  "berm-codegen",
- "crabtalk-proto",
  "linked_list_allocator",
- "prost",
  "rvtime-guest",
  "serde",
  "serde_json",
@@ -229,6 +237,7 @@ dependencies = [
 name = "berm-peers"
 version = "0.0.23"
 dependencies = [
+ "berm-crabtalk",
  "berm-lang",
 ]
 
@@ -236,6 +245,7 @@ dependencies = [
 name = "berm-sessions"
 version = "0.0.23"
 dependencies = [
+ "berm-crabtalk",
  "berm-lang",
 ]
 
@@ -243,6 +253,7 @@ dependencies = [
 name = "berm-skill"
 version = "0.0.23"
 dependencies = [
+ "berm-crabtalk",
  "berm-lang",
 ]
 

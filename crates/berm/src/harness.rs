@@ -15,8 +15,9 @@
 //! the length of a command, so dispatch hands the invocation to the blocking
 //! pool rather than running it on an async worker.
 
-use crate::{Dispatch, Scope};
-use berm::{Berm, Config, Engine, Harness, Manifest};
+use crate::{Dispatch, Http, Protocol, Scope};
+use anyhow::Context as _;
+use berm::{Berm, Config, Engine, Manifest};
 use crabllm_core::{FunctionDef, Tool, ToolType};
 use runtime::{ToolDispatch, ToolFuture};
 use sha2::{Digest as _, Sha256};
@@ -25,6 +26,7 @@ use std::{
     sync::{Arc, OnceLock, RwLock},
 };
 use store::{AgentConfig, AgentId, HarnessConfig};
+use tokio::runtime::Handle;
 
 /// What names an image: a SHA-256 over the ELF and everything the sandbox is
 /// built with.
@@ -67,6 +69,11 @@ pub struct BermHarness {
     /// The runtime's own door, connected once the daemon that implements it
     /// exists — which is after these images load, since it is built on them.
     protocol: Arc<OnceLock<Dispatch>>,
+    /// What bridges a sync sandbox to an async runtime, taken once here rather
+    /// than hunted for inside each call: whether a reactor exists is a fact
+    /// about the embedder, so it is answered when the embedder is built and
+    /// never again on a model's turn.
+    reactor: Handle,
 }
 
 impl BermHarness {
@@ -82,6 +89,8 @@ impl BermHarness {
             engine: Engine::new(&config)?,
             registry: RwLock::new(Registry::default()),
             protocol,
+            reactor: Handle::try_current()
+                .context("crabtalk's system harnesses need a reactor to reach the runtime")?,
         })
     }
 
@@ -160,18 +169,11 @@ impl BermHarness {
             }
         }
         if let Some(scope) = scope {
-            let protocol = self.protocol.clone();
-            system.push(Harness {
-                name: crate::protocol::CALL.to_owned(),
-                call: Arc::new(move |request| crate::protocol::call(&protocol, request, &scope)),
-            });
+            system
+                .push(Protocol::new(self.protocol.clone(), self.reactor.clone(), scope).harness());
         }
         if granted("http") && !declaration.hosts.is_empty() {
-            let hosts = declaration.hosts.clone();
-            system.push(Harness {
-                name: crate::http::FETCH.to_owned(),
-                call: Arc::new(move |request| crate::http::call(&hosts, request)),
-            });
+            system.push(Http::new(declaration.hosts.clone(), self.reactor.clone()).harness());
         }
 
         let harness = Berm::load(&self.engine, &elf, &system)?;

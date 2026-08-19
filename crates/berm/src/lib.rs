@@ -7,10 +7,8 @@
 //!
 //! - [`BermHarness`], which surfaces a harness's tools to the runtime and
 //!   dispatches calls to them
-//! - the `crabtalk.protocol.call` system harness, which is a [`berm::Harness`]
-//!   like any other an embedder supplies
-//! - `crabtalk.http.fetch`, which is here for a second reason as well: hyper
-//!   needs a reactor, and the sandbox is sync and has none
+//! - [`Protocol`] and [`Http`], the implementations behind the `crabtalk`
+//!   namespace — [`berm::Harness`] values like any other an embedder supplies
 //!
 //! The split is what makes "berm is embeddable without crabtalk" a fact the
 //! compiler checks rather than a promise: berm's dependency list has no
@@ -21,10 +19,16 @@ use std::{path::PathBuf, sync::LazyLock};
 mod harness;
 mod http;
 mod protocol;
+/// The host half of the `crabtalk` namespace, from the declaration
+/// `berm-crabtalk` generates its guest stubs from. Sharing the file works here
+/// and not for berm's own set because only one side of this pair publishes.
+mod system {
+    berm::harnesses!(host, "../../lib/berm/crabtalk.harnesses");
+}
 
 pub use harness::BermHarness;
-pub use http::call as http_fetch;
-pub use protocol::{Dispatch, Scope, call as protocol_call};
+pub use http::Http;
+pub use protocol::{Dispatch, Protocol, Scope};
 
 /// Harness images (`~/.crabtalk/harnesses/`), one `{name}.elf` each.
 ///

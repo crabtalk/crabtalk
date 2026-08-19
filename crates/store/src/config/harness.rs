@@ -34,8 +34,10 @@ pub struct HarnessConfig {
     ///
     /// What `root` is to `fs`, this is to `http`: the argument the grant
     /// consists of. An empty list leaves it unregistered, so `http` without
-    /// hosts reaches nothing — and since a name is only reachable by being
-    /// written here, the daemon's own port is out of reach unless someone
-    /// names it.
+    /// hosts reaches nothing.
+    ///
+    /// It bounds `http`, not the harness. `exec` is a shell and a shell has
+    /// curl, so a declaration granting both has egress this list says nothing
+    /// about — the two are not additive, `exec` is simply the wider one.
     pub hosts: Vec<String>,
 }

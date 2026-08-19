@@ -27,6 +27,7 @@ skill = { path = "lib/skill", package = "crabtalk-skill", version = "0.0.23" }
 berm = { path = "berm/berm", version = "0.0.23" }
 berm-lang = { path = "berm/lang", version = "0.0.23" }
 berm-codegen = { path = "berm/codegen", version = "0.0.23" }
+berm-crabtalk = { path = "lib/berm", version = "0.0.23" }
 
 # rvtime
 object = "0.40"

@@ -62,19 +62,17 @@ async fn main() -> Result<()> {
     let granted = Berm::load(
         &engine,
         &elf,
-        &[berm::Harness {
-            name: "crabtalk.protocol.call".to_owned(),
-            call: {
-                let protocol = protocol.clone();
-                let scope = crabtalk_berm::Scope {
-                    read: true,
-                    sessions: false,
-                    skills: Vec::new(),
-                    agent: store::AgentId::default(),
-                };
-                Arc::new(move |request| crabtalk_berm::protocol_call(&protocol, request, &scope))
+        &[crabtalk_berm::Protocol::new(
+            protocol.clone(),
+            tokio::runtime::Handle::current(),
+            crabtalk_berm::Scope {
+                read: true,
+                sessions: false,
+                skills: Vec::new(),
+                agent: store::AgentId::default(),
             },
-        }],
+        )
+        .harness()],
     )?;
     let ungranted = Berm::load(&engine, &elf, &[])?;
 

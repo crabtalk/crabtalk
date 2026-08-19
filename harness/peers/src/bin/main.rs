@@ -14,11 +14,11 @@ extern crate alloc;
 
 #[berm_lang::harness]
 mod tools {
-    use berm_lang::{
-        Failed, Out,
+    use berm_crabtalk::{
         proto::{ClientMessage, ListAgentsMsg, client_message, server_message},
         protocol,
     };
+    use berm_lang::{Failed, Out};
     use core::fmt::Write;
 
     /// List the other agents in this runtime, with their descriptions.

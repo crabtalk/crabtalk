@@ -1,0 +1,19 @@
+[package]
+name = "berm-crabtalk"
+description = "Guest-side library for harnesses that reach the Crabtalk runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["crabtalk", "harness", "sandbox", "riscv"]
+
+[lib]
+# No host tests yet: the crate is `no_std`, so a test harness would need one
+# written against `berm-lang`'s stubs.
+test = false
+
+[dependencies]
+berm-lang.workspace = true
+proto.workspace = true
+prost.workspace = true

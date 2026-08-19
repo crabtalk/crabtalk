@@ -13,4 +13,5 @@ name = "peers"
 path = "src/bin/main.rs"
 
 [dependencies]
-berm-lang = { workspace = true, features = ["protocol"] }
+berm-lang.workspace = true
+berm-crabtalk.workspace = true

@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+berm-codegen.workspace = true
 object.workspace = true
 rvtime.workspace = true
 serde.workspace = true

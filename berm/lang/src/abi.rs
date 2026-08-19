@@ -24,12 +24,6 @@ pub const HOST_FAIL: u64 = hash("berm.fail");
 /// Copy the last system harness call's staged result into guest memory.
 pub const HOST_RESULT_READ: u64 = hash("berm.result.read");
 
-/// Send one `ClientMessage`; the reply is a `ServerMessage`. Gated with the
-/// module that calls it — the SDK builds without the protocol, for a harness
-/// that only reaches the machine.
-#[cfg(feature = "protocol")]
-pub const HOST_PROTOCOL_CALL: u64 = hash("crabtalk.protocol.call");
-
 /// Set on the length a system harness returns when the staged bytes are an error
 /// message rather than a result. A length never reaches this bit on its own,
 /// so one return value carries both without a second call to ask which.
