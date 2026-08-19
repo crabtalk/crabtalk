@@ -2,13 +2,9 @@
 
 use crate::{
     CrabTalk,
+    harness::{AgentScope, EventSink, HarnessRegistry, McpHarness, MemoryHarness},
     llm::Provider,
-    system::{
-        RuntimeHandle, event,
-        harness::{AgentScope, EventSink, HarnessRegistry, McpHarness, MemoryHarness},
-        host::SystemEnv,
-        provider::DefaultProvider,
-    },
+    system::{RuntimeHandle, event, host::SystemEnv, provider::DefaultProvider},
 };
 use anyhow::Result;
 use crabtalk_berm::BermHarness;

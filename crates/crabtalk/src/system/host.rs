@@ -1,6 +1,6 @@
 //! SystemEnv — the runtime environment implementation.
 
-use crate::system::harness::HarnessRegistry;
+use crate::harness::HarnessRegistry;
 use proto::{AgentEventKind, AgentEventMsg, ToolCallInfo};
 use runtime::{AgentEvent, Env, Harness, ToolDispatch};
 use std::sync::Arc;

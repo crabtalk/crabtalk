@@ -1,9 +1,6 @@
 //! CrabTalk — the core struct composing runtime, harnesses, and protocol.
 
-use crate::{
-    llm::Provider,
-    system::{builder::BuildProvider, harness::HarnessRegistry},
-};
+use crate::{harness::HarnessRegistry, llm::Provider, system::builder::BuildProvider};
 use anyhow::Result;
 use runtime::{Harness, Runtime, Sessions};
 use std::{
@@ -22,7 +19,6 @@ pub use transport::setup_socket;
 
 pub mod builder;
 pub mod event;
-pub mod harness;
 pub mod host;
 pub mod provider;
 mod transport;
