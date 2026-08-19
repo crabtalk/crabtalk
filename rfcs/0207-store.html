@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9473a2fc.js";
+            window.path_to_searchindex_js = "../searchindex-6ab9ea9c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-92ffc2ad.js"></script>
+        <script src="../toc-fe74260f.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -237,7 +237,7 @@ Text     idx/text/{ix}/doc/{key}                 len, weight, terms
          idx/text/{ix}/term/{term}/{key}         term frequency
          idx/text/{ix}/stats                     doc count, total length
 </code></pre>
-<p>Ordering is load-bearing rather than incidental. <code>created_at</code> is RFC3339 and sorts lexicographically, so the newest session for an identity is the last key under its prefix and <code>find_latest_session</code> is a scan and a <code>.last()</code>. <code>agent_ids</code> reads ids straight out of the name index, already name-sorted, touching no configs. Message indices are zero-padded to twelve digits because keys sort as bytes and <code>"10"</code> would otherwise precede <code>"2"</code>.</p>
+<p>Ordering is load-bearing rather than incidental. <code>created_at</code> is RFC3339 and sorts lexicographically, so <code>indexed_handles</code> reads an agent’s sessions newest-last with no separate sort step. <code>agent_ids</code> reads ids straight out of the name index, already name-sorted, touching no configs. Message indices are zero-padded to twelve digits because keys sort as bytes and <code>"10"</code> would otherwise precede <code>"2"</code>.</p>
 <p>Two shapes appear, each chosen by its dominant access. A session’s keys nest under its handle so deleting one is a single prefix sweep. A skill’s metadata and body are separate keys so a listing reads names without touching markdown — that property is structural rather than a convention each backend must remember.</p>
 <p>Writes are ordered content-first, index-second, so a crash orphans content nothing can reach rather than leaving an index entry pointing at nothing. Every index is rebuildable by scanning content.</p>
 <h3 id="search"><a class="header" href="#search">Search</a></h3>

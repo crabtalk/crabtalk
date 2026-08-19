@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9473a2fc.js";
+            window.path_to_searchindex_js = "../searchindex-6ab9ea9c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-92ffc2ad.js"></script>
+        <script src="../toc-fe74260f.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -199,6 +199,20 @@
 <tr><td><a href="0150-memory-store.html">0150</a></td><td>Memory Store</td><td><a href="0207-store.html">0207 - Store</a></td></tr>
 <tr><td><a href="0185-session-search.html">0185</a></td><td>Session Search and Storage Primitives</td><td><a href="0207-store.html">0207 - Store</a></td></tr>
 <tr><td><a href="0075-hook.html">0075</a></td><td>Hook</td><td><a href="0207-store.html">0207 - Store</a></td></tr>
+<tr><td><a href="0203-client-side-orchestration.html">0203</a></td><td>Client-Side Orchestration</td><td><a href="0205-berm.html">0205 - Berm</a></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="reversed-without-a-replacement"><a class="header" href="#reversed-without-a-replacement">Reversed without a replacement</a></h2>
+<p>A decision can stop holding without another RFC arriving to say so. These are
+the ones a reader would otherwise take as current.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>RFC</th><th>What no longer holds</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="0205-berm.html">0205</a></td><td>“<code>ask_user</code> stays a forwarded client tool, and so does <code>delegate</code> until it becomes a harness of its own.” Client-side tool forwarding was removed whole on 2026-08-18: <code>SendMsg.tools</code>, <code>StreamMsg.tools</code>, <code>ToolCallForwardEvent</code> and <code>ReplyToTool</code> are reserved field numbers, and there is no bridge behind them. A tool runs where the runtime does.</td></tr>
 </tbody>
 </table>
 </div>

@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9473a2fc.js";
+            window.path_to_searchindex_js = "../searchindex-6ab9ea9c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-92ffc2ad.js"></script>
+        <script src="../toc-fe74260f.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -194,7 +194,7 @@
 <li><strong>Configuration</strong> — current <code>DaemonConfig</code>, reloaded in place on explicit reload.</li>
 </ul>
 <p>The daemon does not interpret tool semantics. Tool dispatch is the runtime’s responsibility, routed through the composite.</p>
-<p>The daemon owns no tools of its own. <code>bash</code>, <code>read</code> and <code>edit</code> are a harness an agent declares; <code>ask_user</code> is a client tool the daemon forwards and never answers. What the daemon supplies is the socket, the runtime, and the state — not a set of capabilities it decided every agent should have.</p>
+<p>The daemon owns no tools of its own. <code>bash</code>, <code>read</code> and <code>edit</code> are a harness an agent declares. What the daemon supplies is the socket, the runtime, and the state — not a set of capabilities it decided every agent should have.</p>
 <h2 id="process-model"><a class="header" href="#process-model">Process model</a></h2>
 <p>The daemon runs as a single OS process. All work happens on a single Tokio runtime. There is one listener task per configured transport, one reply task per connected client, and one task per in-flight dispatch. Shutdown is initiated by a broadcast channel; every long-lived task subscribes and exits when the channel fires.</p>
 <p>A daemon process owns at most one configuration directory and at most one set of transport endpoints.</p>

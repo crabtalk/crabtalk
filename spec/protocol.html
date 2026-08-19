@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9473a2fc.js";
+            window.path_to_searchindex_js = "../searchindex-6ab9ea9c.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-92ffc2ad.js"></script>
+        <script src="../toc-fe74260f.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -197,15 +197,15 @@
 <tbody>
 <tr><td><code>StreamMsg</code></td><td>Append user content, run the agent, stream the response.</td></tr>
 <tr><td><code>SendMsg</code></td><td>The same, returning one complete response rather than a stream.</td></tr>
-<tr><td><code>KillMsg</code></td><td>Cancel the in-flight run, if any.</td></tr>
+<tr><td><code>KillMsg</code></td><td>Drop the live conversation, if any.</td></tr>
 <tr><td><code>CompactMsg</code></td><td>Compact the current history into an archive.</td></tr>
-<tr><td><code>SteerSessionMsg</code></td><td>Inject user content into a run already in flight.</td></tr>
-<tr><td><code>ReplyToTool</code></td><td>Supply the result of a forwarded client-side tool call.</td></tr>
+<tr><td><code>CancelStreamMsg</code></td><td>Stop the in-flight run, if any. Steering is a client composition of cancel + stream.</td></tr>
 </tbody>
 </table>
 </div>
 <p><code>StreamMsg.sender</code> is optional; when omitted the daemon resolves a default determined by the transport. <code>StreamMsg.guest</code> selects who speaks on this turn without changing whose conversation it is.</p>
 <p>There is no working directory on the wire. <code>StreamMsg.cwd</code> was removed: the daemon does not read the user’s filesystem, and a client that wants local context renders it into <code>content</code> itself.</p>
+<p>A client declares no tools either. <code>SendMsg.tools</code> and <code>StreamMsg.tools</code> carried schemas the daemon advertised to the model and invoked back over the stream; both are reserved field numbers now, along with the forward event and its reply. A tool runs where the runtime does, which is what a harness is for.</p>
 <h2 id="capability-groups"><a class="header" href="#capability-groups">Capability groups</a></h2>
 <p>A harness reaches this surface through <code>crabtalk.protocol.call</code>, and what it may send is checked on decode against the group its declaration granted. The check is <strong>default-deny</strong>: a message type in no group reaches nothing, and a group the harness was not granted is the same.</p>
 <ul>
@@ -229,7 +229,7 @@
 <p>The function is defined once in the core <code>Server</code> trait. Any implementor — the daemon, a test harness, a future alternative server — routes client messages the same way.</p>
 <h2 id="no-central-event-loop"><a class="header" href="#no-central-event-loop">No central event loop</a></h2>
 <p>There is no serializing queue, no <code>DaemonEvent</code> enum, and no actor that owns mutation. Operations reach into shared state directly and hold locks for the duration of the critical section.</p>
-<p>Shared state is protected by <code>parking_lot::Mutex</code> or <code>parking_lot::RwLock</code>. Event bus subscriptions, conversation working-directory overrides, and pending <code>ask_user</code> replies each live behind their own lock. Locks are acquired, the work is done, and the lock is released. Ordering between operations is whatever Tokio’s scheduler produces.</p>
+<p>Shared state is protected by <code>parking_lot::Mutex</code> or <code>parking_lot::RwLock</code>. Event bus subscriptions and the live session registry each live behind their own lock. Locks are acquired, the work is done, and the lock is released. Ordering between operations is whatever Tokio’s scheduler produces.</p>
 <h2 id="ordering-guarantees"><a class="header" href="#ordering-guarantees">Ordering guarantees</a></h2>
 <p>Within a single conversation, message ordering is total: <code>StreamMsg</code> appends to history in the order the daemon receives them. Clients that require strict ordering for a conversation are responsible for serializing their own sends.</p>
 <p>Between conversations, no ordering is guaranteed. Two <code>StreamMsg</code> values addressed to different <code>(agent, sender)</code> pairs may run in either order regardless of arrival time.</p>
