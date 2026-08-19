@@ -4,24 +4,26 @@
 //! invocation under rvtime: arguments are pulled in through host calls, the
 //! result is read back out of guest memory, and nothing survives the call.
 //!
-//! A harness reaches the world only through capabilities it was granted, and
-//! the grant is the [`Linker`] it is instantiated with — an ungranted call
-//! traps because nothing is registered for it, not because a check said no.
+//! A harness reaches the world only through capabilities it was given, and the
+//! grant is the [`Linker`] it is instantiated with — an ungranted call traps
+//! because nothing is registered for it, not because a check said no.
 //!
-//! `fs` and `exec` ship here because a sandbox that cannot touch files or run
-//! commands has little to confine. Everything an embedder needs beyond them is
-//! its own to supply through [`Capability`], so berm never has to learn what
-//! the host it is embedded in can do.
+//! Every capability arrives the same way: as a [`Capability`] in the list
+//! passed to [`Berm::load`]. [`fs`] and [`exec`] ship here because they are
+//! about the machine, which every host has, but they are constructed and
+//! passed in like any other — so an embedder can bound them differently, or
+//! substitute its own implementation under the same name, without berm having
+//! a decision to make.
 
 use anyhow::{Context, Result, bail};
 pub use manifest::{Manifest, ToolSpec};
 use rvtime::{Caller, Linker, Module, Store, TypedFunc};
 pub use rvtime::{Config, Engine};
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc};
 
 pub mod abi;
-mod exec;
-mod fs;
+pub mod exec;
+pub mod fs;
 mod manifest;
 mod root;
 mod watchdog;
@@ -36,7 +38,7 @@ pub type Call = Arc<dyn Fn(&[u8]) -> Result<Vec<u8>> + Send + Sync>;
 
 /// A compiled harness. Compilation is paid once per ELF; every invocation
 /// gets a fresh [`Store`] so no guest state crosses between calls.
-pub struct Harness {
+pub struct Berm {
     engine: Engine,
     module: Module,
     linker: Linker<Invocation>,
@@ -47,16 +49,11 @@ pub struct Harness {
     tools: BTreeMap<String, Export>,
 }
 
-impl Harness {
-    /// Compile `elf` and resolve its exports, granting `grants`. The engine's
-    /// code cache makes a second load of the same bytes cheap across processes
-    /// as well as within one.
-    pub fn load(
-        engine: &Engine,
-        elf: &[u8],
-        grants: &Grants,
-        extra: &[Capability],
-    ) -> Result<Self> {
+impl Berm {
+    /// Compile `elf` and resolve its exports, granting `capabilities`. The
+    /// engine's code cache makes a second load of the same bytes cheap across
+    /// processes as well as within one.
+    pub fn load(engine: &Engine, elf: &[u8], capabilities: &[Capability]) -> Result<Self> {
         let module = Module::new(engine, elf).context("failed to compile harness")?;
         let mut linker = Linker::new(engine);
 
@@ -117,36 +114,7 @@ impl Harness {
             },
         )?;
 
-        if let Some(root) = grants.root.clone() {
-            if grants.fs {
-                let read = root.clone();
-                linker.func_wrap(
-                    abi::HOST_FS_READ,
-                    move |caller: Caller<'_, Invocation>, ptr, len| {
-                        Invocation::stage(caller, ptr, len, |request| fs::read(&read, request))
-                    },
-                )?;
-
-                let write = root.clone();
-                linker.func_wrap(
-                    abi::HOST_FS_WRITE,
-                    move |caller: Caller<'_, Invocation>, ptr, len| {
-                        Invocation::stage(caller, ptr, len, |request| fs::write(&write, request))
-                    },
-                )?;
-            }
-
-            if grants.exec {
-                linker.func_wrap(
-                    abi::HOST_EXEC_RUN,
-                    move |caller: Caller<'_, Invocation>, ptr, len| {
-                        Invocation::stage(caller, ptr, len, |request| exec::run(&root, request))
-                    },
-                )?;
-            }
-        }
-
-        for capability in extra {
+        for capability in capabilities {
             let call = capability.call.clone();
             linker.func_wrap(
                 abi::hash(&capability.name),
@@ -299,36 +267,21 @@ impl Invocation {
     }
 }
 
-/// What a harness may reach.
+/// One thing a harness may reach.
 ///
-/// A capability missing here is missing from the [`Linker`], and that absence
-/// is the enforcement — there is no check to write and no check to forget.
-/// `root` is the argument to both `fs` and `exec`, and the grant is the
-/// argument: without it neither is registered, so an under-specified
-/// declaration reaches nothing rather than everything.
-#[derive(Debug, Default, Clone)]
-pub struct Grants {
-    /// The subtree `fs` and `exec` are bounded by.
-    pub root: Option<PathBuf>,
-    /// Read and write files.
-    pub fs: bool,
-    /// Run commands.
-    pub exec: bool,
-}
-
-/// A capability the embedder implements.
+/// A capability absent from the list given to [`Berm::load`] is absent from
+/// the [`Linker`], and that absence is the enforcement — there is no check to
+/// write and none to forget. Whatever bounds it is the argument it was built
+/// with: [`fs::read`] reaches nothing without a root, exactly as an embedder's
+/// own capability reaches nothing without whatever it closes over.
 ///
-/// berm knows `fs` and `exec` because they are about the machine, which every
-/// host has. Anything about the *host* — its own API, its storage, whatever it
-/// is — is supplied as one of these instead, so embedding berm never means
-/// patching it.
-///
-/// The name is hashed to the number the guest puts in `a7`, exactly as the
-/// built-in capabilities are, so an embedder's capability is not a second
-/// class of thing.
+/// The name is hashed to the number the guest puts in `a7`, so berm's `fs` and
+/// an embedder's own capability are the same kind of thing — and an embedder
+/// that would rather serve `berm.fs.read` itself, through its own permissions,
+/// simply passes its own.
 #[derive(Clone)]
 pub struct Capability {
-    /// What the guest calls it, e.g. `crabtalk.protocol.call`.
+    /// What the guest calls it, e.g. `berm.fs.read`.
     pub name: String,
     /// What it does.
     pub call: Call,

@@ -21,13 +21,6 @@ pub const HOST_FAIL: u64 = hash("berm.fail");
 /// Copy the staged capability result into guest memory. `(ptr, cap) -> full length`
 pub const HOST_RESULT_READ: u64 = hash("berm.result.read");
 
-/// Read a file. `(ptr, len) -> staged length`
-pub const HOST_FS_READ: u64 = hash("berm.fs.read");
-/// Write a file. `(ptr, len) -> staged length`
-pub const HOST_FS_WRITE: u64 = hash("berm.fs.write");
-/// Run a command. `(ptr, len) -> staged length`
-pub const HOST_EXEC_RUN: u64 = hash("berm.exec.run");
-
 /// Set on a staged length when the bytes are an error message rather than a
 /// result. A length never reaches this bit on its own, so one return value
 /// carries the outcome and the size together.

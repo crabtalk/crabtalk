@@ -12,7 +12,7 @@
 //! `ClientMessage` the same way.
 
 use anyhow::{Context, Result};
-use berm::{Config, Engine, Grants, Harness};
+use berm::{Berm, Config, Engine};
 use crabtalk_berm::Dispatch;
 
 use proto::{AgentInfo, AgentList, ServerMessage};
@@ -59,10 +59,9 @@ async fn main() -> Result<()> {
     });
     let _ = protocol.set(dispatch);
 
-    let granted = Harness::load(
+    let granted = Berm::load(
         &engine,
         &elf,
-        &Grants::default(),
         &[berm::Capability {
             name: "crabtalk.protocol.call".to_owned(),
             call: {
@@ -77,7 +76,7 @@ async fn main() -> Result<()> {
             },
         }],
     )?;
-    let ungranted = Harness::load(&engine, &elf, &Grants::default(), &[])?;
+    let ungranted = Berm::load(&engine, &elf, &[])?;
 
     tokio::task::spawn_blocking(move || {
         println!("== granted protocol:read ==");
@@ -90,7 +89,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn show(harness: &Harness) {
+fn show(harness: &Berm) {
     match harness.call("peers", Vec::new()) {
         Ok(Ok(result)) => println!("{result}"),
         Ok(Err(failure)) => println!("failed: {failure}\n"),

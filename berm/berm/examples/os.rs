@@ -6,7 +6,7 @@
 //! ```
 
 use anyhow::{Context, Result};
-use berm::{Grants, Harness};
+use berm::Berm;
 use rvtime::{Config, Engine};
 use std::{fs, path::PathBuf};
 
@@ -35,15 +35,14 @@ fn main() -> Result<()> {
     fs::write(sandbox.join("hello.txt"), "alpha\nbeta\ngamma\n")?;
 
     let engine = Engine::new(&Config::new())?;
-    let harness = Harness::load(
+    let harness = Berm::load(
         &engine,
         &elf,
-        &Grants {
-            root: Some(sandbox.clone()),
-            fs: true,
-            exec: true,
-        },
-        &[],
+        &[
+            berm::fs::read(sandbox.clone()),
+            berm::fs::write(sandbox.clone()),
+            berm::exec::run(sandbox.clone()),
+        ],
     )?;
 
     println!("tools:    {:?}", harness.tools().collect::<Vec<_>>());
@@ -83,7 +82,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn show(harness: &Harness, tool: &str, args: &str) -> Result<()> {
+fn show(harness: &Berm, tool: &str, args: &str) -> Result<()> {
     println!("$ {tool} {args}");
     match harness.call(tool, args.as_bytes().to_vec()) {
         Ok(Ok(result)) => println!("{result}\n"),

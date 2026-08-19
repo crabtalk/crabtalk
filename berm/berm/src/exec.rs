@@ -4,14 +4,18 @@
 //! destination is a model that has been reading that shape. A harness passes it
 //! through untouched.
 
-use crate::{root, wire};
+use crate::{Capability, root, wire};
 use anyhow::{Result, bail};
 use std::{
     io::Read,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::Arc,
     time::{Duration, Instant},
 };
+
+/// Run a command. Request: `[command, cwd, key, value, key, value, …]`.
+pub const RUN: &str = "berm.exec.run";
 
 /// How long a command may run. Every capability needs its own timeout: rvtime
 /// can interrupt a looping guest, but not a host call of ours that never
@@ -21,8 +25,15 @@ pub(crate) const TIMEOUT: Duration = Duration::from_secs(30);
 /// How often to check whether the command is done.
 const POLL: Duration = Duration::from_millis(5);
 
-/// Run a command. Request: `[command, cwd, key, value, key, value, …]`.
-pub fn run(root: &Path, request: &[u8]) -> Result<Vec<u8>> {
+/// Run commands, bounded by `root`.
+pub fn run(root: PathBuf) -> Capability {
+    Capability {
+        name: RUN.to_owned(),
+        call: Arc::new(move |request| run_in(&root, request)),
+    }
+}
+
+fn run_in(root: &Path, request: &[u8]) -> Result<Vec<u8>> {
     let fields = wire::fields(request)?;
     let command = wire::text(&fields, 0, "command")?;
     let cwd = root::resolve(root, wire::text(&fields, 1, "cwd")?)?;

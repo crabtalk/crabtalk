@@ -11,7 +11,7 @@
 //! ```
 
 use anyhow::{Context, Result};
-use berm::{Grants, Harness};
+use berm::Berm;
 use rvtime::{Config, Engine};
 use std::{
     fs,
@@ -105,7 +105,7 @@ fn main() -> Result<()> {
         let mut config = Config::new();
         config.cache_dir(&cache).memory_size(mib * 1024 * 1024);
         let engine = Engine::new(&config)?;
-        let harness = Harness::load(&engine, &elf, &Grants::default(), &[])?;
+        let harness = Berm::load(&engine, &elf, &[])?;
 
         let mut samples = Vec::with_capacity(ROUNDS);
         for _ in 0..ROUNDS {
@@ -120,11 +120,11 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn compile(cache: &std::path::Path, elf: &[u8]) -> Result<Harness> {
+fn compile(cache: &std::path::Path, elf: &[u8]) -> Result<Berm> {
     let mut config = Config::new();
     config.cache_dir(cache);
     let engine = Engine::new(&config)?;
-    Harness::load(&engine, elf, &Grants::default(), &[])
+    Berm::load(&engine, elf, &[])
 }
 
 fn time<T>(f: impl FnOnce() -> Result<T>) -> Result<Duration> {
