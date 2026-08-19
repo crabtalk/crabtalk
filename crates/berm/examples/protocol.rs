@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     let granted = Berm::load(
         &engine,
         &elf,
-        &[berm::Capability {
+        &[berm::Harness {
             name: "crabtalk.protocol.call".to_owned(),
             call: {
                 let protocol = protocol.clone();

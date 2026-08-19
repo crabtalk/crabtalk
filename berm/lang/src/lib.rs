@@ -9,9 +9,9 @@
 //! #![no_std]
 //! #![no_main]
 //!
-//! #[berm_sdk::harness(capabilities = ["log"])]
+//! #[berm_lang::harness]
 //! mod tools {
-//!     use berm_sdk::{Failed, Out};
+//!     use berm_lang::{Failed, Out};
 //!
 //!     /// Echo the argument blob back.
 //!     pub fn echo(args: &[u8], out: &mut Out) -> Result<(), Failed> {
@@ -92,7 +92,7 @@ pub use tool::parse;
 pub use tool::{capability, failed};
 
 // Re-exported so a harness declares this SDK and nothing else. The `#[harness]`
-// macro writes `#[serde(crate = "::berm_sdk::serde")]` onto argument structs,
+// macro writes `#[serde(crate = "::berm_lang::serde")]` onto argument structs,
 // which only resolves if the author can reach serde through us — and an author
 // who had to depend on it directly could pick a version that disagrees with
 // the one the derive was generated against.

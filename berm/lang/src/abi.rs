@@ -5,7 +5,7 @@
 //! what it is called, so adding one cannot collide with someone else's
 //! allocation and no registry of integers has to be maintained.
 //!
-//! The same hash is computed host-side in `berm/engine/src/abi.rs`. The two
+//! The same hash is computed host-side in `berm/berm/src/abi.rs`. The two
 //! must agree; if they ever drift, every call traps immediately as an unknown
 //! host call rather than reaching the wrong capability.
 //!

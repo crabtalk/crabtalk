@@ -1,9 +1,9 @@
 //! `fs` — files under a granted root.
 //!
-//! Read and write are separate capabilities, so a harness that summarises a
+//! Read and write are separate system harnesses, so a harness that summarises a
 //! directory can be given the one it needs.
 
-use crate::{Capability, root, wire};
+use crate::{Harness, root, wire};
 use anyhow::{Result, bail};
 use std::{
     path::{Path, PathBuf},
@@ -21,16 +21,16 @@ pub const WRITE: &str = "berm.fs.write";
 pub const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024;
 
 /// Read files, bounded by `root`.
-pub fn read(root: PathBuf) -> Capability {
-    Capability {
+pub fn read(root: PathBuf) -> Harness {
+    Harness {
         name: READ.to_owned(),
         call: Arc::new(move |request| read_at(&root, request)),
     }
 }
 
 /// Write files, bounded by `root`.
-pub fn write(root: PathBuf) -> Capability {
-    Capability {
+pub fn write(root: PathBuf) -> Harness {
+    Harness {
         name: WRITE.to_owned(),
         call: Arc::new(move |request| write_at(&root, request)),
     }

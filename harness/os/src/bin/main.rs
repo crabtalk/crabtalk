@@ -23,10 +23,10 @@ extern crate alloc;
 // one result, so this harness needs more room than the SDK's default. The
 // buffers live in `.bss` and are zeroed per invocation, which against an LLM
 // round trip is not a cost worth trading a truncated read for.
-#[berm_sdk::harness(capabilities = ["fs", "exec"], buffer = 262144)]
+#[berm_lang::harness(buffer = 262144)]
 mod tools {
     use alloc::{collections::BTreeMap, string::String, vec::Vec};
-    use berm_sdk::{Failed, Out, capability, exec, failed, fs, parse};
+    use berm_lang::{Failed, Out, capability, exec, failed, fs, parse};
     use core::fmt::Write;
 
     /// Lines returned per read when the caller does not say.

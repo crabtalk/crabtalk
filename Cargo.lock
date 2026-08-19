@@ -202,25 +202,11 @@ dependencies = [
 name = "berm-fixture"
 version = "0.0.23"
 dependencies = [
- "berm-sdk",
+ "berm-lang",
 ]
 
 [[package]]
-name = "berm-os"
-version = "0.0.23"
-dependencies = [
- "berm-sdk",
-]
-
-[[package]]
-name = "berm-peers"
-version = "0.0.23"
-dependencies = [
- "berm-sdk",
-]
-
-[[package]]
-name = "berm-sdk"
+name = "berm-lang"
 version = "0.0.23"
 dependencies = [
  "berm-codegen",
@@ -233,17 +219,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "berm-os"
+version = "0.0.23"
+dependencies = [
+ "berm-lang",
+]
+
+[[package]]
+name = "berm-peers"
+version = "0.0.23"
+dependencies = [
+ "berm-lang",
+]
+
+[[package]]
 name = "berm-sessions"
 version = "0.0.23"
 dependencies = [
- "berm-sdk",
+ "berm-lang",
 ]
 
 [[package]]
 name = "berm-skill"
 version = "0.0.23"
 dependencies = [
- "berm-sdk",
+ "berm-lang",
 ]
 
 [[package]]

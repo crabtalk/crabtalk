@@ -5,7 +5,7 @@
 //! is no meta-tool to go through (RFC 0205).
 //!
 //! An image is keyed by what determines it — the ELF, the grants it runs
-//! under, and the scope a granted capability closes over — not by the agent
+//! under, and the scope a granted system harness closes over — not by the agent
 //! that declared it. The grant still decides: two agents installing the same
 //! ELF against different roots hash differently and get two linkers. But two
 //! that declare it identically share one image, and a rename changes nothing
@@ -16,7 +16,7 @@
 //! pool rather than running it on an async worker.
 
 use crate::{Dispatch, Scope};
-use berm::{Berm, Capability, Config, Engine, Manifest};
+use berm::{Berm, Config, Engine, Harness, Manifest};
 use crabllm_core::{FunctionDef, Tool, ToolType};
 use runtime::{ToolDispatch, ToolFuture};
 use sha2::{Digest as _, Sha256};
@@ -73,7 +73,7 @@ impl BermHarness {
     /// An engine whose generated code is cached under the config directory, so
     /// a restart pays ~3ms per image instead of ~15ms.
     /// `protocol` is filled by the daemon once it exists. Until then a granted
-    /// protocol capability is present but answers that it is not connected,
+    /// protocol harness is present but answers that it is not connected,
     /// which is a clearer failure than a call that waits for one.
     pub fn new(protocol: Arc<OnceLock<Dispatch>>) -> anyhow::Result<Self> {
         let mut config = Config::new();
@@ -130,11 +130,11 @@ impl BermHarness {
             )
         })?;
 
-        // The declaration names capabilities in crabtalk's vocabulary; berm
+        // The declaration names system harnesses in crabtalk's vocabulary; berm
         // takes values. Translating between them is what this function does,
         // and the argument each value is built with is the grant — without a
         // root, `fs` and `exec` are never constructed.
-        let granted = |name: &str| declaration.capabilities.iter().any(|c| c == name);
+        let granted = |name: &str| declaration.system.iter().any(|c| c == name);
         let read = granted("protocol:read");
         let sessions = granted("protocol:sessions");
         let scope = (read || sessions).then(|| Scope {
@@ -149,32 +149,32 @@ impl BermHarness {
             return Ok(digest);
         }
 
-        let mut capabilities = Vec::new();
+        let mut system = Vec::new();
         if let Some(root) = &declaration.root {
             if granted("fs") {
-                capabilities.push(berm::fs::read(root.clone()));
-                capabilities.push(berm::fs::write(root.clone()));
+                system.push(berm::fs::read(root.clone()));
+                system.push(berm::fs::write(root.clone()));
             }
             if granted("exec") {
-                capabilities.push(berm::exec::run(root.clone()));
+                system.push(berm::exec::run(root.clone()));
             }
         }
         if let Some(scope) = scope {
             let protocol = self.protocol.clone();
-            capabilities.push(Capability {
+            system.push(Harness {
                 name: crate::protocol::CALL.to_owned(),
                 call: Arc::new(move |request| crate::protocol::call(&protocol, request, &scope)),
             });
         }
         if granted("http") && !declaration.hosts.is_empty() {
             let hosts = declaration.hosts.clone();
-            capabilities.push(Capability {
+            system.push(Harness {
                 name: crate::http::FETCH.to_owned(),
                 call: Arc::new(move |request| crate::http::call(&hosts, request)),
             });
         }
 
-        let harness = Berm::load(&self.engine, &elf, &capabilities)?;
+        let harness = Berm::load(&self.engine, &elf, &system)?;
         registry.images.insert(digest, Arc::new(harness));
         Ok(digest)
     }
@@ -200,21 +200,21 @@ impl BermHarness {
     }
 }
 
-/// The digest that names an image: the ELF and everything the capabilities it
-/// is built with are determined by. Everything that changes what the sandbox
+/// The digest that names an image: the ELF, and everything that determines the
+/// system harnesses it is built with. Everything that changes what the sandbox
 /// *is* is in here; nothing else is, so a rename or a second agent declaring
 /// the same thing is not a new image.
 ///
-/// The declaration covers which capabilities are constructed and what bounds
-/// them — `root` for `fs` and `exec`, `hosts` for `http`. `scope` adds what
-/// only the agent knows: `read` and `sessions` are already in the declaration,
-/// but the skills and the agent itself are not, and narrowing is per-agent, so
-/// two agents declaring the same session harness are deliberately two images.
+/// The declaration covers which are constructed and what bounds them — `root`
+/// for `fs` and `exec`, `hosts` for `http`. `scope` adds what only the agent
+/// knows: `read` and `sessions` are already in the declaration, but the skills
+/// and the agent itself are not, and narrowing is per-agent, so two agents
+/// declaring the same session harness are deliberately two images.
 fn digest(elf: &[u8], declaration: &HarnessConfig, scope: Option<&Scope>) -> Digest {
     let mut hasher = Sha256::new();
     hasher.update(elf);
-    for capability in &declaration.capabilities {
-        hasher.update(capability.as_bytes());
+    for name in &declaration.system {
+        hasher.update(name.as_bytes());
         hasher.update([0]);
     }
     hasher.update([0]);

@@ -1,6 +1,6 @@
 //! `protocol` — the runtime, as a harness sees it.
 //!
-//! One capability carries the whole of `ClientMessage`, because the message
+//! One system harness carries the whole of `ClientMessage`, because the message
 //! type is already a discriminant inside the payload and spending a second one
 //! on the ABI would duplicate what protobuf carries (RFC 0205). The grant is
 //! therefore two-level: the number gates the family, and this allowlist gates
@@ -25,7 +25,7 @@ use store::AgentId;
 
 /// What the harness calls to reach the runtime. Named `crabtalk.` rather than
 /// `berm.` because only crabtalk implements it — a different embedder has its
-/// own API and would name a capability after that.
+/// own API and would name a system harness after that.
 pub(crate) const CALL: &str = "crabtalk.protocol.call";
 
 /// How a harness reaches the runtime.

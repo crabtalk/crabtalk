@@ -23,7 +23,7 @@ use std::{
 /// How long a guest may run before it is asked to stop.
 ///
 /// A guest blocked in a host call cannot notice an interrupt until that call
-/// returns, so this has to outlast the longest one a capability may make —
+/// returns, so this has to outlast the longest one a system harness may make —
 /// which is [`crate::exec::TIMEOUT`]. The margin is deliberate: this bound
 /// exists to stop non-termination, not to enforce latency, and a harness doing
 /// slow but finite work should finish rather than be killed.

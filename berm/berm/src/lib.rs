@@ -4,16 +4,17 @@
 //! invocation under rvtime: arguments are pulled in through host calls, the
 //! result is read back out of guest memory, and nothing survives the call.
 //!
-//! A harness reaches the world only through capabilities it was given, and the
-//! grant is the [`Linker`] it is instantiated with — an ungranted call traps
-//! because nothing is registered for it, not because a check said no.
+//! A harness reaches the world only through *system harnesses* it was given,
+//! and the grant is the [`Linker`] it is instantiated with — an ungranted call
+//! traps because nothing is registered for it, not because a check said no.
 //!
-//! Every capability arrives the same way: as a [`Capability`] in the list
-//! passed to [`Berm::load`]. [`fs`] and [`exec`] ship here because they are
-//! about the machine, which every host has, but they are constructed and
-//! passed in like any other — so an embedder can bound them differently, or
-//! substitute its own implementation under the same name, without berm having
-//! a decision to make.
+//! A system harness is native host code behind a name, the way a precompile is
+//! native code behind an address: it is there because a no_std RV64 guest
+//! cannot open a socket or fork a process, not because it was withheld
+//! permission. [`fs`] and [`exec`] ship here for that reason, and arrive
+//! through the same list as anyone else's — so an embedder can bound them
+//! differently, or serve the same name from its own implementation, without
+//! berm having a decision to make.
 
 use anyhow::{Context, Result, bail};
 pub use manifest::{Manifest, ToolSpec};
@@ -32,7 +33,7 @@ pub mod wire;
 /// A guest entry point: takes nothing, returns a pointer and a length.
 type Export = TypedFunc<(), (u64, u64)>;
 
-/// What a capability does: request bytes in, result bytes out. An `Err`
+/// What a system harness does: request bytes in, result bytes out. An `Err`
 /// reaches the guest as a failure message on the same wire as a result.
 pub type Call = Arc<dyn Fn(&[u8]) -> Result<Vec<u8>> + Send + Sync>;
 
@@ -50,10 +51,10 @@ pub struct Berm {
 }
 
 impl Berm {
-    /// Compile `elf` and resolve its exports, granting `capabilities`. The
-    /// engine's code cache makes a second load of the same bytes cheap across
-    /// processes as well as within one.
-    pub fn load(engine: &Engine, elf: &[u8], capabilities: &[Capability]) -> Result<Self> {
+    /// Compile `elf` and resolve its exports, granting `system`. The engine's
+    /// code cache makes a second load of the same bytes cheap across processes
+    /// as well as within one.
+    pub fn load(engine: &Engine, elf: &[u8], system: &[Harness]) -> Result<Self> {
         let module = Module::new(engine, elf).context("failed to compile harness")?;
         let mut linker = Linker::new(engine);
 
@@ -101,8 +102,8 @@ impl Berm {
             },
         )?;
 
-        // The other half of every capability call. Plumbing rather than a
-        // grant: a harness with no capabilities never stages anything, so this
+        // The other half of every system harness call. Plumbing rather than a
+        // grant: a harness given none never stages anything, so this
         // is registered unconditionally and has nothing to hand over.
         linker.func_wrap(
             abi::HOST_RESULT_READ,
@@ -114,10 +115,10 @@ impl Berm {
             },
         )?;
 
-        for capability in capabilities {
-            let call = capability.call.clone();
+        for harness in system {
+            let call = harness.call.clone();
             linker.func_wrap(
-                abi::hash(&capability.name),
+                abi::hash(&harness.name),
                 move |caller: Caller<'_, Invocation>, ptr, len| {
                     let call = call.clone();
                     Invocation::stage(caller, ptr, len, move |request| call(request))
@@ -171,7 +172,7 @@ impl Berm {
         self.tools.keys().map(String::as_str)
     }
 
-    /// What the harness says it is: ABI version, tools, capabilities wanted.
+    /// What the harness says it is: ABI version, tools, and usage.
     pub fn manifest(&self) -> &Manifest {
         &self.manifest
     }
@@ -223,10 +224,10 @@ impl Berm {
 }
 
 /// Guest state for one invocation. Memory is per-invocation; anything a
-/// harness needs to survive belongs in a storage capability, not here.
+/// harness needs to survive belongs in a storage harness, not here.
 pub struct Invocation {
     args: Vec<u8>,
-    /// The last capability call's result, waiting for the guest to pull it.
+    /// The last system harness call's result, waiting for the guest to pull it.
     /// Staged rather than pushed because its size is not known until the work
     /// is done, and doing the work twice to measure it is not an option.
     result: Vec<u8>,
@@ -244,20 +245,20 @@ impl Invocation {
         }
     }
 
-    /// Run one capability and leave its bytes for the guest to pull.
+    /// Run one system harness and leave its bytes for the guest to pull.
     ///
     /// Failure rides on the same return value: the [`abi::ERROR`] bit says the
-    /// staged bytes are a message. A capability that fails therefore costs the
+    /// staged bytes are a message. One that fails therefore costs the
     /// guest nothing extra to find out about, and an empty result cannot be
     /// mistaken for one.
     pub fn stage(
         mut caller: Caller<'_, Self>,
         ptr: u64,
         len: u64,
-        capability: impl FnOnce(&[u8]) -> Result<Vec<u8>>,
+        harness: impl FnOnce(&[u8]) -> Result<Vec<u8>>,
     ) -> Result<u64> {
         let request = caller.read(ptr, len)?.to_vec();
-        let (staged, outcome) = match capability(&request) {
+        let (staged, outcome) = match harness(&request) {
             Ok(result) => (result, 0),
             Err(error) => (error.to_string().into_bytes(), abi::ERROR),
         };
@@ -269,18 +270,18 @@ impl Invocation {
 
 /// One thing a harness may reach.
 ///
-/// A capability absent from the list given to [`Berm::load`] is absent from
+/// A system harness absent from the list given to [`Berm::load`] is absent from
 /// the [`Linker`], and that absence is the enforcement — there is no check to
 /// write and none to forget. Whatever bounds it is the argument it was built
 /// with: [`fs::read`] reaches nothing without a root, exactly as an embedder's
-/// own capability reaches nothing without whatever it closes over.
+/// own reaches nothing without whatever it closes over.
 ///
 /// The name is hashed to the number the guest puts in `a7`, so berm's `fs` and
-/// an embedder's own capability are the same kind of thing — and an embedder
+/// an embedder's own are the same kind of thing — and an embedder
 /// that would rather serve `berm.fs.read` itself, through its own permissions,
 /// simply passes its own.
 #[derive(Clone)]
-pub struct Capability {
+pub struct Harness {
     /// What the guest calls it, e.g. `berm.fs.read`.
     pub name: String,
     /// What it does.

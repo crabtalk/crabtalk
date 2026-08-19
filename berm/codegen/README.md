@@ -1,12 +1,12 @@
 # berm-codegen
 
 The `#[harness]` proc macro. Re-exported by
-[`berm-sdk`](https://crates.io/crates/berm-sdk) — depend on that, not on this.
+[`berm-lang`](https://crates.io/crates/berm-lang) — depend on that, not on this.
 
 ```rust
-#[berm_sdk::harness(capabilities = ["log"])]
+#[berm_lang::harness(capabilities = ["log"])]
 mod tools {
-    use berm_sdk::{Failed, Out};
+    use berm_lang::{Failed, Out};
 
     /// Echo the argument blob back.
     #[args(Echo)]

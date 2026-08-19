@@ -4,7 +4,7 @@
 //! destination is a model that has been reading that shape. A harness passes it
 //! through untouched.
 
-use crate::{Capability, root, wire};
+use crate::{Harness, root, wire};
 use anyhow::{Result, bail};
 use std::{
     io::Read,
@@ -17,7 +17,7 @@ use std::{
 /// Run a command. Request: `[command, cwd, key, value, key, value, …]`.
 pub const RUN: &str = "berm.exec.run";
 
-/// How long a command may run. Every capability needs its own timeout: rvtime
+/// How long a command may run. Every system harness needs its own timeout: rvtime
 /// can interrupt a looping guest, but not a host call of ours that never
 /// returns.
 pub(crate) const TIMEOUT: Duration = Duration::from_secs(30);
@@ -26,8 +26,8 @@ pub(crate) const TIMEOUT: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(5);
 
 /// Run commands, bounded by `root`.
-pub fn run(root: PathBuf) -> Capability {
-    Capability {
+pub fn run(root: PathBuf) -> Harness {
+    Harness {
         name: RUN.to_owned(),
         call: Arc::new(move |request| run_in(&root, request)),
     }

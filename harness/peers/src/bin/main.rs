@@ -12,9 +12,9 @@
 
 extern crate alloc;
 
-#[berm_sdk::harness(capabilities = ["protocol:read"])]
+#[berm_lang::harness]
 mod tools {
-    use berm_sdk::{
+    use berm_lang::{
         Failed, Out,
         proto::{ClientMessage, ListAgentsMsg, client_message, server_message},
         protocol,

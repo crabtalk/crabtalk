@@ -1,5 +1,5 @@
 [package]
-name = "berm-sdk"
+name = "berm-lang"
 description = "Guest-side library for building Crabtalk harnesses"
 version.workspace = true
 edition.workspace = true

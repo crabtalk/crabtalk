@@ -3,7 +3,7 @@
 //! This lives here rather than in berm because hyper needs a reactor and the
 //! engine has neither one nor a dependency that wants one. `fs` and `exec` are
 //! about the machine and ship with the sandbox; this is about a client the
-//! host already runs, so it arrives the way any embedder's capability does.
+//! host already runs, so it arrives the way any embedder's own does.
 //!
 //! The allowlist is the whole of the confinement, and it is checked per
 //! request rather than per connection. hyper's client does not follow

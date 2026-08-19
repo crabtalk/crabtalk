@@ -18,10 +18,10 @@ extern crate alloc;
 // A skill body is prose meant for a model to follow and is the whole payload
 // of this harness — instructions truncated halfway are worse than no skill at
 // all, so this needs the same room the OS harness's reads do.
-#[berm_sdk::harness(capabilities = ["protocol:read"], buffer = 262144)]
+#[berm_lang::harness(buffer = 262144)]
 mod tools {
     use alloc::{string::String, vec::Vec};
-    use berm_sdk::{
+    use berm_lang::{
         Failed, Out, parse,
         proto::{ClientMessage, GetSkillMsg, ListSkillsMsg, client_message, server_message},
         protocol,

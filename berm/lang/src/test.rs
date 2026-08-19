@@ -9,7 +9,7 @@
 //! ```ignore
 //! #[test]
 //! fn echo_wraps_the_payload() {
-//!     let out = berm_sdk::test::call(berm_tool_echo, b"hi").unwrap();
+//!     let out = berm_lang::test::call(berm_tool_echo, b"hi").unwrap();
 //!     assert_eq!(out, br#"{"echo":hi}"#);
 //! }
 //! ```

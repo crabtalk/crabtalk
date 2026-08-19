@@ -1,4 +1,4 @@
-# berm-sdk
+# berm-lang
 
 Build a harness for [Crabtalk](https://github.com/crabtalk/crabtalk).
 
@@ -10,9 +10,9 @@ pair.
 ```rust
 #![cfg_attr(target_arch = "riscv64", no_std, no_main)]
 
-#[berm_sdk::harness(capabilities = ["log"])]
+#[berm_lang::harness]
 mod tools {
-    use berm_sdk::{Failed, Out};
+    use berm_lang::{Failed, Out};
 
     /// Echo the query back.
     #[args(Echo)]
@@ -39,7 +39,7 @@ parser links none.
 
 Off the guest's target this is an ordinary binary, which is why the `cfg_attr`
 above is worth copying: tools then run under `cargo test` with no RISC-V
-toolchain and no daemon. See `berm_sdk::test`.
+toolchain and no daemon. See `berm_lang::test`.
 
 ## Building
 

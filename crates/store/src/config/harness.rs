@@ -17,25 +17,25 @@ pub struct HarnessConfig {
     /// Harness name. Its image is `{name}.elf` under the harnesses directory.
     pub name: String,
 
-    /// Capabilities granted to it. A name absent here is absent from the
-    /// linker the harness is instantiated with, and that absence is the
-    /// enforcement — there is no check to write and none to forget.
-    pub capabilities: Vec<String>,
+    /// System harnesses this one may reach. A name absent here is absent from
+    /// the linker it is instantiated with, and that absence is the enforcement
+    /// — there is no check to write and none to forget.
+    pub system: Vec<String>,
 
     /// The subtree `fs` and `exec` are bounded by, and the default working
     /// directory for a call that names none.
     ///
-    /// This is the argument to those capabilities, and the grant *is* the
-    /// argument: without a root neither is registered, so an under-specified
-    /// declaration reaches nothing rather than everything.
+    /// This is the argument to those two, and the grant *is* the argument:
+    /// without a root neither is registered, so an under-specified declaration
+    /// reaches nothing rather than everything.
     pub root: Option<PathBuf>,
 
     /// Hosts `http` may reach, matched exactly and case-insensitively.
     ///
     /// What `root` is to `fs`, this is to `http`: the argument the grant
-    /// consists of. An empty list leaves the capability unregistered, so
-    /// `http` without hosts reaches nothing — and since a name is only
-    /// reachable by being written here, the daemon's own port is out of reach
-    /// unless someone names it.
+    /// consists of. An empty list leaves it unregistered, so `http` without
+    /// hosts reaches nothing — and since a name is only reachable by being
+    /// written here, the daemon's own port is out of reach unless someone
+    /// names it.
     pub hosts: Vec<String>,
 }

@@ -7,7 +7,7 @@
 //!
 //! - [`BermHarness`], which surfaces a harness's tools to the runtime and
 //!   dispatches calls to them
-//! - the `crabtalk.protocol.call` capability, which is a [`berm::Capability`]
+//! - the `crabtalk.protocol.call` system harness, which is a [`berm::Harness`]
 //!   like any other an embedder supplies
 //! - `crabtalk.http.fetch`, which is here for a second reason as well: hyper
 //!   needs a reactor, and the sandbox is sync and has none

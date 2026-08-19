@@ -18,9 +18,9 @@
 
 extern crate alloc;
 
-#[berm_sdk::harness(capabilities = [])]
+#[berm_lang::harness]
 mod tools {
-    use berm_sdk::{Failed, Out};
+    use berm_lang::{Failed, Out};
 
     /// Echo the argument blob back inside a JSON envelope.
     #[args(Echo)]
@@ -43,7 +43,7 @@ mod tools {
     pub fn chatty(_args: &[u8], out: &mut Out) -> Result<(), Failed> {
         let mut total = 0;
         for _ in 0..100 {
-            total += berm_sdk::args_len();
+            total += berm_lang::args_len();
         }
         if total == usize::MAX {
             return Err(Failed);
@@ -68,7 +68,7 @@ mod tools {
 
 #[cfg(test)]
 mod tests {
-    use berm_sdk::test;
+    use berm_lang::test;
 
     #[test]
     fn echo_wraps_the_payload() {

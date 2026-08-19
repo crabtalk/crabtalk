@@ -18,14 +18,10 @@ extern crate alloc;
 // daemon will return at full stretch. An excerpt cut in half is worse than a
 // missing one — the model would cite it anyway — so the buffer is sized for
 // the answer rather than for the common case.
-#[berm_sdk::harness(
-    capabilities = ["protocol:sessions"],
-    usage_file = "usage.md",
-    buffer = 262144
-)]
+#[berm_lang::harness(usage_file = "usage.md", buffer = 262144)]
 mod tools {
     use alloc::string::String;
-    use berm_sdk::{
+    use berm_lang::{
         Failed, Out, parse,
         proto::{ClientMessage, SearchSessionsMsg, SessionHit, client_message, server_message},
         protocol,

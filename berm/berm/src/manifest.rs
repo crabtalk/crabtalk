@@ -2,8 +2,8 @@
 //!
 //! Carried as an ELF section rather than an export, so reading it never means
 //! running the guest (RFC 0205). It is parsed once at load: the tool schemas
-//! the model sees come from here, and so does the list of capabilities the
-//! author wants — which is documentation, not a grant.
+//! the model sees come from here, and so does the usage an embedder puts in
+//! front of a model before it chooses between them.
 
 use anyhow::{Context, Result, bail};
 use object::{Object, ObjectSection};
@@ -12,15 +12,13 @@ use serde::Deserialize;
 use crate::abi;
 
 /// The ABI this host speaks. A harness built against a different one is
-/// refused rather than dispatched into a capability its author did not mean.
+/// refused rather than dispatched into a system harness its author did not
+/// mean.
 pub const ABI_VERSION: u32 = 0;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Manifest {
     pub abi_version: u32,
-    /// What the harness *wants*. The declaration decides what it gets.
-    #[serde(default)]
-    pub capabilities: Vec<String>,
     pub tools: Vec<ToolSpec>,
     /// When to reach for these tools, and how they go together — the
     /// question no single tool's `description` answers, because it is about
