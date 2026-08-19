@@ -1,4 +1,4 @@
-//! How a capability call works, once, for all of them.
+//! How a system harness call works, once, for all of them.
 //!
 //! A call hands the host a request and gets back a length. The bytes stay
 //! host-side until the guest asks for them, which is the same pull the
@@ -17,8 +17,8 @@ use crate::{
 };
 use alloc::{string::String, vec, vec::Vec};
 
-/// Make one capability call. `Err` carries whatever the host said went wrong.
-pub(crate) fn call(number: u64, request: &[u8]) -> Result<Vec<u8>, String> {
+/// Make one system harness call. `Err` carries whatever the host said went wrong.
+pub fn call(number: u64, request: &[u8]) -> Result<Vec<u8>, String> {
     let staged = sys::call2(number, request.as_ptr() as u64, request.len() as u64);
     let failed = staged & ERROR != 0;
 

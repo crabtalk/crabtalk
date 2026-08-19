@@ -4,7 +4,7 @@ The `#[harness]` proc macro. Re-exported by
 [`berm-lang`](https://crates.io/crates/berm-lang) — depend on that, not on this.
 
 ```rust
-#[berm_lang::harness(capabilities = ["log"])]
+#[berm_lang::harness]
 mod tools {
     use berm_lang::{Failed, Out};
 

@@ -29,10 +29,10 @@ pub fn parse<T: for<'de> serde_guest::Deserialize<'de>>(
     }
 }
 
-/// Turn a capability's failure into this tool's failure, unchanged. The host
+/// Turn a system harness's failure into this tool's failure, unchanged. The host
 /// already said what went wrong, and in more detail than a rewording would
 /// keep.
-pub fn capability<T>(result: Result<T, String>, out: &mut Out) -> Result<T, Failed> {
+pub fn system<T>(result: Result<T, String>, out: &mut Out) -> Result<T, Failed> {
     result.map_err(|error| {
         out.write(error.as_bytes());
         Failed
@@ -40,7 +40,7 @@ pub fn capability<T>(result: Result<T, String>, out: &mut Out) -> Result<T, Fail
 }
 
 /// Fail with a message, for a tool that has decided its own arguments are
-/// wrong before reaching a capability.
+/// wrong before reaching a system harness.
 pub fn failed(message: &str, out: &mut Out) -> Result<(), Failed> {
     out.write(message.as_bytes());
     Err(Failed)

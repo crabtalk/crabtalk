@@ -1,7 +1,7 @@
 //! Name the other agents in the runtime.
 //!
 //! The smallest thing that reaches the runtime rather than the machine: one
-//! tool, one capability, one `ClientMessage`. It exists to exercise the
+//! tool, one system harness, one `ClientMessage`. It exists to exercise the
 //! protocol door end to end — the grant, the decode-time allowlist, and the
 //! redaction — with nothing else in the way.
 //!

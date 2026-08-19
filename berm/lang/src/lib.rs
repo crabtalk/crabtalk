@@ -43,20 +43,21 @@ extern crate std;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-mod abi;
-/// One call path shared by every capability. Needs a heap: a result whose size
-/// the guest learns at runtime has nowhere else to go.
+// `harnesses!` emits `::berm_lang::` paths so an expansion works in a harness's
+// own crate. That only resolves in here if the crate can name itself.
+extern crate self as berm_lang;
+
+/// The wire between a harness and its host. Public because `harnesses!` emits
+/// `abi::hash` for every name it generates.
+pub mod abi;
+/// One call path shared by every system harness. Needs a heap: a result whose
+/// size the guest learns at runtime has nowhere else to go.
+///
+/// Reached only by generated code, which is why it is hidden rather than
+/// private: an expansion lands in the harness's crate, not this one.
 #[cfg(feature = "alloc")]
-mod cap;
-/// Commands. Granted as `exec`.
-#[cfg(feature = "alloc")]
-pub mod exec;
-/// Files, bounded by the granted root. Granted as `fs`.
-#[cfg(feature = "alloc")]
-pub mod fs;
-/// Requests, bounded by the granted hosts. Granted as `http`.
-#[cfg(feature = "alloc")]
-pub mod http;
+#[doc(hidden)]
+pub mod host;
 /// The runtime, over `ClientMessage`. Granted as `protocol:<group>`.
 #[cfg(feature = "protocol")]
 pub mod protocol;
@@ -72,8 +73,10 @@ pub mod test;
 /// Argument parsing and failure reporting, shared by every tool body.
 #[cfg(feature = "alloc")]
 mod tool;
+/// Request framing, on the same terms as [`host`].
 #[cfg(feature = "alloc")]
-mod wire;
+#[doc(hidden)]
+pub mod wire;
 
 // One boundary for the whole crate: `riscv.rs` makes real host calls, and
 // `stub.rs` is a host a test can stand in for. The split is about behaviour
@@ -83,13 +86,37 @@ mod wire;
 #[cfg_attr(not(target_arch = "riscv64"), path = "sys/stub.rs")]
 mod sys;
 
+// The guest half of the system harnesses berm names. Declared here rather than
+// in a file berm reads too: both crates are published, and a proc macro cannot
+// read a dependency's files, so a shared path would leave one package without
+// it. A misspelling on either side hashes to a number nothing is registered
+// for, which `cargo run --example os -p berm` trips on the first call.
+#[cfg(feature = "alloc")]
+harnesses!(guest {
+    namespace = "berm";
+
+    /// Files, bounded by a granted root.
+    mod fs {
+        /// Read a file whole.
+        fn read(path: &str) -> Vec<u8>;
+        /// Write a file, replacing what was there.
+        fn write(path: &str, content: &[u8]);
+    }
+
+    /// Commands, under the same root `fs` is bounded by.
+    mod exec {
+        /// Run a command through a shell, in `cwd` relative to the root.
+        fn run(command: &str, cwd: &str, env: &[(&str, &str)]) -> Vec<u8>;
+    }
+});
+
 pub use abi::{Buf, args_len, log};
-pub use berm_codegen::harness;
+pub use berm_codegen::{harness, harnesses};
 pub use out::Out;
 #[cfg(feature = "args")]
 pub use tool::parse;
 #[cfg(feature = "alloc")]
-pub use tool::{capability, failed};
+pub use tool::{failed, system};
 
 // Re-exported so a harness declares this SDK and nothing else. The `#[harness]`
 // macro writes `#[serde(crate = "::berm_lang::serde")]` onto argument structs,

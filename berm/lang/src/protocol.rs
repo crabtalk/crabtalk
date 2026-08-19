@@ -7,7 +7,7 @@
 //! ungranted message type comes back as an error rather than being silently
 //! ignored.
 
-use crate::{abi::HOST_PROTOCOL_CALL, cap};
+use crate::{abi::HOST_PROTOCOL_CALL, host};
 use alloc::{string::String, vec::Vec};
 use prost::Message;
 use proto::{ClientMessage, ServerMessage};
@@ -22,6 +22,6 @@ pub fn call(message: ClientMessage) -> Result<ServerMessage, String> {
         .encode(&mut request)
         .map_err(|_| String::from("could not encode the request"))?;
 
-    let reply = cap::call(HOST_PROTOCOL_CALL, &request)?;
+    let reply = host::call(HOST_PROTOCOL_CALL, &request)?;
     ServerMessage::decode(&reply[..]).map_err(|_| String::from("could not decode the reply"))
 }

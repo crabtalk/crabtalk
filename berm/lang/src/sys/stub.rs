@@ -4,8 +4,8 @@
 //! and unit test their handlers natively rather than cross-compiling to see
 //! anything at all. The calls a test can reasonably answer — the argument blob,
 //! the log, the failure channel — are served from [`crate::test`]'s state.
-//! Anything else panics naming the capability, because a test that reached a
-//! real capability should say so rather than read a plausible zero.
+//! Anything else panics naming the system harness, because a test that reached a
+//! real system harness should say so rather than read a plausible zero.
 
 use crate::abi;
 use std::{cell::RefCell, string::String, vec::Vec};

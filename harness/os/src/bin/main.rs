@@ -26,7 +26,7 @@ extern crate alloc;
 #[berm_lang::harness(buffer = 262144)]
 mod tools {
     use alloc::{collections::BTreeMap, string::String, vec::Vec};
-    use berm_lang::{Failed, Out, capability, exec, failed, fs, parse};
+    use berm_lang::{Failed, Out, exec, failed, fs, parse, system};
     use core::fmt::Write;
 
     /// Lines returned per read when the caller does not say.
@@ -44,10 +44,10 @@ mod tools {
             .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect();
 
-        // The capability returns the JSON the model has always read for this
+        // The system harness returns the JSON the model has always read for this
         // tool, so it goes back untouched rather than being parsed to be
         // printed again — which this harness could not do anyway.
-        let result = capability(
+        let result = system(
             exec::run(
                 &input.command,
                 input.cwd.as_deref().unwrap_or("."),
@@ -63,7 +63,7 @@ mod tools {
     #[args(Read)]
     pub fn read(args: &[u8], out: &mut Out) -> Result<(), Failed> {
         let input: Read = parse(args, out)?;
-        let content = capability(fs::read(&input.path), out)?;
+        let content = system(fs::read(&input.path), out)?;
         let content = utf8(&content, &input.path, out)?;
 
         let total = content.lines().count();
@@ -110,7 +110,7 @@ mod tools {
             return failed("old_string and new_string are identical", out);
         }
 
-        let content = capability(fs::read(&input.path), out)?;
+        let content = system(fs::read(&input.path), out)?;
         let content = utf8(&content, &input.path, out)?;
 
         // Uniqueness is what makes this safe without having read the file
@@ -126,7 +126,7 @@ mod tools {
         }
 
         let edited = content.replacen(input.old_string.as_str(), &input.new_string, 1);
-        capability(fs::write(&input.path, edited.as_bytes()), out)?;
+        system(fs::write(&input.path, edited.as_bytes()), out)?;
         out.write(b"ok");
         Ok(())
     }

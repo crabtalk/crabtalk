@@ -4,7 +4,7 @@ A sandbox for harnesses. Loads a hash-pinned RV64 ELF, compiles it once, and
 instantiates it per invocation under [rvtime](https://crates.io/crates/rvtime);
 nothing survives the call.
 
-A harness reaches the world only through capabilities it was granted, and the
+A harness reaches the world only through system harnesses it was granted, and the
 grant *is* the `Linker` it is instantiated with — an ungranted call traps
 because nothing is registered for it. `fs` and `exec` ship here; anything about
 the host is supplied by the embedder through `Capability`.

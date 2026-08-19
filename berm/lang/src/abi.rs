@@ -1,50 +1,41 @@
 //! The wire between a harness and its host.
 //!
 //! Host calls travel in `a7`, which is a number — but the number is *derived*
-//! from a name rather than assigned (RFC 0205). A capability is identified by
+//! from a name rather than assigned (RFC 0205). A system harness is identified by
 //! what it is called, so adding one cannot collide with someone else's
 //! allocation and no registry of integers has to be maintained.
 //!
 //! The same hash is computed host-side in `berm/berm/src/abi.rs`. The two
 //! must agree; if they ever drift, every call traps immediately as an unknown
-//! host call rather than reaching the wrong capability.
+//! host call rather than reaching the wrong system harness.
 //!
 //! Whether a call reaches a host at all is `sys`'s business, not this file's.
 
 use crate::sys;
 
 /// Write a UTF-8 message to the host log.
-pub(crate) const HOST_LOG: u64 = hash("berm.log");
+pub const HOST_LOG: u64 = hash("berm.log");
 /// Byte length of this invocation's argument blob.
-pub(crate) const HOST_ARG_LEN: u64 = hash("berm.args.len");
+pub const HOST_ARG_LEN: u64 = hash("berm.args.len");
 /// Copy the argument blob into guest memory.
-pub(crate) const HOST_ARG_READ: u64 = hash("berm.args.read");
+pub const HOST_ARG_READ: u64 = hash("berm.args.read");
 /// Fail this invocation with a message.
-pub(crate) const HOST_FAIL: u64 = hash("berm.fail");
-/// Copy the last capability call's staged result into guest memory.
-pub(crate) const HOST_RESULT_READ: u64 = hash("berm.result.read");
+pub const HOST_FAIL: u64 = hash("berm.fail");
+/// Copy the last system harness call's staged result into guest memory.
+pub const HOST_RESULT_READ: u64 = hash("berm.result.read");
 
-/// Read a file. Request is the path; the result is its bytes.
-pub(crate) const HOST_FS_READ: u64 = hash("berm.fs.read");
-/// Write a file. Request is a `u32` path length, the path, then the content.
-pub(crate) const HOST_FS_WRITE: u64 = hash("berm.fs.write");
-/// Run a command. Request and result are both JSON.
-pub(crate) const HOST_EXEC_RUN: u64 = hash("berm.exec.run");
 /// Send one `ClientMessage`; the reply is a `ServerMessage`. Gated with the
 /// module that calls it — the SDK builds without the protocol, for a harness
 /// that only reaches the machine.
 #[cfg(feature = "protocol")]
-pub(crate) const HOST_PROTOCOL_CALL: u64 = hash("crabtalk.protocol.call");
-/// Perform one HTTP request. Both the request and the reply are framed fields.
-#[cfg(feature = "alloc")]
-pub(crate) const HOST_HTTP_FETCH: u64 = hash("crabtalk.http.fetch");
+pub const HOST_PROTOCOL_CALL: u64 = hash("crabtalk.protocol.call");
 
-/// Set on the length a capability returns when the staged bytes are an error
+/// Set on the length a system harness returns when the staged bytes are an error
 /// message rather than a result. A length never reaches this bit on its own,
 /// so one return value carries both without a second call to ask which.
 pub(crate) const ERROR: u64 = 1 << 63;
 
-/// FNV-1a over the capability's name, evaluated at compile time.
+/// FNV-1a over the system harness's name, evaluated at compile time.
 pub const fn hash(name: &str) -> u64 {
     let bytes = name.as_bytes();
     let mut result: u64 = 0xcbf2_9ce4_8422_2325;
@@ -106,7 +97,7 @@ pub fn fail(message: &[u8]) -> Buf {
     Buf { ptr: 0, len: 0 }
 }
 
-/// Pull the last capability call's staged result, returning its *full* length
+/// Pull the last system harness call's staged result, returning its *full* length
 /// exactly as [`read_args`] does — the one pattern both use.
 pub(crate) fn read_result(buffer: &mut [u8]) -> usize {
     sys::call2(

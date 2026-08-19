@@ -11,7 +11,30 @@ use syn::{
     Expr, ExprLit, Item, ItemFn, ItemMod, Lit, LitStr, Token, parse::Parse, parse_macro_input,
 };
 
+mod harnesses;
 mod schema;
+
+/// Declare a set of system harnesses, generating one side of the ABI.
+///
+/// ```ignore
+/// berm_lang::harnesses!(guest {
+///     namespace = "berm";
+///     mod fs {
+///         /// Read a file whole.
+///         fn read(path: &str) -> Vec<u8>;
+///     }
+/// });
+/// ```
+///
+/// `guest` emits the stub a harness calls; `host` emits what a host registers
+/// under. Crates that can share a declaration file pass a path instead of a
+/// block, so the framing one side builds and the other reads has one source.
+#[proc_macro]
+pub fn harnesses(input: TokenStream) -> TokenStream {
+    parse_macro_input!(input as harnesses::Declaration)
+        .expand()
+        .into()
+}
 
 /// Default size of the argument and result buffers, in bytes.
 ///

@@ -25,7 +25,7 @@ use std::{
 const HARNESS: &str = "target/riscv64imac-unknown-none-elf/release/peers";
 
 // Mirrors the real dispatch path: a harness blocks the thread it runs on, so
-// the hook hands invocations to the blocking pool and capabilities `block_on`
+// the hook hands invocations to the blocking pool and system harnesses `block_on`
 // from inside one. Calling from an async context instead would panic.
 #[tokio::main]
 async fn main() -> Result<()> {

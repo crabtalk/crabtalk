@@ -1,6 +1,6 @@
 [package]
 name = "crabtalk-berm"
-description = "Crabtalk's side of berm — the harness hook and the protocol capability"
+description = "Crabtalk's side of berm — the harness hook and the protocol harness"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
