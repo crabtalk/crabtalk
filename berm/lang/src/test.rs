@@ -13,6 +13,7 @@
 //!     assert_eq!(out, br#"{"echo":hi}"#);
 //! }
 //! ```
+#![cfg(not(target_arch = "riscv64"))]
 
 use crate::{Buf, sys};
 use std::{string::String, vec::Vec};

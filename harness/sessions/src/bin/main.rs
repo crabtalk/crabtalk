@@ -25,7 +25,7 @@ mod tools {
         proto::{ClientMessage, SearchSessionsMsg, SessionHit, client_message, server_message},
         protocol,
     };
-    use berm_lang::{Failed, Out, parse};
+    use berm_lang::{Failed, Out, tool::parse};
     use core::fmt::Write;
 
     /// Search past conversations by keyword.

@@ -23,34 +23,10 @@ pub use rvtime::{Config, Engine};
 use std::{collections::BTreeMap, sync::Arc};
 
 pub mod abi;
-pub mod exec;
-pub mod fs;
+pub mod host;
 mod manifest;
 mod root;
-/// The host half of berm's system set: one constructor per name, taking the
-/// implementation and returning the [`Harness`] that serves it.
-///
-/// `berm-lang` declares the guest half of the same thing in its own crate.
-/// Both are published, so neither can hold a file the other reads.
-pub mod system {
-    berm_codegen::harnesses!(host {
-        namespace = "berm";
-
-        /// Files, bounded by a granted root.
-        mod fs {
-            /// Read a file whole.
-            fn read(path: &str) -> Vec<u8>;
-            /// Write a file, replacing what was there.
-            fn write(path: &str, content: &[u8]);
-        }
-
-        /// Commands, under the same root `fs` is bounded by.
-        mod exec {
-            /// Run a command through a shell, in `cwd` relative to the root.
-            fn run(command: &str, cwd: &str, env: &[(&str, &str)]) -> Vec<u8>;
-        }
-    });
-}
+pub mod sys;
 mod watchdog;
 pub mod wire;
 
@@ -62,7 +38,7 @@ extern crate self as berm;
 // re-exports serde: an embedder depends on this crate and nothing else, and
 // cannot pick a version the generated code disagrees with.
 pub use anyhow;
-pub use berm_codegen::harnesses;
+pub use berm_codegen::hosts;
 
 /// A guest entry point: takes nothing, returns a pointer and a length.
 type Export = TypedFunc<(), (u64, u64)>;

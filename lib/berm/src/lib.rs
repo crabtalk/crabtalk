@@ -6,8 +6,7 @@
 //! `ClientMessage` is, and must not, because the same sandbox runs elsewhere.
 //!
 //! This crate is the other half of that split, from the guest's side: the
-//! `crabtalk` namespace, declared once and generated into both the stubs a
-//! harness calls and the constructors `crabtalk-berm` serves them with.
+//! stubs a harness calls to reach the `crabtalk` namespace.
 //!
 //! ```ignore
 //! use berm_crabtalk::{protocol, proto::{ClientMessage, ListAgentsMsg, client_message}};
@@ -21,13 +20,8 @@
 
 extern crate alloc;
 
-// The generated stubs. Private because `protocol` is served by the typed
-// wrapper beside it rather than by the byte-level call underneath.
-mod sys {
-    berm_lang::harnesses!(guest, "crabtalk.harnesses");
-}
-
 pub mod protocol;
+pub mod sys;
 
 pub use proto;
 pub use sys::http;

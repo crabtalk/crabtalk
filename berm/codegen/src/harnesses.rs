@@ -1,9 +1,10 @@
-//! `harnesses!` — one declaration, two expansions.
+//! One declaration, two expansions — `harnesses!` from the guest, `host!` from
+//! the host.
 //!
 //! A system harness is native host code behind a name. Both ends of that name
 //! have to agree on the framing, and hand-writing them is how they drift: the
 //! guest builds `[path]` and the host reads `fields[0]`, in different crates,
-//! kept in step by memory. Here they come from one source.
+//! kept in step by memory. Here they come from one grammar.
 
 use crate::docs;
 use proc_macro2::TokenStream;
@@ -15,7 +16,9 @@ use syn::{
     token,
 };
 
-/// Which side is being generated.
+/// Which side is being generated. Chosen by the macro the declaration was
+/// written under, not by the declaration — the crate you reach it through is
+/// the side you are on, so the wrong one is not spellable.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Side {
     Guest,
@@ -23,7 +26,6 @@ pub enum Side {
 }
 
 pub struct Declaration {
-    side: Side,
     namespace: String,
     modules: Vec<Module>,
 }
@@ -76,55 +78,6 @@ enum Ty {
 }
 
 impl Parse for Declaration {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mode: Ident = input.parse()?;
-        let side = match mode.to_string().as_str() {
-            "guest" => Side::Guest,
-            "host" => Side::Host,
-            other => {
-                return Err(syn::Error::new(
-                    mode.span(),
-                    format!("unknown side: {other} (expected `guest` or `host`)"),
-                ));
-            }
-        };
-
-        // A path rather than the text, for the reason `usage_file` takes one: a
-        // proc macro never sees an `include_str!` expanded, so it reads the file
-        // itself. Both sides naming the same path is what makes them one source,
-        // which holds only while at most one of them is published — a path
-        // leaving the crate root is a file `cargo package` omits.
-        let body: Body = if input.peek(Token![,]) {
-            input.parse::<Token![,]>()?;
-            let path: LitStr = input.parse()?;
-            let root = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| {
-                syn::Error::new(path.span(), "a declaration file needs CARGO_MANIFEST_DIR")
-            })?;
-            let full = std::path::Path::new(&root).join(path.value());
-            let text = std::fs::read_to_string(&full)
-                .map_err(|e| syn::Error::new(path.span(), format!("{}: {e}", full.display())))?;
-            syn::parse_str(&text)?
-        } else {
-            let inner;
-            syn::braced!(inner in input);
-            inner.parse()?
-        };
-
-        Ok(Self {
-            side,
-            namespace: body.namespace,
-            modules: body.modules,
-        })
-    }
-}
-
-/// The declaration proper, without the side — what a shared file holds.
-struct Body {
-    namespace: String,
-    modules: Vec<Module>,
-}
-
-impl Parse for Body {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let key: Ident = input.parse()?;
         if key != "namespace" {
@@ -357,11 +310,11 @@ impl Ty {
 }
 
 impl Declaration {
-    pub fn expand(&self) -> TokenStream {
+    pub fn expand(&self, side: Side) -> TokenStream {
         let modules = self.modules.iter().map(|module| {
             let name = &module.name;
             let docs = doc(&module.docs);
-            let calls = module.calls.iter().map(|call| match self.side {
+            let calls = module.calls.iter().map(|call| match side {
                 Side::Guest => self.guest(module, call),
                 Side::Host => self.host(module, call),
             });

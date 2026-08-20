@@ -3,7 +3,7 @@
 //! Read and write are separate system harnesses, so a harness that summarises a
 //! directory can be given the one it needs.
 
-use crate::{Harness, root, system};
+use crate::{Harness, root, sys};
 use anyhow::bail;
 use std::path::PathBuf;
 
@@ -14,9 +14,8 @@ pub const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024;
 
 /// Read files, bounded by `root`.
 pub fn read(root: PathBuf) -> Harness {
-    system::fs::read(move |path| {
+    sys::fs::read(move |path| {
         let path = root::resolve(&root, path)?;
-
         let size = std::fs::metadata(&path)
             .map(|meta| meta.len())
             .unwrap_or_default();
@@ -30,7 +29,7 @@ pub fn read(root: PathBuf) -> Harness {
 
 /// Write files, bounded by `root`.
 pub fn write(root: PathBuf) -> Harness {
-    system::fs::write(move |path, content| {
+    sys::fs::write(move |path, content| {
         let path = root::resolve(&root, path)?;
         std::fs::write(&path, content)?;
         Ok(())

@@ -161,11 +161,11 @@ impl BermHarness {
         let mut system = Vec::new();
         if let Some(root) = &declaration.root {
             if granted("fs") {
-                system.push(berm::fs::read(root.clone()));
-                system.push(berm::fs::write(root.clone()));
+                system.push(berm::host::fs::read(root.clone()));
+                system.push(berm::host::fs::write(root.clone()));
             }
             if granted("exec") {
-                system.push(berm::exec::run(root.clone()));
+                system.push(berm::host::exec::run(root.clone()));
             }
         }
         if let Some(scope) = scope {

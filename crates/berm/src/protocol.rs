@@ -141,7 +141,7 @@ impl Protocol {
     /// declaration `berm-crabtalk` builds its stub from, so there is no string
     /// here for the two sides to disagree about.
     pub fn harness(self) -> berm::Harness {
-        crate::system::protocol::call(move |message| self.call(message))
+        crate::sys::protocol::call(move |message| self.call(message))
     }
 
     /// Decode one `ClientMessage`, check it against the allowlist, dispatch

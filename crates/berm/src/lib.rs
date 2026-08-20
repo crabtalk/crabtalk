@@ -14,21 +14,15 @@
 //! compiler checks rather than a promise: berm's dependency list has no
 //! crabtalk crate in it, and cannot grow one without this file moving.
 
+pub use harness::BermHarness;
+pub use http::Http;
+pub use protocol::{Dispatch, Protocol, Scope};
 use std::{path::PathBuf, sync::LazyLock};
 
 mod harness;
 mod http;
 mod protocol;
-/// The host half of the `crabtalk` namespace, from the declaration
-/// `berm-crabtalk` generates its guest stubs from. Sharing the file works here
-/// and not for berm's own set because only one side of this pair publishes.
-mod system {
-    berm::harnesses!(host, "../../lib/berm/crabtalk.harnesses");
-}
-
-pub use harness::BermHarness;
-pub use http::Http;
-pub use protocol::{Dispatch, Protocol, Scope};
+mod sys;
 
 /// Harness images (`~/.crabtalk/harnesses/`), one `{name}.elf` each.
 ///

@@ -6,6 +6,7 @@
 //! So the guest asks instead, from inside the entry it is already in, the first
 //! time it allocates. A harness that never allocates never asks, which is why
 //! there is nothing to declare.
+#![cfg(all(feature = "alloc", target_arch = "riscv64"))]
 
 use crate::{
     abi::{HOST_HEAP_SIZE, HOST_HEAP_START},

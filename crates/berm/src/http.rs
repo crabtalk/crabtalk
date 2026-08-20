@@ -17,7 +17,7 @@
 //! unexpected — the check is on the URL's host, not on the address it
 //! resolves to.
 
-use crate::system::http::Fetch;
+use crate::sys::http::Fetch;
 use anyhow::{Context, Result, bail};
 use bytes::Bytes;
 use http::{Request, Uri};
@@ -66,7 +66,7 @@ impl Http {
     /// The harness serving `crabtalk.http.fetch`, named by the declaration
     /// rather than by a string written here.
     pub fn harness(self) -> berm::Harness {
-        crate::system::http::fetch(move |method, url, body, headers| {
+        crate::sys::http::fetch(move |method, url, body, headers| {
             self.fetch(method, url, body, headers)
         })
     }

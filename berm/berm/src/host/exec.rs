@@ -7,7 +7,7 @@
 //! The root bounds the filesystem and nothing else: this is a shell, so a
 //! harness holding it reaches the network too.
 
-use crate::{Harness, root, system};
+use crate::{Harness, root, sys};
 use anyhow::bail;
 use std::{
     io::Read,
@@ -26,7 +26,7 @@ const POLL: Duration = Duration::from_millis(5);
 
 /// Run commands, bounded by `root`.
 pub fn run(root: PathBuf) -> Harness {
-    system::exec::run(move |command, cwd, env| {
+    sys::exec::run(move |command, cwd, env| {
         let cwd = root::resolve(&root, cwd)?;
 
         let mut process = Command::new("bash");

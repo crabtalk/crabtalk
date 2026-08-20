@@ -48,23 +48,12 @@ extern crate alloc;
 // own crate. That only resolves in here if the crate can name itself.
 extern crate self as berm_lang;
 
-/// The wire between a harness and its host: call numbers, framing, and the one
-/// call path. Public because `harnesses!` emits `abi::hash` for every name it
-/// generates, and hidden inside because the rest is reached only by generated
-/// code — an expansion lands in the harness's crate, not this one.
 pub mod abi;
-// Installing a global allocator is something only the whole program may do,
-// so like the panic handler it happens on the guest's target and nowhere else.
-#[cfg(all(feature = "alloc", target_arch = "riscv64"))]
+pub mod call;
 mod heap;
 mod out;
-/// Run a harness's tools natively. Present only off the guest's target, where
-/// there is a test to run them from.
-#[cfg(not(target_arch = "riscv64"))]
 pub mod test;
-/// Argument parsing and failure reporting, shared by every tool body.
-#[cfg(feature = "alloc")]
-mod tool;
+pub mod tool;
 
 // One boundary for the whole crate: `riscv.rs` makes real host calls, and
 // `stub.rs` is a host a test can stand in for. The split is about behaviour
@@ -74,40 +63,9 @@ mod tool;
 #[cfg_attr(not(target_arch = "riscv64"), path = "sys/stub.rs")]
 mod sys;
 
-// The guest half of berm's system set. berm declares the host half of the same
-// thing, in its own crate: both are published, and a proc macro cannot read a
-// dependency's files, so a shared path would leave one package without it.
-//
-// Drift is caught rather than prevented. A renamed call hashes to a number
-// nothing is registered for, and a changed field count fails the arity check
-// the host expansion emits — both loud, on the first call, which
-// `cargo run --example os -p berm` makes.
-#[cfg(feature = "alloc")]
-harnesses!(guest {
-    namespace = "berm";
-
-    /// Files, bounded by a granted root.
-    mod fs {
-        /// Read a file whole.
-        fn read(path: &str) -> Vec<u8>;
-        /// Write a file, replacing what was there.
-        fn write(path: &str, content: &[u8]);
-    }
-
-    /// Commands, under the same root `fs` is bounded by.
-    mod exec {
-        /// Run a command through a shell, in `cwd` relative to the root.
-        fn run(command: &str, cwd: &str, env: &[(&str, &str)]) -> Vec<u8>;
-    }
-});
-
 pub use abi::{Buf, args_len, log};
 pub use berm_codegen::{harness, harnesses};
 pub use out::Out;
-#[cfg(feature = "args")]
-pub use tool::parse;
-#[cfg(feature = "alloc")]
-pub use tool::{failed, system};
 
 // Re-exported so a harness declares this SDK and nothing else. The `#[harness]`
 // macro writes `#[serde(crate = "::berm_lang::serde")]` onto argument structs,

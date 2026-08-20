@@ -25,7 +25,7 @@ mod tools {
         proto::{ClientMessage, GetSkillMsg, ListSkillsMsg, client_message, server_message},
         protocol,
     };
-    use berm_lang::{Failed, Out, parse};
+    use berm_lang::{Failed, Out, tool::parse};
     use core::fmt::Write;
 
     /// Load a skill by name, or list what is available.

@@ -27,7 +27,7 @@ use std::{
 /// which is [`crate::exec::TIMEOUT`]. The margin is deliberate: this bound
 /// exists to stop non-termination, not to enforce latency, and a harness doing
 /// slow but finite work should finish rather than be killed.
-const TIMEOUT: Duration = Duration::from_secs(crate::exec::TIMEOUT.as_secs() * 2);
+const TIMEOUT: Duration = Duration::from_secs(crate::host::exec::TIMEOUT.as_secs() * 2);
 
 /// One guest's deadline: the ticket that withdraws it, when it expires, and
 /// the handle that stops it.

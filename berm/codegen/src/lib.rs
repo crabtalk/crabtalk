@@ -14,25 +14,34 @@ use syn::{
 mod harnesses;
 mod schema;
 
-/// Declare a set of system harnesses, generating one side of the ABI.
+/// Declare the system harnesses a harness may call, emitting a stub for each.
 ///
 /// ```ignore
-/// berm_lang::harnesses!(guest {
+/// berm_lang::harnesses! {
 ///     namespace = "berm";
 ///     mod fs {
 ///         /// Read a file whole.
 ///         fn read(path: &str) -> Vec<u8>;
 ///     }
-/// });
+/// }
 /// ```
 ///
-/// `guest` emits the stub a harness calls; `host` emits what a host registers
-/// under. Crates that can share a declaration file pass a path instead of a
-/// block, so the framing one side builds and the other reads has one source.
+/// [`host!`] takes the same declaration and emits what a host registers under.
+/// Each side writes it in its own crate, and drift is caught on the first call:
+/// a renamed call hashes to a number nothing is registered for.
 #[proc_macro]
 pub fn harnesses(input: TokenStream) -> TokenStream {
     parse_macro_input!(input as harnesses::Declaration)
-        .expand()
+        .expand(harnesses::Side::Guest)
+        .into()
+}
+
+/// The other side of [`harnesses!`]: one constructor per name, taking the
+/// implementation and returning the `Harness` that serves it.
+#[proc_macro]
+pub fn hosts(input: TokenStream) -> TokenStream {
+    parse_macro_input!(input as harnesses::Declaration)
+        .expand(harnesses::Side::Host)
         .into()
 }
 

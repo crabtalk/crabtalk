@@ -3,6 +3,7 @@
 //! Reading arguments and reporting a failure are the same in every harness,
 //! and a copy per crate is a copy that drifts — one of them starts wording an
 //! error differently, and a model sees two conventions from one runtime.
+#![cfg(feature = "alloc")]
 
 use crate::{Failed, Out};
 use alloc::string::String;

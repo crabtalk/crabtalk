@@ -39,9 +39,9 @@ fn main() -> Result<()> {
         &engine,
         &elf,
         &[
-            berm::fs::read(sandbox.clone()),
-            berm::fs::write(sandbox.clone()),
-            berm::exec::run(sandbox.clone()),
+            berm::host::fs::read(sandbox.clone()),
+            berm::host::fs::write(sandbox.clone()),
+            berm::host::exec::run(sandbox.clone()),
         ],
     )?;
 
