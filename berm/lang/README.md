@@ -63,13 +63,14 @@ The resulting ELF is the whole artifact: one file, every platform.
 
 ## Reaching a runtime
 
-This crate is the sandbox, and its system set is the machine: files and
-commands, the things a no_std RV64 guest cannot do for itself. It knows nothing
-about any particular host's API.
+This crate owns the ABI and declares no system harness of its own. What a
+harness can reach is whatever its host registered, so naming any of it here
+would be the SDK deciding what a host must serve.
 
-A harness that talks to the Crabtalk daemon adds
+A harness running under the Crabtalk daemon adds
 [`berm-crabtalk`](https://crates.io/crates/berm-crabtalk), which declares the
-`crabtalk` namespace and carries the message types.
+`crabtalk` namespace — files, commands, HTTP, the runtime — and carries the
+message types.
 
 ## Design
 

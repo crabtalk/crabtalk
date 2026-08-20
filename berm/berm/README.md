@@ -6,8 +6,8 @@ nothing survives the call.
 
 A harness reaches the world only through system harnesses it was granted, and the
 grant *is* the `Linker` it is instantiated with — an ungranted call traps
-because nothing is registered for it. `fs` and `exec` ship here; anything about
-the host is supplied by the embedder through `Capability`.
+because nothing is registered for it. berm ships none: every `Harness` a guest
+can reach is one the embedder passed to `Berm::load`.
 
 `berm::manifest(elf)` reads what an image claims to be without compiling or
 running it.

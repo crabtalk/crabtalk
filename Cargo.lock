@@ -230,6 +230,7 @@ dependencies = [
 name = "berm-os"
 version = "0.0.23"
 dependencies = [
+ "berm-crabtalk",
  "berm-lang",
 ]
 
@@ -696,9 +697,11 @@ dependencies = [
  "hyper-tls",
  "hyper-util",
  "prost",
+ "serde_json",
  "sha2",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

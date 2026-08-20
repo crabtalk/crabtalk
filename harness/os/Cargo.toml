@@ -13,4 +13,5 @@ name = "os"
 path = "src/bin/main.rs"
 
 [dependencies]
+berm-crabtalk.workspace = true
 berm-lang.workspace = true

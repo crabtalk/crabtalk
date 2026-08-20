@@ -6,6 +6,20 @@
 berm::hosts! {
     namespace = "crabtalk";
 
+    /// Files, bounded by a granted root.
+    mod fs {
+        /// Read a file whole.
+        fn read(path: &str) -> Vec<u8>;
+        /// Write a file, replacing what was there.
+        fn write(path: &str, content: &[u8]);
+    }
+
+    /// Commands, under the same root `fs` is bounded by.
+    mod exec {
+        /// Run a command through a shell, in `cwd` relative to the root.
+        fn run(command: &str, cwd: &str, env: &[(&str, &str)]) -> Vec<u8>;
+    }
+
     /// The runtime, as a harness sees it.
     mod protocol {
         /// Send one encoded `ClientMessage`; the reply is an encoded `ServerMessage`.

@@ -7,8 +7,9 @@
 //! The root bounds the filesystem and nothing else: this is a shell, so a
 //! harness holding it reaches the network too.
 
-use crate::{Harness, root, sys};
+use crate::{root, sys};
 use anyhow::bail;
+use berm::Harness;
 use std::{
     io::Read,
     path::PathBuf,
@@ -16,10 +17,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// How long a command may run. Every system harness needs its own timeout: rvtime
-/// can interrupt a looping guest, but not a host call of ours that never
-/// returns.
-pub(crate) const TIMEOUT: Duration = Duration::from_secs(30);
+/// How long a command may run. Every system harness needs its own timeout:
+/// rvtime can interrupt a looping guest, but not a host call of ours that never
+/// returns — and it has to stay under berm's watchdog, which cannot fire while
+/// the guest is blocked in here.
+const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// How often to check whether the command is done.
 const POLL: Duration = Duration::from_millis(5);

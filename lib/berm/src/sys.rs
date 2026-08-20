@@ -1,9 +1,23 @@
 // The guest half of the `crabtalk` namespace. `crabtalk-berm` declares the host
-// half of the same thing, the way `berm-lang` and `berm` split berm's own set:
-// drift hashes to a number nothing is registered for, loud on the first call.
+// half of the same thing, and drift between them hashes to a number nothing is
+// registered for — loud on the first call.
 
 berm_lang::harnesses! {
     namespace = "crabtalk";
+
+    /// Files, bounded by a granted root.
+    mod fs {
+        /// Read a file whole.
+        fn read(path: &str) -> Vec<u8>;
+        /// Write a file, replacing what was there.
+        fn write(path: &str, content: &[u8]);
+    }
+
+    /// Commands, under the same root `fs` is bounded by.
+    mod exec {
+        /// Run a command through a shell, in `cwd` relative to the root.
+        fn run(command: &str, cwd: &str, env: &[(&str, &str)]) -> Vec<u8>;
+    }
 
     /// The runtime, as a harness sees it.
     mod protocol {

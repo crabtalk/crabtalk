@@ -28,10 +28,11 @@
 //! `-Clink-arg=--emit-relocs`; the template's `.cargo/config.toml` carries
 //! both, and neither is optional.
 //!
-//! The system set here is the machine — files and commands, the things a
-//! no_std RV64 guest cannot do for itself. A harness that talks to the Crabtalk
-//! daemon adds [`berm-crabtalk`](https://crates.io/crates/berm-crabtalk), which
-//! declares that namespace and carries the message types.
+//! This crate declares no system harness of its own: what a harness can reach
+//! is whatever its host registered, and naming any of it here would be the SDK
+//! deciding what a host must serve. A harness running under the Crabtalk daemon
+//! adds [`berm-crabtalk`](https://crates.io/crates/berm-crabtalk), which
+//! declares that namespace — files, commands, HTTP, the runtime.
 
 #![no_std]
 
@@ -44,12 +45,7 @@ extern crate std;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-// `harnesses!` emits `::berm_lang::` paths so an expansion works in a harness's
-// own crate. That only resolves in here if the crate can name itself.
-extern crate self as berm_lang;
-
 pub mod abi;
-pub mod call;
 mod heap;
 mod out;
 pub mod test;

@@ -26,9 +26,9 @@ extern crate alloc;
 #[berm_lang::harness(buffer = 262144)]
 mod tools {
     use alloc::{collections::BTreeMap, string::String, vec::Vec};
+    use berm_crabtalk::{exec, fs};
     use berm_lang::{
         Failed, Out,
-        call::{exec, fs},
         tool::{failed, parse, system},
     };
     use core::fmt::Write;

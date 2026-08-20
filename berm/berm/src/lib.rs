@@ -9,12 +9,11 @@
 //! traps because nothing is registered for it, not because a check said no.
 //!
 //! A system harness is native host code behind a name, the way a precompile is
-//! native code behind an address: it is there because a no_std RV64 guest
-//! cannot open a socket or fork a process, not because it was withheld
-//! permission. [`fs`] and [`exec`] ship here for that reason, and arrive
-//! through the same list as anyone else's — so an embedder can bound them
-//! differently, or serve the same name from its own implementation, without
-//! berm having a decision to make.
+//! native code behind an address. berm ships none: what a filesystem is bounded
+//! by, what shape a command's result takes, where bytes persist — each is a
+//! decision about a host, and berm has no host. An embedder passes [`Harness`]
+//! values to [`Berm::load`] and that list is the whole of what a guest can
+//! reach.
 
 use anyhow::{Context, Result, bail};
 pub use manifest::{Manifest, ToolSpec};
@@ -23,16 +22,9 @@ pub use rvtime::{Config, Engine};
 use std::{collections::BTreeMap, sync::Arc};
 
 pub mod abi;
-pub mod host;
 mod manifest;
-mod root;
-pub mod sys;
 mod watchdog;
 pub mod wire;
-
-// `harnesses!` emits `::berm::` paths so an expansion works in an embedder's
-// own crate. That only resolves in here if the crate can name itself.
-extern crate self as berm;
 
 // Reached by the host expansion, and re-exported for the reason `berm-lang`
 // re-exports serde: an embedder depends on this crate and nothing else, and
@@ -282,17 +274,14 @@ impl Invocation {
 ///
 /// A system harness absent from the list given to [`Berm::load`] is absent from
 /// the [`Linker`], and that absence is the enforcement — there is no check to
-/// write and none to forget. Whatever bounds it is the argument it was built
-/// with: [`fs::read`] reaches nothing without a root, exactly as an embedder's
-/// own reaches nothing without whatever it closes over.
+/// write and none to forget. Whatever bounds it is whatever it closes over.
 ///
-/// The name is hashed to the number the guest puts in `a7`, so berm's `fs` and
-/// an embedder's own are the same kind of thing — and an embedder
-/// that would rather serve `berm.fs.read` itself, through its own permissions,
-/// simply passes its own.
+/// The name is hashed to the number the guest puts in `a7`, and berm neither
+/// reserves a namespace nor recognises one: every name in the list belongs to
+/// the embedder that wrote it.
 #[derive(Clone)]
 pub struct Harness {
-    /// What the guest calls it, e.g. `berm.fs.read`.
+    /// What the guest calls it, e.g. `crabtalk.fs.read`.
     pub name: String,
     /// What it does.
     pub call: Call,

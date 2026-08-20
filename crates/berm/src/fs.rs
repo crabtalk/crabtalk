@@ -3,8 +3,9 @@
 //! Read and write are separate system harnesses, so a harness that summarises a
 //! directory can be given the one it needs.
 
-use crate::{Harness, root, sys};
+use crate::{root, sys};
 use anyhow::bail;
+use berm::Harness;
 use std::path::PathBuf;
 
 /// Refuse a file larger than this rather than pull it into guest memory.

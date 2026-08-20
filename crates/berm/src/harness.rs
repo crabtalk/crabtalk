@@ -15,7 +15,7 @@
 //! the length of a command, so dispatch hands the invocation to the blocking
 //! pool rather than running it on an async worker.
 
-use crate::{Dispatch, Http, Protocol, Scope};
+use crate::{Dispatch, Http, Protocol, Scope, exec, fs};
 use anyhow::Context as _;
 use berm::{Berm, Config, Engine, Manifest};
 use crabllm_core::{FunctionDef, Tool, ToolType};
@@ -161,11 +161,11 @@ impl BermHarness {
         let mut system = Vec::new();
         if let Some(root) = &declaration.root {
             if granted("fs") {
-                system.push(berm::host::fs::read(root.clone()));
-                system.push(berm::host::fs::write(root.clone()));
+                system.push(fs::read(root.clone()));
+                system.push(fs::write(root.clone()));
             }
             if granted("exec") {
-                system.push(berm::host::exec::run(root.clone()));
+                system.push(exec::run(root.clone()));
             }
         }
         if let Some(scope) = scope {

@@ -31,12 +31,12 @@ use tokio::runtime::Handle;
 
 /// Cap on a response body. A harness reads one through its own heap, so an
 /// unbounded body is an unbounded allocation inside the sandbox — the same
-/// reason `berm`'s `fs` refuses an oversized file.
+/// reason [`crate::fs`] refuses an oversized file.
 const MAX_BODY: usize = 16 * 1024 * 1024;
 
 /// Total round trip. A harness blocked in a host call cannot notice an
-/// interrupt until the call returns, so berm's watchdog is set to outlast the
-/// longest one — this stays within that bound rather than moving it.
+/// interrupt until the call returns, so this has to stay under berm's watchdog
+/// bound.
 const TIMEOUT: Duration = Duration::from_secs(30);
 
 type Connector = hyper_tls::HttpsConnector<HttpConnector>;

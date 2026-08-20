@@ -2,12 +2,12 @@
 //!
 //! ```sh
 //! cargo build --release -p berm-os --target riscv64imac-unknown-none-elf
-//! cargo run --example os -p berm
+//! cargo run --example os -p crabtalk-berm
 //! ```
 
 use anyhow::{Context, Result};
-use berm::Berm;
-use rvtime::{Config, Engine};
+use berm::{Berm, Config, Engine};
+use crabtalk_berm::{exec, fs as harness_fs};
 use std::{fs, path::PathBuf};
 
 const GUEST: &str = "target/riscv64imac-unknown-none-elf/{profile}/os";
@@ -39,9 +39,9 @@ fn main() -> Result<()> {
         &engine,
         &elf,
         &[
-            berm::host::fs::read(sandbox.clone()),
-            berm::host::fs::write(sandbox.clone()),
-            berm::host::exec::run(sandbox.clone()),
+            harness_fs::read(sandbox.clone()),
+            harness_fs::write(sandbox.clone()),
+            exec::run(sandbox.clone()),
         ],
     )?;
 

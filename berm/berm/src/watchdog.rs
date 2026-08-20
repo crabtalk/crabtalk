@@ -23,11 +23,10 @@ use std::{
 /// How long a guest may run before it is asked to stop.
 ///
 /// A guest blocked in a host call cannot notice an interrupt until that call
-/// returns, so this has to outlast the longest one a system harness may make —
-/// which is [`crate::exec::TIMEOUT`]. The margin is deliberate: this bound
-/// exists to stop non-termination, not to enforce latency, and a harness doing
-/// slow but finite work should finish rather than be killed.
-const TIMEOUT: Duration = Duration::from_secs(crate::host::exec::TIMEOUT.as_secs() * 2);
+/// returns, so an embedder's system harness has to time out well inside this.
+/// The bound exists to stop non-termination, not to enforce latency, and a
+/// harness doing slow but finite work should finish rather than be killed.
+const TIMEOUT: Duration = Duration::from_secs(60);
 
 /// One guest's deadline: the ticket that withdraws it, when it expires, and
 /// the handle that stops it.
