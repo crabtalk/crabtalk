@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/*", "berm/*", "crates/*", "harness/*", "lib/*"]
+members = ["apps/*", "crates/*", "harness/*", "lib/*"]
 
 [workspace.package]
 version = "0.0.24"
@@ -25,16 +25,11 @@ embed = { path = "lib/embed", package = "crabtalk-embed", version = "0.0.24" }
 mcp = { path = "lib/mcp", package = "crabtalk-mcp", version = "0.0.24", default-features = false }
 search = { path = "lib/search", package = "crabtalk-search", version = "0.0.24", default-features = false }
 skill = { path = "lib/skill", package = "crabtalk-skill", version = "0.0.24" }
-berm = { path = "berm/berm", version = "0.0.24" }
-berm-lang = { path = "berm/lang", version = "0.0.24" }
-berm-codegen = { path = "berm/codegen", version = "0.0.24" }
 berm-crabtalk = { path = "lib/berm", version = "0.0.24" }
 
-# rvtime
-object = "0.40"
-rvtime = "0.0.2"
-rvtime-guest = { version = "0.0.2", default-features = false }
-linked_list_allocator = "0.10"
+# berm — https://github.com/crabtalk/berm
+berm = "0.0.3"
+berm-lang = "0.0.3"
 
 # crabllm
 crabllm-core = { git = "https://github.com/crabtalk/crabllm", branch = "dev" }
@@ -103,16 +98,6 @@ parking_lot = "0.12"
 schemars = "1.1.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# The same crates for guests, which are `no_std` with an allocator. Second
-# entries rather than features on the first because a member cannot turn off
-# default features it inherits, and every host member needs the std ones.
-serde_guest = { package = "serde", version = "1", default-features = false, features = [
-    "derive",
-    "alloc",
-] }
-serde_json_guest = { package = "serde_json", version = "1", default-features = false, features = [
-    "alloc",
-] }
 serde_yml = "0.0.12"
 termimad = "0.34"
 tar = "0.4"

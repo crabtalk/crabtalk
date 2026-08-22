@@ -1,6 +1,6 @@
 # crabtalk-berm
 
-Crabtalk's side of [berm](../../berm/berm): the harness hook and every system
+Crabtalk's side of [berm](https://github.com/crabtalk/berm): the harness hook and every system
 harness Crabtalk serves — `crabtalk.fs`, `crabtalk.exec`, `crabtalk.http.fetch`
 and `crabtalk.protocol.call`. berm serves none of its own.
 

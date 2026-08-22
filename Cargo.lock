@@ -178,7 +178,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "berm"
-version = "0.0.24"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cd1ab56a63511f52d3de68c0305ece8fad4b9b0885a566684ca04c9b2e27591"
 dependencies = [
  "anyhow",
  "berm-codegen",
@@ -187,12 +189,13 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
 name = "berm-codegen"
-version = "0.0.24"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "818f05bdbab0e82d5f9abebfd259f29bf5d552319fedc459b9448055647b9dce"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -209,15 +212,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "berm-fixture"
-version = "0.0.24"
-dependencies = [
- "berm-lang",
-]
-
-[[package]]
 name = "berm-lang"
-version = "0.0.24"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "586187580dea8ebec76e0d5453323737d3f19140ce8d854078c1757ecf8aa509"
 dependencies = [
  "berm-codegen",
  "linked_list_allocator",
@@ -3329,9 +3327,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a17d35c154b6cdb21e5e6f2a67b323a3aa2797a1f4874e08f8bdec0a13483fc9"
+checksum = "7df7304e33dcefcf1ccbfdf42964e1e4b72aacbc3f65262ad1a96153c6758710"
 dependencies = [
  "anyhow",
  "libc",
@@ -3343,9 +3341,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-compiler"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47211b253075208e07006308d9fa47c60d0155f9c89ebf24cac75ba0f17b57c2"
+checksum = "662c266bfef46d4ef4df4b1634a06c92867d7d8d1cc48e279f0e19e2a723ac84"
 dependencies = [
  "anyhow",
  "cc",
@@ -3359,9 +3357,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-core"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a49392bdc8598059cc8e89116cccd1e3bb0af96849dcefb5295ac4309bec6e63"
+checksum = "63275113567f1a8bc125e71baa459ac0cdda881a5c474f537eddf2a2cf83d357"
 dependencies = [
  "anyhow",
  "object 0.40.0",
@@ -3370,9 +3368,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-cranelift"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15b9e6e29f6338a66c0d131e8a579101787f91b55d6a8d66616f11b29bc6ec67"
+checksum = "c78befd3192929a90a4ca8cddcf7f006a8ecdf5075eab09efb9b3e2b739ed39a"
 dependencies = [
  "anyhow",
  "cranelift",
@@ -3383,9 +3381,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-guest"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4833085316c8d6b8b26c96dcecb64ed16ef6219350d46f942f3d44871d3e906f"
+checksum = "970d3c83825ac7e4562c012e988e5fe0e90aa2745bfbd6e799f4d2b6be2f95f2"
 
 [[package]]
 name = "ryu"

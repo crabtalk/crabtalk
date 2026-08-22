@@ -51,13 +51,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install RISC-V target
         run: rustup target add riscv64imac-unknown-none-elf
-      # Proves what only a real build can: that the macro's exports survive
-      # --gc-sections, that --emit-relocs reached the linker, and that the
-      # manifest section is where the host looks for it.
-      - name: Build Fixture
-        run: cargo build --release -p berm-fixture --target riscv64imac-unknown-none-elf
       # The first real harness, and the one that proves capabilities: fs and
-      # exec, bounded by a root the harness cannot widen.
+      # exec, bounded by a root the harness cannot widen. A real build is also
+      # the only thing that proves the macro's exports survive --gc-sections,
+      # that --emit-relocs reached the linker, and that the manifest section is
+      # where the host looks for it.
       - name: Build OS Harness
         run: cargo build --release -p berm-os --target riscv64imac-unknown-none-elf
       # The protocol harness: proves a harness can carry the daemon's own
@@ -71,10 +69,6 @@ jobs:
         run: cargo build --release -p berm-skill --target riscv64imac-unknown-none-elf
       - name: Build Sessions Harness
         run: cargo build --release -p berm-sessions --target riscv64imac-unknown-none-elf
-      # And that the host can compile, instantiate, and call it — the one
-      # place rvtime itself runs in this repo's CI.
-      - name: Run Engine
-        run: cargo run --release --example measure -p berm
       # bash, read, and edit against a real directory, including the paths that
       # must be refused. Also covers the harness constructs a model's own output
       # reaches: an unknown argument and a wrong argument type.

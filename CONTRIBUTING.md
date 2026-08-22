@@ -43,10 +43,9 @@ harness/                One crate per harness, built two ways: `no_std` for
   └─ skill
 ```
 
-Beside all of it sits `berm/` — the sandbox harnesses run in, plus its SDK
-and its macro. It depends on no crate of ours, because crabtalk is one thing
-that embeds it and deliberately not the only one; `berm/` and `harness/` leave
-together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
+The sandbox harnesses run in is [berm](https://github.com/crabtalk/berm), a
+separate repository on crates.io: `berm` host-side, `berm-lang` for guests.
+See [RFC 0205](docs/src/rfcs/0205-berm.md).
 
 ## Where does my feature go?
 
