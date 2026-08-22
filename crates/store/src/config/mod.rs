@@ -2,6 +2,7 @@
 
 pub mod cache;
 pub mod crabtalk;
+mod env;
 pub mod harness;
 pub mod hooks;
 pub mod llm;

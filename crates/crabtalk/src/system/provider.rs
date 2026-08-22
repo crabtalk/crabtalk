@@ -1,22 +1,23 @@
 //! The provider crabtalk runs against when the embedder doesn't supply one.
 
+use anyhow::Result;
 use crabllm_core::{
     BoxStream, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, Error,
     ModelList, Provider, ProviderConfig, Retrying, anthropic, gemini,
 };
-use crabllm_provider::{RemoteProvider, make_client};
-use std::time::Duration;
+use crabllm_provider::{ProviderRegistry, RemoteProvider, make_client};
+use std::{collections::HashMap, time::Duration};
 use store::LlmConfig;
 
-/// Two variants, not one. `Gateway` is a crabllm proxy: it reads the dialect
-/// each model reports and routes natively, on top of the SDK's retry and
-/// caching path. `Direct` is a single upstream named by `llm.kind`, reached
-/// through crabllm's own per-dialect providers. Still one endpoint either way
-/// — multiplexing belongs to the embedder, via `CrabTalk::start_with`.
+/// What the install talks to. `Gateway` is a crabllm proxy, reached through
+/// the SDK's retry and caching path; `Direct` is the single upstream named
+/// by `llm.kind`; `Registry` is the several named in `[providers]`, each
+/// request routed on the model it asks for.
 #[derive(Debug, Clone)]
 pub enum DefaultProvider {
     Gateway(crabllm_sdk::Client),
     Direct(Retrying<RemoteProvider>),
+    Registry(ProviderRegistry<RemoteProvider>),
 }
 
 impl From<&LlmConfig> for DefaultProvider {
@@ -46,16 +47,53 @@ impl From<&LlmConfig> for DefaultProvider {
 }
 
 impl DefaultProvider {
-    /// Model ids the endpoint advertises. Empty on failure — logged, never
-    /// fatal, because the next reload retries and a daemon that can't list
-    /// models can still be pointed at one by name.
-    pub async fn model_ids(&self) -> Vec<String> {
-        match self.models().await {
-            Ok(list) => list.data.into_iter().map(|m| m.id).collect(),
-            Err(e) => {
-                tracing::warn!("failed to list models from the configured endpoint: {e}");
-                Vec::new()
-            }
+    /// Build what `config` names. Pass it a config [`discover`] has already
+    /// been over: a registry routes on the model lists it is built with, and
+    /// a provider that named none of its own would route nothing.
+    pub fn open(config: &store::Config) -> Result<Self> {
+        if config.providers.is_empty() {
+            return Ok(Self::from(&config.llm));
+        }
+        let providers: HashMap<String, ProviderConfig> = config
+            .providers
+            .iter()
+            .map(|(name, provider)| (name.clone(), provider.clone()))
+            .collect();
+        let registry = ProviderRegistry::from_provider_configs(&providers, &HashMap::new(), |p| p)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        Ok(Self::Registry(registry))
+    }
+}
+
+/// Resolve `config` into the routing table the install runs on, and answer
+/// with every model name in it. A provider that named its own models keeps
+/// them; one that didn't has them read from its catalogue.
+pub async fn discover(config: &mut store::Config) -> Vec<String> {
+    if config.providers.is_empty() {
+        let single = DefaultProvider::from(&config.llm);
+        return catalogue(&single, "the configured endpoint").await;
+    }
+    // One client, so every provider probes over the same connection pool.
+    let client = make_client();
+    for (name, provider) in &mut config.providers {
+        if provider.models.is_empty() {
+            let remote = RemoteProvider::new(name, provider, client.clone());
+            provider.models = catalogue(&remote, name).await;
+        }
+    }
+    config
+        .providers
+        .values()
+        .flat_map(|provider| provider.models.iter().cloned())
+        .collect()
+}
+
+async fn catalogue(provider: &impl Provider, name: &str) -> Vec<String> {
+    match provider.models().await {
+        Ok(list) => list.data.into_iter().map(|model| model.id).collect(),
+        Err(e) => {
+            tracing::warn!("no model list from {name}: {e} — name its models in the config");
+            Vec::new()
         }
     }
 }
@@ -68,6 +106,7 @@ impl Provider for DefaultProvider {
         match self {
             Self::Gateway(p) => p.chat_completion(request).await,
             Self::Direct(p) => p.chat_completion(request).await,
+            Self::Registry(p) => p.chat_completion(request).await,
         }
     }
 
@@ -78,6 +117,7 @@ impl Provider for DefaultProvider {
         match self {
             Self::Gateway(p) => p.chat_completion_stream(request).await,
             Self::Direct(p) => p.chat_completion_stream(request).await,
+            Self::Registry(p) => p.chat_completion_stream(request).await,
         }
     }
 
@@ -88,6 +128,7 @@ impl Provider for DefaultProvider {
         match self {
             Self::Gateway(p) => p.anthropic_messages(request).await,
             Self::Direct(p) => p.anthropic_messages(request).await,
+            Self::Registry(p) => p.anthropic_messages(request).await,
         }
     }
 
@@ -98,6 +139,7 @@ impl Provider for DefaultProvider {
         match self {
             Self::Gateway(p) => p.anthropic_messages_stream(request).await,
             Self::Direct(p) => p.anthropic_messages_stream(request).await,
+            Self::Registry(p) => p.anthropic_messages_stream(request).await,
         }
     }
 
@@ -109,6 +151,7 @@ impl Provider for DefaultProvider {
         match self {
             Self::Gateway(p) => p.gemini_generate_content_stream(model, request).await,
             Self::Direct(p) => p.gemini_generate_content_stream(model, request).await,
+            Self::Registry(p) => p.gemini_generate_content_stream(model, request).await,
         }
     }
 
@@ -116,6 +159,7 @@ impl Provider for DefaultProvider {
         match self {
             Self::Gateway(p) => p.models().await,
             Self::Direct(p) => p.models().await,
+            Self::Registry(p) => p.models().await,
         }
     }
 }

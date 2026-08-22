@@ -1,7 +1,8 @@
 //! Top-level configuration loaded from `config.toml`.
 
-use crate::config::{LlmConfig, cache::CacheConfig, mcp::McpConfig, system::TasksConfig};
-use anyhow::Result;
+use crate::config::{LlmConfig, cache::CacheConfig, env, mcp::McpConfig, system::TasksConfig};
+use anyhow::{Context, Result};
+use crabllm_core::ProviderConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -18,9 +19,15 @@ use std::collections::BTreeMap;
 /// Per-agent customization lives on each [`AgentConfig`](crate::AgentConfig).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
-    /// LLM endpoint (`[llm]`) — single OpenAI-compatible endpoint.
+    /// LLM endpoint (`[llm]`) — one endpoint, reached directly or through
+    /// a gateway that routes for us.
     #[serde(default)]
     pub llm: LlmConfig,
+    /// LLM endpoints (`[providers]`), keyed by name and routed on the model
+    /// each request asks for. A provider that names no `models` has them
+    /// read from its catalogue at startup.
+    #[serde(default)]
+    pub providers: BTreeMap<String, ProviderConfig>,
     /// Task executor pool configuration (`[tasks]`).
     #[serde(default)]
     pub tasks: TasksConfig,
@@ -37,7 +44,27 @@ pub struct Config {
 
 impl Config {
     pub fn from_toml(toml_str: &str) -> Result<Self> {
-        Ok(toml::from_str(toml_str)?)
+        let mut config: Self = toml::from_str(toml_str)?;
+        config.resolve()?;
+        Ok(config)
+    }
+
+    /// Resolve `${VAR}` in every secret, and reject a file that names the
+    /// install's endpoints twice over.
+    fn resolve(&mut self) -> Result<()> {
+        anyhow::ensure!(
+            !(self.llm.is_set() && !self.providers.is_empty()),
+            "configure either [llm] or [providers], not both"
+        );
+        self.llm.api_key = env::interpolate(&self.llm.api_key).context("[llm] api_key")?;
+        for (name, provider) in &mut self.providers {
+            let Some(key) = &provider.api_key else {
+                continue;
+            };
+            provider.api_key =
+                Some(env::interpolate(key).with_context(|| format!("[providers.{name}] api_key"))?);
+        }
+        Ok(())
     }
 
     /// Load configuration from a file path. A missing file is an empty

@@ -4,7 +4,11 @@ use crate::{
     Config, CrabTalk,
     harness::{AgentScope, EventSink, HarnessRegistry, McpHarness, MemoryHarness},
     llm::Provider,
-    system::{RuntimeHandle, event, host::SystemEnv, provider::DefaultProvider},
+    system::{
+        RuntimeHandle, event,
+        host::SystemEnv,
+        provider::{self, DefaultProvider},
+    },
 };
 use anyhow::Result;
 use crabtalk_berm::BermHarness;
@@ -27,7 +31,8 @@ pub fn build_default_provider(
     config: &store::Config,
     models: &[String],
 ) -> Result<Model<DefaultProvider>> {
-    build_providers(config, models)
+    tracing::info!("llm registered — {} models", models.len());
+    Ok(Model::new(DefaultProvider::open(config)?))
 }
 
 impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
@@ -135,20 +140,21 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         Runtime<crate::system::SystemCfg<P, S>>,
         Arc<HarnessRegistry<S>>,
     )> {
-        // Ask the endpoint what it serves; an empty list is survivable, so a
-        // failure only warns.
-        let llm = &config.settings.llm;
-        let models = match llm.kind.is_none() && llm.base_url.is_empty() {
-            true => {
-                tracing::warn!("no llm.base_url configured in config.toml — model list is empty");
+        // Ask each endpoint what it serves; an empty list is survivable, so a
+        // failure only warns. Discovery writes what it learns back into the
+        // settings, because that is what a registry routes on.
+        let mut settings = config.settings.clone();
+        let models = match settings.llm.is_set() || !settings.providers.is_empty() {
+            true => provider::discover(&mut settings).await,
+            false => {
+                tracing::warn!("no [llm] or [providers] in config.toml — model list is empty");
                 Vec::new()
             }
-            false => DefaultProvider::from(llm).model_ids().await,
         };
         let default_model = models.first().cloned().unwrap_or_default();
         Self::scaffold(&storage, &default_model).await?;
 
-        let model = build_provider(&config.settings, &models)?;
+        let model = build_provider(&settings, &models)?;
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::new(
             std::time::Duration::from_secs(config.settings.mcp.idle_timeout),
         ));
@@ -212,14 +218,4 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         storage.upsert_agent(&crab).await?;
         storage.set_default_agent(&crab.id).await
     }
-}
-
-fn build_providers(config: &store::Config, models: &[String]) -> Result<Model<DefaultProvider>> {
-    let llm = &config.llm;
-    tracing::info!(
-        "llm endpoint registered — {} models from {}",
-        models.len(),
-        llm.base_url
-    );
-    Ok(Model::new(DefaultProvider::from(llm)))
 }
