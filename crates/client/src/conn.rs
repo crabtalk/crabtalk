@@ -30,6 +30,16 @@ pub enum ConnectionInfo {
     Tcp(u16),
 }
 
+impl std::fmt::Display for ConnectionInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(unix)]
+            Self::Uds(path) => write!(f, "{}", path.display()),
+            Self::Tcp(port) => write!(f, "tcp://127.0.0.1:{port}"),
+        }
+    }
+}
+
 impl ConnectionInfo {
     /// Resolve the platform default: UDS on Unix, TCP (from port file) on Windows.
     pub fn platform_default() -> Result<Self> {

@@ -445,6 +445,10 @@ message Stats {
   uint32 active_conversations = 2;
   uint32 registered_agents = 3;
   string active_model = 4;
+  // The daemon's own version. A client and a daemon that disagree here
+  // are the skew installing them together exists to prevent, and this is
+  // the only way to see it.
+  string version = 5;
 }
 
 message Pong {}

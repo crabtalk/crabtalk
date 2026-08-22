@@ -32,6 +32,8 @@ apps/                   Products.
   │                     over crabdb, and the process that serves the runtime
   │                     over them. *A* product of the framework, not the
   │                     architecture.
+  ├─ cli                `crabtalk` — a client of the daemon's socket, one
+  │                     RPC per command, no protocol of its own
   └─ crabup             Version manager for the ecosystem
 
 harness/                One crate per harness, built two ways: `no_std` for

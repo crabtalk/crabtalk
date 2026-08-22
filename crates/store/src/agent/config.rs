@@ -32,8 +32,10 @@ pub struct AgentConfig {
     /// [`AgentConfig::new`] / the protocol create handler when missing.
     #[serde(default)]
     pub id: AgentId,
-    /// Agent name. Derived from TOML key, not stored in TOML.
-    #[serde(skip)]
+    /// The label a person types. Stored with the record: the name index
+    /// resolves it to an id, and every cleanup path needs the record to
+    /// know which index key was its own.
+    #[serde(default)]
     pub name: String,
     /// Who the agent is.
     #[serde(default)]

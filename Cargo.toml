@@ -12,6 +12,7 @@ keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
 crabup = { path = "apps/crabup", package = "crabup", version = "0.0.24", default-features = false }
+cli = { path = "apps/cli", package = "crabtalk-cli", version = "0.0.24" }
 client = { path = "crates/client", package = "crabtalk-client", version = "0.0.24" }
 crabtalk = { path = "crates/crabtalk", package = "crabtalk", version = "0.0.24", default-features = false }
 runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.0.24" }

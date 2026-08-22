@@ -12,8 +12,11 @@ pub mod list;
 /// you type is the one cargo never mentions. Installed and removed
 /// together: these speak one protobuf protocol to each other, so a machine
 /// holding two versions of it is the failure a separate install would
-/// eventually produce. `crabtalk-cli` joins the list when it exists.
-pub const CRATES: &[(&str, &str)] = &[("crabtalk-agent", "crabtalkd")];
+/// eventually produce.
+pub const CRATES: &[(&str, &str)] = &[
+    ("crabtalk-agent", "crabtalkd"),
+    ("crabtalk-cli", "crabtalk"),
+];
 
 #[derive(clap::Parser, Debug)]
 #[command(name = "crabup", about = "Crabtalk version manager")]

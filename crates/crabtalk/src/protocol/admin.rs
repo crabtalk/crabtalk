@@ -24,6 +24,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             active_conversations: active as u32,
             registered_agents: agents,
             active_model,
+            version: env!("CARGO_PKG_VERSION").to_owned(),
         })
     }
 

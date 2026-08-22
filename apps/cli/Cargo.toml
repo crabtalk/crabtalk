@@ -1,0 +1,23 @@
+[package]
+name = "crabtalk-cli"
+description = "The Crabtalk command line"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[[bin]]
+name = "crabtalk"
+path = "src/bin/main.rs"
+
+[dependencies]
+client.workspace = true
+proto = { workspace = true, features = ["client"] }
+
+anyhow.workspace = true
+clap.workspace = true
+futures-util.workspace = true
+tokio = { workspace = true, features = ["rt"] }
