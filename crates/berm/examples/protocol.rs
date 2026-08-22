@@ -6,8 +6,8 @@
 //! ```
 //!
 //! The runtime here is a stand-in, because none of what this checks is about
-//! the runtime: whether an ungranted harness can reach the door at all,
-//! whether an ungranted *message* gets past the allowlist, and whether
+//! the runtime: whether a harness without the door can reach it at all,
+//! whether a message the door does not carry gets past the allowlist, and whether
 //! `AgentInfo.config` survives the trip. A real daemon would answer the same
 //! `ClientMessage` the same way.
 
@@ -59,28 +59,26 @@ async fn main() -> Result<()> {
     });
     let _ = protocol.set(dispatch);
 
-    let granted = Berm::load(
+    let linked = Berm::load(
         &engine,
         &elf,
         &[crabtalk_berm::Protocol::new(
             protocol.clone(),
             tokio::runtime::Handle::current(),
             crabtalk_berm::Scope {
-                read: true,
-                sessions: false,
                 skills: Vec::new(),
                 agent: store::AgentId::default(),
             },
         )
         .harness()],
     )?;
-    let ungranted = Berm::load(&engine, &elf, &[])?;
+    let unlinked = Berm::load(&engine, &elf, &[])?;
 
     tokio::task::spawn_blocking(move || {
-        println!("== granted protocol:read ==");
-        show(&granted);
-        println!("== not granted ==");
-        show(&ungranted);
+        println!("== protocol linked ==");
+        show(&linked);
+        println!("== protocol absent ==");
+        show(&unlinked);
     })
     .await?;
 

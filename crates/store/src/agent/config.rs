@@ -68,7 +68,7 @@ pub struct AgentConfig {
     /// daemon spawns or connects to on the agent's behalf. Empty = none.
     #[serde(default)]
     pub mcps: Vec<crate::config::McpServerConfig>,
-    /// Harnesses this agent uses, and what each is granted. Their tools join
+    /// Harnesses this agent uses, and what bounds each. Their tools join
     /// this agent's tool list under their own names. Empty = none.
     #[serde(default)]
     pub harnesses: Vec<crate::config::HarnessConfig>,
@@ -95,13 +95,11 @@ impl AgentConfig {
         cfg.harnesses = vec![
             crate::HarnessConfig {
                 name: "os".to_owned(),
-                system: vec!["fs".to_owned(), "exec".to_owned()],
                 root: Some(crate::Root::Home),
                 hosts: Vec::new(),
             },
             crate::HarnessConfig {
                 name: "sessions".to_owned(),
-                system: vec!["protocol:sessions".to_owned()],
                 root: None,
                 hosts: Vec::new(),
             },

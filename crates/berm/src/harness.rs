@@ -103,9 +103,9 @@ impl BermHarness {
     /// engine's generated code so a restart pays ~3ms per image instead of
     /// ~15ms.
     ///
-    /// `protocol` is filled by the daemon once it exists. Until then a granted
-    /// protocol harness is present but answers that it is not connected,
-    /// which is a clearer failure than a call that waits for one.
+    /// `protocol` is filled by the daemon once it exists. Until then the door
+    /// is present but answers that it is not connected, which is a clearer
+    /// failure than a call that waits for one.
     pub fn new(
         protocol: Arc<OnceLock<Dispatch>>,
         images: PathBuf,
@@ -194,46 +194,32 @@ impl BermHarness {
             )
         })?;
 
-        // The declaration names system harnesses in crabtalk's vocabulary; berm
-        // takes values. Translating between them is what this function does,
-        // and the argument each value is built with is the grant — without a
-        // root, `fs` and `exec` are never constructed.
-        let granted = |name: &str| declaration.system.iter().any(|c| c == name);
-        let read = granted("protocol:read");
-        let sessions = granted("protocol:sessions");
-        let scope = (read || sessions).then(|| Scope {
-            read,
-            sessions,
+        // Every value here is built from the argument that bounds it, and that
+        // argument is the whole of the grant: no root, no `fs` and no `exec`;
+        // no hosts, no `http`.
+        let scope = Scope {
             skills: skills.to_vec(),
             agent: *agent,
-        });
-
+        };
         let root = bind(declaration.root.as_ref(), session_root)?;
 
-        let digest = digest(&elf, declaration, root.as_deref(), scope.as_ref());
+        let digest = digest(&elf, declaration, root.as_deref(), &scope);
         if registry.images.contains_key(&digest) {
             return Ok(digest);
         }
 
         let mut system = Vec::new();
         if let Some(root) = &root {
-            if granted("fs") {
-                system.push(fs::read(root.clone()));
-                system.push(fs::write(root.clone()));
-                system.push(fs::glob(root.clone()));
-                system.push(fs::grep(root.clone()));
-            }
-            if granted("exec") {
-                system.push(exec::run(root.clone()));
-            }
+            system.push(fs::read(root.clone()));
+            system.push(fs::write(root.clone()));
+            system.push(fs::glob(root.clone()));
+            system.push(fs::grep(root.clone()));
+            system.push(exec::run(root.clone()));
         }
-        if let Some(scope) = scope {
-            system
-                .push(Protocol::new(self.protocol.clone(), self.reactor.clone(), scope).harness());
-        }
-        if granted("http") && !declaration.hosts.is_empty() {
+        if !declaration.hosts.is_empty() {
             system.push(Http::new(declaration.hosts.clone(), self.reactor.clone()).harness());
         }
+        system.push(Protocol::new(self.protocol.clone(), self.reactor.clone(), scope).harness());
 
         let harness = Berm::load(&self.engine, &elf, &system)?;
         registry.images.insert(digest, Arc::new(harness));
@@ -307,22 +293,11 @@ pub fn bind(declared: Option<&Root>, session: Option<&Path>) -> anyhow::Result<O
 /// The declaration covers which are constructed and what bounds them — `hosts`
 /// for `http`, and for `fs` and `exec` the already-bound `root`, which is what
 /// two sessions in one project share and two in different projects do not.
-/// `scope` adds what only the agent knows: `read` and `sessions` are already in
-/// the declaration, but the skills and the agent itself are not, and narrowing
-/// is per-agent, so two agents declaring the same session harness are
-/// deliberately two images.
-fn digest(
-    elf: &[u8],
-    declaration: &HarnessConfig,
-    root: Option<&Path>,
-    scope: Option<&Scope>,
-) -> Digest {
+/// `scope` adds what only the agent knows, and narrowing is per-agent, so two
+/// agents declaring the same session harness are deliberately two images.
+fn digest(elf: &[u8], declaration: &HarnessConfig, root: Option<&Path>, scope: &Scope) -> Digest {
     let mut hasher = Sha256::new();
     hasher.update(elf);
-    for name in &declaration.system {
-        hasher.update(name.as_bytes());
-        hasher.update([0]);
-    }
     hasher.update([0]);
     if let Some(root) = root {
         hasher.update(root.as_os_str().as_encoded_bytes());
@@ -333,13 +308,11 @@ fn digest(
         hasher.update([0]);
     }
     hasher.update([0]);
-    if let Some(scope) = scope {
-        hasher.update(scope.agent.to_string().as_bytes());
+    hasher.update(scope.agent.to_string().as_bytes());
+    hasher.update([0]);
+    for skill in &scope.skills {
+        hasher.update(skill.as_bytes());
         hasher.update([0]);
-        for skill in &scope.skills {
-            hasher.update(skill.as_bytes());
-            hasher.update([0]);
-        }
     }
     hasher.finalize().into()
 }

@@ -2,9 +2,9 @@
 //!
 //! One system harness carries the whole of `ClientMessage`, because the message
 //! type is already a discriminant inside the payload and spending a second one
-//! on the ABI would duplicate what protobuf carries (RFC 0205). The grant is
-//! therefore two-level: the number gates the family, and this allowlist gates
-//! which message types pass, checked once on decode.
+//! on the ABI would duplicate what protobuf carries (RFC 0205). What that costs
+//! is an allowlist checked once on decode, where a typed call would have been
+//! narrowed by its own signature.
 //!
 //! One door also means one place to redact. `AgentInfo.config` is the full
 //! `AgentConfig` as JSON, and an agent's config holds its MCPs by value —
@@ -33,17 +33,12 @@ pub type Dispatch = Arc<
     dyn Fn(ClientMessage) -> Pin<Box<dyn Future<Output = Vec<ServerMessage>> + Send>> + Send + Sync,
 >;
 
-/// What one agent's declaration granted the harness it loaded.
+/// What the agent behind a harness narrows the runtime to.
 ///
-/// The grant lives in the declaration, so the agent's own limits are known
-/// here without the invocation having to carry them. That is also why this is
-/// part of an image's digest: two agents declaring the same ELF under
-/// different scopes are two sandboxes, not one.
+/// The agent's own limits are known here without the invocation having to carry
+/// them. That is also why this is part of an image's digest: two agents
+/// declaring the same ELF under different scopes are two sandboxes, not one.
 pub struct Scope {
-    /// Whether `protocol:read` was granted.
-    pub read: bool,
-    /// Whether `protocol:sessions` was granted.
-    pub sessions: bool,
     /// The skills this agent declared. Empty is unrestricted, which is what
     /// an agent naming none has always meant.
     pub skills: Vec<String>,
@@ -69,30 +64,28 @@ impl Scope {
 }
 
 impl Scope {
-    /// Whether a message type is in a group this harness holds.
+    /// Whether this door carries `message` at all.
     ///
-    /// Default-deny: a message named in no group reaches nothing, and a group
-    /// a harness was not granted is the same. Anything destructive, anything
-    /// that answers on someone else's behalf, and anything whose payload is
-    /// substantially a credential belongs to no group a third party can hold.
-    fn allows(&self, message: &client_message::Msg) -> bool {
+    /// Default-deny, and the list is what the door *is* rather than what some
+    /// declaration bought: anything destructive, anything that answers on
+    /// someone else's behalf, and anything whose payload is substantially a
+    /// credential is reachable by no harness, however it was declared.
+    fn allows(message: &client_message::Msg) -> bool {
         use client_message::Msg;
-        match message {
-            // protocol:read — the catalogue, and nothing that spends tokens.
+        matches!(
+            message,
+            // The catalogue, and nothing that spends tokens.
             Msg::Ping(_)
-            | Msg::GetStats(_)
-            | Msg::ListAgents(_)
-            | Msg::GetAgent(_)
-            | Msg::ListSkills(_)
-            | Msg::GetSkill(_)
-            | Msg::ListModels(_)
-            | Msg::ListSubscriptions(_) => self.read,
-            // protocol:sessions — excerpts of the declaring agent's own past
-            // conversations. Its own group rather than part of `read`, which
-            // is the catalogue: this is content, and content is not a listing.
-            Msg::SearchSessions(_) => self.sessions,
-            _ => false,
-        }
+                | Msg::GetStats(_)
+                | Msg::ListAgents(_)
+                | Msg::GetAgent(_)
+                | Msg::ListSkills(_)
+                | Msg::GetSkill(_)
+                | Msg::ListModels(_)
+                | Msg::ListSubscriptions(_)
+                // Excerpts of the declaring agent's own past conversations.
+                | Msg::SearchSessions(_)
+        )
     }
 }
 
@@ -151,8 +144,8 @@ impl Protocol {
         let Some(inner) = message.msg.as_ref() else {
             bail!("empty client message");
         };
-        if !self.scope.allows(inner) {
-            bail!("this message type is in no group this harness was granted");
+        if !Scope::allows(inner) {
+            bail!("this message type is not one a harness can reach");
         }
         // Refused here rather than filtered out of the reply, so asking for a
         // skill outside the declaration costs nothing and says so.

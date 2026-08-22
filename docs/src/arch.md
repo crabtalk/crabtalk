@@ -40,14 +40,14 @@ them — agents, sessions, memory, skills, harnesses, search — comes for free.
 
 A harness is one crate compiled two ways. Built `no_std` for RV64 it is a
 sandboxed ELF the daemon schedules, reaching the world only through
-capabilities its agent declared — the absence of a capability from its linker
-*is* the enforcement. Built with `std` it is compiled into the host and reaches
-those things directly.
+capabilities its declaration bounded — the absence of a capability from its
+linker *is* the enforcement. Built with `std` it is compiled into the host and
+reaches those things directly.
 
 So compiled-in versus sandboxed is a build target, not an architecture, and
 `Harness` is the one name for both. What differs is confinement: as an ELF the
-declaration's grants bound it; compiled in there is no linker to omit from, and
-the same grants are documentation. That follows from compiling something in
+declaration's arguments bound it; compiled in there is no linker to omit from,
+and the same arguments are documentation. That follows from compiling something in
 being total trust — but it is one source under two security models, which is
 worth knowing before choosing a build.
 
@@ -78,23 +78,23 @@ compiled in, because the sandboxed build gets a fresh heap per invocation.
 Persisting through `fs` does not count — a file outlives the call. A live
 connection does not.
 
-## Declarations, not inference
+## Arguments, not lists
 
 The recurring rule, and the one worth defending hardest:
 
-> **The declaration is the grant. The daemon never infers one from the other.**
+> **The argument is the grant. A capability without one is never registered.**
 
-A harness's manifest says what it *wants*; the agent's `HarnessConfig` says
-what it *gets*. A manifest that could grant itself anything would make "what
-can this agent reach?" a question you answer by reading every image instead of
-one config file.
+`root` is the argument to `fs` and `exec`; `hosts` is the argument to `http`.
+An under-specified declaration reaches *nothing* rather than everything, and
+there is no separate list of permitted names to keep in step with it — a list
+could only ever restate what the arguments already decided, or contradict them.
 
-The same rule explains why grants take arguments rather than booleans. `root`
-is the argument to `fs` and `exec`; `hosts` is the argument to `http`. Without
-the argument the capability is not registered at all, so an under-specified
-declaration reaches *nothing* rather than everything.
+What a published image calls is the image's business. One that never calls a
+capability needs no stopping; one that does is an image for exactly that, and
+choosing to install it is the decision. A shell-less environment is an image
+with no shell tool, not a shell tool with its host call withheld.
 
-And it is why a harness never chooses its own scope: `SearchSessions` carries
+And a harness never chooses its own scope: `SearchSessions` carries
 an `agent` filter, and the host **overwrites** it with whoever declared the
 harness. Refusing a wrong value would only teach the harness to send the right
 one.
