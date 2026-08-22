@@ -101,10 +101,9 @@ one.
 
 ## berm is not a crabtalk feature
 
-`berm/engine`, `berm/sdk` and `berm/codegen` have no crabtalk crate in their
-dependency lists and cannot grow one without `crates/berm/src/lib.rs` moving.
-That split is compiler-checked rather than promised, and it is why the sandbox
-can leave this repository whenever it needs to.
+The sandbox lives in its own repository, [berm](https://github.com/crabtalk/berm),
+and reaches this one from crates.io: `berm` host-side, `berm-lang` for guests.
+Neither knows a crabtalk crate exists.
 
 `crates/berm` is crabtalk's *side*: what surfaces sandboxed tools, and
 the `crabtalk.*` capabilities. Anything host-specific belongs there. `http`

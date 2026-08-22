@@ -9,16 +9,27 @@ repository.workspace = true
 keywords.workspace = true
 
 [[bin]]
-name = "crabtalk-agent"
+name = "crabtalkd"
 path = "src/bin/main.rs"
+
+[features]
+default = ["native-tls"]
+native-tls = ["crabtalk/native-tls"]
+rustls = ["crabtalk/rustls"]
 
 [dependencies]
 crabdb.workspace = true
+crabtalk.workspace = true
+crabup.workspace = true
+proto = { workspace = true, features = ["server"] }
 store.workspace = true
+transport.workspace = true
 
 anyhow.workspace = true
+futures-util.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 crabllm-core.workspace = true

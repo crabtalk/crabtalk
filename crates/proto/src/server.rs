@@ -111,6 +111,12 @@ pub trait Server: Sync {
         req: crate::CancelStreamMsg,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
+    /// Handle `CreateSession` — open a session with a root attached.
+    fn create_session(
+        &self,
+        req: crate::CreateSessionMsg,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
     /// Handle `ListAgents` — return all registered agents.
     fn list_agents(
         &self,
@@ -303,6 +309,12 @@ pub trait Server: Sync {
                 }
                 client_message::Msg::CancelStream(req) => {
                     yield match self.cancel_stream(req).await {
+                        Ok(()) => server_pong(),
+                        Err(e) => server_error(500, e.to_string()),
+                    };
+                }
+                client_message::Msg::CreateSession(req) => {
+                    yield match self.create_session(req).await {
                         Ok(()) => server_pong(),
                         Err(e) => server_error(500, e.to_string()),
                     };

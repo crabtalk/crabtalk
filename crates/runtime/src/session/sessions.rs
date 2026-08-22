@@ -22,9 +22,12 @@ use crate::{
 };
 use anyhow::Result;
 use proto::ActiveConversationInfo;
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, AtomicUsize, Ordering},
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+    },
 };
 use store::{AgentId, SessionHandle, interface::Sessions as _};
 use tokio::sync::Mutex;
@@ -64,12 +67,16 @@ impl Sessions {
     /// loads it from storage if it exists there, or creates it fresh
     /// under exactly this handle if it doesn't. The caller picks the
     /// handle — this only ever answers "is this one already something."
+    ///
+    /// `root` is read only when the session is created. An existing one
+    /// keeps the root it was opened against, the way it keeps its agent.
     pub async fn open<C: Config>(
         &self,
         rt: &Runtime<C>,
         handle: SessionHandle,
         agent: &AgentId,
         created_by: &str,
+        root: Option<PathBuf>,
     ) -> Result<(u64, SharedSession)> {
         if let Some(found) = self.find_by_handle(&handle) {
             // A session grows during its runs, and this is the only
@@ -88,10 +95,11 @@ impl Sessions {
                     anyhow::bail!("agent '{agent}' not registered");
                 }
                 rt.storage()
-                    .create_session(&handle, agent, created_by)
+                    .create_session(&handle, agent, created_by, root.clone())
                     .await?;
                 let mut session = Session::new(id, agent, created_by);
                 session.handle = Some(handle);
+                session.root = root;
                 session
             }
         };

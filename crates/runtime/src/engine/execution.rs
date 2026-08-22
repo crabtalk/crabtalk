@@ -2,7 +2,8 @@
 
 use super::Runtime;
 use crate::{
-    AgentEvent, AgentResponse, AgentStopReason, Config, Env, Harness, Session, SharedSession,
+    AgentEvent, AgentResponse, AgentStopReason, Config, Env, Harness, Session, SessionRef,
+    SharedSession,
 };
 use anyhow::Result;
 use async_stream::stream;
@@ -66,7 +67,10 @@ impl<C: Config> Runtime<C> {
         agent.extend_tools(extra_tools);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let response = agent.run(&mut session.history, tx, None, tool_choice).await;
+        let session_ref = SessionRef::from(&*session);
+        let response = agent
+            .run(&mut session.history, tx, Some(&session_ref), tool_choice)
+            .await;
 
         let mut event_trace: Vec<store::EventLine> = Vec::new();
         while let Ok(event) = rx.try_recv() {
@@ -113,7 +117,8 @@ impl<C: Config> Runtime<C> {
             let mut done_event: Option<AgentEvent> = None;
             let mut event_trace: Vec<store::EventLine> = Vec::new();
             {
-                let mut event_stream = std::pin::pin!(agent.run_stream(&mut session.history, Some(session_id), cancel, tool_choice));
+                let session_ref = SessionRef::from(&*session);
+                let mut event_stream = std::pin::pin!(agent.run_stream(&mut session.history, Some(&session_ref), cancel, tool_choice));
                 while let Some(event) = event_stream.next().await {
                     self.env.hook().on_event(&agent_id, session_id, &event);
                     self.env.on_agent_event(&agent_id, session_id, false, &event);
@@ -257,6 +262,7 @@ impl<C: Config> Runtime<C> {
                 tool_choice: None,
                 stop_sequences: None,
                 thinking,
+                output_config: None,
             };
 
             let mut response_text = String::new();

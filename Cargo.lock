@@ -178,7 +178,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "berm"
-version = "0.0.24"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cd1ab56a63511f52d3de68c0305ece8fad4b9b0885a566684ca04c9b2e27591"
 dependencies = [
  "anyhow",
  "berm-codegen",
@@ -187,12 +189,13 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
 name = "berm-codegen"
-version = "0.0.24"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "818f05bdbab0e82d5f9abebfd259f29bf5d552319fedc459b9448055647b9dce"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -209,15 +212,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "berm-fixture"
-version = "0.0.24"
-dependencies = [
- "berm-lang",
-]
-
-[[package]]
 name = "berm-lang"
-version = "0.0.24"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "586187580dea8ebec76e0d5453323737d3f19140ce8d854078c1757ecf8aa509"
 dependencies = [
  "berm-codegen",
  "linked_list_allocator",
@@ -538,18 +536,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "console"
-version = "0.16.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d64e8af5551369d19cf50138de61f1c42074ab970f74e99be916646777f8fc87"
-dependencies = [
- "encode_unicode",
- "libc",
- "unicode-width",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "core-foundation"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -577,7 +563,7 @@ dependencies = [
 [[package]]
 name = "crabllm-core"
 version = "0.0.24"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#7b567ac5a53aa9e32999e2f165802a0b2ae7245a"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#4dc92947a81c2296e04b412c710d8a7b4fb8e167"
 dependencies = [
  "bytes",
  "futures",
@@ -592,7 +578,7 @@ dependencies = [
 [[package]]
 name = "crabllm-http"
 version = "0.0.24"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#7b567ac5a53aa9e32999e2f165802a0b2ae7245a"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#4dc92947a81c2296e04b412c710d8a7b4fb8e167"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -613,7 +599,7 @@ dependencies = [
 [[package]]
 name = "crabllm-provider"
 version = "0.0.24"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#7b567ac5a53aa9e32999e2f165802a0b2ae7245a"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#4dc92947a81c2296e04b412c710d8a7b4fb8e167"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -627,7 +613,7 @@ dependencies = [
 [[package]]
 name = "crabllm-sdk"
 version = "0.0.24"
-source = "git+https://github.com/crabtalk/crabllm?branch=dev#7b567ac5a53aa9e32999e2f165802a0b2ae7245a"
+source = "git+https://github.com/crabtalk/crabllm?branch=dev#4dc92947a81c2296e04b412c710d8a7b4fb8e167"
 dependencies = [
  "bytes",
  "crabllm-core",
@@ -653,7 +639,6 @@ dependencies = [
  "crabtalk-runtime",
  "crabtalk-skill",
  "crabtalk-store",
- "crabtalk-transport",
  "futures-core",
  "futures-util",
  "parking_lot",
@@ -673,10 +658,16 @@ version = "0.0.24"
 dependencies = [
  "anyhow",
  "crabllm-core",
+ "crabtalk",
  "crabtalk-crabdb",
+ "crabtalk-proto",
  "crabtalk-store",
+ "crabtalk-transport",
+ "crabup",
+ "futures-util",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "ulid",
 ]
 
@@ -702,6 +693,18 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "crabtalk-cli"
+version = "0.0.24"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crabtalk-client",
+ "crabtalk-proto",
+ "futures-util",
+ "tokio",
 ]
 
 [[package]]
@@ -880,12 +883,6 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs",
- "flate2",
- "indicatif",
- "reqwest",
- "serde",
- "serde_json",
- "tar",
  "toml",
 ]
 
@@ -1364,12 +1361,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
-name = "encode_unicode"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
-
-[[package]]
 name = "enum-as-inner"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1419,16 +1410,6 @@ name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
-
-[[package]]
-name = "filetime"
-version = "0.2.29"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
-dependencies = [
- "cfg-if",
- "libc",
-]
 
 [[package]]
 name = "find-msvc-tools"
@@ -2152,19 +2133,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "indicatif"
-version = "0.18.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25470f23803092da7d239834776d653104d551bc4d7eacaf31e6837854b8e9eb"
-dependencies = [
- "console",
- "portable-atomic",
- "unicode-width",
- "unit-prefix",
- "web-time",
-]
-
-[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2784,12 +2752,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
-name = "portable-atomic"
-version = "1.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
-
-[[package]]
 name = "postcard"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3365,9 +3327,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a17d35c154b6cdb21e5e6f2a67b323a3aa2797a1f4874e08f8bdec0a13483fc9"
+checksum = "7df7304e33dcefcf1ccbfdf42964e1e4b72aacbc3f65262ad1a96153c6758710"
 dependencies = [
  "anyhow",
  "libc",
@@ -3379,9 +3341,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-compiler"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47211b253075208e07006308d9fa47c60d0155f9c89ebf24cac75ba0f17b57c2"
+checksum = "662c266bfef46d4ef4df4b1634a06c92867d7d8d1cc48e279f0e19e2a723ac84"
 dependencies = [
  "anyhow",
  "cc",
@@ -3395,9 +3357,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-core"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a49392bdc8598059cc8e89116cccd1e3bb0af96849dcefb5295ac4309bec6e63"
+checksum = "63275113567f1a8bc125e71baa459ac0cdda881a5c474f537eddf2a2cf83d357"
 dependencies = [
  "anyhow",
  "object 0.40.0",
@@ -3406,9 +3368,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-cranelift"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15b9e6e29f6338a66c0d131e8a579101787f91b55d6a8d66616f11b29bc6ec67"
+checksum = "c78befd3192929a90a4ca8cddcf7f006a8ecdf5075eab09efb9b3e2b739ed39a"
 dependencies = [
  "anyhow",
  "cranelift",
@@ -3419,9 +3381,9 @@ dependencies = [
 
 [[package]]
 name = "rvtime-guest"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4833085316c8d6b8b26c96dcecb64ed16ef6219350d46f942f3d44871d3e906f"
+checksum = "970d3c83825ac7e4562c012e988e5fe0e90aa2745bfbd6e799f4d2b6be2f95f2"
 
 [[package]]
 name = "ryu"
@@ -3857,17 +3819,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tar"
-version = "0.4.46"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
-dependencies = [
- "filetime",
- "libc",
- "xattr",
-]
-
-[[package]]
 name = "target-lexicon"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4292,12 +4243,6 @@ name = "unicode_categories"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39ec24b3121d976906ece63c9daad25b85969647682eee313cb5779fdd69e14e"
-
-[[package]]
-name = "unit-prefix"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81e544489bf3d8ef66c953931f56617f423cd4b5494be343d9b9d3dda037b9a3"
 
 [[package]]
 name = "untrusted"
@@ -4889,16 +4834,6 @@ name = "writeable"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
-
-[[package]]
-name = "xattr"
-version = "1.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
-dependencies = [
- "libc",
- "rustix",
-]
 
 [[package]]
 name = "yoke"

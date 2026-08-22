@@ -16,7 +16,7 @@
 //! compiler checks rather than a promise: berm's dependency list has no
 //! crabtalk crate in it, and cannot grow one without this file moving.
 
-pub use harness::BermHarness;
+pub use harness::{BermHarness, bind};
 pub use http::Http;
 pub use protocol::{Dispatch, Protocol, Scope};
 use std::{path::PathBuf, sync::LazyLock};

@@ -32,6 +32,7 @@ impl<C: Config> Runtime<C> {
             session.created_at_iso = snapshot.meta.created_at;
         }
         session.summary = snapshot.meta.summary;
+        session.root = snapshot.meta.root;
         session.handle = Some(handle);
         Ok(Some(session))
     }

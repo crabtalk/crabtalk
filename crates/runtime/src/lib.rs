@@ -20,7 +20,7 @@ pub use agent::{
 pub use engine::Runtime;
 pub use env::Env;
 pub use harness::Harness;
-pub use session::{Session, Sessions, SharedSession};
+pub use session::{Session, SessionRef, Sessions, SharedSession};
 
 /// A session's persistent identity, re-exported so callers get it
 /// without depending on `storage` directly. No longer aliased to a

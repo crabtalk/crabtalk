@@ -7,7 +7,7 @@
 //! [`Agent::run_stream`]. `run_stream()` is the canonical step loop —
 //! `run()` collects its events and returns the final response.
 
-use crate::agent::model::MessageBuilder;
+use crate::{SessionRef, agent::model::MessageBuilder};
 use anyhow::Result;
 use async_stream::stream;
 pub use builder::AgentBuilder;
@@ -24,6 +24,7 @@ use store::HistoryEntry;
 pub use store::{AgentConfig, AgentId};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+use tool::ToolDispatch;
 pub use tool::{AsTool, ToolDispatcher};
 
 mod builder;
@@ -181,6 +182,7 @@ impl<P: Provider + 'static> Agent<P> {
             tool_choice,
             stop_sequences: None,
             thinking,
+            output_config: None,
         }
     }
 
@@ -192,7 +194,7 @@ impl<P: Provider + 'static> Agent<P> {
     pub async fn step(
         &self,
         history: &mut Vec<HistoryEntry>,
-        session_id: Option<u64>,
+        session: Option<&SessionRef>,
     ) -> Result<AgentStep> {
         let request = self.build_request(history, None);
         let response = self.model.send(request).await?;
@@ -218,7 +220,7 @@ impl<P: Provider + 'static> Agent<P> {
                     &tc.function.name,
                     &tc.function.arguments,
                     &sender,
-                    session_id,
+                    session,
                     &tc.id,
                 )
             }))
@@ -258,7 +260,7 @@ impl<P: Provider + 'static> Agent<P> {
         name: &str,
         args: &str,
         sender: &str,
-        session_id: Option<u64>,
+        session: Option<&SessionRef>,
         call_id: &str,
     ) -> Result<String, String> {
         let Some(dispatcher) = &self.dispatcher else {
@@ -266,9 +268,15 @@ impl<P: Provider + 'static> Agent<P> {
                 "tool '{name}' called but no tool dispatcher configured"
             ));
         };
-        dispatcher
-            .dispatch(name, args, &self.config.id, sender, session_id, call_id)
-            .await
+        let call = ToolDispatch {
+            args: args.to_owned(),
+            agent: self.config.id,
+            sender: sender.to_owned(),
+            session_id: session.map(|s| s.id),
+            call_id: call_id.to_owned(),
+            root: session.and_then(|s| s.root.clone()),
+        };
+        dispatcher.dispatch(name, call).await
     }
 
     /// Determine the stop reason for a step with no tool calls.
@@ -288,10 +296,10 @@ impl<P: Provider + 'static> Agent<P> {
         &self,
         history: &mut Vec<HistoryEntry>,
         events: mpsc::UnboundedSender<AgentEvent>,
-        session_id: Option<u64>,
+        session: Option<&SessionRef>,
         tool_choice: Option<ToolChoice>,
     ) -> AgentResponse {
-        let mut stream = std::pin::pin!(self.run_stream(history, session_id, None, tool_choice));
+        let mut stream = std::pin::pin!(self.run_stream(history, session, None, tool_choice));
         let mut response = None;
         while let Some(event) = stream.next().await {
             if let AgentEvent::Done(ref resp) = event {
@@ -317,7 +325,7 @@ impl<P: Provider + 'static> Agent<P> {
     pub fn run_stream<'a>(
         &'a self,
         history: &'a mut Vec<HistoryEntry>,
-        session_id: Option<u64>,
+        session: Option<&'a SessionRef>,
         cancel: Option<CancellationToken>,
         tool_choice: Option<ToolChoice>,
     ) -> impl Stream<Item = AgentEvent> + 'a {
@@ -521,7 +529,7 @@ impl<P: Provider + 'static> Agent<P> {
                                 &tc.function.name,
                                 &tc.function.arguments,
                                 &sender,
-                                session_id,
+                                session,
                                 &tc.id,
                             );
                             // `start` is captured inside the async block so

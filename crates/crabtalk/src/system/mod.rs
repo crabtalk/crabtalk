@@ -9,19 +9,14 @@ use std::{
 };
 use store::interface::Backend;
 use tokio::sync::{RwLock, broadcast};
-pub use transport::{bridge_shutdown, setup_tcp};
 use {
     builder::build_default_provider, event::EventBus, host::SystemEnv, provider::DefaultProvider,
 };
-
-#[cfg(unix)]
-pub use transport::setup_socket;
 
 pub mod builder;
 pub mod event;
 pub mod host;
 pub mod provider;
-mod transport;
 
 /// Handle to the runtime. The outer `RwLock` keeps the inner
 /// `Arc<Runtime>` swappable without invalidating handles held by
@@ -81,7 +76,6 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     ) -> Result<CrabTalkHandle<P, S>> {
         let config_path = config_dir.join(store::CONFIG_FILE);
         let config = store::Config::load(&config_path)?;
-        tracing::info!("loaded configuration from {}", config_path.display());
 
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
         let inner =

@@ -26,7 +26,7 @@ A daemon process owns at most one configuration directory and at most one set of
 
 ## Config directory
 
-The daemon is rooted at a configuration directory supplied at startup. The directory holds:
+The daemon is rooted at a configuration directory supplied at startup — `$CRABTALK_HOME`, else `~/.crabtalk`. Two daemons with different roots share nothing: the store, the socket and the port file all hang off it. The directory holds:
 
 | Path                           | Contents                                            |
 |--------------------------------|-----------------------------------------------------|
@@ -44,7 +44,7 @@ All paths are resolved relative to the configuration directory. The daemon write
 
 **Reload.** A `ReloadMsg` causes the daemon to re-read `config.toml` and rebuild the shared runtime in place. Existing in-flight dispatches complete against the previous runtime; new dispatches see the reloaded runtime. Transports are not re-bound.
 
-**Shutdown.** The daemon broadcasts a shutdown signal. Transport listeners stop accepting new connections. Active dispatches complete or cancel at the next await point. The daemon writes no final state on shutdown; state is persisted on each mutating operation, not at exit.
+**Shutdown.** `SIGTERM` or `SIGINT` broadcasts a shutdown signal. Transport listeners stop accepting new connections, active dispatches complete or cancel at the next await point, and the socket and port file are removed. State was persisted on each mutating operation, so nothing is written at exit that a caller was not already acknowledged for; the store is checkpointed, which is durability and startup cost rather than new state.
 
 ## Persistence boundary
 

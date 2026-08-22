@@ -6,11 +6,11 @@ use crate::{
     protocol::{CancelGuard, parse_agent},
     system::CrabTalk,
 };
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use futures_util::{StreamExt, pin_mut};
 use proto::*;
 use runtime::AgentEvent;
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use store::{SearchOptions, SessionHandle, interface::Backend};
 
 impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
@@ -68,6 +68,47 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             .collect())
     }
 
+    /// Open a session under the handle the caller picked, bound to a root.
+    ///
+    /// Refuses a handle that already names a session: a client asking for a
+    /// fresh one and silently receiving somebody else's history — under a
+    /// root that is no longer the one it asked for — is the failure this
+    /// exists to make loud.
+    pub(crate) async fn create_session(&self, req: CreateSessionMsg) -> Result<()> {
+        if req.session_handle.is_empty() {
+            anyhow::bail!("session_handle is required");
+        }
+        let agent = parse_agent(&req.agent)?;
+        let rt: Arc<_> = self.runtime.read().await.clone();
+        let handle = SessionHandle::new(req.session_handle);
+        if rt.storage().load_session(&handle).await?.is_some() {
+            anyhow::bail!("session '{}' already exists", handle.as_str());
+        }
+        // Rejected here rather than left to the first tool call, which would
+        // report a tool that is merely absent and say nothing about the root
+        // that made it so.
+        let root = req.root.map(PathBuf::from);
+        let config = rt
+            .agent(&agent)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("agent '{agent}' not registered"))?;
+        for declaration in &config.harnesses {
+            crabtalk_berm::bind(declaration.root.as_ref(), root.as_deref()).with_context(|| {
+                format!(
+                    "harness '{}' cannot be bound to that root",
+                    declaration.name
+                )
+            })?;
+        }
+
+        let sender = req.sender.as_deref().unwrap_or("");
+        let created_by = if sender.is_empty() { "user" } else { sender };
+        self.sessions
+            .open(&rt, handle, &agent, created_by, root)
+            .await?;
+        Ok(())
+    }
+
     pub(crate) async fn send(&self, req: SendMsg) -> Result<SendResponse> {
         if req.session_handle.is_empty() {
             anyhow::bail!("session_handle is required");
@@ -77,7 +118,10 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let sender = req.sender.as_deref().unwrap_or("");
         let created_by = if sender.is_empty() { "user" } else { sender };
         let handle = SessionHandle::new(req.session_handle);
-        let (_, session) = self.sessions.open(&rt, handle, &agent, created_by).await?;
+        let (_, session) = self
+            .sessions
+            .open(&rt, handle, &agent, created_by, None)
+            .await?;
         let tool_choice = req
             .tool_choice
             .map(|s| crabllm_core::ToolChoice::from(s.as_str()));
@@ -141,7 +185,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             }
             let created_by = if sender.is_empty() { "user".into() } else { sender.clone() };
             let (session_id, session) = sessions
-                .open(&rt, SessionHandle::new(session_handle), &agent, created_by.as_str())
+                .open(&rt, SessionHandle::new(session_handle), &agent, created_by.as_str(), None)
                 .await?;
             // Clears the cancellation token on any exit path — stream end,
             // early return on Done, or the consumer dropping the stream —

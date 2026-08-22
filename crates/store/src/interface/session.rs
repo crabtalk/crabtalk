@@ -10,7 +10,7 @@ use crate::{
     text::{TextIndex, TextSearch},
 };
 use anyhow::Result;
-use std::{collections::BTreeMap, future::Future};
+use std::{collections::BTreeMap, future::Future, path::PathBuf};
 
 /// How the implementation over [`KVStorage`] ranks a session search.
 ///
@@ -62,6 +62,7 @@ pub trait Sessions: Send + Sync + 'static {
         handle: &SessionHandle,
         agent: &AgentId,
         created_by: &str,
+        root: Option<PathBuf>,
     ) -> impl Future<Output = Result<()>> + Send;
 
     fn load_session(
@@ -134,6 +135,7 @@ impl<T: KVStorage> Sessions for T {
         handle: &SessionHandle,
         agent: &AgentId,
         created_by: &str,
+        root: Option<PathBuf>,
     ) -> Result<()> {
         let now = chrono::Utc::now().to_rfc3339();
         let meta = SessionMeta {
@@ -144,6 +146,7 @@ impl<T: KVStorage> Sessions for T {
             updated_at: now,
             message_count: 0,
             summary: None,
+            root,
         };
         self.put_json(Column::Session, &self.meta_key(handle), &meta)
             .await?;

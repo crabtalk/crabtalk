@@ -6,11 +6,18 @@
 
 use std::{path::PathBuf, sync::LazyLock};
 
-/// Install root (`~/.crabtalk/`).
+/// Environment variable naming the install root.
+pub const HOME_VAR: &str = "CRABTALK_HOME";
+
+/// Install root — `$CRABTALK_HOME`, else `~/.crabtalk/`.
 pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
-    dirs::home_dir()
-        .expect("no home directory")
-        .join(".crabtalk")
+    std::env::var_os(HOME_VAR)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .expect("no home directory")
+                .join(".crabtalk")
+        })
 });
 
 /// Managed binary directory (`~/.crabtalk/bin/`).

@@ -144,23 +144,7 @@ impl<S: Backend> Env for SystemEnv<S> {
 }
 
 impl<S: Backend> runtime::ToolDispatcher for SystemEnv<S> {
-    fn dispatch<'a>(
-        &'a self,
-        name: &'a str,
-        args: &'a str,
-        agent: &'a AgentId,
-        sender: &'a str,
-        session_id: Option<u64>,
-        call_id: &'a str,
-    ) -> runtime::ToolFuture<'a> {
-        let call = ToolDispatch {
-            args: args.to_owned(),
-            agent: *agent,
-            sender: sender.to_owned(),
-            session_id,
-            call_id: call_id.to_owned(),
-        };
-
+    fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> runtime::ToolFuture<'a> {
         // System tools — daemon-side hooks (memory, sessions, skill, mcp).
         if let Some(fut) = self.hook.dispatch(name, call) {
             return fut;

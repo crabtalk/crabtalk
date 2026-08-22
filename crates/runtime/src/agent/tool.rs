@@ -8,7 +8,7 @@
 use crabllm_core::{FunctionDef, Tool, ToolType};
 use heck::ToSnakeCase;
 use schemars::JsonSchema;
-use std::{collections::BTreeMap, future::Future, pin::Pin, sync::Arc};
+use std::{collections::BTreeMap, future::Future, path::PathBuf, pin::Pin, sync::Arc};
 use store::{AgentId, HistoryEntry};
 
 /// Boxed future returned by a [`ToolDispatcher::dispatch`] call.
@@ -20,15 +20,7 @@ pub type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<String, String>> + 
 /// every tool call the model emits. Implementors look the tool up by
 /// name, enforce scope, and invoke the registered handler.
 pub trait ToolDispatcher: Send + Sync + 'static {
-    fn dispatch<'a>(
-        &'a self,
-        name: &'a str,
-        args: &'a str,
-        agent: &'a AgentId,
-        sender: &'a str,
-        session_id: Option<u64>,
-        call_id: &'a str,
-    ) -> ToolFuture<'a>;
+    fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> ToolFuture<'a>;
 }
 
 /// Arguments passed to a tool handler during dispatch.
@@ -46,6 +38,8 @@ pub struct ToolDispatch {
     /// correlate dispatches with out-of-band replies (e.g. client-tool
     /// forwarding).
     pub call_id: String,
+    /// The session's root, for a declaration that narrows to one.
+    pub root: Option<PathBuf>,
 }
 
 /// A type-erased async tool handler.
@@ -176,15 +170,7 @@ impl<T: JsonSchema> AsTool for T {
 }
 
 impl ToolDispatcher for () {
-    fn dispatch<'a>(
-        &'a self,
-        name: &'a str,
-        _args: &'a str,
-        _agent: &'a AgentId,
-        _sender: &'a str,
-        _session_id: Option<u64>,
-        _call_id: &'a str,
-    ) -> ToolFuture<'a> {
+    fn dispatch<'a>(&'a self, name: &'a str, _call: ToolDispatch) -> ToolFuture<'a> {
         Box::pin(async move { Err(format!("tool not registered: {name}")) })
     }
 }

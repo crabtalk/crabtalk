@@ -28,9 +28,12 @@ crates/                 The framework and its assembly.
   └─ berm               Crabtalk's side of berm — image loading, capabilities
 
 apps/                   Products.
-  ├─ agent              The backend a general install runs — five KV methods
-  │                     over crabdb. *A* product of the framework, not the
+  ├─ agent              The daemon a general install runs: five KV methods
+  │                     over crabdb, and the process that serves the runtime
+  │                     over them. *A* product of the framework, not the
   │                     architecture.
+  ├─ cli                `crabtalk` — a client of the daemon's socket, one
+  │                     RPC per command, no protocol of its own
   └─ crabup             Version manager for the ecosystem
 
 harness/                One crate per harness, built two ways: `no_std` for
@@ -40,10 +43,9 @@ harness/                One crate per harness, built two ways: `no_std` for
   └─ skill
 ```
 
-Beside all of it sits `berm/` — the sandbox harnesses run in, plus its SDK
-and its macro. It depends on no crate of ours, because crabtalk is one thing
-that embeds it and deliberately not the only one; `berm/` and `harness/` leave
-together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
+The sandbox harnesses run in is [berm](https://github.com/crabtalk/berm), a
+separate repository on crates.io: `berm` host-side, `berm-lang` for guests.
+See [RFC 0205](docs/src/rfcs/0205-berm.md).
 
 ## Where does my feature go?
 
@@ -56,7 +58,8 @@ together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 | Does it change execution, dispatch, or the `Harness` seam? | crates/runtime |
 | Does it add a persistence backend? | the application — see apps/agent |
 | Does it add a wire transport? | crates/transport |
-| Does it need network I/O, scheduling, or process lifecycle? | crates/crabtalk (system) |
+| Does it need outbound network I/O or scheduling? | crates/crabtalk (system) |
+| Does it bind a listener, or own process lifecycle? | the application — see apps/agent |
 | Does it adapt a platform or speak to the daemon as a client? | crates/client |
 | Does it install or update a crabtalk binary? | apps/crabup |
 | **If none of these fit, challenge whether the feature should exist.** | |
@@ -65,7 +68,7 @@ together when it does. See [RFC 0205](docs/src/rfcs/0205-berm.md).
 
 - **Runtime** — never initiates I/O. It only responds. No sockets, timers, or listeners.
 - **Runtime owns mechanics, clients own UX.** The store exposes session primitives (`create_session`, `append_session_messages`, `list_sessions`, `session_meta`, `search_sessions`), and the runtime exposes compaction and cancellation as mechanics the client invokes explicitly over the protocol — neither fires on its own. Discretionary lifecycle — `/clear`, `/new`, `/compact`, session selection, archival browsing, saved searches — is composed in the client from those primitives. See [RFC 0207](docs/src/rfcs/0207-store.md).
-- **Crabtalk (library)** — never interprets tool semantics. It only routes. Cron and config are system concerns (process-lifetime, not session-lifetime).
+- **Crabtalk (library)** — never interprets tool semantics. It only routes. It is handed a `ClientMessage` and returns a stream; which endpoints a process serves, and where it advertises them, is the application's. Cron and config are system concerns (process-lifetime, not session-lifetime).
 - **Client** — no dependency on runtime or model. Adapter-centric, not agent-centric.
 - **Store** — the keyspace and the interfaces over it, and no engine. If it links a database or a search crate, the abstraction is wrong: which store to run is the application's choice.
 

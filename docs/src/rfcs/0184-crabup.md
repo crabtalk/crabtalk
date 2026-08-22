@@ -3,125 +3,48 @@
 - Feature Name: crabup
 - Start Date: 2026-04-24
 - Discussion: [#184](https://github.com/crabtalk/crabtalk/pull/184)
-- Crates: new `crabup` binary; consumes `command`; shrinks `crabtalkd`
+- Crates: `crabup`
 - Updates: [0043 (Component System)](0043-component.md)
 
-> **Note (2026-08-15).** The verbs below are superseded. `pull` / `rm` shipped as `install` / `uninstall`, and the `pkg add` / `pkg remove` surface never shipped at all — so `add` / `remove` were free, and now pair with `install` / `uninstall` to split binaries by role, following `rustup`. Apps (daemon, cli, telegram) and any crate by name are `install` / `uninstall`; harness services (cron, search), which live under `harness/` in the workspace, are `add` / `remove`. Naming one to the wrong verb is an error that names the right one. Pass-through is unchanged but belongs to the app verbs, since an unknown crate cannot be shown to be harness. This RFC's rejection of "a `component add` vs `pull` split" stands on its own terms: that split was about install *mechanism*, and there is still only one — this one is about what a binary is to the user. The `wechat` row is gone from the resolution table along with the gateway.
+> **Note (2026-08-22).** This RFC made service management the point: crabup owned `launchd`/`systemd`/`schtasks` lifecycle for every crabtalk binary, and `cargo install` was the part it merely wrapped. That half is gone — `crates/command` was deleted with the harness work, no platform unit is written, and there are no `start`/`stop`/`ps`/`logs` verbs. So is the resolution table: crabup installs one product and names its crates as a constant. What survives is distribution and the install layout, which is what the text below now describes. The verb history (`pull`/`rm` shipping as `install`/`uninstall`, the `add`/`remove` pair for harness services) is settled and no longer worth carrying: harnesses are ELF images with no process, per [0205](0205-berm.md).
 
 ## Summary
 
-`crabup` is a thin wrapper over `cargo install` that also owns `launchd`/`systemd`/`schtasks` lifecycle for every crabtalk binary. `crabup install crabtalkd` spawns `cargo install crabtalkd`. The value add is service management — the one thing `cargo install` doesn't do — not distribution, not version coordination, not a registry.
+crabup is how crabtalk reaches a machine and stays current. It is a wrapper over `cargo install`: crates.io is the registry, workspace-version inheritance is the version coordination, and `cargo install` is already an upgrade when a newer version exists and a no-op when it is not. Prebuilt binaries are a second backend for the same verbs, and wait on a release job that does not exist yet.
 
-## Motivation
+It also owns the install layout. `~/.crabtalk` is defined here, the way rustup defines `~/.rustup`, and every other crate reads the paths from `crabup::dirs` instead of re-deriving them. That is the half the workspace depends on, and it is why the commands sit behind a `cmd` feature: a crate that wants `CONFIG_DIR` should not build a CLI to get it.
 
-Two real problems today, both about service management, not about distribution:
-
-1. **The daemon is its own installer.** `crabtalkd start` generates and loads a platform unit for itself via the `command` crate; every other binary (`crabtalk-telegram`, `crabtalk-wechat`, …) does the same thing with the same code. A daemon shouldn't install itself, and the install path shouldn't live in three places.
-2. **No one-stop service surface.** `ps`, `logs`, `start`, `stop` are duplicated per binary and absent for most. Users need a single tool that knows about all crabtalk services on the machine, not one subcommand per binary.
-
-Distribution is already handled: every crabtalk crate publishes to crates.io with `version.workspace = true`, so `cargo install crabtalkd` is the install story today. It will remain the install story under crabup — crabup just renames the command and wraps service management around it.
-
-RFC [0043](0043-component.md) defined *how* components talk to the daemon (port-file discovery, MCP contract). This RFC defines *how they get installed and stay alive*.
-
-## Design
-
-### Command surface
+## Command surface
 
 ```
-crabup pull <name> [--version X]      # cargo install crabtalk-<name> (or crabtalkd)
-crabup rm <name>                      # cargo uninstall
-crabup update                         # bump every installed crabtalk-* crate to latest
-crabup list                           # installed crabtalk-* crates
-crabup ps                             # all crabtalk services, one view
-
-crabup <name> start                   # install + load platform unit
-crabup <name> stop
-crabup <name> restart
-crabup <name> logs [-f]
+crabup install [--version X | --nightly] [--features a,b] [--no-default-features]
+crabup update                 # the same command
+crabup uninstall
+crabup list
 ```
 
-`<name>` is a short name from the resolution table below, so `crabup daemon start`, `crabup telegram start`, `crabup search logs -f`. Each short name is both a pull/rm target and a service-command namespace. `pull`/`rm` install and remove crabtalk binaries via `cargo install`; `pkg add`/`pkg remove` install and remove crabtalk packages (manifests + cached source repos), so the user has one tool for both install surfaces.
+No target name. crabup installs *crabtalk*, which is more than one crate — today `crabtalk-agent`, whose binary is `crabtalkd`, and `crabtalk-cli`, whose binary is `crabtalk`, when it exists. Package and binary differ on purpose: the package name namespaces a registry, the binary name is what someone types. They go on and come off together, because they speak one protobuf protocol to each other and a machine holding two versions of it is a wire mismatch nobody asked for. cydonia and a berm instance join later.
 
-`crabup update` is always batch — it bumps every installed `crabtalk-*` crate to the latest version on crates.io, same shape as `rustup update` over its components. There is no per-component update verb: if you only want to change one crate, that's `crabup pull <name> --version <X>`. This makes "keep the set aligned" the default behavior of the only tool users will reach for when they want newer bits, without needing atomic-set machinery to enforce it.
+## What each verb does
 
-That's it. No `pin`, no `doctor`, no `component add` vs `pull` split — `cargo install` already handles versions; a component is just a crate you can run as a service. No atomic-set enforcement; if a user mixes versions and breaks the wire, the fix is `crabup pull <name> --version <matching>` for the mismatched one or `crabup update` to bump everything.
+**`install`**, and `update`, which is an alias rather than a second command: `cargo install` each crate, passing `--version` when pinned. Installing a version already present is a no-op, and installing over an older one is the upgrade — there is nothing left for a separate verb to do.
 
-### `pull` is a pass-through
+**`--nightly`** switches the source to `--git` on the repository's `dev` branch, with `--locked` so the build matches the lockfile that branch tested against. It conflicts with `--version`: a branch has one tip, and pinning it is what `--version` against crates.io is for. This is the same pair of backends the prebuilt path will slot into — a flag choosing where the bits come from, behind unchanged verbs.
 
-```
-crabup pull <name>
-  ↓ resolve name → crate ("tui" → "crabtalk-tui"; "daemon" → "crabtalkd")
-  ↓ cargo install <crate> [--version X]
-```
+**`uninstall`** runs `cargo uninstall` for each.
 
-Name resolution is a small table compiled into crabup:
+**`list`** reads `~/.cargo/.crates.toml` and prints each crate with its version. There is no parallel state file: if cargo's record is wrong then cargo is wrong, and crabup being wrong with it is correct.
 
-| Short name | crates.io crate     | Role                 |
-|------------|---------------------|----------------------|
-| `daemon`   | `crabtalkd`         | daemon               |
-| `tui`      | `crabtalk-tui`      | REPL client          |
-| `telegram` | `crabtalk-telegram` | Telegram gateway     |
-| `wechat`   | `crabtalk-wechat`   | WeChat gateway       |
-| `search`   | `crabtalk-search`   | meta-search service  |
-| `cron`     | `crabtalk-cron`     | scheduler            |
+## Removed
 
-`crabup pull <short>` resolves via the table; `crabup pull <anything-else>` passes through verbatim so `crabup pull some-third-party-crabtalk-gateway` still works without a table edit. New first-party binaries get a row added when they ship.
+**Service management.** No plist, no unit file, no supervision. The daemon runs in the foreground under whatever started it — a terminal today, a client process next. Distribution and lifecycle were coupled here because the daemon used to install itself; with the daemon out of that business, lifecycle belongs to whoever wants the process alive, not to the installer.
 
-Binaries land in `~/.cargo/bin`, where `cargo install` has always put them. `crabup list` reads `~/.cargo/.crates.toml` and filters for `crabtalk*`. There is no parallel state file; if `.crates.toml` is wrong, `cargo` is wrong, and crabup being wrong with it is the correct behavior.
+**Pass-through installs.** `crabup install <any-crate>` left with the table it resolved against. `cargo install` is that command.
 
-Prerequisite: `cargo` on `PATH`. If missing, crabup prints one line pointing at `https://rustup.rs` and exits. No auto-install, no curl-pipe — the daemon doing that was part of what motivated this RFC.
+**The GitHub download path.** Written and removed on 2026-08-22 — it fetched `{bin}-{version}-{platform}.tar.gz` from the releases page, which no job builds, so every install fell through to cargo anyway. It comes back with the release job, behind the same verbs.
 
-### Service management (the real content)
-
-The `command` crate already renders `launchd.plist`, `systemd.service`, and `schtasks.xml` and exposes install/uninstall/log-tail helpers. It stays. What changes is the caller: today each binary calls `command::install` from its own CLI; after this RFC only `crabup` calls into `command`. `crabtalkd start/stop/ps/logs` are deleted; so are the mirrored flags in `crabtalk-tui`.
-
-`crabup <name> start` is:
-
-1. Find the binary on `PATH` (fail fast if not installed).
-2. Look up service metadata in crabup's name table — the same table that resolves short names to crates also carries `label` (mechanical: `ai.crabtalk.<name>`) and `description`. crabup is the package manager; it owns this metadata, the binaries don't need to expose it.
-3. Render the platform unit via `command` and load it.
-
-`crabup ps` is the one piece that needs more than wrapping: it scans `~/.crabtalk/run/*.port` (the same directory RFC 0043 already defines) and checks each listener, then cross-references with whatever the platform's service manager reports for `ai.crabtalk.*` labels. One view, all services.
-
-### Component model
-
-RFC 0043 stands unchanged. A component is a binary that writes a port file on startup and serves MCP on that port. crabup doesn't alter the contract — it just installs and service-manages those binaries the same way it does `crabtalkd`. "Install a component" and "install the daemon" are the same operation under different names.
-
-### crabllm as a managed service (optional, motivated)
-
-Today `crabllm-provider` is a library linked into `crabtalkd`. Making `crabllm` a separate service is worth doing only if at least one of these is concrete:
-
-- One set of provider credentials serves multiple daemons on the same machine.
-- Central place for provider fallback, rate-limit smoothing, or caching.
-- Swap models or provider SDKs without restarting `crabtalkd`.
-
-None of those are pressing yet. When one is, `crabtalk-llmd` becomes another crate crabup installs and service-manages, same as any gateway. The RFC doesn't need to anticipate it.
-
-## Impact on `crabtalkd`
-
-| Removed from `crabtalkd` | Replaced by |
-|---|---|
-| `Command::Start { force }` | `crabup daemon start` (first install: `crabup pull daemon`) |
-| `Command::Stop`, `Restart` | `crabup daemon stop` / `crabup daemon restart` |
-| `Command::Ps` | `crabup ps` (all services, one place) |
-| `Command::Logs` | `crabup daemon logs` |
-| `ensure_config` + `attach::setup_llm` on first start | `crabup daemon start` first-run flow |
-| Duplicate forwarding in TUI (`--start`, `--stop`) | Removed |
-
-After this, `crabtalkd`'s CLI is `run` (the long-running process the service unit invokes, equivalent to today's `--foreground`), `reload`, and `events`. Package install/uninstall live in crabup as `pkg add`/`pkg remove`, not in the daemon CLI.
-
-## Alternatives
-
-**Plain `cargo install`, no crabup.** Installs are one command, but users hand-write `launchd`/`systemd` units per binary, and `ps`/`logs` across services don't exist. The service-management gap is the whole reason crabup is a separate tool.
-
-**A real package manager with its own manifest, signed pre-built binaries, version coordination, atomic-set installs.** Previously drafted; cut. Infrastructure we don't need — crates.io is the registry, workspace-version inheritance is the coordination, and the non-developer audience that would need pre-built binaries doesn't exist yet. If that audience materializes, pre-built becomes a second `crabup pull` backend alongside the `cargo install` path.
-
-**Keep each binary's `start/stop/logs` subcommand, just delete the cross-binary dispatcher.** Leaves three copies of the same install code and no one-stop service view. Cuts nothing meaningful.
-
-**Dynamic plugin loading (shared objects).** Rejected by RFC 0043 — shared fate with the daemon is the exact thing the component model avoids.
+**Harness images.** ELF files, not binaries with a process ([0205](0205-berm.md)), installed today by `make harness` into `~/.crabtalk/harnesses`. Something should install them; it is not this surface yet.
 
 ## Unresolved Questions
 
-- **Windows service layer.** `schtasks` is weaker than `launchd`/`systemd` (no restart-on-failure, limited log routing). Acceptable for v1, or not?
-- **`rm` scope.** Should `crabup rm daemon` also remove `~/.crabtalk/config/`? Leaning no (`rm` is binary-only; data stays); confirm.
-- **Multiple daemon instances.** If two `crabtalkd` instances run on one machine, what owns `~/.crabtalk/`? Out of scope for v1.
+- **What `uninstall` removes.** Binary only today — `~/.crabtalk` and its store survive. That is the safe default, not a decided one.

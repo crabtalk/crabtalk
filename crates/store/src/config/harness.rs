@@ -9,7 +9,7 @@
 //! one from the other.
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -28,7 +28,7 @@ pub struct HarnessConfig {
     /// This is the argument to those two, and the grant *is* the argument:
     /// without a root neither is registered, so an under-specified declaration
     /// reaches nothing rather than everything.
-    pub root: Option<PathBuf>,
+    pub root: Option<Root>,
 
     /// Hosts `http` may reach, matched exactly and case-insensitively.
     ///
@@ -40,4 +40,31 @@ pub struct HarnessConfig {
     /// curl, so a declaration granting both has egress this list says nothing
     /// about — the two are not additive, `exec` is simply the wider one.
     pub hosts: Vec<String>,
+}
+
+/// Where the bound on `fs` and `exec` comes from.
+///
+/// Both variants carry the bound itself, so a session narrowing within one can
+/// never widen it: the clamp is the type rather than a check somewhere that can
+/// be forgotten. Absent this whole value, neither harness is constructed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Root {
+    /// Bound to whatever the session named, resolved inside this path. A
+    /// session that named none is bound to this path itself.
+    Session(PathBuf),
+    /// Bound to this path, whatever the session named.
+    // Untagged so a declaration written before sessions could narrow — a bare
+    // `root = "/path"` — still reads as the fixed grant it was.
+    #[serde(untagged)]
+    Fixed(PathBuf),
+}
+
+impl Root {
+    /// The outer bound, which nothing resolved against this may escape.
+    pub fn bound(&self) -> &Path {
+        match self {
+            Self::Session(path) | Self::Fixed(path) => path,
+        }
+    }
 }

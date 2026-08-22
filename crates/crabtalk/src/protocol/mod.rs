@@ -80,6 +80,10 @@ impl<P: Provider + 'static, S: Backend> Server for CrabTalk<P, S> {
         Ok(())
     }
 
+    async fn create_session(&self, req: CreateSessionMsg) -> Result<()> {
+        self.create_session(req).await
+    }
+
     async fn cancel_stream(&self, req: CancelStreamMsg) -> Result<()> {
         let handle = SessionHandle::new(req.session_handle.as_str());
         let (id, _) = self.sessions.find_by_handle(&handle).ok_or_else(|| {

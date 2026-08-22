@@ -5,20 +5,20 @@
 [![Discord][discord-badge]][discord]
 
 > [!WARNING]
-> **Heavy refactor in progress.** The daemon and the CLI are being redesigned
-> and are not in the tree; there is no install story until they land. Crate
-> layout and APIs are moving with them — treat anything written about
-> internals as out of date until this settles.
+> **Heavy refactor in progress.** The CLI is being redesigned and is not in
+> the tree yet. Crate layout and APIs are moving with it — treat anything
+> written about internals as out of date until this settles.
 
 **Agent daemon.** Runs agents, dispatches tools, connects to MCP servers.
 Start it, talk to it, extend it with packages.
 
 ```bash
-curl -fsSL https://crabtalk.ai/install.sh | sh
+cargo install crabup   # the version manager
+crabup install         # crabtalk itself
+crabtalkd              # run the daemon
 ```
 
-That installs [`crabup`](apps/crabup), the version manager. See the
-[installation guide][install] for details.
+See the [installation guide][install] for details.
 
 Config reference: [`crates/store/src/config/`](crates/store/src/config/).
 
