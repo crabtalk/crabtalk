@@ -5,7 +5,7 @@
 //! are one thing at two layers, which is why nothing translates between
 //! them — a session carries `storage`'s [`SessionHandle`] directly.
 
-use std::{sync::Arc, time::Instant};
+use std::{path::PathBuf, sync::Arc, time::Instant};
 use store::{AgentId, HistoryEntry, SessionHandle, SessionMeta};
 use tokio::sync::Mutex;
 pub use {
@@ -20,6 +20,26 @@ mod sessions;
 /// that runs it. The lock is held for a whole agent run — that is what
 /// serializes concurrent sends to one session.
 pub type SharedSession = Arc<Mutex<Session>>;
+
+/// What a run tells its tool calls about the session they belong to.
+///
+/// The two travel together everywhere — a dispatch that knows the id but
+/// not the root would bind `fs` to the wrong subtree — so they are one
+/// value rather than two parameters kept in step by hand.
+#[derive(Debug, Clone)]
+pub struct SessionRef {
+    pub id: u64,
+    pub root: Option<PathBuf>,
+}
+
+impl From<&Session> for SessionRef {
+    fn from(session: &Session) -> Self {
+        Self {
+            id: session.id,
+            root: session.root.clone(),
+        }
+    }
+}
 
 /// A session tied to a specific agent.
 ///
@@ -51,6 +71,9 @@ pub struct Session {
     /// Persistent session identity, assigned by the storage layer.
     /// `None` until the first persistence call.
     pub handle: Option<SessionHandle>,
+    /// Where this session's work happens. A `Root::Session` declaration
+    /// narrows to it; every other declaration ignores it.
+    pub root: Option<PathBuf>,
 }
 
 impl Session {
@@ -74,6 +97,7 @@ impl Session {
             created_at_iso: chrono::Utc::now().to_rfc3339(),
             summary: None,
             handle: None,
+            root: None,
         }
     }
 
@@ -93,6 +117,7 @@ impl Session {
             updated_at: chrono::Utc::now().to_rfc3339(),
             message_count: self.history.len() as u64,
             summary: self.summary.clone(),
+            root: self.root.clone(),
         }
     }
 }

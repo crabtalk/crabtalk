@@ -87,6 +87,8 @@ message ClientMessage {
     PublishEventMsg publish_event = 43;
     // Cancel the in-flight stream for a session.
     CancelStreamMsg cancel_stream = 57;
+    // Open a session explicitly, to say what a stream cannot.
+    CreateSessionMsg create_session = 58;
     // MCP lifecycle event subscription
     SubscribeMcpEventsMsg subscribe_mcp_events = 52;
     // Extension point for downstream products.
@@ -150,6 +152,28 @@ message StreamMsg {
   string session_handle = 11;
 }
 
+
+// Create a session before anything runs in it.
+//
+// `send` and `stream` still open one implicitly for a handle the daemon
+// has not seen, which is all a client with nothing extra to say needs.
+// This is for the client that has something: a root.
+message CreateSessionMsg {
+  // The handle the session is created under, caller-chosen like everywhere
+  // else. Creating one that already exists is an error rather than a
+  // silent no-op — a client that thinks it opened a fresh session and got
+  // somebody else's history has a bug worth hearing about.
+  string session_handle = 1;
+  // The agent's ULID.
+  string agent = 2;
+  // Attribution, read only here — an existing session's identity does not
+  // change after.
+  optional string sender = 3;
+  // Where this session's work happens. A harness declaring `root =
+  // {session = ...}` narrows to it, and cannot be widened past the subtree
+  // that declaration already named; every other declaration ignores it.
+  optional string root = 4;
+}
 
 message Ping {}
 message SubscribeEvents {}

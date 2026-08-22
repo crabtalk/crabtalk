@@ -2,6 +2,7 @@
 
 use crate::{AgentId, session::history::HistoryEntry};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Opaque handle identifying a persisted session.
 ///
@@ -36,6 +37,11 @@ pub struct SessionMeta {
     pub message_count: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// Where this session's work happens — the path a `Root::Session`
+    /// declaration narrows to. Persisted because a session resumed after a
+    /// restart has to rebind to the same subtree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<PathBuf>,
 }
 
 /// Meta plus working-context history, already replayed past the last

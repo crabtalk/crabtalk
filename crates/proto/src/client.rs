@@ -872,6 +872,42 @@ pub trait Client: Send {
         }
     }
 
+    /// Open a session under `session_handle`, bound to `root`.
+    ///
+    /// Only worth calling when there is something to say that `stream`
+    /// cannot carry; otherwise let the first stream open it.
+    fn create_session(
+        &mut self,
+        session_handle: String,
+        agent: String,
+        sender: Option<String>,
+        root: Option<String>,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            match self
+                .request(crate::ClientMessage {
+                    msg: Some(client_message::Msg::CreateSession(
+                        crate::CreateSessionMsg {
+                            session_handle,
+                            agent,
+                            sender,
+                            root,
+                        },
+                    )),
+                })
+                .await?
+            {
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Pong(_)),
+                } => Ok(()),
+                crate::ServerMessage {
+                    msg: Some(server_message::Msg::Error(crate::ErrorMsg { code, message })),
+                } => anyhow::bail!("server error ({code}): {message}"),
+                other => anyhow::bail!("unexpected response: {other:?}"),
+            }
+        }
+    }
+
     /// Steer a session: cancel its in-flight stream, then start a new
     /// turn with `content` in the same session. Nothing running isn't an
     /// error — the cancel no-ops and the message streams normally.

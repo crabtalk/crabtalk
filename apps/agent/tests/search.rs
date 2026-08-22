@@ -16,7 +16,7 @@ async fn open() -> Backend {
 
 async fn seed(s: &Backend, agent: &AgentId, sender: &str, msgs: &[&str]) -> store::SessionHandle {
     let h = store::SessionHandle::new(ulid::Ulid::new().to_string());
-    s.create_session(&h, agent, sender).await.unwrap();
+    s.create_session(&h, agent, sender, None).await.unwrap();
     let entries: Vec<HistoryEntry> = msgs
         .iter()
         .enumerate()

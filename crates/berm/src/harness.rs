@@ -23,25 +23,39 @@ use runtime::{ToolDispatch, ToolFuture};
 use sha2::{Digest as _, Sha256};
 use std::{
     collections::BTreeMap,
+    path::{Path, PathBuf},
     sync::{Arc, OnceLock, RwLock},
 };
-use store::{AgentConfig, AgentId, HarnessConfig};
+use store::{AgentConfig, AgentId, HarnessConfig, Root};
 use tokio::runtime::Handle;
 
 /// What names an image: a SHA-256 over the ELF and everything the sandbox is
 /// built with.
 type Digest = [u8; 32];
 
+/// What an agent declared, kept because a `Root::Session` declaration cannot
+/// be built until a session names its root — which is after the agent
+/// resolved, and every time a new root turns up.
+struct Declared {
+    harnesses: Vec<HarnessConfig>,
+    skills: Vec<String>,
+}
+
 /// Every harness image the daemon has loaded, and who declared it.
 ///
-/// One lock over both maps: the two are only ever read or written together,
+/// One lock over all three maps: they are only ever read or written together,
 /// and a single guard is one fewer ordering rule to get wrong.
 #[derive(Default)]
 struct Registry {
     /// Digest to the image it names.
     images: BTreeMap<Digest, Arc<Berm>>,
-    /// The images each agent's declarations resolved to, in declaration order.
-    agents: BTreeMap<AgentId, Vec<Digest>>,
+    /// What each agent asked for, as written.
+    declared: BTreeMap<AgentId, Declared>,
+    /// The images an agent's declarations resolved to, in declaration order,
+    /// under one session root. `None` is the resolution a session that named
+    /// no root gets, and the one `scoped_tools` reads — tool *names* do not
+    /// vary with the root, only the subtree they reach.
+    agents: BTreeMap<(AgentId, Option<PathBuf>), Vec<Digest>>,
 }
 
 impl Registry {
@@ -49,17 +63,22 @@ impl Registry {
     /// change to `agents`, so an agent losing a harness loses its tools —
     /// the registry holds what is declared now, not what once was.
     fn sweep(&mut self) {
-        let Self { images, agents } = self;
+        let Self { images, agents, .. } = self;
         images.retain(|digest, _| agents.values().flatten().any(|d| d == digest));
     }
 
-    /// The images `agent` declared, in order.
-    fn of(&self, agent: &AgentId) -> impl Iterator<Item = &Arc<Berm>> {
+    /// The images `agent` resolved to under `root`, in order.
+    fn of(&self, agent: &AgentId, root: Option<&Path>) -> impl Iterator<Item = &Arc<Berm>> {
         self.agents
-            .get(agent)
+            .get(&(*agent, root.map(Path::to_path_buf)))
             .into_iter()
             .flatten()
             .filter_map(|digest| self.images.get(digest))
+    }
+
+    /// Forget every resolution of `agent`, whatever root it was against.
+    fn clear(&mut self, agent: &AgentId) {
+        self.agents.retain(|(id, _), _| id != agent);
     }
 }
 
@@ -102,10 +121,36 @@ impl BermHarness {
     /// once cannot compile the same image twice.
     pub fn load(&self, agent: &AgentId, config: &AgentConfig) {
         let mut registry = self.registry.write().expect("harness registry");
-        let mut declared = Vec::new();
-        for declaration in &config.harnesses {
-            match self.image(&mut registry, agent, declaration, &config.skills) {
-                Ok(digest) => declared.push(digest),
+        registry.clear(agent);
+        registry.declared.insert(
+            *agent,
+            Declared {
+                harnesses: config.harnesses.clone(),
+                skills: config.skills.clone(),
+            },
+        );
+        self.resolve(&mut registry, agent, None);
+        registry.sweep();
+    }
+
+    /// Build `agent`'s declarations against `root`, filing them under it.
+    ///
+    /// Idempotent: a resolution already present is left alone, and an image
+    /// two roots agree on is shared rather than compiled twice.
+    fn resolve(&self, registry: &mut Registry, agent: &AgentId, root: Option<&Path>) {
+        let key = (*agent, root.map(Path::to_path_buf));
+        if registry.agents.contains_key(&key) {
+            return;
+        }
+        let Some(declared) = registry.declared.get(agent) else {
+            return;
+        };
+        let (harnesses, skills) = (declared.harnesses.clone(), declared.skills.clone());
+
+        let mut digests = Vec::new();
+        for declaration in &harnesses {
+            match self.image(registry, agent, declaration, &skills, root) {
+                Ok(digest) => digests.push(digest),
                 Err(error) => tracing::warn!(
                     %agent,
                     harness = declaration.name,
@@ -113,8 +158,7 @@ impl BermHarness {
                 ),
             }
         }
-        registry.agents.insert(*agent, declared);
-        registry.sweep();
+        registry.agents.insert(key, digests);
     }
 
     /// Read one image, grant it what the declaration says, and return the
@@ -130,6 +174,7 @@ impl BermHarness {
         agent: &AgentId,
         declaration: &HarnessConfig,
         skills: &[String],
+        session_root: Option<&Path>,
     ) -> anyhow::Result<Digest> {
         let path = crate::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
         let elf = std::fs::read(&path).map_err(|e| {
@@ -153,13 +198,15 @@ impl BermHarness {
             agent: *agent,
         });
 
-        let digest = digest(&elf, declaration, scope.as_ref());
+        let root = bind(declaration.root.as_ref(), session_root)?;
+
+        let digest = digest(&elf, declaration, root.as_deref(), scope.as_ref());
         if registry.images.contains_key(&digest) {
             return Ok(digest);
         }
 
         let mut system = Vec::new();
-        if let Some(root) = &declaration.root {
+        if let Some(root) = &root {
             if granted("fs") {
                 system.push(fs::read(root.clone()));
                 system.push(fs::write(root.clone()));
@@ -181,25 +228,53 @@ impl BermHarness {
         Ok(digest)
     }
 
-    /// The image serving `tool` for `agent`.
-    fn owner(&self, agent: &AgentId, tool: &str) -> Option<Arc<Berm>> {
-        self.registry
-            .read()
-            .expect("harness registry")
-            .of(agent)
-            .find(|harness| harness.manifest().tools.iter().any(|t| t.name == tool))
-            .cloned()
+    /// The image serving `tool` for `agent` under `root`, building that
+    /// resolution if this is the first call against it.
+    ///
+    /// The build is a compile, and it happens here rather than when the
+    /// session opened, so the first tool call in a project pays for it once.
+    fn owner(&self, agent: &AgentId, root: Option<&Path>, tool: &str) -> Option<Arc<Berm>> {
+        let find = |registry: &Registry| {
+            registry
+                .of(agent, root)
+                .find(|harness| harness.manifest().tools.iter().any(|t| t.name == tool))
+                .cloned()
+        };
+        if let Some(found) = find(&self.registry.read().expect("harness registry")) {
+            return found.into();
+        }
+        let mut registry = self.registry.write().expect("harness registry");
+        self.resolve(&mut registry, agent, root);
+        find(&registry)
     }
 
-    /// Tool names an agent's declarations bring.
+    /// Tool names an agent's declarations bring. Root-independent: a
+    /// declaration reaches a different subtree under a different root, never
+    /// different tools.
     fn names(&self, agent: &AgentId) -> Vec<String> {
         self.registry
             .read()
             .expect("harness registry")
-            .of(agent)
+            .of(agent, None)
             .flat_map(|harness| harness.manifest().tools.iter().map(|t| t.name.clone()))
             .collect()
     }
+}
+
+/// The path `fs` and `exec` are bounded by, or `None` when neither is granted.
+///
+/// A [`Root::Session`] declaration is the outer bound and the session narrows
+/// inside it, so a session cannot widen its own reach — and one that named no
+/// root gets the bound itself, which is what every declaration meant before a
+/// session could narrow at all.
+pub fn bind(declared: Option<&Root>, session: Option<&Path>) -> anyhow::Result<Option<PathBuf>> {
+    let (Some(Root::Session(bound)), Some(session)) = (declared, session) else {
+        return Ok(declared.map(|root| root.bound().to_path_buf()));
+    };
+    let session = session
+        .to_str()
+        .with_context(|| format!("session root {} is not utf-8", session.display()))?;
+    crate::root::resolve(bound, session).map(Some)
 }
 
 /// The digest that names an image: the ELF, and everything that determines the
@@ -207,12 +282,19 @@ impl BermHarness {
 /// *is* is in here; nothing else is, so a rename or a second agent declaring
 /// the same thing is not a new image.
 ///
-/// The declaration covers which are constructed and what bounds them — `root`
-/// for `fs` and `exec`, `hosts` for `http`. `scope` adds what only the agent
-/// knows: `read` and `sessions` are already in the declaration, but the skills
-/// and the agent itself are not, and narrowing is per-agent, so two agents
-/// declaring the same session harness are deliberately two images.
-fn digest(elf: &[u8], declaration: &HarnessConfig, scope: Option<&Scope>) -> Digest {
+/// The declaration covers which are constructed and what bounds them — `hosts`
+/// for `http`, and for `fs` and `exec` the already-bound `root`, which is what
+/// two sessions in one project share and two in different projects do not.
+/// `scope` adds what only the agent knows: `read` and `sessions` are already in
+/// the declaration, but the skills and the agent itself are not, and narrowing
+/// is per-agent, so two agents declaring the same session harness are
+/// deliberately two images.
+fn digest(
+    elf: &[u8],
+    declaration: &HarnessConfig,
+    root: Option<&Path>,
+    scope: Option<&Scope>,
+) -> Digest {
     let mut hasher = Sha256::new();
     hasher.update(elf);
     for name in &declaration.system {
@@ -220,7 +302,7 @@ fn digest(elf: &[u8], declaration: &HarnessConfig, scope: Option<&Scope>) -> Dig
         hasher.update([0]);
     }
     hasher.update([0]);
-    if let Some(root) = &declaration.root {
+    if let Some(root) = root {
         hasher.update(root.as_os_str().as_encoded_bytes());
     }
     hasher.update([0]);
@@ -295,7 +377,8 @@ impl runtime::Harness for BermHarness {
 
     fn on_forget_agent(&self, id: &AgentId) {
         let mut registry = self.registry.write().expect("harness registry");
-        registry.agents.remove(id);
+        registry.declared.remove(id);
+        registry.clear(id);
         registry.sweep();
     }
 
@@ -304,7 +387,7 @@ impl runtime::Harness for BermHarness {
     }
 
     fn dispatch<'a>(&'a self, name: &'a str, call: ToolDispatch) -> Option<ToolFuture<'a>> {
-        let harness = self.owner(&call.agent, name)?;
+        let harness = self.owner(&call.agent, call.root.as_deref(), name)?;
         let tool = name.to_owned();
         Some(Box::pin(async move {
             let invocation =

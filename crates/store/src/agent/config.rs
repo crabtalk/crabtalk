@@ -96,7 +96,7 @@ impl AgentConfig {
             crate::HarnessConfig {
                 name: "os".to_owned(),
                 system: vec!["fs".to_owned(), "exec".to_owned()],
-                root: dirs::home_dir(),
+                root: dirs::home_dir().map(crate::Root::Session),
                 hosts: Vec::new(),
             },
             crate::HarnessConfig {
