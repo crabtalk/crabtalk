@@ -26,7 +26,7 @@ A daemon process owns at most one configuration directory and at most one set of
 
 ## Config directory
 
-The daemon is rooted at a configuration directory supplied at startup. The directory holds:
+The daemon is rooted at a configuration directory supplied at startup — `$CRABTALK_HOME`, else `~/.crabtalk`. Two daemons with different roots share nothing: the store, the socket and the port file all hang off it. The directory holds:
 
 | Path                           | Contents                                            |
 |--------------------------------|-----------------------------------------------------|
