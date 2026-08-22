@@ -18,4 +18,4 @@ Knows nothing about Crabtalk — the keyspace and everything above it is
 
 ## License
 
-MIT
+Apache-2.0

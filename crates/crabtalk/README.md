@@ -10,4 +10,4 @@ MCP servers, and task delegation.
 
 ## License
 
-MIT
+Apache-2.0

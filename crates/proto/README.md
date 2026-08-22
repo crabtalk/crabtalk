@@ -19,4 +19,4 @@ writes; every operation is a provided method over them, typed both ways.
 
 ## License
 
-MIT
+Apache-2.0

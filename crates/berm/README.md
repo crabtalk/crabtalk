@@ -10,4 +10,4 @@ without crabtalk" compiler-checked rather than promised.
 
 ## License
 
-MIT
+Apache-2.0

@@ -50,4 +50,4 @@ crabtalk-search engines
 
 ## License
 
-MIT
+Apache-2.0

@@ -10,4 +10,4 @@ make harness             # build and install to ~/.crabtalk/harnesses
 
 ## License
 
-MIT
+Apache-2.0

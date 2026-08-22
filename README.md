@@ -41,7 +41,7 @@ auto-discovery.
 
 ## License
 
-MIT
+Apache-2.0
 
 <!-- badges -->
 

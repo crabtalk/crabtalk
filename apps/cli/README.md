@@ -28,4 +28,4 @@ socket isn't there, the error says so and names the binary to run.
 
 ## License
 
-MIT
+Apache-2.0

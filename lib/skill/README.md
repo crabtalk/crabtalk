@@ -14,4 +14,4 @@ because skills in the wild are written both ways.
 
 ## License
 
-MIT
+Apache-2.0

@@ -49,4 +49,4 @@ socket — and `$CRABTALK_HOME` points that somewhere else.
 
 ## License
 
-MIT
+Apache-2.0

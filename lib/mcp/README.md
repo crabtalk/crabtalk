@@ -19,4 +19,4 @@ logic, and decoders that MCP never uses.
 
 ## License
 
-MIT
+Apache-2.0

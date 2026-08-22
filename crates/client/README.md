@@ -7,4 +7,4 @@ command parsing — what an app needs to talk to the daemon over a socket.
 
 ## License
 
-MIT
+Apache-2.0

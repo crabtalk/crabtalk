@@ -19,4 +19,4 @@ CRABTALK_HOME=/tmp/x crabtalkd    # a second install, sharing nothing
 
 ## License
 
-MIT
+Apache-2.0

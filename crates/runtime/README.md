@@ -14,4 +14,4 @@ be persisted, so it stays in the process.
 
 ## License
 
-MIT
+Apache-2.0

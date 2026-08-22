@@ -19,4 +19,4 @@ The keyspace and the search design are specified in
 
 ## License
 
-MIT
+Apache-2.0
