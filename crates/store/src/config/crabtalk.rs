@@ -43,9 +43,19 @@ impl Config {
         Ok(toml::from_str(toml_str)?)
     }
 
-    /// Load configuration from a file path.
+    /// Load configuration from a file path. A missing file is an empty
+    /// configuration, so an install nobody has configured still starts.
     pub fn load(path: &std::path::Path) -> Result<Self> {
-        let content = std::fs::read_to_string(path)?;
-        Self::from_toml(&content)
+        match std::fs::read_to_string(path) {
+            Ok(content) => {
+                tracing::info!("configuration from {}", path.display());
+                Self::from_toml(&content)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                tracing::warn!("no {CONFIG_FILE} at {} — using defaults", path.display());
+                Ok(Self::default())
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 }

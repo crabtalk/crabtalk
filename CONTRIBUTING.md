@@ -28,8 +28,9 @@ crates/                 The framework and its assembly.
   └─ berm               Crabtalk's side of berm — image loading, capabilities
 
 apps/                   Products.
-  ├─ agent              The backend a general install runs — five KV methods
-  │                     over crabdb. *A* product of the framework, not the
+  ├─ agent              The daemon a general install runs: five KV methods
+  │                     over crabdb, and the process that serves the runtime
+  │                     over them. *A* product of the framework, not the
   │                     architecture.
   └─ crabup             Version manager for the ecosystem
 

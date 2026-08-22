@@ -12,8 +12,14 @@
 
 use anyhow::Result;
 use crabdb::CrabDb;
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    sync::{Arc, LazyLock},
+};
 use store::kv::{Column, KVStorage};
+
+/// The store file (`~/.crabtalk/store.crmem`).
+pub static STORE_PATH: LazyLock<PathBuf> = LazyLock::new(|| crabup::CONFIG_DIR.join("store.crmem"));
 
 /// A realm's store.
 ///
@@ -72,10 +78,3 @@ impl KVStorage for Backend {
         tokio::task::spawn_blocking(move || db.scan(col as u8, &prefix)).await?
     }
 }
-
-/// This backend satisfies everything the runtime asks for.
-/// Asserted here because nothing in this workspace instantiates it yet.
-const _: fn() = || {
-    fn assert_backend<T: store::Backend>() {}
-    assert_backend::<Backend>();
-};

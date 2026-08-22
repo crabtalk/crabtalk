@@ -673,10 +673,14 @@ version = "0.0.24"
 dependencies = [
  "anyhow",
  "crabllm-core",
+ "crabtalk",
  "crabtalk-crabdb",
  "crabtalk-store",
+ "crabtalk-transport",
+ "crabup",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "ulid",
 ]
 

@@ -3,15 +3,15 @@
 //! Gated behind `cmd` so a crate that only needs the layout in [`crate::dirs`]
 //! does not build a CLI, an HTTP client, and a tar decoder.
 
-use anyhow::{Result, anyhow};
-
-use crate::cmd::registry::{Entry, Kind};
+use anyhow::Result;
 
 pub mod cargo;
 pub mod github;
 pub mod list;
 pub mod manifest;
-pub mod registry;
+
+/// The binary crabup manages, as its crate and as its file on disk.
+pub const AGENT: &str = "crabtalk-agent";
 
 #[derive(clap::Parser, Debug)]
 #[command(name = "crabup", about = "Crabtalk version manager")]
@@ -22,39 +22,22 @@ pub struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
-    /// Install an app — daemon, cli — or any crate by name.
+    /// Install crabtalk.
     Install {
         #[command(flatten)]
         fetch: Fetch,
     },
-    /// Add a harness service — search.
-    Add {
-        #[command(flatten)]
-        fetch: Fetch,
-    },
-    /// Uninstall an app, or any crate by name.
-    Uninstall {
-        #[command(flatten)]
-        target: Removal,
-    },
-    /// Remove a harness service.
-    Remove {
-        #[command(flatten)]
-        target: Removal,
-    },
-    /// Update all installed crabtalk binaries to the latest version.
+    /// Uninstall crabtalk.
+    Uninstall,
+    /// Update crabtalk to the latest version.
     Update,
-    /// List available crabtalk binaries.
+    /// Show what is installed.
     List,
 }
 
-/// Everything `install` and `add` share. They differ only in which
-/// [`Kind`] of binary they accept — the fetch itself is identical.
+/// Which build of the binary to fetch, and how.
 #[derive(clap::Args, Debug)]
 pub struct Fetch {
-    /// Short name (daemon, cli, …) or crate name.
-    #[arg(required = true)]
-    pub names: Vec<String>,
     /// Pin to a specific version (e.g. v0.0.21).
     #[arg(long)]
     pub version: Option<String>,
@@ -69,157 +52,66 @@ pub struct Fetch {
     pub no_default_features: bool,
 }
 
-/// Reject names the verb for `kind` shouldn't handle, before any of them
-/// is acted on — a mixed list fails whole rather than half-applying.
-/// `verb` picks the install or remove name for a `Kind`, so the same gate
-/// serves `install`/`add` and `uninstall`/`remove`.
-fn gate(names: &[String], kind: Kind, verb: fn(Kind) -> &'static str) -> Result<()> {
-    for name in names {
-        match Entry::by_short(name) {
-            Some(entry) if entry.kind != kind => {
-                return Err(anyhow!(
-                    "{name} is a {}, not a {}: use `crabup {} {name}`",
-                    entry.kind.noun(),
-                    kind.noun(),
-                    verb(entry.kind)
-                ));
-            }
-            // An unknown name is an arbitrary crate. Nothing marks it as
-            // harness, so it belongs to the app verb.
-            None if kind == Kind::Harness => {
-                return Err(anyhow!(
-                    "unknown harness service: {name} — `crabup {}` takes {}; \
-                     for any other crate use `crabup {} {name}`",
-                    verb(Kind::Harness),
-                    Entry::shorts_of(Kind::Harness).join(", "),
-                    verb(Kind::App)
-                ));
-            }
-            _ => {}
-        }
-    }
-    Ok(())
-}
-
 impl Fetch {
-    fn run(self, kind: Kind) -> Result<()> {
-        gate(&self.names, kind, Kind::install_verb)?;
-
-        let use_source = self.source || !self.features.is_empty() || self.no_default_features;
-        if use_source {
-            for name in &self.names {
-                let krate = Entry::resolve(name);
-                cargo::install(
-                    krate,
-                    cargo::InstallOpts {
-                        version: self.version.as_deref(),
-                        features: &self.features,
-                        no_default_features: self.no_default_features,
-                    },
-                )?;
-            }
-            return Ok(());
+    /// A release build unless the flags ask for something cargo has to
+    /// compile, with cargo as the fallback when no release serves this
+    /// platform.
+    fn run(self) -> Result<()> {
+        let opts = cargo::InstallOpts {
+            version: self.version.as_deref(),
+            features: &self.features,
+            no_default_features: self.no_default_features,
+        };
+        if self.source || !self.features.is_empty() || self.no_default_features {
+            return cargo::install(AGENT, opts);
         }
 
-        let mut entries: Vec<&Entry> = Vec::new();
-        let mut cargo_names: Vec<&str> = Vec::new();
-        for name in &self.names {
-            match Entry::by_short(name) {
-                Some(entry) => entries.push(entry),
-                None => cargo_names.push(name),
+        match github::install(self.version.as_deref()) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                eprintln!("warn: github download failed ({e:#}), falling back to cargo install");
+                cargo::install(AGENT, opts)
             }
         }
-
-        if !entries.is_empty() {
-            match github::install(&entries, self.version.as_deref()) {
-                Ok(()) => {}
-                Err(e) => {
-                    eprintln!(
-                        "warn: github download failed ({e:#}), falling back to cargo install"
-                    );
-                    for entry in &entries {
-                        cargo::install(
-                            entry.krate,
-                            cargo::InstallOpts {
-                                version: self.version.as_deref(),
-                                ..Default::default()
-                            },
-                        )?;
-                    }
-                }
-            }
-        }
-
-        for name in cargo_names {
-            cargo::install(
-                name,
-                cargo::InstallOpts {
-                    version: self.version.as_deref(),
-                    ..Default::default()
-                },
-            )?;
-        }
-
-        Ok(())
     }
 }
 
-/// The other half of [`Fetch`] — same kind gate, opposite direction.
-#[derive(clap::Args, Debug)]
-pub struct Removal {
-    /// Short name or crate name.
-    pub name: String,
+/// Remove the managed binary, or the cargo-installed one if that is what
+/// is there.
+fn uninstall() -> Result<()> {
+    let managed = crate::dirs::BIN_DIR.join(AGENT);
+    if managed.exists() {
+        std::fs::remove_file(&managed)?;
+        manifest::remove(AGENT)?;
+        println!("info: removed {}", managed.display());
+        return Ok(());
+    }
+    cargo::uninstall(AGENT)
 }
 
-impl Removal {
-    fn run(self, kind: Kind) -> Result<()> {
-        gate(std::slice::from_ref(&self.name), kind, Kind::remove_verb)?;
+fn update() -> Result<()> {
+    let Some(current) = manifest::version(AGENT) else {
+        println!("nothing installed via crabup");
+        return Ok(());
+    };
 
-        if let Some(entry) = Entry::by_short(&self.name) {
-            let managed = crate::dirs::BIN_DIR.join(entry.bin);
-            if managed.exists() {
-                std::fs::remove_file(&managed)?;
-                manifest::remove(entry.short)?;
-                println!("info: removed {}", managed.display());
-                return Ok(());
-            }
-        }
-        cargo::uninstall(Entry::resolve(&self.name))
+    println!("info: checking latest version...");
+    let latest = github::latest_version()?;
+    if current == latest {
+        println!("{AGENT} {latest} is up to date");
+        return Ok(());
     }
+
+    println!("info: updating {AGENT} {current} → {latest}");
+    github::install(Some(&latest))
 }
 
 impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
-            Command::Install { fetch } => fetch.run(Kind::App),
-            Command::Add { fetch } => fetch.run(Kind::Harness),
-            Command::Uninstall { target } => target.run(Kind::App),
-            Command::Remove { target } => target.run(Kind::Harness),
-            Command::Update => {
-                let installed = manifest::all()?;
-                if installed.is_empty() {
-                    println!("nothing installed via crabup");
-                    return Ok(());
-                }
-
-                println!("info: checking latest version...");
-                let latest = github::latest_version()?;
-                println!("info: latest version: {latest}");
-
-                let outdated: Vec<&Entry> = installed
-                    .iter()
-                    .filter(|(_, v)| v.as_str() != latest)
-                    .filter_map(|(short, _)| Entry::by_short(short))
-                    .collect();
-
-                if outdated.is_empty() {
-                    println!("everything is up to date");
-                    return Ok(());
-                }
-
-                println!("info: updating {} component(s)", outdated.len());
-                github::install(&outdated, Some(&latest))
-            }
+            Command::Install { fetch } => fetch.run(),
+            Command::Uninstall => uninstall(),
+            Command::Update => update(),
             Command::List => list::run(),
         }
     }

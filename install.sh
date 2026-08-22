@@ -497,16 +497,13 @@ post_install() {
     write_crabtalk_env
     setup_shell_profile
 
-    # Install core components via crabup.
+    # Install crabtalk via crabup.
     echo ""
-    info "installing crabtalk components..."
-    "$BIN_PATH" install daemon cli
+    info "installing crabtalk..."
+    "$BIN_PATH" install
 
-    # Offer to start the daemon (includes auth setup on first run).
     echo ""
-    if confirm "start the daemon now?"; then
-        "$BIN_PATH" daemon start
-    fi
+    info "start it with: crabtalk-agent"
 }
 
 cleanup() {

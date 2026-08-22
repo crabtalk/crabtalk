@@ -81,7 +81,6 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     ) -> Result<CrabTalkHandle<P, S>> {
         let config_path = config_dir.join(store::CONFIG_FILE);
         let config = store::Config::load(&config_path)?;
-        tracing::info!("loaded configuration from {}", config_path.display());
 
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
         let inner =

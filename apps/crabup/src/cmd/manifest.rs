@@ -28,29 +28,20 @@ fn save(table: &toml::Table) -> Result<()> {
 }
 
 /// Record an installed binary's version.
-pub fn record(short: &str, version: &str) -> Result<()> {
+pub fn record(bin: &str, version: &str) -> Result<()> {
     let mut table = load()?;
-    table.insert(short.to_string(), toml::Value::String(version.to_string()));
+    table.insert(bin.to_string(), toml::Value::String(version.to_string()));
     save(&table)
 }
 
 /// Remove an entry from the manifest.
-pub fn remove(short: &str) -> Result<()> {
+pub fn remove(bin: &str) -> Result<()> {
     let mut table = load()?;
-    table.remove(short);
+    table.remove(bin);
     save(&table)
 }
 
 /// Get the installed version of a binary, if tracked.
-pub fn version(short: &str) -> Option<String> {
-    load().ok()?.get(short)?.as_str().map(String::from)
-}
-
-/// All installed entries: short name → version.
-pub fn all() -> Result<std::collections::BTreeMap<String, String>> {
-    let table = load()?;
-    Ok(table
-        .into_iter()
-        .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
-        .collect())
+pub fn version(bin: &str) -> Option<String> {
+    load().ok()?.get(bin)?.as_str().map(String::from)
 }

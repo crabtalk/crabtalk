@@ -3,9 +3,9 @@
 use std::io::Read;
 
 use anyhow::{Context, Result, bail};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::cmd::registry::Entry;
+use crate::cmd;
 
 const REPO: &str = "crabtalk/crabtalk";
 
@@ -48,7 +48,7 @@ pub fn latest_version() -> Result<String> {
 }
 
 /// Download a URL with a progress bar, return the bytes.
-fn download(url: &str, prefix: &str, mp: &MultiProgress) -> Result<Vec<u8>> {
+fn download(url: &str, prefix: &str) -> Result<Vec<u8>> {
     let resp = reqwest::blocking::get(url).context("download failed")?;
     if !resp.status().is_success() {
         bail!("{prefix}: HTTP {}", resp.status());
@@ -56,12 +56,12 @@ fn download(url: &str, prefix: &str, mp: &MultiProgress) -> Result<Vec<u8>> {
 
     let total = resp.content_length().unwrap_or(0);
     let style = ProgressStyle::with_template(
-        "{prefix:>12} [{bar:20.cyan/dim}] {bytes:>10}/{total_bytes:<10} ({bytes_per_sec}, ETA: {eta})",
+        "{prefix:>16} [{bar:20.cyan/dim}] {bytes:>10}/{total_bytes:<10} ({bytes_per_sec}, ETA: {eta})",
     )
     .unwrap()
     .progress_chars("=> ");
 
-    let pb = mp.add(ProgressBar::new(total));
+    let pb = ProgressBar::new(total);
     pb.set_style(style);
     pb.set_prefix(prefix.to_string());
 
@@ -104,11 +104,8 @@ fn extract_binary(tarball: &[u8], bin_name: &str) -> Result<()> {
     bail!("binary '{bin_name}' not found in tarball")
 }
 
-/// Install one or more entries from GitHub releases.
-///
-/// Uses a shared `MultiProgress` so all download bars render together,
-/// like rustup's component download display.
-pub fn install(entries: &[&Entry], version: Option<&str>) -> Result<()> {
+/// Install the managed binary from a GitHub release.
+pub fn install(version: Option<&str>) -> Result<()> {
     let platform = detect_platform()?;
     let version = match version {
         Some(v) => v.to_string(),
@@ -118,18 +115,13 @@ pub fn install(entries: &[&Entry], version: Option<&str>) -> Result<()> {
         }
     };
 
-    let mp = MultiProgress::new();
-    println!("info: downloading {} components", entries.len());
-
-    for entry in entries {
-        let url = format!(
-            "https://github.com/{REPO}/releases/download/{version}/{bin}-{version}-{platform}.tar.gz",
-            bin = entry.bin,
-        );
-        let tarball = download(&url, entry.bin, &mp)?;
-        extract_binary(&tarball, entry.bin)?;
-        crate::cmd::manifest::record(entry.short, &version)?;
-    }
+    let url = format!(
+        "https://github.com/{REPO}/releases/download/{version}/{bin}-{version}-{platform}.tar.gz",
+        bin = cmd::AGENT,
+    );
+    let tarball = download(&url, cmd::AGENT)?;
+    extract_binary(&tarball, cmd::AGENT)?;
+    cmd::manifest::record(cmd::AGENT, &version)?;
 
     println!("info: installed to {}", crate::dirs::BIN_DIR.display());
     Ok(())
