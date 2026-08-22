@@ -32,3 +32,15 @@ pub static SOCKET_PATH: LazyLock<PathBuf> = LazyLock::new(|| RUN_DIR.join("crabt
 
 /// TCP port file (`~/.crabtalk/run/crabtalk.port`). Contains the port as text.
 pub static PORT_FILE: LazyLock<PathBuf> = LazyLock::new(|| RUN_DIR.join("crabtalk.port"));
+
+/// Top-level configuration (`~/.crabtalk/config.toml`).
+pub static CONFIG_FILE: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("config.toml"));
+
+/// Harness images (`~/.crabtalk/harnesses/`), one `{name}.elf` each.
+pub static HARNESSES_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("harnesses"));
+
+/// Cache root (`~/.crabtalk/cache/`), one subdirectory per thing that caches.
+pub static CACHE_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("cache"));
+
+/// The store file (`~/.crabtalk/store.crmem`).
+pub static STORE_FILE: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("store.crmem"));

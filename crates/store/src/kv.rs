@@ -29,11 +29,12 @@ pub enum Column {
     /// The inverted index. Its own column so a scan for a term can never
     /// wander into the content it points at.
     Text = 6,
+    Event = 7,
 }
 
 impl Column {
     /// Every column, for backends that must enumerate them at open.
-    pub const ALL: [Column; 7] = [
+    pub const ALL: [Column; 8] = [
         Column::Agent,
         Column::Session,
         Column::Memory,
@@ -41,6 +42,7 @@ impl Column {
         Column::Harness,
         Column::Config,
         Column::Text,
+        Column::Event,
     ];
 }
 

@@ -1,12 +1,9 @@
 //! CrabTalk — the core struct composing runtime, harnesses, and protocol.
 
-use crate::{harness::HarnessRegistry, llm::Provider, system::builder::BuildProvider};
+use crate::{Config, harness::HarnessRegistry, llm::Provider, system::builder::BuildProvider};
 use anyhow::Result;
 use runtime::{Harness, Runtime, Sessions};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::sync::Arc;
 use store::interface::Backend;
 use tokio::sync::{RwLock, broadcast};
 use {
@@ -40,9 +37,8 @@ pub struct CrabTalk<P: Provider + 'static, S: Backend> {
     pub runtime: RuntimeHandle<P, S>,
     /// Root registry owning all harnesses and shared state.
     pub registry: Arc<HarnessRegistry<S>>,
-    pub(crate) config_dir: PathBuf,
     pub(crate) started_at: std::time::Instant,
-    pub(crate) events: Arc<parking_lot::Mutex<EventBus>>,
+    pub(crate) events: Arc<parking_lot::Mutex<EventBus<S>>>,
     pub(crate) build_provider: BuildProvider<P>,
     /// Live sessions, owned here so they outlive any runtime swap.
     pub(crate) sessions: Arc<Sessions>,
@@ -53,7 +49,6 @@ impl<P: Provider + 'static, S: Backend> Clone for CrabTalk<P, S> {
         Self {
             runtime: self.runtime.clone(),
             registry: self.registry.clone(),
-            config_dir: self.config_dir.clone(),
             started_at: self.started_at,
             events: self.events.clone(),
             build_provider: Arc::clone(&self.build_provider),
@@ -63,23 +58,20 @@ impl<P: Provider + 'static, S: Backend> Clone for CrabTalk<P, S> {
 }
 
 impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
-    /// Start against a caller-supplied provider, storage, and harnesses.
-    /// These are the seams an embedder uses to bring its own keys rather
-    /// than the single configured endpoint, its own persistence rather
-    /// than the filesystem, and its own capabilities alongside the
-    /// built-ins. This crate builds none of them — it is handed all three.
+    /// Start against a caller-supplied configuration, provider, storage, and
+    /// harnesses. These are the seams an embedder uses to bring its own
+    /// settings rather than a file on this machine, its own keys rather than
+    /// the single configured endpoint, its own persistence rather than the
+    /// filesystem, and its own capabilities alongside the built-ins. This
+    /// crate builds none of them — it is handed all four.
     pub async fn start_with(
-        config_dir: &Path,
+        config: Config,
         storage: Arc<S>,
         build_provider: BuildProvider<P>,
         harnesses: Vec<Arc<dyn Harness>>,
     ) -> Result<CrabTalkHandle<P, S>> {
-        let config_path = config_dir.join(store::CONFIG_FILE);
-        let config = store::Config::load(&config_path)?;
-
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
-        let inner =
-            CrabTalk::build(&config, config_dir, storage, build_provider, harnesses).await?;
+        let inner = CrabTalk::build(&config, storage, build_provider, harnesses).await?;
 
         Ok(CrabTalkHandle {
             config,
@@ -92,7 +84,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
 impl<S: Backend> CrabTalk<DefaultProvider, S> {
     /// Start against the configured endpoint, with the caller's storage.
     pub async fn start(
-        config_dir: &Path,
+        config: Config,
         storage: Arc<S>,
     ) -> Result<CrabTalkHandle<DefaultProvider, S>> {
         let build_provider: BuildProvider<DefaultProvider> =
@@ -100,12 +92,12 @@ impl<S: Backend> CrabTalk<DefaultProvider, S> {
                 build_default_provider(config, models)
             });
 
-        Self::start_with(config_dir, storage, build_provider, vec![]).await
+        Self::start_with(config, storage, build_provider, vec![]).await
     }
 }
 
 pub struct CrabTalkHandle<P: Provider + 'static, S: Backend> {
-    pub config: store::Config,
+    pub config: Config,
     pub shutdown_tx: broadcast::Sender<()>,
     pub inner: CrabTalk<P, S>,
 }

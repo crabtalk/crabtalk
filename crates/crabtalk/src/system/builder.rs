@@ -1,7 +1,7 @@
 //! CrabTalk construction and lifecycle methods.
 
 use crate::{
-    CrabTalk,
+    Config, CrabTalk,
     harness::{AgentScope, EventSink, HarnessRegistry, McpHarness, MemoryHarness},
     llm::Provider,
     system::{RuntimeHandle, event, host::SystemEnv, provider::DefaultProvider},
@@ -13,7 +13,6 @@ use proto::server::Server;
 use runtime::{Harness, Runtime, Sessions, agent::Model};
 use std::{
     collections::BTreeMap,
-    path::Path,
     sync::{Arc, OnceLock},
 };
 use store::interface::Backend;
@@ -33,8 +32,7 @@ pub fn build_default_provider(
 
 impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     pub(crate) async fn build(
-        config: &store::Config,
-        config_dir: &Path,
+        config: &Config,
         storage: Arc<S>,
         build_provider: BuildProvider<P>,
         harnesses: Vec<Arc<dyn Harness>>,
@@ -44,8 +42,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let scopes = Arc::new(parking_lot::RwLock::new(BTreeMap::new()));
         let (runtime, registry) = Self::build_all(
             config,
-            config_dir,
-            storage,
+            storage.clone(),
             &build_provider,
             protocol.clone(),
             scopes,
@@ -58,7 +55,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
             .unwrap_or_else(|_| panic!("runtime already initialized"));
 
         let sessions = Arc::new(Sessions::new(
-            config.cache.sessions.map(|mb| mb * 1024 * 1024),
+            config.settings.cache.sessions.map(|mb| mb * 1024 * 1024),
         ));
 
         let fire_runtime = shared_runtime.clone();
@@ -90,7 +87,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
                 }
             });
         });
-        let event_bus = event::EventBus::load(config_dir.to_path_buf(), fire);
+        let event_bus = event::EventBus::load(storage, fire).await;
         let events = Arc::new(parking_lot::Mutex::new(event_bus));
 
         {
@@ -104,7 +101,6 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let daemon = Self {
             runtime: shared_runtime,
             registry,
-            config_dir: config_dir.to_path_buf(),
             started_at: std::time::Instant::now(),
             events,
             build_provider,
@@ -129,8 +125,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
 
     /// Build the registry, SystemEnv, and Runtime in one shot.
     async fn build_all(
-        config: &store::Config,
-        config_dir: &Path,
+        config: &Config,
         storage: Arc<S>,
         build_provider: &BuildProvider<P>,
         protocol: Arc<OnceLock<crabtalk_berm::Dispatch>>,
@@ -142,19 +137,20 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     )> {
         // Ask the endpoint what it serves; an empty list is survivable, so a
         // failure only warns.
-        let models = match config.llm.kind.is_none() && config.llm.base_url.is_empty() {
+        let llm = &config.settings.llm;
+        let models = match llm.kind.is_none() && llm.base_url.is_empty() {
             true => {
                 tracing::warn!("no llm.base_url configured in config.toml — model list is empty");
                 Vec::new()
             }
-            false => DefaultProvider::from(&config.llm).model_ids().await,
+            false => DefaultProvider::from(llm).model_ids().await,
         };
         let default_model = models.first().cloned().unwrap_or_default();
         Self::scaffold(&storage, &default_model).await?;
 
-        let model = build_provider(config, &models)?;
+        let model = build_provider(&config.settings, &models)?;
         let mcp_handler: Arc<McpHandler> = Arc::new(McpHandler::new(
-            std::time::Duration::from_secs(config.mcp.idle_timeout),
+            std::time::Duration::from_secs(config.settings.mcp.idle_timeout),
         ));
         mcp_handler.spawn_reaper();
 
@@ -163,11 +159,8 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         // Loading every agent's images at startup is what made residency
         // here proportional to how many agents exist rather than how many
         // are working.
-        let berm = match BermHarness::new(
-            protocol,
-            config_dir.join("harnesses"),
-            config_dir.join("cache/berm"),
-        ) {
+        let berm = match BermHarness::new(protocol, config.harnesses.clone(), config.cache.clone())
+        {
             Ok(harnesses) => Some(Arc::new(harnesses)),
             Err(error) => {
                 tracing::warn!("harness engine unavailable: {error:#}");
@@ -177,7 +170,10 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let mut registry = HarnessRegistry::new(
             scopes,
             berm,
-            Arc::new(McpHarness::new(mcp_handler.clone(), config.env.clone())),
+            Arc::new(McpHarness::new(
+                mcp_handler.clone(),
+                config.settings.env.clone(),
+            )),
             Arc::new(MemoryHarness::new(storage.clone())),
         )
         .map_err(anyhow::Error::msg)?;

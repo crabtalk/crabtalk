@@ -12,14 +12,8 @@
 
 use anyhow::Result;
 use crabdb::CrabDb;
-use std::{
-    path::PathBuf,
-    sync::{Arc, LazyLock},
-};
+use std::{path::PathBuf, sync::Arc};
 use store::kv::{Column, KVStorage};
-
-/// The store file (`~/.crabtalk/store.crmem`).
-pub static STORE_PATH: LazyLock<PathBuf> = LazyLock::new(|| crabup::CONFIG_DIR.join("store.crmem"));
 
 /// A realm's store.
 ///

@@ -1,19 +1,30 @@
 //! The daemon: a store, the runtime over it, and the sockets it answers on.
 
-use crate::backend::{Backend, STORE_PATH};
+use crate::backend::Backend;
 use crate::serve;
 use anyhow::Result;
-use crabtalk::CrabTalk;
+use crabtalk::{Config, CrabTalk};
 use std::{sync::Arc, time::Duration};
 
 /// How long a listener gets to drain after shutdown is broadcast.
 const DRAIN: Duration = Duration::from_secs(5);
 
-pub async fn start() -> Result<()> {
-    let store = Arc::new(Backend::open(&*STORE_PATH)?);
-    tracing::info!("store at {}", STORE_PATH.display());
+/// What this install starts the daemon with: the settings as written, and
+/// the two directories only an installed process can name.
+fn config() -> Result<Config> {
+    Ok(Config {
+        settings: store::Config::load(&crabup::dirs::CONFIG_FILE)?,
+        harnesses: crabup::dirs::HARNESSES_DIR.clone(),
+        cache: crabup::dirs::CACHE_DIR.join("berm"),
+    })
+}
 
-    let handle = CrabTalk::start(&crabup::CONFIG_DIR, store.clone()).await?;
+pub async fn start() -> Result<()> {
+    let config = config()?;
+    let store = Arc::new(Backend::open(&*crabup::dirs::STORE_FILE)?);
+    tracing::info!("store at {}", crabup::dirs::STORE_FILE.display());
+
+    let handle = CrabTalk::start(config, store.clone()).await?;
 
     #[cfg(unix)]
     let (socket, socket_join) = serve::socket(handle.inner.clone(), &handle.shutdown_tx)?;

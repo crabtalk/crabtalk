@@ -20,12 +20,12 @@
 
 pub use agent::{AgentConfig, AgentId, DEFAULT_AGENT};
 pub use config::{
-    CONFIG_FILE, CacheConfig, Config, HarnessConfig, HooksConfig, LlmConfig, McpConfig,
-    McpServerConfig, MemoryConfig, Root, TasksConfig,
+    CacheConfig, Config, HarnessConfig, HooksConfig, LlmConfig, McpConfig, McpServerConfig,
+    MemoryConfig, Root, TasksConfig,
 };
 pub use interface::{
-    Agents, Backend, Harnesses, Memory, MemoryEntry, Sessions, Skill, SkillSummary, Skills,
-    Weights, validate_table_name,
+    Agents, Backend, EventSubscription, Harnesses, Memory, MemoryEntry, Sessions, Skill,
+    SkillSummary, Skills, Subscriptions, Weights, validate_table_name,
 };
 pub use kv::{Column, KVStorage, Realm};
 pub use session::{

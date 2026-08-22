@@ -5,14 +5,11 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Name of the file [`Config`] is read from, under the install root.
-pub const CONFIG_FILE: &str = "config.toml";
-
 /// Top-level configuration (`config.toml`).
 ///
 /// Everything a person writes by hand: the LLM endpoint, the task
-/// executor pool, env vars passed to MCP processes. Read from the file
-/// on every reload, so editing it and reloading is the whole workflow.
+/// executor pool, env vars passed to MCP processes. Read once, by
+/// whoever starts the daemon — editing it takes a restart.
 ///
 /// Nothing the daemon writes belongs here. What the daemon decides —
 /// which agent is default — is store state reached through
@@ -52,7 +49,7 @@ impl Config {
                 Self::from_toml(&content)
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                tracing::warn!("no {CONFIG_FILE} at {} — using defaults", path.display());
+                tracing::warn!("no config at {} — using defaults", path.display());
                 Ok(Self::default())
             }
             Err(e) => Err(e.into()),

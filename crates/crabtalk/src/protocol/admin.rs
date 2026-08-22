@@ -1,15 +1,12 @@
 //! Administrative operations: stats, events.
 
-use crate::{
-    llm::Provider,
-    system::{CrabTalk, event::EventSubscription},
-};
+use crate::{llm::Provider, system::CrabTalk};
 use anyhow::Result;
 use proto::{
     AgentEventMsg, McpEventMsg, Stats, SubscribeEventMsg, SubscriptionInfo, SubscriptionList,
 };
 use runtime::Env;
-use store::interface::Backend;
+use store::{EventSubscription, interface::Backend};
 use tokio::sync::broadcast::error::RecvError;
 
 impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {

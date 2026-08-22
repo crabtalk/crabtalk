@@ -2,77 +2,38 @@
 //!
 //! Subscriptions match on an exact `source` string. When a matching
 //! event is published, the bus invokes a user-supplied `fire` callback.
-//! Persistence is direct filesystem I/O to `events/subscriptions.toml`.
+//! The map here is what this process answers from; the store is its
+//! durable mirror.
 
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use store::AgentId;
-
-/// Persistent event subscription.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EventSubscription {
-    pub id: u64,
-    pub source: String,
-    pub target_agent: AgentId,
-    #[serde(default)]
-    pub once: bool,
-    /// The session recurring fires land in. Minted when the subscription
-    /// is created — there is no client turn on a later fire to hand a
-    /// fresh handle back to, so it has to already exist by then.
-    #[serde(default)]
-    pub session_handle: String,
-}
-
-impl From<&EventSubscription> for proto::SubscriptionInfo {
-    fn from(sub: &EventSubscription) -> Self {
-        Self {
-            id: sub.id,
-            source: sub.source.clone(),
-            target_agent: sub.target_agent.to_string(),
-            once: sub.once,
-        }
-    }
-}
-
-/// TOML file wrapper — `[[subscription]]` array of tables.
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct EventFile {
-    #[serde(default)]
-    subscription: Vec<EventSubscription>,
-}
+use std::{collections::HashMap, sync::Arc};
+use store::{EventSubscription, Subscriptions};
 
 /// Callback signature for firing a matched subscription.
 pub type FireCallback = Arc<dyn Fn(&EventSubscription, &str) + Send + Sync>;
 
-/// In-memory event bus with filesystem-backed recovery.
-pub struct EventBus {
+/// In-memory event bus, recovered from and mirrored to the store.
+pub struct EventBus<S: Subscriptions> {
     subscriptions: HashMap<u64, EventSubscription>,
     next_id: u64,
-    path: PathBuf,
+    storage: Arc<S>,
     fire: FireCallback,
 }
 
-impl EventBus {
-    /// Load subscriptions from `events/subscriptions.toml` under `root`.
-    pub fn load(root: PathBuf, fire: FireCallback) -> Self {
-        let path = root.join("events").join("subscriptions.toml");
-        let mut subscriptions = HashMap::new();
-        let mut max_id = 0u64;
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            match toml::from_str::<EventFile>(&content) {
-                Ok(file) => {
-                    for sub in file.subscription {
-                        max_id = max_id.max(sub.id);
-                        subscriptions.insert(sub.id, sub);
-                    }
-                }
-                Err(e) => tracing::warn!("failed to parse {}: {e}", path.display()),
+impl<S: Subscriptions> EventBus<S> {
+    /// Recover what was subscribed before this process started.
+    pub async fn load(storage: Arc<S>, fire: FireCallback) -> Self {
+        let subscriptions: HashMap<u64, EventSubscription> = match storage.subscriptions().await {
+            Ok(subs) => subs.into_iter().map(|sub| (sub.id, sub)).collect(),
+            Err(e) => {
+                tracing::warn!("failed to read subscriptions: {e}");
+                HashMap::new()
             }
-        }
+        };
+        let next_id = subscriptions.keys().max().copied().unwrap_or(0) + 1;
         Self {
             subscriptions,
-            next_id: max_id + 1,
-            path,
+            next_id,
+            storage,
             fire,
         }
     }
@@ -82,7 +43,7 @@ impl EventBus {
         sub.id = self.next_id;
         self.next_id += 1;
         self.subscriptions.insert(sub.id, sub.clone());
-        self.save();
+        self.mirror(Some(sub.clone()), sub.id);
         sub
     }
 
@@ -91,7 +52,7 @@ impl EventBus {
         if self.subscriptions.remove(&id).is_none() {
             return false;
         }
-        self.save();
+        self.mirror(None, id);
         true
     }
 
@@ -111,30 +72,29 @@ impl EventBus {
                 }
             }
         }
-        if !to_remove.is_empty() {
-            for id in &to_remove {
-                self.subscriptions.remove(id);
-            }
-            self.save();
+        for id in to_remove {
+            self.subscriptions.remove(&id);
+            self.mirror(None, id);
         }
     }
 
-    fn save(&self) {
-        let file = EventFile {
-            subscription: self.subscriptions.values().cloned().collect(),
-        };
-        let content = match toml::to_string_pretty(&file) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!("failed to serialize subscriptions: {e}");
-                return;
+    /// Write one subscription through to the store, or erase it when
+    /// `sub` is `None`.
+    ///
+    /// Off the caller's thread, because `publish` is reached from a sync
+    /// sink and a protocol reply should not wait on a disk write. A
+    /// failure costs durability, not the subscription this process is
+    /// already serving, so it is logged like the file write it replaced.
+    fn mirror(&self, sub: Option<EventSubscription>, id: u64) {
+        let storage = self.storage.clone();
+        tokio::spawn(async move {
+            let result = match &sub {
+                Some(sub) => storage.put_subscription(sub).await.map(|_| true),
+                None => storage.remove_subscription(id).await,
+            };
+            if let Err(e) = result {
+                tracing::error!("failed to persist subscription {id}: {e}");
             }
-        };
-        if let Some(parent) = self.path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Err(e) = std::fs::write(&self.path, &content) {
-            tracing::error!("failed to write {}: {e}", self.path.display());
-        }
+        });
     }
 }
