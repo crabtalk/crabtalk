@@ -9,7 +9,7 @@ repository.workspace = true
 keywords.workspace = true
 
 [[bin]]
-name = "crabtalk-agent"
+name = "crabtalkd"
 path = "src/bin/main.rs"
 
 [features]

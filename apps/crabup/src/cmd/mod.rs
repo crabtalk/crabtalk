@@ -1,17 +1,19 @@
 //! The commands — everything crabup does to an install.
 //!
 //! Gated behind `cmd` so a crate that only needs the layout in [`crate::dirs`]
-//! does not build a CLI, an HTTP client, and a tar decoder.
+//! does not build a CLI.
 
 use anyhow::Result;
 
 pub mod cargo;
-pub mod github;
 pub mod list;
-pub mod manifest;
 
-/// The binary crabup manages, as its crate and as its file on disk.
-pub const AGENT: &str = "crabtalk-agent";
+/// What crabup manages, as `(crate, binary)` — the two differ, and the one
+/// you type is the one cargo never mentions. Installed and removed
+/// together: these speak one protobuf protocol to each other, so a machine
+/// holding two versions of it is the failure a separate install would
+/// eventually produce. `crabtalk-cli` joins the list when it exists.
+pub const CRATES: &[(&str, &str)] = &[("crabtalk-agent", "crabtalkd")];
 
 #[derive(clap::Parser, Debug)]
 #[command(name = "crabup", about = "Crabtalk version manager")]
@@ -22,96 +24,61 @@ pub struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
-    /// Install crabtalk.
+    /// Install crabtalk, or move it to the latest version.
+    #[command(visible_alias = "update")]
     Install {
         #[command(flatten)]
         fetch: Fetch,
     },
     /// Uninstall crabtalk.
     Uninstall,
-    /// Update crabtalk to the latest version.
-    Update,
     /// Show what is installed.
     List,
 }
 
-/// Which build of the binary to fetch, and how.
+/// Which build to install.
 #[derive(clap::Args, Debug)]
 pub struct Fetch {
-    /// Pin to a specific version (e.g. v0.0.21).
-    #[arg(long)]
+    /// Pin to a specific version (e.g. 0.0.21).
+    #[arg(long, conflicts_with = "nightly")]
     pub version: Option<String>,
-    /// Build from source via cargo install instead of downloading.
+    /// Build from the development branch instead of the release on crates.io.
     #[arg(long)]
-    pub source: bool,
-    /// Comma-separated cargo features (implies --source).
+    pub nightly: bool,
+    /// Comma-separated cargo features.
     #[arg(long, value_delimiter = ',')]
     pub features: Vec<String>,
-    /// Disable default cargo features (implies --source).
+    /// Disable default cargo features.
     #[arg(long)]
     pub no_default_features: bool,
 }
 
 impl Fetch {
-    /// A release build unless the flags ask for something cargo has to
-    /// compile, with cargo as the fallback when no release serves this
-    /// platform.
+    /// `cargo install` is already an upgrade when a newer version exists and
+    /// a no-op when it does not, so installing and updating are one act.
     fn run(self) -> Result<()> {
-        let opts = cargo::InstallOpts {
-            version: self.version.as_deref(),
-            features: &self.features,
-            no_default_features: self.no_default_features,
-        };
-        if self.source || !self.features.is_empty() || self.no_default_features {
-            return cargo::install(AGENT, opts);
+        for (krate, _) in CRATES.iter().copied() {
+            cargo::install(
+                krate,
+                cargo::InstallOpts {
+                    version: self.version.as_deref(),
+                    features: &self.features,
+                    no_default_features: self.no_default_features,
+                    nightly: self.nightly,
+                },
+            )?;
         }
-
-        match github::install(self.version.as_deref()) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                eprintln!("warn: github download failed ({e:#}), falling back to cargo install");
-                cargo::install(AGENT, opts)
-            }
-        }
+        Ok(())
     }
-}
-
-/// Remove the managed binary, or the cargo-installed one if that is what
-/// is there.
-fn uninstall() -> Result<()> {
-    let managed = crate::dirs::BIN_DIR.join(AGENT);
-    if managed.exists() {
-        std::fs::remove_file(&managed)?;
-        manifest::remove(AGENT)?;
-        println!("info: removed {}", managed.display());
-        return Ok(());
-    }
-    cargo::uninstall(AGENT)
-}
-
-fn update() -> Result<()> {
-    let Some(current) = manifest::version(AGENT) else {
-        println!("nothing installed via crabup");
-        return Ok(());
-    };
-
-    println!("info: checking latest version...");
-    let latest = github::latest_version()?;
-    if current == latest {
-        println!("{AGENT} {latest} is up to date");
-        return Ok(());
-    }
-
-    println!("info: updating {AGENT} {current} → {latest}");
-    github::install(Some(&latest))
 }
 
 impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
             Command::Install { fetch } => fetch.run(),
-            Command::Uninstall => uninstall(),
-            Command::Update => update(),
+            Command::Uninstall => CRATES
+                .iter()
+                .try_for_each(|(krate, _)| cargo::uninstall(krate)),
             Command::List => list::run(),
         }
     }

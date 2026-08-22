@@ -21,10 +21,10 @@ fn usage() -> String {
     let home = crabup::dirs::HOME_VAR;
     format!(
         "\
-crabtalk-agent — the crabtalk daemon
+crabtalkd — the crabtalk daemon
 
 USAGE:
-    crabtalk-agent [OPTIONS]
+    crabtalkd [OPTIONS]
 
 OPTIONS:
     -h, --help     Print this message
@@ -51,7 +51,7 @@ fn parse() -> Result<()> {
             std::process::exit(0);
         }
         "-V" | "--version" => {
-            println!("crabtalk-agent {}", env!("CARGO_PKG_VERSION"));
+            println!("crabtalkd {}", env!("CARGO_PKG_VERSION"));
             std::process::exit(0);
         }
         other => bail!("unexpected argument: {other}\n\n{}", usage()),
