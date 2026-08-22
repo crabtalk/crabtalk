@@ -3,7 +3,7 @@ resolver = "3"
 members = ["apps/*", "berm/*", "crates/*", "harness/*", "lib/*"]
 
 [workspace.package]
-version = "0.0.23"
+version = "0.0.24"
 edition = "2024"
 authors = ["clearloop <tianyi.gc@gmail.com>"]
 license = "MIT"
@@ -11,23 +11,23 @@ repository = "https://github.com/crabtalk/crabtalk"
 keywords = ["llm", "agent", "ai"]
 
 [workspace.dependencies]
-crabup = { path = "apps/crabup", package = "crabup", version = "0.0.23", default-features = false }
-client = { path = "crates/client", package = "crabtalk-client", version = "0.0.23" }
-crabtalk = { path = "crates/crabtalk", package = "crabtalk", version = "0.0.23", default-features = false }
-runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.0.23" }
-transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.23" }
-proto = { path = "crates/proto", package = "crabtalk-proto", version = "0.0.23", default-features = false }
-store = { path = "crates/store", package = "crabtalk-store", version = "0.0.23", default-features = false }
-crabtalk-berm = { path = "crates/berm", version = "0.0.23" }
-crabdb = { path = "lib/crabdb", package = "crabtalk-crabdb", version = "0.0.23" }
-embed = { path = "lib/embed", package = "crabtalk-embed", version = "0.0.23" }
-mcp = { path = "lib/mcp", package = "crabtalk-mcp", version = "0.0.23", default-features = false }
-search = { path = "lib/search", package = "crabtalk-search", version = "0.0.23", default-features = false }
-skill = { path = "lib/skill", package = "crabtalk-skill", version = "0.0.23" }
-berm = { path = "berm/berm", version = "0.0.23" }
-berm-lang = { path = "berm/lang", version = "0.0.23" }
-berm-codegen = { path = "berm/codegen", version = "0.0.23" }
-berm-crabtalk = { path = "lib/berm", version = "0.0.23" }
+crabup = { path = "apps/crabup", package = "crabup", version = "0.0.24", default-features = false }
+client = { path = "crates/client", package = "crabtalk-client", version = "0.0.24" }
+crabtalk = { path = "crates/crabtalk", package = "crabtalk", version = "0.0.24", default-features = false }
+runtime = { path = "crates/runtime", package = "crabtalk-runtime", version = "0.0.24" }
+transport = { path = "crates/transport", package = "crabtalk-transport", version = "0.0.24" }
+proto = { path = "crates/proto", package = "crabtalk-proto", version = "0.0.24", default-features = false }
+store = { path = "crates/store", package = "crabtalk-store", version = "0.0.24", default-features = false }
+crabtalk-berm = { path = "crates/berm", version = "0.0.24" }
+crabdb = { path = "lib/crabdb", package = "crabtalk-crabdb", version = "0.0.24" }
+embed = { path = "lib/embed", package = "crabtalk-embed", version = "0.0.24" }
+mcp = { path = "lib/mcp", package = "crabtalk-mcp", version = "0.0.24", default-features = false }
+search = { path = "lib/search", package = "crabtalk-search", version = "0.0.24", default-features = false }
+skill = { path = "lib/skill", package = "crabtalk-skill", version = "0.0.24" }
+berm = { path = "berm/berm", version = "0.0.24" }
+berm-lang = { path = "berm/lang", version = "0.0.24" }
+berm-codegen = { path = "berm/codegen", version = "0.0.24" }
+berm-crabtalk = { path = "lib/berm", version = "0.0.24" }
 
 # rvtime
 object = "0.40"

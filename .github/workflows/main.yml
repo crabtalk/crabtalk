@@ -79,7 +79,7 @@ jobs:
       # must be refused. Also covers the harness constructs a model's own output
       # reaches: an unknown argument and a wrong argument type.
       - name: Run OS Harness
-        run: cargo run --release --example os -p berm
+        run: cargo run --release --example os -p crabtalk-berm
       # The grant, the decode-time allowlist, and the redaction that keeps a
       # protocol read from being a credential read.
       - name: Run Protocol Harness

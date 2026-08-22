@@ -178,7 +178,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "berm"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "berm-codegen",
@@ -192,7 +192,7 @@ dependencies = [
 
 [[package]]
 name = "berm-codegen"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -201,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "berm-crabtalk"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "berm-lang",
  "crabtalk-proto",
@@ -210,14 +210,14 @@ dependencies = [
 
 [[package]]
 name = "berm-fixture"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "berm-lang",
 ]
 
 [[package]]
 name = "berm-lang"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "berm-codegen",
  "linked_list_allocator",
@@ -228,7 +228,7 @@ dependencies = [
 
 [[package]]
 name = "berm-os"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "berm-crabtalk",
  "berm-lang",
@@ -236,7 +236,7 @@ dependencies = [
 
 [[package]]
 name = "berm-peers"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "berm-crabtalk",
  "berm-lang",
@@ -244,7 +244,7 @@ dependencies = [
 
 [[package]]
 name = "berm-sessions"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "berm-crabtalk",
  "berm-lang",
@@ -252,7 +252,7 @@ dependencies = [
 
 [[package]]
 name = "berm-skill"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "berm-crabtalk",
  "berm-lang",
@@ -638,7 +638,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -669,7 +669,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-agent"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "crabllm-core",
@@ -682,7 +682,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-berm"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "berm",
@@ -706,7 +706,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-client"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "crabllm-core",
@@ -725,7 +725,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-crabdb"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "parking_lot",
@@ -734,7 +734,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-embed"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -747,7 +747,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-mcp"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "bytes",
@@ -772,7 +772,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-proto"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -786,7 +786,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-runtime"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -810,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-search"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "base64 0.22.1",
  "lru",
@@ -829,7 +829,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-skill"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "dirs",
@@ -841,7 +841,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-store"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "chrono",
@@ -860,7 +860,7 @@ dependencies = [
 
 [[package]]
 name = "crabtalk-transport"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -875,7 +875,7 @@ dependencies = [
 
 [[package]]
 name = "crabup"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "anyhow",
  "clap",
