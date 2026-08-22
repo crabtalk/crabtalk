@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-6ab9ea9c.js";
+            window.path_to_searchindex_js = "searchindex-36c66832.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fe74260f.js"></script>
@@ -259,10 +259,9 @@ an <code>agent</code> filter, and the host <strong>overwrites</strong> it with w
 harness. Refusing a wrong value would only teach the harness to send the right
 one.</p>
 <h2 id="berm-is-not-a-crabtalk-feature"><a class="header" href="#berm-is-not-a-crabtalk-feature">berm is not a crabtalk feature</a></h2>
-<p><code>berm/engine</code>, <code>berm/sdk</code> and <code>berm/codegen</code> have no crabtalk crate in their
-dependency lists and cannot grow one without <code>crates/berm/src/lib.rs</code> moving.
-That split is compiler-checked rather than promised, and it is why the sandbox
-can leave this repository whenever it needs to.</p>
+<p>The sandbox lives in its own repository, <a href="https://github.com/crabtalk/berm">berm</a>,
+and reaches this one from crates.io: <code>berm</code> host-side, <code>berm-lang</code> for guests.
+Neither knows a crabtalk crate exists.</p>
 <p><code>crates/berm</code> is crabtalk’s <em>side</em>: what surfaces sandboxed tools, and
 the <code>crabtalk.*</code> capabilities. Anything host-specific belongs there. <code>http</code>
 lives there rather than in the engine because hyper needs a reactor and the

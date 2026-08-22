@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-6ab9ea9c.js";
+            window.path_to_searchindex_js = "../searchindex-36c66832.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fe74260f.js"></script>
@@ -191,6 +191,9 @@
 </ul>
 <blockquote>
 <p><strong>Updated (2026-08-17).</strong> Three changes since this landed. Images are keyed by a content digest — the ELF, its <code>Grants</code>, the capability <code>Scope</code>, and the granted hosts — rather than by <code>(agent, harness)</code>, so identical declarations share one image and a rename is not an event. An <code>http</code> capability exists, bounded by a <code>hosts</code> allowlist on the declaration exactly as <code>root</code> bounds <code>fs</code>; it lives in <code>crates/berm</code> rather than the engine because hyper needs a reactor the sandbox deliberately lacks. And <code>.berm.abi</code> carries a <code>usage</code> string — what the tools are for — read off the ELF without running it and injected only into agents that declared the harness.</p>
+</blockquote>
+<blockquote>
+<p><strong>Updated (2026-08-22).</strong> The sandbox left, which this RFC said it would: berm is <a href="https://github.com/crabtalk/berm">crabtalk/berm</a> and reaches this repository from crates.io as <code>berm</code> and <code>berm-lang</code>. Every <code>berm/*</code> path below names a directory that is no longer here, and the layout it describes is upstream’s to keep. What stays is <code>crates/berm</code> — crabtalk’s side, unchanged.</p>
 </blockquote>
 <blockquote>
 <p><strong>Updated by <a href="0207-store.html">0207 (Store)</a> (2026-08-18).</strong> The <code>crates/hooks</code> paths cited below are gone — hooks were deleted as a crate, the internal <code>Hook</code> seam this RFC scoped out is now <code>Harness</code>, and its lifecycle methods were renamed (0207 supersedes 0075). Harness images have a home in the store as <code>image/{digest}</code>, but berm still reads them from <code>HARNESSES_DIR</code> on the filesystem; wiring it to the <code>Harnesses</code> interface is open work.</p>

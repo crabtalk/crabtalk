@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-6ab9ea9c.js";
+            window.path_to_searchindex_js = "../searchindex-36c66832.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-fe74260f.js"></script>
@@ -199,7 +199,7 @@
 <p>The daemon runs as a single OS process. All work happens on a single Tokio runtime. There is one listener task per configured transport, one reply task per connected client, and one task per in-flight dispatch. Shutdown is initiated by a broadcast channel; every long-lived task subscribes and exits when the channel fires.</p>
 <p>A daemon process owns at most one configuration directory and at most one set of transport endpoints.</p>
 <h2 id="config-directory"><a class="header" href="#config-directory">Config directory</a></h2>
-<p>The daemon is rooted at a configuration directory supplied at startup. The directory holds:</p>
+<p>The daemon is rooted at a configuration directory supplied at startup — <code>$CRABTALK_HOME</code>, else <code>~/.crabtalk</code>. Two daemons with different roots share nothing: the store, the socket and the port file all hang off it. The directory holds:</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -217,7 +217,7 @@
 <p><strong>Startup.</strong> The daemon reads <code>config.toml</code>, constructs the provider, assembles harnesses, opens storage, builds the shared runtime, loads event subscriptions from disk, binds transports, and begins accepting client messages.</p>
 <p><strong>Runtime.</strong> The daemon serves the <code>Server</code> trait. Each client message is dispatched into a spawned task that produces a stream of server messages.</p>
 <p><strong>Reload.</strong> A <code>ReloadMsg</code> causes the daemon to re-read <code>config.toml</code> and rebuild the shared runtime in place. Existing in-flight dispatches complete against the previous runtime; new dispatches see the reloaded runtime. Transports are not re-bound.</p>
-<p><strong>Shutdown.</strong> The daemon broadcasts a shutdown signal. Transport listeners stop accepting new connections. Active dispatches complete or cancel at the next await point. The daemon writes no final state on shutdown; state is persisted on each mutating operation, not at exit.</p>
+<p><strong>Shutdown.</strong> <code>SIGTERM</code> or <code>SIGINT</code> broadcasts a shutdown signal. Transport listeners stop accepting new connections, active dispatches complete or cancel at the next await point, and the socket and port file are removed. State was persisted on each mutating operation, so nothing is written at exit that a caller was not already acknowledged for; the store is checkpointed, which is durability and startup cost rather than new state.</p>
 <h2 id="persistence-boundary"><a class="header" href="#persistence-boundary">Persistence boundary</a></h2>
 <p>The daemon persists through the store. Operations that mutate conversations, memory, or agent definitions write before acknowledging the caller. Cron and event subscription files are written directly by the daemon.</p>
 <p>A write reaches the OS immediately, so a process crash loses nothing. <code>fsync</code> happens at a checkpoint, so a power loss can lose writes since the last one — see <a href="storage.html">Storage</a>.</p>

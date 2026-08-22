@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-6ab9ea9c.js";
+            window.path_to_searchindex_js = "searchindex-36c66832.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-fe74260f.js"></script>
@@ -296,10 +296,9 @@ an <code>agent</code> filter, and the host <strong>overwrites</strong> it with w
 harness. Refusing a wrong value would only teach the harness to send the right
 one.</p>
 <h2 id="berm-is-not-a-crabtalk-feature"><a class="header" href="#berm-is-not-a-crabtalk-feature">berm is not a crabtalk feature</a></h2>
-<p><code>berm/engine</code>, <code>berm/sdk</code> and <code>berm/codegen</code> have no crabtalk crate in their
-dependency lists and cannot grow one without <code>crates/berm/src/lib.rs</code> moving.
-That split is compiler-checked rather than promised, and it is why the sandbox
-can leave this repository whenever it needs to.</p>
+<p>The sandbox lives in its own repository, <a href="https://github.com/crabtalk/berm">berm</a>,
+and reaches this one from crates.io: <code>berm</code> host-side, <code>berm-lang</code> for guests.
+Neither knows a crabtalk crate exists.</p>
 <p><code>crates/berm</code> is crabtalk’s <em>side</em>: what surfaces sandboxed tools, and
 the <code>crabtalk.*</code> capabilities. Anything host-specific belongs there. <code>http</code>
 lives there rather than in the engine because hyper needs a reactor and the
@@ -665,7 +664,7 @@ a capability may make.</p>
 <p>The daemon runs as a single OS process. All work happens on a single Tokio runtime. There is one listener task per configured transport, one reply task per connected client, and one task per in-flight dispatch. Shutdown is initiated by a broadcast channel; every long-lived task subscribes and exits when the channel fires.</p>
 <p>A daemon process owns at most one configuration directory and at most one set of transport endpoints.</p>
 <h2 id="config-directory"><a class="header" href="#config-directory">Config directory</a></h2>
-<p>The daemon is rooted at a configuration directory supplied at startup. The directory holds:</p>
+<p>The daemon is rooted at a configuration directory supplied at startup — <code>$CRABTALK_HOME</code>, else <code>~/.crabtalk</code>. Two daemons with different roots share nothing: the store, the socket and the port file all hang off it. The directory holds:</p>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -683,7 +682,7 @@ a capability may make.</p>
 <p><strong>Startup.</strong> The daemon reads <code>config.toml</code>, constructs the provider, assembles harnesses, opens storage, builds the shared runtime, loads event subscriptions from disk, binds transports, and begins accepting client messages.</p>
 <p><strong>Runtime.</strong> The daemon serves the <code>Server</code> trait. Each client message is dispatched into a spawned task that produces a stream of server messages.</p>
 <p><strong>Reload.</strong> A <code>ReloadMsg</code> causes the daemon to re-read <code>config.toml</code> and rebuild the shared runtime in place. Existing in-flight dispatches complete against the previous runtime; new dispatches see the reloaded runtime. Transports are not re-bound.</p>
-<p><strong>Shutdown.</strong> The daemon broadcasts a shutdown signal. Transport listeners stop accepting new connections. Active dispatches complete or cancel at the next await point. The daemon writes no final state on shutdown; state is persisted on each mutating operation, not at exit.</p>
+<p><strong>Shutdown.</strong> <code>SIGTERM</code> or <code>SIGINT</code> broadcasts a shutdown signal. Transport listeners stop accepting new connections, active dispatches complete or cancel at the next await point, and the socket and port file are removed. State was persisted on each mutating operation, so nothing is written at exit that a caller was not already acknowledged for; the store is checkpointed, which is durability and startup cost rather than new state.</p>
 <h2 id="persistence-boundary"><a class="header" href="#persistence-boundary">Persistence boundary</a></h2>
 <p>The daemon persists through the store. Operations that mutate conversations, memory, or agent definitions write before acknowledging the caller. Cron and event subscription files are written directly by the daemon.</p>
 <p>A write reaches the OS immediately, so a process crash loses nothing. <code>fsync</code> happens at a checkpoint, so a power loss can lose writes since the last one — see <a href="#storage">Storage</a>.</p>
@@ -1482,108 +1481,35 @@ the pluggable memory provider aligned with this model.</p>
 <li>Feature Name: crabup</li>
 <li>Start Date: 2026-04-24</li>
 <li>Discussion: <a href="https://github.com/crabtalk/crabtalk/pull/184">#184</a></li>
-<li>Crates: new <code>crabup</code> binary; consumes <code>command</code>; shrinks <code>crabtalkd</code></li>
+<li>Crates: <code>crabup</code></li>
 <li>Updates: <a href="rfcs/0043-component.html">0043 (Component System)</a></li>
 </ul>
 <blockquote>
-<p><strong>Note (2026-08-15).</strong> The verbs below are superseded. <code>pull</code> / <code>rm</code> shipped as <code>install</code> / <code>uninstall</code>, and the <code>pkg add</code> / <code>pkg remove</code> surface never shipped at all — so <code>add</code> / <code>remove</code> were free, and now pair with <code>install</code> / <code>uninstall</code> to split binaries by role, following <code>rustup</code>. Apps (daemon, cli, telegram) and any crate by name are <code>install</code> / <code>uninstall</code>; harness services (cron, search), which live under <code>harness/</code> in the workspace, are <code>add</code> / <code>remove</code>. Naming one to the wrong verb is an error that names the right one. Pass-through is unchanged but belongs to the app verbs, since an unknown crate cannot be shown to be harness. This RFC’s rejection of “a <code>component add</code> vs <code>pull</code> split” stands on its own terms: that split was about install <em>mechanism</em>, and there is still only one — this one is about what a binary is to the user. The <code>wechat</code> row is gone from the resolution table along with the gateway.</p>
+<p><strong>Note (2026-08-22).</strong> This RFC made service management the point: crabup owned <code>launchd</code>/<code>systemd</code>/<code>schtasks</code> lifecycle for every crabtalk binary, and <code>cargo install</code> was the part it merely wrapped. That half is gone — <code>crates/command</code> was deleted with the harness work, no platform unit is written, and there are no <code>start</code>/<code>stop</code>/<code>ps</code>/<code>logs</code> verbs. So is the resolution table: crabup installs one product and names its crates as a constant. What survives is distribution and the install layout, which is what the text below now describes. The verb history (<code>pull</code>/<code>rm</code> shipping as <code>install</code>/<code>uninstall</code>, the <code>add</code>/<code>remove</code> pair for harness services) is settled and no longer worth carrying: harnesses are ELF images with no process, per <a href="#0205---berm">0205</a>.</p>
 </blockquote>
 <h2 id="summary-6"><a class="header" href="#summary-6">Summary</a></h2>
-<p><code>crabup</code> is a thin wrapper over <code>cargo install</code> that also owns <code>launchd</code>/<code>systemd</code>/<code>schtasks</code> lifecycle for every crabtalk binary. <code>crabup install crabtalkd</code> spawns <code>cargo install crabtalkd</code>. The value add is service management — the one thing <code>cargo install</code> doesn’t do — not distribution, not version coordination, not a registry.</p>
-<h2 id="motivation-6"><a class="header" href="#motivation-6">Motivation</a></h2>
-<p>Two real problems today, both about service management, not about distribution:</p>
-<ol>
-<li><strong>The daemon is its own installer.</strong> <code>crabtalkd start</code> generates and loads a platform unit for itself via the <code>command</code> crate; every other binary (<code>crabtalk-telegram</code>, <code>crabtalk-wechat</code>, …) does the same thing with the same code. A daemon shouldn’t install itself, and the install path shouldn’t live in three places.</li>
-<li><strong>No one-stop service surface.</strong> <code>ps</code>, <code>logs</code>, <code>start</code>, <code>stop</code> are duplicated per binary and absent for most. Users need a single tool that knows about all crabtalk services on the machine, not one subcommand per binary.</li>
-</ol>
-<p>Distribution is already handled: every crabtalk crate publishes to crates.io with <code>version.workspace = true</code>, so <code>cargo install crabtalkd</code> is the install story today. It will remain the install story under crabup — crabup just renames the command and wraps service management around it.</p>
-<p>RFC <a href="rfcs/0043-component.html">0043</a> defined <em>how</em> components talk to the daemon (port-file discovery, MCP contract). This RFC defines <em>how they get installed and stay alive</em>.</p>
-<h2 id="design-6"><a class="header" href="#design-6">Design</a></h2>
-<h3 id="command-surface"><a class="header" href="#command-surface">Command surface</a></h3>
-<pre><code>crabup pull &lt;name&gt; [--version X]      # cargo install crabtalk-&lt;name&gt; (or crabtalkd)
-crabup rm &lt;name&gt;                      # cargo uninstall
-crabup update                         # bump every installed crabtalk-* crate to latest
-crabup list                           # installed crabtalk-* crates
-crabup ps                             # all crabtalk services, one view
-
-crabup &lt;name&gt; start                   # install + load platform unit
-crabup &lt;name&gt; stop
-crabup &lt;name&gt; restart
-crabup &lt;name&gt; logs [-f]
+<p>crabup is how crabtalk reaches a machine and stays current. It is a wrapper over <code>cargo install</code>: crates.io is the registry, workspace-version inheritance is the version coordination, and <code>cargo install</code> is already an upgrade when a newer version exists and a no-op when it is not. Prebuilt binaries are a second backend for the same verbs, and wait on a release job that does not exist yet.</p>
+<p>It also owns the install layout. <code>~/.crabtalk</code> is defined here, the way rustup defines <code>~/.rustup</code>, and every other crate reads the paths from <code>crabup::dirs</code> instead of re-deriving them. That is the half the workspace depends on, and it is why the commands sit behind a <code>cmd</code> feature: a crate that wants <code>CONFIG_DIR</code> should not build a CLI to get it.</p>
+<h2 id="command-surface"><a class="header" href="#command-surface">Command surface</a></h2>
+<pre><code>crabup install [--version X | --nightly] [--features a,b] [--no-default-features]
+crabup update                 # the same command
+crabup uninstall
+crabup list
 </code></pre>
-<p><code>&lt;name&gt;</code> is a short name from the resolution table below, so <code>crabup daemon start</code>, <code>crabup telegram start</code>, <code>crabup search logs -f</code>. Each short name is both a pull/rm target and a service-command namespace. <code>pull</code>/<code>rm</code> install and remove crabtalk binaries via <code>cargo install</code>; <code>pkg add</code>/<code>pkg remove</code> install and remove crabtalk packages (manifests + cached source repos), so the user has one tool for both install surfaces.</p>
-<p><code>crabup update</code> is always batch — it bumps every installed <code>crabtalk-*</code> crate to the latest version on crates.io, same shape as <code>rustup update</code> over its components. There is no per-component update verb: if you only want to change one crate, that’s <code>crabup pull &lt;name&gt; --version &lt;X&gt;</code>. This makes “keep the set aligned” the default behavior of the only tool users will reach for when they want newer bits, without needing atomic-set machinery to enforce it.</p>
-<p>That’s it. No <code>pin</code>, no <code>doctor</code>, no <code>component add</code> vs <code>pull</code> split — <code>cargo install</code> already handles versions; a component is just a crate you can run as a service. No atomic-set enforcement; if a user mixes versions and breaks the wire, the fix is <code>crabup pull &lt;name&gt; --version &lt;matching&gt;</code> for the mismatched one or <code>crabup update</code> to bump everything.</p>
-<h3 id="pull-is-a-pass-through"><a class="header" href="#pull-is-a-pass-through"><code>pull</code> is a pass-through</a></h3>
-<pre><code>crabup pull &lt;name&gt;
-  ↓ resolve name → crate ("tui" → "crabtalk-tui"; "daemon" → "crabtalkd")
-  ↓ cargo install &lt;crate&gt; [--version X]
-</code></pre>
-<p>Name resolution is a small table compiled into crabup:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Short name</th><th>crates.io crate</th><th>Role</th></tr>
-</thead>
-<tbody>
-<tr><td><code>daemon</code></td><td><code>crabtalkd</code></td><td>daemon</td></tr>
-<tr><td><code>tui</code></td><td><code>crabtalk-tui</code></td><td>REPL client</td></tr>
-<tr><td><code>telegram</code></td><td><code>crabtalk-telegram</code></td><td>Telegram gateway</td></tr>
-<tr><td><code>wechat</code></td><td><code>crabtalk-wechat</code></td><td>WeChat gateway</td></tr>
-<tr><td><code>search</code></td><td><code>crabtalk-search</code></td><td>meta-search service</td></tr>
-<tr><td><code>cron</code></td><td><code>crabtalk-cron</code></td><td>scheduler</td></tr>
-</tbody>
-</table>
-</div>
-<p><code>crabup pull &lt;short&gt;</code> resolves via the table; <code>crabup pull &lt;anything-else&gt;</code> passes through verbatim so <code>crabup pull some-third-party-crabtalk-gateway</code> still works without a table edit. New first-party binaries get a row added when they ship.</p>
-<p>Binaries land in <code>~/.cargo/bin</code>, where <code>cargo install</code> has always put them. <code>crabup list</code> reads <code>~/.cargo/.crates.toml</code> and filters for <code>crabtalk*</code>. There is no parallel state file; if <code>.crates.toml</code> is wrong, <code>cargo</code> is wrong, and crabup being wrong with it is the correct behavior.</p>
-<p>Prerequisite: <code>cargo</code> on <code>PATH</code>. If missing, crabup prints one line pointing at <code>https://rustup.rs</code> and exits. No auto-install, no curl-pipe — the daemon doing that was part of what motivated this RFC.</p>
-<h3 id="service-management-the-real-content"><a class="header" href="#service-management-the-real-content">Service management (the real content)</a></h3>
-<p>The <code>command</code> crate already renders <code>launchd.plist</code>, <code>systemd.service</code>, and <code>schtasks.xml</code> and exposes install/uninstall/log-tail helpers. It stays. What changes is the caller: today each binary calls <code>command::install</code> from its own CLI; after this RFC only <code>crabup</code> calls into <code>command</code>. <code>crabtalkd start/stop/ps/logs</code> are deleted; so are the mirrored flags in <code>crabtalk-tui</code>.</p>
-<p><code>crabup &lt;name&gt; start</code> is:</p>
-<ol>
-<li>Find the binary on <code>PATH</code> (fail fast if not installed).</li>
-<li>Look up service metadata in crabup’s name table — the same table that resolves short names to crates also carries <code>label</code> (mechanical: <code>ai.crabtalk.&lt;name&gt;</code>) and <code>description</code>. crabup is the package manager; it owns this metadata, the binaries don’t need to expose it.</li>
-<li>Render the platform unit via <code>command</code> and load it.</li>
-</ol>
-<p><code>crabup ps</code> is the one piece that needs more than wrapping: it scans <code>~/.crabtalk/run/*.port</code> (the same directory RFC 0043 already defines) and checks each listener, then cross-references with whatever the platform’s service manager reports for <code>ai.crabtalk.*</code> labels. One view, all services.</p>
-<h3 id="component-model"><a class="header" href="#component-model">Component model</a></h3>
-<p>RFC 0043 stands unchanged. A component is a binary that writes a port file on startup and serves MCP on that port. crabup doesn’t alter the contract — it just installs and service-manages those binaries the same way it does <code>crabtalkd</code>. “Install a component” and “install the daemon” are the same operation under different names.</p>
-<h3 id="crabllm-as-a-managed-service-optional-motivated"><a class="header" href="#crabllm-as-a-managed-service-optional-motivated">crabllm as a managed service (optional, motivated)</a></h3>
-<p>Today <code>crabllm-provider</code> is a library linked into <code>crabtalkd</code>. Making <code>crabllm</code> a separate service is worth doing only if at least one of these is concrete:</p>
-<ul>
-<li>One set of provider credentials serves multiple daemons on the same machine.</li>
-<li>Central place for provider fallback, rate-limit smoothing, or caching.</li>
-<li>Swap models or provider SDKs without restarting <code>crabtalkd</code>.</li>
-</ul>
-<p>None of those are pressing yet. When one is, <code>crabtalk-llmd</code> becomes another crate crabup installs and service-manages, same as any gateway. The RFC doesn’t need to anticipate it.</p>
-<h2 id="impact-on-crabtalkd"><a class="header" href="#impact-on-crabtalkd">Impact on <code>crabtalkd</code></a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Removed from <code>crabtalkd</code></th><th>Replaced by</th></tr>
-</thead>
-<tbody>
-<tr><td><code>Command::Start { force }</code></td><td><code>crabup daemon start</code> (first install: <code>crabup pull daemon</code>)</td></tr>
-<tr><td><code>Command::Stop</code>, <code>Restart</code></td><td><code>crabup daemon stop</code> / <code>crabup daemon restart</code></td></tr>
-<tr><td><code>Command::Ps</code></td><td><code>crabup ps</code> (all services, one place)</td></tr>
-<tr><td><code>Command::Logs</code></td><td><code>crabup daemon logs</code></td></tr>
-<tr><td><code>ensure_config</code> + <code>attach::setup_llm</code> on first start</td><td><code>crabup daemon start</code> first-run flow</td></tr>
-<tr><td>Duplicate forwarding in TUI (<code>--start</code>, <code>--stop</code>)</td><td>Removed</td></tr>
-</tbody>
-</table>
-</div>
-<p>After this, <code>crabtalkd</code>’s CLI is <code>run</code> (the long-running process the service unit invokes, equivalent to today’s <code>--foreground</code>), <code>reload</code>, and <code>events</code>. Package install/uninstall live in crabup as <code>pkg add</code>/<code>pkg remove</code>, not in the daemon CLI.</p>
-<h2 id="alternatives-5"><a class="header" href="#alternatives-5">Alternatives</a></h2>
-<p><strong>Plain <code>cargo install</code>, no crabup.</strong> Installs are one command, but users hand-write <code>launchd</code>/<code>systemd</code> units per binary, and <code>ps</code>/<code>logs</code> across services don’t exist. The service-management gap is the whole reason crabup is a separate tool.</p>
-<p><strong>A real package manager with its own manifest, signed pre-built binaries, version coordination, atomic-set installs.</strong> Previously drafted; cut. Infrastructure we don’t need — crates.io is the registry, workspace-version inheritance is the coordination, and the non-developer audience that would need pre-built binaries doesn’t exist yet. If that audience materializes, pre-built becomes a second <code>crabup pull</code> backend alongside the <code>cargo install</code> path.</p>
-<p><strong>Keep each binary’s <code>start/stop/logs</code> subcommand, just delete the cross-binary dispatcher.</strong> Leaves three copies of the same install code and no one-stop service view. Cuts nothing meaningful.</p>
-<p><strong>Dynamic plugin loading (shared objects).</strong> Rejected by RFC 0043 — shared fate with the daemon is the exact thing the component model avoids.</p>
+<p>No target name. crabup installs <em>crabtalk</em>, which is more than one crate — today <code>crabtalk-agent</code>, whose binary is <code>crabtalkd</code>, and <code>crabtalk-cli</code>, whose binary is <code>crabtalk</code>, when it exists. Package and binary differ on purpose: the package name namespaces a registry, the binary name is what someone types. They go on and come off together, because they speak one protobuf protocol to each other and a machine holding two versions of it is a wire mismatch nobody asked for. cydonia and a berm instance join later.</p>
+<h2 id="what-each-verb-does"><a class="header" href="#what-each-verb-does">What each verb does</a></h2>
+<p><strong><code>install</code></strong>, and <code>update</code>, which is an alias rather than a second command: <code>cargo install</code> each crate, passing <code>--version</code> when pinned. Installing a version already present is a no-op, and installing over an older one is the upgrade — there is nothing left for a separate verb to do.</p>
+<p><strong><code>--nightly</code></strong> switches the source to <code>--git</code> on the repository’s <code>dev</code> branch, with <code>--locked</code> so the build matches the lockfile that branch tested against. It conflicts with <code>--version</code>: a branch has one tip, and pinning it is what <code>--version</code> against crates.io is for. This is the same pair of backends the prebuilt path will slot into — a flag choosing where the bits come from, behind unchanged verbs.</p>
+<p><strong><code>uninstall</code></strong> runs <code>cargo uninstall</code> for each.</p>
+<p><strong><code>list</code></strong> reads <code>~/.cargo/.crates.toml</code> and prints each crate with its version. There is no parallel state file: if cargo’s record is wrong then cargo is wrong, and crabup being wrong with it is correct.</p>
+<h2 id="removed"><a class="header" href="#removed">Removed</a></h2>
+<p><strong>Service management.</strong> No plist, no unit file, no supervision. The daemon runs in the foreground under whatever started it — a terminal today, a client process next. Distribution and lifecycle were coupled here because the daemon used to install itself; with the daemon out of that business, lifecycle belongs to whoever wants the process alive, not to the installer.</p>
+<p><strong>Pass-through installs.</strong> <code>crabup install &lt;any-crate&gt;</code> left with the table it resolved against. <code>cargo install</code> is that command.</p>
+<p><strong>The GitHub download path.</strong> Written and removed on 2026-08-22 — it fetched <code>{bin}-{version}-{platform}.tar.gz</code> from the releases page, which no job builds, so every install fell through to cargo anyway. It comes back with the release job, behind the same verbs.</p>
+<p><strong>Harness images.</strong> ELF files, not binaries with a process (<a href="#0205---berm">0205</a>), installed today by <code>make harness</code> into <code>~/.crabtalk/harnesses</code>. Something should install them; it is not this surface yet.</p>
 <h2 id="unresolved-questions-5"><a class="header" href="#unresolved-questions-5">Unresolved Questions</a></h2>
 <ul>
-<li><strong>Windows service layer.</strong> <code>schtasks</code> is weaker than <code>launchd</code>/<code>systemd</code> (no restart-on-failure, limited log routing). Acceptable for v1, or not?</li>
-<li><strong><code>rm</code> scope.</strong> Should <code>crabup rm daemon</code> also remove <code>~/.crabtalk/config/</code>? Leaning no (<code>rm</code> is binary-only; data stays); confirm.</li>
-<li><strong>Multiple daemon instances.</strong> If two <code>crabtalkd</code> instances run on one machine, what owns <code>~/.crabtalk/</code>? Out of scope for v1.</li>
+<li><strong>What <code>uninstall</code> removes.</strong> Binary only today — <code>~/.crabtalk</code> and its store survive. That is the safe default, not a decided one.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="0189---policy-at-the-edge"><a class="header" href="#0189---policy-at-the-edge">0189 - Policy at the Edge</a></h1>
@@ -1600,7 +1526,7 @@ crabup &lt;name&gt; logs [-f]
 </blockquote>
 <h2 id="summary-7"><a class="header" href="#summary-7">Summary</a></h2>
 <p>Mechanism belongs in the daemon; policy belongs at the edge. The daemon stops making decisions on the user’s behalf — it no longer auto-compacts on a token-count heuristic, no longer spawns title-generation calls in the background, no longer BM25-searches memory and injects synthetic <code>&lt;recall&gt;</code> user turns. Each of these is now an explicit RPC the client calls when (and if) it wants the behavior. A new <code>AgentEvent::ContextUsage { usage }</code> carries real per-step token counts so clients can pick their own pressure threshold. The <code>Hook::on_before_run</code> lifecycle method is removed.</p>
-<h2 id="motivation-7"><a class="header" href="#motivation-7">Motivation</a></h2>
+<h2 id="motivation-6"><a class="header" href="#motivation-6">Motivation</a></h2>
 <p>Three independent features had drifted toward the same anti-pattern: the daemon making policy decisions using its own heuristics, then mutating conversation state on the user’s behalf without being asked. RFC 0000 codified auto-compaction at a <code>chars/4</code>-derived threshold. RFC 0038 (then 0150) codified auto-recall as a per-turn before-run injection. The runtime grew a quiet <code>spawn_title_generation</code> call inside <code>finalize_run</code>. Each was useful in isolation. Together they shaped a daemon that thought it knew best.</p>
 <p>The cost of that posture:</p>
 <ul>
@@ -1610,7 +1536,7 @@ crabup &lt;name&gt; logs [-f]
 <li><strong>Race with the explicit API.</strong> All three behaviors had explicit-API counterparts (<code>compact_conversation</code>, the <code>recall</code> tool, a clearly-named title RPC if the client wanted one). The daemon was racing the client to call its own API.</li>
 </ul>
 <p>RFC 0185 already drew the right line for sessions: “the runtime’s job is to provide mechanical primitives. UX decisions belong one layer up in the client.” This RFC carries that all the way through.</p>
-<h2 id="design-7"><a class="header" href="#design-7">Design</a></h2>
+<h2 id="design-6"><a class="header" href="#design-6">Design</a></h2>
 <h3 id="principle"><a class="header" href="#principle">Principle</a></h3>
 <p>Mechanism in the daemon, policy at the edge. Concretely:</p>
 <ul>
@@ -1672,13 +1598,13 @@ crabup &lt;name&gt; logs [-f]
 </blockquote>
 <h2 id="summary-8"><a class="header" href="#summary-8">Summary</a></h2>
 <p>Agents own their MCP servers by value, not by name reference into a daemon-global registry. <code>AgentConfig.mcps</code> becomes <code>Vec&lt;McpServerConfig&gt;</code> — every agent carries the full configuration of every MCP it uses. The daemon’s job shrinks to “spawn what agents declare, dedup identical processes, route tool calls per agent.” <code>Storage::{list,upsert,delete}_mcp</code> and <code>crabtalkd mcp</code> go away. Forking an agent now means copying one config; the new owner gets a self-contained, runnable artifact.</p>
-<h2 id="motivation-8"><a class="header" href="#motivation-8">Motivation</a></h2>
+<h2 id="motivation-7"><a class="header" href="#motivation-7">Motivation</a></h2>
 <p>The current model treats MCPs as a daemon-level resource that agents reference by name. That made sense when crabtalk was a single-user CLI managing a fixed fleet of tools. It doesn’t fit where the runtime is going.</p>
 <p><strong>Forkability is broken.</strong> RFC 0135 framed agents as the unit users see and share — sessions are plumbing, agents are the artifact. Cloud workflows extend that: an agent should be a forkable thing, like a GitHub repo. Today, forking an agent’s TOML doesn’t fork its MCPs; the fork lands on a daemon that may or may not have a server registered under the same name, with the same args, with the same env. The agent reference is a dangling pointer until someone manually re-registers the missing pieces.</p>
 <p><strong>Namespace pollution is artificial.</strong> Two agents that want the same logical MCP with different env (e.g., one read-only token, one admin token) must register two differently-named entries in a global flat namespace. The bridge’s <code>tool_cache: BTreeMap&lt;String, Tool&gt;</code> then logs-and-skips conflicts when both expose <code>web_search</code>. None of that pollution is intrinsic to MCP; it’s a consequence of the registry shape.</p>
 <p><strong>The allowlist is a workaround for ownership.</strong> <code>AgentConfig.mcps: Vec&lt;String&gt;</code> (RFC 0082) gates which global entries an agent may dispatch to. It exists because the registry is shared. If agents own their MCPs, allowlists become tautological — the agent only dispatches to what it declared.</p>
 <p>The cloud target makes this acute. Cloud will import <code>crabtalk</code> as a library and host one agent per tenant (or per agent instance). A daemon-global registry on a multi-tenant host either leaks configurations across tenants or forces the cloud layer to maintain its own per-tenant overlay on top of the registry. Either way the global registry is wrong — the right shape is “agent has its MCPs,” and the cloud’s secret/canonical layer can compose forkable templates above that.</p>
-<h2 id="design-8"><a class="header" href="#design-8">Design</a></h2>
+<h2 id="design-7"><a class="header" href="#design-7">Design</a></h2>
 <h3 id="data-model"><a class="header" href="#data-model">Data model</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -1740,12 +1666,12 @@ crabup &lt;name&gt; logs [-f]
 </ul>
 <h2 id="summary-9"><a class="header" href="#summary-9">Summary</a></h2>
 <p>An MCP peer is a process, and this RFC gives it a lifetime of its own rather than borrowing the declaration’s. Credentials join the dedup fingerprint, so a peer is never shared across a trust boundary. A peer that stops answering now says so instead of reporting <code>Connected</code> forever. <code>ReconnectMcp</code> brings one back on request. And a peer starts on an agent’s first MCP tool call and stops once it goes idle, instead of existing for as long as some agent has the config in its TOML.</p>
-<h2 id="motivation-9"><a class="header" href="#motivation-9">Motivation</a></h2>
+<h2 id="motivation-8"><a class="header" href="#motivation-8">Motivation</a></h2>
 <p>RFC 0193 made MCPs agent-owned and deduped identical configs down to one process. Both decisions hold. What did not survive contact with a multi-tenant host is the assumption underneath them: that a declaration and a process are the same thing, and that structural identity is <code>(command, args, env, url)</code>.</p>
 <p><strong>Credentials were not part of identity.</strong> <code>fingerprint</code> hashed <code>env</code> precisely because it carries a stdio server’s secrets — but <code>auth</code>, the HTTP transport’s equivalent, was left out. Two agents naming the same URL with different bearer tokens hashed identically, so the second refcount-bumped onto the first one’s peer and its tool calls went out under the first agent’s header. On a single-user install that is invisible. On a shared host it is a credential leak, and it is the one config that dedup must never collapse.</p>
 <p><strong>Peers were tied to registration.</strong> <code>register_for_agent</code> spawned on first reference and only the last <code>unregister_for_agent</code> tore down. For a CLI with a handful of agents that is fine — everything is warm and nothing is wasted. Host ten thousand tenants and it means a child process for every MCP any of them ever mentioned, alive from boot, whether or not a model ever called one. Dedup does not rescue this: the interesting servers are per-tenant credentialed, and with credentials now correctly part of identity, those are exactly the configs that <em>cannot</em> share a peer. The process count scales with tenants, not with distinct tools.</p>
 <p><strong>Failure was invisible.</strong> Nothing wrote back to peer state after the initial connect. An expired token or a dead child surfaced as an error string handed to the model; <code>states()</code> kept reporting <code>Connected</code> and <code>McpEventKind::Failed</code> never fired again. A client watching the lifecycle stream was blind to the single condition it would want to act on, which also made “let the client decide whether to retry” — 0193’s stated position — unimplementable in practice.</p>
-<h2 id="design-9"><a class="header" href="#design-9">Design</a></h2>
+<h2 id="design-8"><a class="header" href="#design-8">Design</a></h2>
 <h3 id="credentials-are-identity"><a class="header" href="#credentials-are-identity">Credentials are identity</a></h3>
 <p><code>fingerprint</code> hashes <code>(command, args, env, url, auth)</code>. One peer sends one <code>Authorization</code> header on behalf of every agent sharing it, so agents holding different tokens get different peers.</p>
 <p>This has a second effect worth naming: rotating a token is now a real reconnect through the existing surface. A new token is a new fingerprint, so <code>UpsertMcp</code> with fresh credentials tears the old peer down and stands a new one up. Before, the rotated config hashed to the same fingerprint, took the refcount fast path, and left the peer running with the expired header while the daemon reported success.</p>
@@ -1781,7 +1707,7 @@ idle_timeout = 1800
 <p>“<code>register_for_agent(agent, cfg)</code> increments the refcount, spawning if first” no longer holds; it records only. The <strong>Lifecycle interactions</strong> section reads the same way throughout — agent create, update, daemon startup, and daemon reload all describe new fingerprints spawning. They now register declarations, and the first dispatch spawns. Agent delete and rename are unchanged.</p>
 <p><strong>Out of scope</strong> ruled that “whether a client retries is a client decision.” That intent survives and is finally actionable: the daemon still never auto-restarts, but a failed peer is now visible on the lifecycle stream and in <code>ListMcps</code>, and <code>ReconnectMcp</code> gives the client something to call. The reaper ages <code>Failed</code> back to <code>Disconnected</code>, which makes the following dispatch a natural retry — a bound on retry frequency, not an auto-restart policy.</p>
 <p>The <strong>Migration</strong> section’s one-shot inlining of the global <code>[mcps]</code> registry has been removed, as that section itself anticipated (“the migration code path is dead and gets removed in a follow-up cleanup commit”).</p>
-<h2 id="alternatives-6"><a class="header" href="#alternatives-6">Alternatives</a></h2>
+<h2 id="alternatives-5"><a class="header" href="#alternatives-5">Alternatives</a></h2>
 <p><strong>Sweep for idle peers during dispatch instead of running a reaper.</strong> No background task, no tick interval. Rejected because it inverts the case that matters: a host with thousands of idle tenants is precisely one where nothing dispatches, so nothing would ever sweep. Eviction has to be driven by time passing, not by traffic.</p>
 <p><strong>Retry failed peers automatically with backoff.</strong> Rejected as machinery for a bound the design already has. The idle timeout is a retry interval for free, and it is a number the operator already chose.</p>
 <p><strong>Per-agent idle timeout.</strong> Rejected because a peer is shared. Two agents with different timeouts on one process leaves no honest answer to whose wins, and the tie-break would be invisible to both.</p>
@@ -1806,6 +1732,9 @@ idle_timeout = 1800
 <p><strong>Updated (2026-08-17).</strong> Three changes since this landed. Images are keyed by a content digest — the ELF, its <code>Grants</code>, the capability <code>Scope</code>, and the granted hosts — rather than by <code>(agent, harness)</code>, so identical declarations share one image and a rename is not an event. An <code>http</code> capability exists, bounded by a <code>hosts</code> allowlist on the declaration exactly as <code>root</code> bounds <code>fs</code>; it lives in <code>crates/berm</code> rather than the engine because hyper needs a reactor the sandbox deliberately lacks. And <code>.berm.abi</code> carries a <code>usage</code> string — what the tools are for — read off the ELF without running it and injected only into agents that declared the harness.</p>
 </blockquote>
 <blockquote>
+<p><strong>Updated (2026-08-22).</strong> The sandbox left, which this RFC said it would: berm is <a href="https://github.com/crabtalk/berm">crabtalk/berm</a> and reaches this repository from crates.io as <code>berm</code> and <code>berm-lang</code>. Every <code>berm/*</code> path below names a directory that is no longer here, and the layout it describes is upstream’s to keep. What stays is <code>crates/berm</code> — crabtalk’s side, unchanged.</p>
+</blockquote>
+<blockquote>
 <p><strong>Updated by <a href="#0207---store">0207 (Store)</a> (2026-08-18).</strong> The <code>crates/hooks</code> paths cited below are gone — hooks were deleted as a crate, the internal <code>Hook</code> seam this RFC scoped out is now <code>Harness</code>, and its lifecycle methods were renamed (0207 supersedes 0075). Harness images have a home in the store as <code>image/{digest}</code>, but berm still reads them from <code>HARNESSES_DIR</code> on the filesystem; wiring it to the <code>Harnesses</code> interface is open work.</p>
 </blockquote>
 <h2 id="summary-10"><a class="header" href="#summary-10">Summary</a></h2>
@@ -1814,12 +1743,12 @@ idle_timeout = 1800
 <p>What it calls back into is <strong>the protocol</strong>. <code>ClientMessage</code> is already the daemon’s complete, versioned, externally-facing API, so it is the vocabulary for everything a harness does to the runtime: send to an agent, subscribe to an event, schedule a wake. One capability number carries the whole surface, with a per-harness allowlist over message types.</p>
 <p>Harnesses replace stdio-spawned MCP servers as the way we distribute extensions. <code>harness/search</code> becomes one. <code>harness/cron</code> is deleted outright, because scheduling stops being a service and becomes the harness execution model: every harness invocation — tool call, timed wake, subscribed event — goes through one queue, and a cron entry is the case where the trigger is a time.</p>
 <p>Two things follow that reach past extension code. Where a harness runs is a deployment property rather than a design one, which dissolves the “client tool” category: OS capabilities become a harness placed on whichever machine holds the files, and a client tool narrows to one whose result requires a human. And a harness is a third home for policy — not daemon-core, not client — which is where delegation belongs once sub-agents can reach tools without a client attached.</p>
-<h2 id="motivation-10"><a class="header" href="#motivation-10">Motivation</a></h2>
+<h2 id="motivation-9"><a class="header" href="#motivation-9">Motivation</a></h2>
 <p><strong>Spawning a binary is not an extension mechanism.</strong> Today an agent declares an MCP server (RFC 0193) and the daemon runs the named command as a child process with the daemon’s own privileges: full filesystem, full network, full environment. Nothing about that grant is declared, inspectable, or revocable. The tool the model sees is <code>search_web</code>; the thing the operating system sees is an unbounded process. For code we wrote that is a manageable risk. For code a third party wrote it is the whole risk, and it is the reason there is no answer today to “can I install someone else’s tool?”</p>
 <p><strong>Distribution multiplies the problem.</strong> A native binary needs a build per platform — <code>apps/crabup/src/github.rs:15-19</code> enumerates five — so a third-party tool author must produce and maintain five artifacts before anyone can install one. Most will not, and the ones who do become five chances for the artifact to differ from the source.</p>
 <p><strong>The word is already in the repo, meaning two different things.</strong> <code>apps/crabup/src/registry.rs:6</code> defines <code>harness/</code> as “the services you attach to a running system,” installed with <code>crabup add</code>. Two entries carry that label. <code>crabtalk-search</code> answers requests and has no state of its own between them. <code>crabtalk-cron</code> owns a timer, wakes itself, and calls the daemon over the SDK socket. These are not the same kind of thing, and calling both a harness has cost us a definition we could reason with.</p>
 <p><strong>The runtime exists and was built for this.</strong> rvtime compiles a statically linked RV64IMAC ELF to native code with Cranelift, caches the generated code on disk keyed by a hash of the CLIF function plus ISA settings, and lets the host register numbered call-backs. Its own cache module is documented for the case where “a daemon may compile the same plugin from several processes at once.” It is published as <code>rvtime</code> 0.0.1 and we own it.</p>
-<h2 id="design-10"><a class="header" href="#design-10">Design</a></h2>
+<h2 id="design-9"><a class="header" href="#design-9">Design</a></h2>
 <h3 id="definition"><a class="header" href="#definition">Definition</a></h3>
 <blockquote>
 <p>A harness never runs of its own accord. The daemon decides when it runs; while running, it may call back in.</p>
@@ -2156,11 +2085,11 @@ crabtalk.protocol.call                              ← only crabtalk has one
 </ul>
 <h2 id="summary-11"><a class="header" href="#summary-11">Summary</a></h2>
 <p>Persistence is one primitive. A store implements five methods — <code>get</code>, <code>put</code>, <code>delete</code>, <code>scan_keys</code>, <code>scan</code> — and is thereby already an <code>Agents</code>, a <code>Sessions</code>, a <code>Memory</code>, a <code>Skills</code>, a <code>Harnesses</code> and a <code>TextSearch</code>, because each of those traits is bounded on <code>KVStorage</code>, carries its own method bodies, and is blanket-implemented for anything satisfying it. There is no wrapper to construct and nothing to wire. Secondary indexes are keys; ranked full-text search is BM25 over the same keyspace; and the shipped backend is <code>crabdb</code>, an append-only single-file store with a resident key index, replacing SQLite.</p>
-<h2 id="motivation-11"><a class="header" href="#motivation-11">Motivation</a></h2>
+<h2 id="motivation-10"><a class="header" href="#motivation-10">Motivation</a></h2>
 <p>The <code>Storage</code> trait this replaces had twenty methods and one implementation per backend, so every backend reimplemented sessions, agents, skills and config from scratch. Splitting it into a KV half and a SQL half did not fix that — the SQL half had twenty domain-named methods of its own (<code>index_agent</code>, <code>latest_session</code>, <code>skill_summaries</code>) against four hand-rolled entity tables holding data the KV half already held. It was the domain model restated one layer down, and a backend author still wrote bespoke SQL per entity. Narrowness is not the same property as primitiveness: a trait can be closed and still be the domain in disguise.</p>
 <p>The observation that collapses it is that an ordered lookup, a name resolution and a set membership are all secondary indexes, and a secondary index is just more keys. <code>find_latest_session</code> does not need a query planner; it needs keys that sort. Once that is true of everything except ranked full-text, and ranked full-text turns out to be an inverted index — a map from term to documents, which is what a keyspace is — nothing is left that a relational engine was doing.</p>
 <p>What remained of SQLite at that point was one table with three columns, no joins, no aggregates and no transactions: a parser and a query planner running on every <code>get</code> to perform a B-tree lookup. A runtime crate has no business linking a database, and the cost of one is not paid for by what this design uses of it.</p>
-<h2 id="design-11"><a class="header" href="#design-11">Design</a></h2>
+<h2 id="design-10"><a class="header" href="#design-10">Design</a></h2>
 <h3 id="one-primitive"><a class="header" href="#one-primitive">One primitive</a></h3>
 <pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -2232,7 +2161,7 @@ index    count u32 | repeated { col u8 | key_len u32 | key | offset u64 }
 <p><code>crates/hooks</code> is deleted. The trait is <code>Harness</code> in <code>crates/runtime/src/harness/</code>, the composite is <code>Hooks</code>, and what used to be hooks are either harnesses proper (<code>os</code>, per 0205) or the two that remain internal because they wrap daemon state a guest cannot own (<code>memory</code>, <code>mcp</code>).</p>
 <p>The lifecycle methods change for a reason that belongs to this RFC rather than to 0205. “Registered” is no longer a state an agent can be in — it is in the store or it is not — so <code>on_register_agent</code> / <code>on_unregister_agent</code> become <code>on_resolve_agent</code> / <code>on_forget_agent</code>. The first fires per run, for the agent that is running, and <strong>must be idempotent</strong>: there is no registry to call it once. The second fires when an agent is deleted from the store, because that is the only moment nothing will resolve the id again.</p>
 <p>That inverts 0075’s stated invariant. It promised that by the time <code>Runtime::agent()</code> returned, hook state was in place, and that hook state was dropped the moment an agent became invisible — both properties of a registry with a membership boundary. What replaces it is narrower and cheaper: state is in place before the run that needs it, and is proportional to the agents actually working rather than to the agents that exist.</p>
-<h2 id="alternatives-7"><a class="header" href="#alternatives-7">Alternatives</a></h2>
+<h2 id="alternatives-6"><a class="header" href="#alternatives-6">Alternatives</a></h2>
 <p><strong>A KV primitive plus a SQL index.</strong> Tried and removed. The SQL half became twenty domain-named methods over four entity tables restating KV content, so a backend author still wrote per-entity SQL. A primitive is generic; a closed set of named domain queries is the domain model with a smaller surface.</p>
 <p><strong>A composite type pairing the primitives.</strong> <code>Store&lt;K, Q&gt;</code> was built and deleted. It forced a construction step, two generic parameters through every signature, and hand-written <code>Arc&lt;T&gt;</code> forwarding impls to satisfy its bounds — all of which vanish when the interfaces are implemented over the primitive directly and auto-deref does the rest.</p>
 <p><strong>A third-party embedded store.</strong> redb and parity-db both satisfy the requirements, and parity-db’s native columns match <code>Column</code> exactly. Rejected on dependency grounds: the bar here is “better than a directory of files,” which is a small enough target to own, and shipping a runtime should not mean shipping someone else’s storage engine.</p>
