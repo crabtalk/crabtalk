@@ -85,6 +85,8 @@ impl Registry {
 pub struct BermHarness {
     engine: Engine,
     registry: RwLock<Registry>,
+    /// Where images live, one `{name}.elf` each.
+    images: PathBuf,
     /// The runtime's own door, connected once the daemon that implements it
     /// exists — which is after these images load, since it is built on them.
     protocol: Arc<OnceLock<Dispatch>>,
@@ -96,17 +98,25 @@ pub struct BermHarness {
 }
 
 impl BermHarness {
-    /// An engine whose generated code is cached under the config directory, so
-    /// a restart pays ~3ms per image instead of ~15ms.
+    /// Both directories come from the embedder, which is the only thing that
+    /// knows its own install: `images` is read from, and `cache` holds the
+    /// engine's generated code so a restart pays ~3ms per image instead of
+    /// ~15ms.
+    ///
     /// `protocol` is filled by the daemon once it exists. Until then a granted
     /// protocol harness is present but answers that it is not connected,
     /// which is a clearer failure than a call that waits for one.
-    pub fn new(protocol: Arc<OnceLock<Dispatch>>) -> anyhow::Result<Self> {
+    pub fn new(
+        protocol: Arc<OnceLock<Dispatch>>,
+        images: PathBuf,
+        cache: PathBuf,
+    ) -> anyhow::Result<Self> {
         let mut config = Config::new();
-        config.cache_dir(crabup::CONFIG_DIR.join("cache/berm"));
+        config.cache_dir(cache);
         Ok(Self {
             engine: Engine::new(&config)?,
             registry: RwLock::new(Registry::default()),
+            images,
             protocol,
             reactor: Handle::try_current()
                 .context("crabtalk's system harnesses need a reactor to reach the runtime")?,
@@ -176,7 +186,7 @@ impl BermHarness {
         skills: &[String],
         session_root: Option<&Path>,
     ) -> anyhow::Result<Digest> {
-        let path = crate::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
+        let path = self.images.join(format!("{}.elf", declaration.name));
         let elf = std::fs::read(&path).map_err(|e| {
             anyhow::anyhow!(
                 "{}: {e} — `make harness` installs images here",
@@ -267,14 +277,24 @@ impl BermHarness {
 /// inside it, so a session cannot widen its own reach — and one that named no
 /// root gets the bound itself, which is what every declaration meant before a
 /// session could narrow at all.
+///
+/// This is where [`Root::Home`] becomes a path, because it is the last moment
+/// before one is needed and the first at which the running machine is the one
+/// answering.
 pub fn bind(declared: Option<&Root>, session: Option<&Path>) -> anyhow::Result<Option<PathBuf>> {
-    let (Some(Root::Session(bound)), Some(session)) = (declared, session) else {
-        return Ok(declared.map(|root| root.bound().to_path_buf()));
+    let bound = match declared {
+        None => return Ok(None),
+        Some(Root::Fixed(path)) => return Ok(Some(path.clone())),
+        Some(Root::Session(path)) => path.clone(),
+        Some(Root::Home) => dirs::home_dir().context("no home directory to bind a harness to")?,
+    };
+    let Some(session) = session else {
+        return Ok(Some(bound));
     };
     let session = session
         .to_str()
         .with_context(|| format!("session root {} is not utf-8", session.display()))?;
-    crate::root::resolve(bound, session).map(Some)
+    crate::root::resolve(&bound, session).map(Some)
 }
 
 /// The digest that names an image: the ELF, and everything that determines the
@@ -357,7 +377,7 @@ impl runtime::Harness for BermHarness {
     /// available without instantiating anything.
     fn on_build_agent(&self, mut config: AgentConfig) -> AgentConfig {
         for declaration in &config.harnesses {
-            let path = crate::HARNESSES_DIR.join(format!("{}.elf", declaration.name));
+            let path = self.images.join(format!("{}.elf", declaration.name));
             let usage = std::fs::read(&path)
                 .ok()
                 .and_then(|elf| Manifest::from_elf(&elf).ok())

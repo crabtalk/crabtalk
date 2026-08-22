@@ -15,6 +15,7 @@ path = "src/bin/main.rs"
 
 [dependencies]
 client.workspace = true
+crabup = { workspace = true, default-features = false }
 proto = { workspace = true, features = ["client"] }
 
 anyhow.workspace = true

@@ -44,6 +44,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         let scopes = Arc::new(parking_lot::RwLock::new(BTreeMap::new()));
         let (runtime, registry) = Self::build_all(
             config,
+            config_dir,
             storage,
             &build_provider,
             protocol.clone(),
@@ -129,6 +130,7 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
     /// Build the registry, SystemEnv, and Runtime in one shot.
     async fn build_all(
         config: &store::Config,
+        config_dir: &Path,
         storage: Arc<S>,
         build_provider: &BuildProvider<P>,
         protocol: Arc<OnceLock<crabtalk_berm::Dispatch>>,
@@ -161,7 +163,11 @@ impl<P: Provider + 'static, S: Backend> CrabTalk<P, S> {
         // Loading every agent's images at startup is what made residency
         // here proportional to how many agents exist rather than how many
         // are working.
-        let berm = match BermHarness::new(protocol) {
+        let berm = match BermHarness::new(
+            protocol,
+            config_dir.join("harnesses"),
+            config_dir.join("cache/berm"),
+        ) {
             Ok(harnesses) => Some(Arc::new(harnesses)),
             Err(error) => {
                 tracing::warn!("harness engine unavailable: {error:#}");

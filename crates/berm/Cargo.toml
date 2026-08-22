@@ -15,10 +15,9 @@ runtime.workspace = true
 store = { workspace = true, default-features = false }
 proto.workspace = true
 
-crabup = { workspace = true, default-features = false }
-
 anyhow.workspace = true
 bytes.workspace = true
+dirs.workspace = true
 http.workspace = true
 http-body-util.workspace = true
 hyper-tls.workspace = true

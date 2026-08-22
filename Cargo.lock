@@ -682,7 +682,7 @@ dependencies = [
  "crabtalk-proto",
  "crabtalk-runtime",
  "crabtalk-store",
- "crabup",
+ "dirs",
  "http",
  "http-body-util",
  "hyper-tls",
@@ -703,6 +703,7 @@ dependencies = [
  "clap",
  "crabtalk-client",
  "crabtalk-proto",
+ "crabup",
  "futures-util",
  "tokio",
 ]
@@ -835,7 +836,6 @@ name = "crabtalk-skill"
 version = "0.0.24"
 dependencies = [
  "anyhow",
- "dirs",
  "serde",
  "serde_yml",
  "tokio",
@@ -851,7 +851,6 @@ dependencies = [
  "crabllm-core",
  "crabtalk-proto",
  "crabtalk-skill",
- "dirs",
  "serde",
  "serde_json",
  "serde_yml",
@@ -868,7 +867,6 @@ dependencies = [
  "anyhow",
  "async-stream",
  "crabtalk-proto",
- "crabup",
  "futures-core",
  "futures-util",
  "prost",

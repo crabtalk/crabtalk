@@ -3,7 +3,9 @@
 //! The trait defines every protocol RPC; transport connections (UDS, TCP, mem)
 //! implement it. This module adds:
 //!
-//! - [`ConnectionInfo`] — a cloneable handle that knows how to (re)connect.
+//! - [`ConnectionInfo`] — a cloneable handle that knows how to (re)connect. It
+//!   is told where the daemon is; finding that out is the caller's, since only
+//!   a process that knows its install root can answer it.
 //! - Typed one-shot sugars on `ConnectionInfo` (`stream`, `reply_to_ask`,
 //!   `kill_conversation`, `subscribe_events`) that adapter apps reach for
 //!   instead of building `ClientMessage` envelopes by hand.
@@ -41,20 +43,6 @@ impl std::fmt::Display for ConnectionInfo {
 }
 
 impl ConnectionInfo {
-    /// Resolve the platform default: UDS on Unix, TCP (from port file) on Windows.
-    pub fn platform_default() -> Result<Self> {
-        #[cfg(unix)]
-        {
-            Ok(Self::Uds(transport::SOCKET_PATH.to_path_buf()))
-        }
-        #[cfg(not(unix))]
-        {
-            let port_str = std::fs::read_to_string(&*transport::TCP_PORT_FILE)?;
-            let port: u16 = port_str.trim().parse()?;
-            Ok(Self::Tcp(port))
-        }
-    }
-
     /// Open a fresh connection, send `req`, and return a receiver of stream
     /// events. The connection closes when the daemon emits `StreamEnd`, when
     /// the server sends an error, or when the receiver is dropped.

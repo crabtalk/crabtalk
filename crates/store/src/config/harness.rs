@@ -9,7 +9,7 @@
 //! one from the other.
 
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -44,27 +44,22 @@ pub struct HarnessConfig {
 
 /// Where the bound on `fs` and `exec` comes from.
 ///
-/// Both variants carry the bound itself, so a session narrowing within one can
-/// never widen it: the clamp is the type rather than a check somewhere that can
-/// be forgotten. Absent this whole value, neither harness is constructed.
+/// A session narrowing within a bound can never widen it: the clamp is the type
+/// rather than a check somewhere that can be forgotten. Absent this whole value,
+/// neither harness is constructed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Root {
     /// Bound to whatever the session named, resolved inside this path. A
     /// session that named none is bound to this path itself.
     Session(PathBuf),
+    /// [`Root::Session`] under the home directory of whoever is running, read
+    /// where the harness binds. The path is absent here because a stored one is
+    /// the home of the machine that first scaffolded the agent.
+    Home,
     /// Bound to this path, whatever the session named.
     // Untagged so a declaration written before sessions could narrow — a bare
     // `root = "/path"` — still reads as the fixed grant it was.
     #[serde(untagged)]
     Fixed(PathBuf),
-}
-
-impl Root {
-    /// The outer bound, which nothing resolved against this may escape.
-    pub fn bound(&self) -> &Path {
-        match self {
-            Self::Session(path) | Self::Fixed(path) => path,
-        }
-    }
 }

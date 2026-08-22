@@ -19,7 +19,6 @@
 pub use harness::{BermHarness, bind};
 pub use http::Http;
 pub use protocol::{Dispatch, Protocol, Scope};
-use std::{path::PathBuf, sync::LazyLock};
 
 pub mod exec;
 pub mod fs;
@@ -29,11 +28,3 @@ mod http;
 mod protocol;
 mod root;
 mod sys;
-
-/// Harness images (`~/.crabtalk/harnesses/`), one `{name}.elf` each.
-///
-/// Lives here rather than with the rest of the install layout because this
-/// crate is the only thing that loads an image — and the installer that will
-/// write them reaches crabtalk's side of berm, not the other way round.
-pub static HARNESSES_DIR: LazyLock<PathBuf> =
-    LazyLock::new(|| crabup::CONFIG_DIR.join("harnesses"));

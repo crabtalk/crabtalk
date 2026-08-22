@@ -1,6 +1,6 @@
 use crate::engine::EngineId;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Configuration for the meta search engine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,42 +80,8 @@ impl Config {
         Ok(config)
     }
 
-    /// Try to discover and load config from the default location.
-    /// Returns default config if no file is found.
-    pub fn discover() -> Self {
-        if let Some(path) = default_config_path()
-            && path.exists()
-        {
-            match Self::load(&path) {
-                Ok(config) => return config,
-                Err(e) => {
-                    eprintln!("warning: failed to load {}: {e}", path.display());
-                }
-            }
-        }
-        Self::default()
-    }
-
     /// Generate default config as TOML string.
     pub fn default_toml() -> String {
         toml::to_string_pretty(&Config::default()).unwrap_or_default()
-    }
-}
-
-fn default_config_path() -> Option<PathBuf> {
-    dirs_path().map(|p| p.join("config.toml"))
-}
-
-fn dirs_path() -> Option<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config").join("crabtalk-search"))
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-            .map(|p| p.join("crabtalk-search"))
     }
 }

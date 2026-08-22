@@ -12,7 +12,6 @@ keywords.workspace = true
 
 [dependencies]
 crabllm-core.workspace = true
-dirs.workspace = true
 proto = { workspace = true, features = ["llm", "std"] }
 skill.workspace = true
 

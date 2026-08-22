@@ -18,7 +18,7 @@ pub async fn start() -> Result<()> {
     #[cfg(unix)]
     let (socket, socket_join) = serve::socket(handle.inner.clone(), &handle.shutdown_tx)?;
     let (tcp_join, port) = serve::tcp(handle.inner.clone(), &handle.shutdown_tx)?;
-    std::fs::write(&*transport::TCP_PORT_FILE, port.to_string())?;
+    std::fs::write(&*crabup::dirs::PORT_FILE, port.to_string())?;
 
     handle.wait_until_ready().await?;
     tracing::info!("daemon ready");
@@ -33,7 +33,7 @@ pub async fn start() -> Result<()> {
         let _ = std::fs::remove_file(socket);
     }
     let _ = tokio::time::timeout(DRAIN, tcp_join).await;
-    let _ = std::fs::remove_file(&*transport::TCP_PORT_FILE);
+    let _ = std::fs::remove_file(&*crabup::dirs::PORT_FILE);
 
     store.checkpoint()
 }

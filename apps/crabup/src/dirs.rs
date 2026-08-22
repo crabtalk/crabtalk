@@ -22,3 +22,13 @@ pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 
 /// Managed binary directory (`~/.crabtalk/bin/`).
 pub static BIN_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("bin"));
+
+/// Runtime directory (`~/.crabtalk/run/`) — where a listener advertises itself
+/// so a client can find it without being told.
+pub static RUN_DIR: LazyLock<PathBuf> = LazyLock::new(|| CONFIG_DIR.join("run"));
+
+/// Pinned socket path (`~/.crabtalk/run/crabtalk.sock`).
+pub static SOCKET_PATH: LazyLock<PathBuf> = LazyLock::new(|| RUN_DIR.join("crabtalk.sock"));
+
+/// TCP port file (`~/.crabtalk/run/crabtalk.port`). Contains the port as text.
+pub static PORT_FILE: LazyLock<PathBuf> = LazyLock::new(|| RUN_DIR.join("crabtalk.port"));

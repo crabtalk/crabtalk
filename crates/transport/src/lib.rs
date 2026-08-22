@@ -1,8 +1,9 @@
 //! Transport layer for the Crabtalk daemon.
 //!
 //! Wire message types and API traits live in `crabtalk-proto`. This crate
-//! provides the framing codec, the UDS and TCP transports, and where a
-//! listener advertises itself on disk.
+//! provides the framing codec and the UDS and TCP transports. Where a listener
+//! advertises itself is the serving process's, not this crate's — it is handed
+//! an address and knows nothing about the machine it runs on.
 
 /// Per-connection reply channel capacity.
 ///
@@ -14,18 +15,6 @@ pub const REPLY_CHANNEL_CAPACITY: usize = 256;
 use anyhow::Result;
 use futures_core::Stream;
 use proto::{ClientMessage, ServerMessage, client::Client};
-use std::{path::PathBuf, sync::LazyLock};
-
-/// Runtime directory (`~/.crabtalk/run/`) — where a listener advertises
-/// itself so a client can find it without being told.
-pub static RUN_DIR: LazyLock<PathBuf> = LazyLock::new(|| crabup::dirs::CONFIG_DIR.join("run"));
-
-/// Pinned socket path (`~/.crabtalk/run/crabtalk.sock`).
-#[cfg(unix)]
-pub static SOCKET_PATH: LazyLock<PathBuf> = LazyLock::new(|| RUN_DIR.join("crabtalk.sock"));
-
-/// TCP port file (`~/.crabtalk/run/crabtalk.port`). Contains the port as text.
-pub static TCP_PORT_FILE: LazyLock<PathBuf> = LazyLock::new(|| RUN_DIR.join("crabtalk.port"));
 
 pub mod codec;
 pub mod tcp;

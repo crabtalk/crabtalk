@@ -39,7 +39,7 @@ pub fn socket(
     daemon: Daemon,
     shutdown_tx: &broadcast::Sender<()>,
 ) -> Result<(&'static Path, tokio::task::JoinHandle<()>)> {
-    let resolved_path: &'static Path = &transport::SOCKET_PATH;
+    let resolved_path: &'static Path = &crabup::dirs::SOCKET_PATH;
     if let Some(parent) = resolved_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
