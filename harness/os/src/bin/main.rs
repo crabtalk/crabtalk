@@ -1,4 +1,4 @@
-//! OS tools as a harness: bash, read, edit.
+//! OS tools as a harness: bash, read, edit, glob, grep.
 //!
 //! These were once dispatched to whichever client was connected, so a run with
 //! no client had no tools at all. As a harness they run wherever the runtime
@@ -135,6 +135,35 @@ mod tools {
         Ok(())
     }
 
+    /// Find files by name. Returns paths newest first.
+    #[args(Glob)]
+    pub fn glob(args: &[u8], out: &mut Out) -> Result<(), Failed> {
+        let input: Glob = parse(args, out)?;
+        let result = system(
+            fs::glob(&input.pattern, input.path.as_deref().unwrap_or(".")),
+            out,
+        )?;
+        out.write(&result);
+        Ok(())
+    }
+
+    /// Search file contents. Prefer this over running `grep` or `rg` through `bash`.
+    #[args(Grep)]
+    pub fn grep(args: &[u8], out: &mut Out) -> Result<(), Failed> {
+        let input: Grep = parse(args, out)?;
+        let result = system(
+            fs::grep(
+                &input.pattern,
+                input.path.as_deref().unwrap_or("."),
+                input.include.as_deref().unwrap_or(""),
+                input.mode.as_deref().unwrap_or("files"),
+            ),
+            out,
+        )?;
+        out.write(&result);
+        Ok(())
+    }
+
     /// Arguments for `bash`.
     pub struct Bash {
         /// Shell command to run (e.g. `"ls -la"`, `"cat foo.txt | grep bar"`).
@@ -153,6 +182,26 @@ mod tools {
         pub offset: Option<usize>,
         /// Maximum number of lines to read. Defaults to 2000.
         pub limit: Option<usize>,
+    }
+
+    /// Arguments for `glob`.
+    pub struct Glob {
+        /// Glob pattern, e.g. `**/*.rs` or `src/**/*.toml`.
+        pub pattern: String,
+        /// Directory to search under, relative to the workspace root. Defaults to the root.
+        pub path: Option<String>,
+    }
+
+    /// Arguments for `grep`.
+    pub struct Grep {
+        /// Regular expression. Inline flags work — `(?i)` searches case-insensitively.
+        pub pattern: String,
+        /// Directory to search under, relative to the workspace root. Defaults to the root.
+        pub path: Option<String>,
+        /// Glob limiting which files are searched, e.g. `*.rs`.
+        pub include: Option<String>,
+        /// `files` for paths (the default), `content` for matching lines, `count` for tallies.
+        pub mode: Option<String>,
     }
 
     /// Arguments for `edit`.

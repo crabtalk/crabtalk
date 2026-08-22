@@ -220,6 +220,8 @@ impl BermHarness {
             if granted("fs") {
                 system.push(fs::read(root.clone()));
                 system.push(fs::write(root.clone()));
+                system.push(fs::glob(root.clone()));
+                system.push(fs::grep(root.clone()));
             }
             if granted("exec") {
                 system.push(exec::run(root.clone()));

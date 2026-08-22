@@ -33,6 +33,12 @@ fn main() -> Result<()> {
     let _ = fs::remove_dir_all(&sandbox);
     fs::create_dir_all(&sandbox)?;
     fs::write(sandbox.join("hello.txt"), "alpha\nbeta\ngamma\n")?;
+    fs::create_dir_all(sandbox.join("src"))?;
+    fs::write(sandbox.join("src/lib.rs"), "fn alpha() {}\nfn beta() {}\n")?;
+    fs::write(sandbox.join("src/main.rs"), "fn main() { alpha() }\n")?;
+    // Searching respects .gitignore, so this one must never turn up below.
+    fs::write(sandbox.join(".gitignore"), "hidden.rs\n")?;
+    fs::write(sandbox.join("src/hidden.rs"), "fn alpha() {}\n")?;
 
     let engine = Engine::new(&Config::new())?;
     let harness = Berm::load(
@@ -41,6 +47,8 @@ fn main() -> Result<()> {
         &[
             harness_fs::read(sandbox.clone()),
             harness_fs::write(sandbox.clone()),
+            harness_fs::glob(sandbox.clone()),
+            harness_fs::grep(sandbox.clone()),
             exec::run(sandbox.clone()),
         ],
     )?;
@@ -62,6 +70,17 @@ fn main() -> Result<()> {
     show(&harness, "read", r#"{"path":"hello.txt"}"#)?;
     show(&harness, "bash", r#"{"command":"ls -1 && pwd"}"#)?;
 
+    show(&harness, "glob", r#"{"pattern":"**/*.rs"}"#)?;
+    show(&harness, "glob", r#"{"pattern":"*.rs","path":"src"}"#)?;
+    show(&harness, "grep", r#"{"pattern":"alpha"}"#)?;
+    show(
+        &harness,
+        "grep",
+        r#"{"pattern":"fn (alpha|beta)","include":"*.rs","mode":"content"}"#,
+    )?;
+    show(&harness, "grep", r#"{"pattern":"alpha","mode":"count"}"#)?;
+    show(&harness, "grep", r#"{"pattern":"x","mode":"sideways"}"#)?;
+
     // serde_json's unknown-field and wrong-type paths, where the jump tables are.
     show(
         &harness,
@@ -73,6 +92,7 @@ fn main() -> Result<()> {
     // The boundary, from inside. Both must fail.
     show(&harness, "read", r#"{"path":"../../../etc/passwd"}"#)?;
     show(&harness, "read", r#"{"path":"/etc/passwd"}"#)?;
+    show(&harness, "glob", r#"{"pattern":"*","path":"../.."}"#)?;
     show(
         &harness,
         "edit",

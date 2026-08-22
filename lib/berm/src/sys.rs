@@ -11,6 +11,10 @@ berm_lang::harnesses! {
         fn read(path: &str) -> Vec<u8>;
         /// Write a file, replacing what was there.
         fn write(path: &str, content: &[u8]);
+        /// Paths under `path` matching `pattern`, newest first.
+        fn glob(pattern: &str, path: &str) -> Vec<u8>;
+        /// Search file contents under `path`. `mode` is `files`, `content` or `count`.
+        fn grep(pattern: &str, path: &str, include: &str, mode: &str) -> Vec<u8>;
     }
 
     /// Commands, under the same root `fs` is bounded by.
