@@ -1,9 +1,10 @@
 //! `http` — requests to the hosts a declaration named.
 //!
-//! This lives here rather than in berm because hyper needs a reactor and the
-//! engine has neither one nor a dependency that wants one. `fs` and `exec` are
-//! about the machine and ship with the sandbox; this is about a client the
-//! host already runs, so it arrives the way any embedder's capability does.
+//! Named `crabtalk.` rather than `berm.` because it is not the machine. A
+//! harness holding `exec` already has a shell, and a shell has curl, so an
+//! unbounded fetch is nothing berm needs to hand out. What this adds is the
+//! bound: a client that goes only where the declaration said, through a pool
+//! the daemon already runs.
 //!
 //! The allowlist is the whole of the confinement, and it is checked per
 //! request rather than per connection. hyper's client does not follow
@@ -16,8 +17,8 @@
 //! unexpected — the check is on the URL's host, not on the address it
 //! resolves to.
 
+use crate::sys::http::Fetch;
 use anyhow::{Context, Result, bail};
-use berm::wire;
 use bytes::Bytes;
 use http::{Request, Uri};
 use http_body_util::{BodyExt, Full, Limited};
@@ -26,19 +27,16 @@ use hyper_util::{
     rt::TokioExecutor,
 };
 use std::{sync::LazyLock, time::Duration};
-
-/// What the harness calls it. `crabtalk.` rather than `berm.` for the reason
-/// [`crate::protocol::CALL`] is: the name says who implements it.
-pub(crate) const FETCH: &str = "crabtalk.http.fetch";
+use tokio::runtime::Handle;
 
 /// Cap on a response body. A harness reads one through its own heap, so an
 /// unbounded body is an unbounded allocation inside the sandbox — the same
-/// reason `berm`'s `fs` refuses an oversized file.
+/// reason [`crate::fs`] refuses an oversized file.
 const MAX_BODY: usize = 16 * 1024 * 1024;
 
 /// Total round trip. A harness blocked in a host call cannot notice an
-/// interrupt until the call returns, so berm's watchdog is set to outlast the
-/// longest one — this stays within that bound rather than moving it.
+/// interrupt until the call returns, so this has to stay under berm's watchdog
+/// bound.
 const TIMEOUT: Duration = Duration::from_secs(30);
 
 type Connector = hyper_tls::HttpsConnector<HttpConnector>;
@@ -50,76 +48,89 @@ type Connector = hyper_tls::HttpsConnector<HttpConnector>;
 static CLIENT: LazyLock<Client<Connector, Full<Bytes>>> =
     LazyLock::new(|| Client::builder(TokioExecutor::new()).build(Connector::new()));
 
-/// Perform one request, if `hosts` names where it is going.
+/// What one declaration's `hosts` grant is served by.
 ///
-/// Request: `[method, url, body, name, value, name, value, …]`.
-/// Reply: `[status, headers, body]`, the status as decimal text and the
-/// headers as `name: value` lines. The body stays bytes: it is HTML or JSON
-/// far more often than it is UTF-8 anyone verified.
-pub fn call(hosts: &[String], request: &[u8]) -> Result<Vec<u8>> {
-    let fields = wire::fields(request)?;
-    let method = wire::text(&fields, 0, "method")?;
-    let url = wire::text(&fields, 1, "url")?;
-    let body = fields.get(2).copied().unwrap_or_default();
+/// The reactor is held rather than looked up per call: hyper needs one and the
+/// sandbox is sync, so the embedder's runtime is part of what this is built
+/// with — the same way a root is what `fs` is built with.
+pub struct Http {
+    hosts: Vec<String>,
+    reactor: Handle,
+}
 
-    let uri: Uri = url.parse().with_context(|| format!("{url} is not a url"))?;
-    let Some(host) = uri.host() else {
-        bail!("{url} has no host");
-    };
-    if !hosts
-        .iter()
-        .any(|granted| granted.eq_ignore_ascii_case(host))
-    {
-        bail!("{host} is not a host this harness was granted");
+impl Http {
+    pub fn new(hosts: Vec<String>, reactor: Handle) -> Self {
+        Self { hosts, reactor }
     }
 
-    // hyper-util's legacy client does not reliably populate `Host` for
-    // HTTP/1.1, and servers built on hyper reject a request without it.
-    let authority = match uri.port_u16() {
-        Some(port) => format!("{host}:{port}"),
-        None => host.to_owned(),
-    };
-    let mut builder = Request::builder()
-        .method(method)
-        .uri(&uri)
-        .header("host", &authority);
-
-    let headers = &fields[3.min(fields.len())..];
-    if headers.len() % 2 != 0 {
-        bail!("a header has no value");
-    }
-    for pair in headers.chunks(2) {
-        builder = builder.header(pair[0], pair[1]);
-    }
-    let request = builder.body(Full::new(Bytes::copy_from_slice(body)))?;
-
-    let handle = tokio::runtime::Handle::try_current()
-        .map_err(|_| anyhow::anyhow!("http needs a running reactor"))?;
-    let (status, headers, body) = handle.block_on(async {
-        tokio::time::timeout(TIMEOUT, async {
-            let response = CLIENT.request(request).await.context("request failed")?;
-            let status = response.status().as_u16();
-            let headers = response
-                .headers()
-                .iter()
-                .map(|(name, value)| {
-                    format!("{name}: {}\n", String::from_utf8_lossy(value.as_bytes()))
-                })
-                .collect::<String>();
-            let body = Limited::new(response.into_body(), MAX_BODY)
-                .collect()
-                .await
-                .map_err(|e| anyhow::anyhow!("could not read the response body: {e}"))?
-                .to_bytes();
-            Ok::<_, anyhow::Error>((status, headers, body))
+    /// The harness serving `crabtalk.http.fetch`, named by the declaration
+    /// rather than by a string written here.
+    pub fn harness(self) -> berm::Harness {
+        crate::sys::http::fetch(move |method, url, body, headers| {
+            self.fetch(method, url, body, headers)
         })
-        .await
-        .context("request timed out")?
-    })?;
+    }
 
-    Ok(wire::frame(&[
-        status.to_string().as_bytes(),
-        headers.as_bytes(),
-        &body,
-    ]))
+    /// Perform one request, if the grant names where it is going.
+    pub fn fetch(
+        &self,
+        method: &str,
+        url: &str,
+        body: &[u8],
+        headers: &[(&str, &str)],
+    ) -> Result<Fetch> {
+        let uri: Uri = url.parse().with_context(|| format!("{url} is not a url"))?;
+        let Some(host) = uri.host() else {
+            bail!("{url} has no host");
+        };
+        if !self
+            .hosts
+            .iter()
+            .any(|granted| granted.eq_ignore_ascii_case(host))
+        {
+            bail!("{host} is not a host this harness was granted");
+        }
+
+        // hyper-util's legacy client does not reliably populate `Host` for
+        // HTTP/1.1, and servers built on hyper reject a request without it.
+        let authority = match uri.port_u16() {
+            Some(port) => format!("{host}:{port}"),
+            None => host.to_owned(),
+        };
+        let mut builder = Request::builder()
+            .method(method)
+            .uri(&uri)
+            .header("host", &authority);
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+        let request = builder.body(Full::new(Bytes::copy_from_slice(body)))?;
+
+        self.reactor.block_on(async {
+            tokio::time::timeout(TIMEOUT, async {
+                let response = CLIENT.request(request).await.context("request failed")?;
+                let status = response.status().as_u16();
+                let headers = response
+                    .headers()
+                    .iter()
+                    .map(|(name, value)| {
+                        format!("{name}: {}\n", String::from_utf8_lossy(value.as_bytes()))
+                    })
+                    .collect::<String>();
+                let body = Limited::new(response.into_body(), MAX_BODY)
+                    .collect()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("could not read the response body: {e}"))?
+                    .to_bytes()
+                    .to_vec();
+                Ok::<_, anyhow::Error>(Fetch {
+                    status,
+                    headers,
+                    body,
+                })
+            })
+            .await
+            .context("request timed out")?
+        })
+    }
 }

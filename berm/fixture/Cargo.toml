@@ -13,4 +13,4 @@ name = "fixture"
 path = "src/bin/main.rs"
 
 [dependencies]
-berm-sdk.workspace = true
+berm-lang.workspace = true

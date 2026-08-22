@@ -12,7 +12,7 @@
 //! `ClientMessage` the same way.
 
 use anyhow::{Context, Result};
-use berm::{Config, Engine, Grants, Harness};
+use berm::{Berm, Config, Engine};
 use crabtalk_berm::Dispatch;
 
 use proto::{AgentInfo, AgentList, ServerMessage};
@@ -25,7 +25,7 @@ use std::{
 const HARNESS: &str = "target/riscv64imac-unknown-none-elf/release/peers";
 
 // Mirrors the real dispatch path: a harness blocks the thread it runs on, so
-// the hook hands invocations to the blocking pool and capabilities `block_on`
+// the hook hands invocations to the blocking pool and system harnesses `block_on`
 // from inside one. Calling from an async context instead would panic.
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -59,25 +59,22 @@ async fn main() -> Result<()> {
     });
     let _ = protocol.set(dispatch);
 
-    let granted = Harness::load(
+    let granted = Berm::load(
         &engine,
         &elf,
-        &Grants::default(),
-        &[berm::Capability {
-            name: "crabtalk.protocol.call".to_owned(),
-            call: {
-                let protocol = protocol.clone();
-                let scope = crabtalk_berm::Scope {
-                    read: true,
-                    sessions: false,
-                    skills: Vec::new(),
-                    agent: store::AgentId::default(),
-                };
-                Arc::new(move |request| crabtalk_berm::protocol_call(&protocol, request, &scope))
+        &[crabtalk_berm::Protocol::new(
+            protocol.clone(),
+            tokio::runtime::Handle::current(),
+            crabtalk_berm::Scope {
+                read: true,
+                sessions: false,
+                skills: Vec::new(),
+                agent: store::AgentId::default(),
             },
-        }],
+        )
+        .harness()],
     )?;
-    let ungranted = Harness::load(&engine, &elf, &Grants::default(), &[])?;
+    let ungranted = Berm::load(&engine, &elf, &[])?;
 
     tokio::task::spawn_blocking(move || {
         println!("== granted protocol:read ==");
@@ -90,7 +87,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn show(harness: &Harness) {
+fn show(harness: &Berm) {
     match harness.call("peers", Vec::new()) {
         Ok(Ok(result)) => println!("{result}"),
         Ok(Err(failure)) => println!("failed: {failure}\n"),

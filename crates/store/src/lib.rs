@@ -1,18 +1,20 @@
-//! Persistence for Crabtalk, in three layers.
+//! Persistence for Crabtalk, in two layers.
 //!
-//! [`KVStorage`] holds content, and the secondary indexes that find it —
-//! an ordered lookup, a name resolution, a set membership are all just
-//! more keys. [`TextSearch`] holds the one thing keys cannot answer:
-//! ranked full-text.
+//! The [`interface`] traits are what the runtime programs against, and
+//! they name no storage: an agent, a session, a memory entry, a skill,
+//! a harness image. [`TextSearch`] sits beside them for the one thing
+//! keys cannot answer, ranked full-text.
 //!
-//! The [`interface`] traits are bounded on those two and carry their own
-//! bodies, so implementing the primitives *is* implementing the
-//! interfaces — there is no wrapper to build and nothing to wire.
+//! Below them, [`KVStorage`] is five methods — content, plus the
+//! secondary indexes that find it, since an ordered lookup, a name
+//! resolution and a set membership are all just more keys. Every
+//! interface above is blanket-implemented over it, so a backend writes
+//! those five and has a working daemon. `crabtalk-agent` is one such
+//! backend, over [`crabdb`].
 //!
-//! A backend implements five methods and gets everything above them for
-//! free — which is what makes a different deployment a different
-//! implementation rather than a rewrite of anything here.
-//! `crabtalk-agent` is one such backend, over [`crabdb`].
+//! A store whose engine already models sessions and agents takes the
+//! other door: implement the interfaces directly, name no key, and skip
+//! the KV entirely.
 //!
 //! [`crabdb`]: https://docs.rs/crabtalk-crabdb
 

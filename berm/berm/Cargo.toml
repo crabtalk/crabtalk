@@ -1,0 +1,20 @@
+[package]
+name = "berm"
+description = "Sandboxed harness host — runs guest ELFs under rvtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+berm-codegen.workspace = true
+object.workspace = true
+rvtime.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

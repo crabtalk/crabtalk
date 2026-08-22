@@ -1,30 +1,34 @@
 //! Crabtalk's side of berm.
 //!
-//! berm knows how to run a harness and how to bound one to a directory. It does
-//! not know what an agent is, what a `ClientMessage` is, or that a daemon
-//! exists — and it must not, because the same sandbox runs elsewhere. This
-//! crate is everything that knowledge lives in:
+//! berm knows how to run a harness and nothing else. It serves no system
+//! harness of its own — not the machine, and certainly not an agent or a
+//! `ClientMessage` — because every one of those is a decision about a host, and
+//! the same sandbox runs elsewhere. This crate is every such decision Crabtalk
+//! makes:
 //!
 //! - [`BermHarness`], which surfaces a harness's tools to the runtime and
 //!   dispatches calls to them
-//! - the `crabtalk.protocol.call` capability, which is a [`berm::Capability`]
-//!   like any other an embedder supplies
-//! - `crabtalk.http.fetch`, which is here for a second reason as well: hyper
-//!   needs a reactor, and the sandbox is sync and has none
+//! - [`fs`], [`exec`], [`Http`] and [`Protocol`], the implementations behind the
+//!   `crabtalk` namespace — [`berm::Harness`] values, which is all an embedder
+//!   ever hands over
 //!
 //! The split is what makes "berm is embeddable without crabtalk" a fact the
 //! compiler checks rather than a promise: berm's dependency list has no
 //! crabtalk crate in it, and cannot grow one without this file moving.
 
+pub use harness::BermHarness;
+pub use http::Http;
+pub use protocol::{Dispatch, Protocol, Scope};
 use std::{path::PathBuf, sync::LazyLock};
+
+pub mod exec;
+pub mod fs;
 
 mod harness;
 mod http;
 mod protocol;
-
-pub use harness::BermHarness;
-pub use http::call as http_fetch;
-pub use protocol::{Dispatch, Scope, call as protocol_call};
+mod root;
+mod sys;
 
 /// Harness images (`~/.crabtalk/harnesses/`), one `{name}.elf` each.
 ///

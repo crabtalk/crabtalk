@@ -93,13 +93,13 @@ impl AgentConfig {
         cfg.harnesses = vec![
             crate::HarnessConfig {
                 name: "os".to_owned(),
-                capabilities: vec!["fs".to_owned(), "exec".to_owned()],
+                system: vec!["fs".to_owned(), "exec".to_owned()],
                 root: dirs::home_dir(),
                 hosts: Vec::new(),
             },
             crate::HarnessConfig {
                 name: "sessions".to_owned(),
-                capabilities: vec!["protocol:sessions".to_owned()],
+                system: vec!["protocol:sessions".to_owned()],
                 root: None,
                 hosts: Vec::new(),
             },

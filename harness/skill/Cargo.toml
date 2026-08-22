@@ -13,4 +13,5 @@ name = "skill"
 path = "src/bin/main.rs"
 
 [dependencies]
-berm-sdk = { workspace = true, features = ["protocol"] }
+berm-lang.workspace = true
+berm-crabtalk.workspace = true

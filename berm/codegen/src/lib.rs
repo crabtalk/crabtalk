@@ -8,11 +8,42 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    Expr, ExprArray, ExprLit, Item, ItemFn, ItemMod, Lit, LitStr, Token, parse::Parse,
-    parse_macro_input,
+    Expr, ExprLit, Item, ItemFn, ItemMod, Lit, LitStr, Token, parse::Parse, parse_macro_input,
 };
 
+mod harnesses;
 mod schema;
+
+/// Declare the system harnesses a harness may call, emitting a stub for each.
+///
+/// ```ignore
+/// berm_lang::harnesses! {
+///     namespace = "berm";
+///     mod fs {
+///         /// Read a file whole.
+///         fn read(path: &str) -> Vec<u8>;
+///     }
+/// }
+/// ```
+///
+/// [`host!`] takes the same declaration and emits what a host registers under.
+/// Each side writes it in its own crate, and drift is caught on the first call:
+/// a renamed call hashes to a number nothing is registered for.
+#[proc_macro]
+pub fn harnesses(input: TokenStream) -> TokenStream {
+    parse_macro_input!(input as harnesses::Declaration)
+        .expand(harnesses::Side::Guest)
+        .into()
+}
+
+/// The other side of [`harnesses!`]: one constructor per name, taking the
+/// implementation and returning the `Harness` that serves it.
+#[proc_macro]
+pub fn hosts(input: TokenStream) -> TokenStream {
+    parse_macro_input!(input as harnesses::Declaration)
+        .expand(harnesses::Side::Host)
+        .into()
+}
 
 /// Default size of the argument and result buffers, in bytes.
 ///
@@ -30,7 +61,6 @@ const DEFAULT_PARAMETERS: &str = r#"{"type":"object"}"#;
 const TOOL_PREFIX: &str = "berm_tool_";
 
 struct Config {
-    capabilities: Vec<String>,
     buffer: usize,
     usage: String,
     /// Kept only to re-emit as an `include_str!`, so editing the file
@@ -40,7 +70,6 @@ struct Config {
 
 impl Parse for Config {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut capabilities = Vec::new();
         let mut buffer = DEFAULT_BUFFER;
         let mut usage = String::new();
         let mut usage_file = None;
@@ -50,23 +79,6 @@ impl Parse for Config {
             input.parse::<Token![=]>()?;
 
             match key.to_string().as_str() {
-                "capabilities" => {
-                    let array: ExprArray = input.parse()?;
-                    for element in array.elems {
-                        match element {
-                            Expr::Lit(ExprLit {
-                                lit: Lit::Str(text),
-                                ..
-                            }) => capabilities.push(text.value()),
-                            other => {
-                                return Err(syn::Error::new_spanned(
-                                    other,
-                                    "a capability is a string literal",
-                                ));
-                            }
-                        }
-                    }
-                }
                 "buffer" => {
                     let size: syn::LitInt = input.parse()?;
                     buffer = size.base10_parse()?;
@@ -91,9 +103,7 @@ impl Parse for Config {
                 other => {
                     return Err(syn::Error::new(
                         key.span(),
-                        format!(
-                            "unknown argument: {other} (expected `capabilities`, `buffer` or `usage_file`)"
-                        ),
+                        format!("unknown argument: {other} (expected `buffer` or `usage_file`)"),
                     ));
                 }
             }
@@ -104,7 +114,6 @@ impl Parse for Config {
         }
 
         Ok(Config {
-            capabilities,
             buffer,
             usage,
             usage_file,
@@ -134,9 +143,9 @@ enum Args {
 /// Declare a harness from a module of tool functions.
 ///
 /// ```ignore
-/// #[harness(capabilities = ["log"])]
+/// #[harness]
 /// mod tools {
-///     use berm_sdk::{Failed, Out};
+///     use berm_lang::{Failed, Out};
 ///
 ///     /// Echo the argument blob back.
 ///     pub fn echo(args: &[u8], out: &mut Out) -> Result<(), Failed> {
@@ -177,24 +186,24 @@ pub fn harness(args: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             #[doc = #doc]
             #[unsafe(no_mangle)]
-            pub extern "C" fn #symbol() -> ::berm_sdk::Buf {
+            pub extern "C" fn #symbol() -> ::berm_lang::Buf {
                 let arguments = unsafe { &mut *::core::ptr::addr_of_mut!(_CRABTALK_ARGS) };
-                let length = ::berm_sdk::read_args(arguments);
+                let length = ::berm_lang::abi::read_args(arguments);
                 if length > _CRABTALK_BUFFER {
-                    return ::berm_sdk::fail(b"arguments exceeded the input buffer");
+                    return ::berm_lang::abi::fail(b"arguments exceeded the input buffer");
                 }
                 let arguments = &arguments[..length];
 
                 let buffer = unsafe { &mut *::core::ptr::addr_of_mut!(_CRABTALK_OUT) };
-                let mut out = ::berm_sdk::Out::new(buffer);
+                let mut out = ::berm_lang::Out::new(buffer);
 
                 match #module_ident::#ident(arguments, &mut out) {
                     Ok(()) if out.overflowed() => {
-                        ::berm_sdk::fail(b"result exceeded the output buffer")
+                        ::berm_lang::abi::fail(b"result exceeded the output buffer")
                     }
                     Ok(()) => out.finish(),
-                    Err(::berm_sdk::Failed) => {
-                        ::berm_sdk::fail(out.written())
+                    Err(::berm_lang::Failed) => {
+                        ::berm_lang::abi::fail(out.written())
                     }
                 }
             }
@@ -304,9 +313,9 @@ fn collect(module: &mut ItemMod) -> syn::Result<Vec<Tool>> {
         // depends on one crate and cannot pick a serde the derive disagrees
         // with. This is why the author writes neither line.
         item.attrs
-            .push(syn::parse_quote!(#[derive(::berm_sdk::serde::Deserialize)]));
+            .push(syn::parse_quote!(#[derive(::berm_lang::serde::Deserialize)]));
         item.attrs
-            .push(syn::parse_quote!(#[serde(crate = "::berm_sdk::serde")]));
+            .push(syn::parse_quote!(#[serde(crate = "::berm_lang::serde")]));
     }
 
     for tool in &tools {
@@ -405,13 +414,6 @@ pub(crate) fn docs(attrs: &[syn::Attribute]) -> String {
 
 /// Build the description JSON at compile time.
 fn describe(config: &Config, tools: &[Tool]) -> String {
-    let capabilities = config
-        .capabilities
-        .iter()
-        .map(|c| format!("\"{}\"", escape(c)))
-        .collect::<Vec<_>>()
-        .join(",");
-
     let tools = tools
         .iter()
         .map(|t| {
@@ -426,7 +428,7 @@ fn describe(config: &Config, tools: &[Tool]) -> String {
         .join(",");
 
     format!(
-        r#"{{"abi_version":0,"capabilities":[{capabilities}],"tools":[{tools}],"usage":"{}"}}"#,
+        r#"{{"abi_version":0,"tools":[{tools}],"usage":"{}"}}"#,
         escape(&config.usage),
     )
 }

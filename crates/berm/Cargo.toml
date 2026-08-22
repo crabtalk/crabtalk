@@ -1,6 +1,6 @@
 [package]
 name = "crabtalk-berm"
-description = "Crabtalk's side of berm — the harness hook and the protocol capability"
+description = "Crabtalk's side of berm — the harness hook and the system harnesses it serves"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -24,9 +24,11 @@ http-body-util.workspace = true
 hyper-tls.workspace = true
 hyper-util.workspace = true
 prost = { workspace = true, features = ["std"] }
+serde_json.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

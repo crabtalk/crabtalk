@@ -25,58 +25,19 @@ pub struct MemoryEntry {
 }
 
 /// The agent's brain — named entries, searched by relevance.
-pub trait Memory: KVStorage + TextSearch {
-    fn memory(&self, name: &str) -> impl Future<Output = Result<Option<MemoryEntry>>> + Send {
-        async move {
-            self.get_json(Column::Memory, &self.key(&["memory", name]))
-                .await
-        }
-    }
+pub trait Memory: Send + Sync + 'static {
+    fn memory(&self, name: &str) -> impl Future<Output = Result<Option<MemoryEntry>>> + Send;
 
-    /// Names come out of the keys themselves — an enumeration reads no
-    /// entry bodies.
-    fn memory_names(&self) -> impl Future<Output = Result<Vec<String>>> + Send {
-        async move {
-            let keys = self
-                .scan_keys(Column::Memory, &self.prefix(&["memory"]))
-                .await?;
-            Ok(keys.iter().filter_map(|k| last_segment(k)).collect())
-        }
-    }
+    /// Every entry name. An enumeration reads no entry bodies.
+    fn memory_names(&self) -> impl Future<Output = Result<Vec<String>>> + Send;
 
-    /// Names beginning with `stem`. Bounded by the stem rather than the
-    /// column, for callers that file entries under a shared one — no
-    /// trailing separator, so `foo-` reaches `foo-1` and `foo-2`.
-    fn memory_names_under(&self, stem: &str) -> impl Future<Output = Result<Vec<String>>> + Send {
-        async move {
-            let keys = self
-                .scan_keys(Column::Memory, &self.key(&["memory", stem]))
-                .await?;
-            Ok(keys.iter().filter_map(|k| last_segment(k)).collect())
-        }
-    }
+    /// Names beginning with `stem`, for callers that file entries under a
+    /// shared one — no trailing separator, so `foo-` reaches `foo-1`.
+    fn memory_names_under(&self, stem: &str) -> impl Future<Output = Result<Vec<String>>> + Send;
 
-    fn put_memory(&self, entry: &MemoryEntry) -> impl Future<Output = Result<()>> + Send {
-        async move {
-            let key = self.key(&["memory", &entry.name]);
-            self.put_json(Column::Memory, &key, entry).await?;
-            // Aliases are alternative search terms, so they are part of
-            // the document rather than keys of their own.
-            let text = match entry.aliases.is_empty() {
-                true => entry.content.clone(),
-                false => format!("{}\n{}", entry.aliases.join(" "), entry.content),
-            };
-            self.index_text(TextIndex::Memory, &key, &text, 1.0).await
-        }
-    }
+    fn put_memory(&self, entry: &MemoryEntry) -> impl Future<Output = Result<()>> + Send;
 
-    fn remove_memory(&self, name: &str) -> impl Future<Output = Result<bool>> + Send {
-        async move {
-            let key = self.key(&["memory", name]);
-            self.drop_text(TextIndex::Memory, &key).await?;
-            self.delete(Column::Memory, &key).await
-        }
-    }
+    fn remove_memory(&self, name: &str) -> impl Future<Output = Result<bool>> + Send;
 
     /// Entry names ranked by relevance. The bodies are `memory` calls the
     /// caller makes for the ones it keeps.
@@ -84,15 +45,54 @@ pub trait Memory: KVStorage + TextSearch {
         &self,
         query: &str,
         limit: usize,
-    ) -> impl Future<Output = Result<Vec<String>>> + Send {
-        async move {
-            let hits = self.search_text(TextIndex::Memory, query, limit).await?;
-            Ok(hits.iter().filter_map(|h| last_segment(&h.key)).collect())
-        }
-    }
+    ) -> impl Future<Output = Result<Vec<String>>> + Send;
 }
 
-impl<T: KVStorage + TextSearch> Memory for T {}
+impl<T: KVStorage> Memory for T {
+    async fn memory(&self, name: &str) -> Result<Option<MemoryEntry>> {
+        self.get_json(Column::Memory, &self.key(&["memory", name]))
+            .await
+    }
+
+    /// Names come out of the keys themselves.
+    async fn memory_names(&self) -> Result<Vec<String>> {
+        let keys = self
+            .scan_keys(Column::Memory, &self.prefix(&["memory"]))
+            .await?;
+        Ok(keys.iter().filter_map(|k| last_segment(k)).collect())
+    }
+
+    /// Bounded by the stem rather than the column.
+    async fn memory_names_under(&self, stem: &str) -> Result<Vec<String>> {
+        let keys = self
+            .scan_keys(Column::Memory, &self.key(&["memory", stem]))
+            .await?;
+        Ok(keys.iter().filter_map(|k| last_segment(k)).collect())
+    }
+
+    async fn put_memory(&self, entry: &MemoryEntry) -> Result<()> {
+        let key = self.key(&["memory", &entry.name]);
+        self.put_json(Column::Memory, &key, entry).await?;
+        // Aliases are alternative search terms, so they are part of the
+        // document rather than keys of their own.
+        let text = match entry.aliases.is_empty() {
+            true => entry.content.clone(),
+            false => format!("{}\n{}", entry.aliases.join(" "), entry.content),
+        };
+        self.index_text(TextIndex::Memory, &key, &text, 1.0).await
+    }
+
+    async fn remove_memory(&self, name: &str) -> Result<bool> {
+        let key = self.key(&["memory", name]);
+        self.drop_text(TextIndex::Memory, &key).await?;
+        self.delete(Column::Memory, &key).await
+    }
+
+    async fn search_memory(&self, query: &str, limit: usize) -> Result<Vec<String>> {
+        let hits = self.search_text(TextIndex::Memory, query, limit).await?;
+        Ok(hits.iter().filter_map(|h| last_segment(&h.key)).collect())
+    }
+}
 
 /// The trailing segment of a slash-separated key.
 fn last_segment(key: &[u8]) -> Option<String> {

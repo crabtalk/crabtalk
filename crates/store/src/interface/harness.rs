@@ -13,51 +13,51 @@ use std::future::Future;
 ///
 /// Shaped for extraction: berm will own this interface once it is split
 /// out, and these three methods are what it needs.
-pub trait Harnesses: KVStorage {
-    fn harness_image(&self, digest: &str) -> impl Future<Output = Result<Option<Vec<u8>>>> + Send {
-        async move {
-            self.get(Column::Harness, &self.key(&["image", digest]))
-                .await
-        }
-    }
+pub trait Harnesses: Send + Sync + 'static {
+    fn harness_image(&self, digest: &str) -> impl Future<Output = Result<Option<Vec<u8>>>> + Send;
 
     /// Store an image and return the digest it is keyed by.
     fn put_harness_image(
         &self,
         name: &str,
         bytes: &[u8],
-    ) -> impl Future<Output = Result<String>> + Send {
-        async move {
-            let digest = digest(bytes);
-            // The image is immutable under its digest, so re-putting the
-            // same bytes is a no-op and two agents declaring one harness
-            // share the entry. Only the name→digest pointer moves.
-            self.put(Column::Harness, &self.key(&["image", &digest]), bytes)
-                .await?;
-            self.put(
-                Column::Harness,
-                &self.key(&["name", name]),
-                digest.as_bytes(),
-            )
-            .await?;
-            Ok(digest)
-        }
-    }
+    ) -> impl Future<Output = Result<String>> + Send;
 
-    fn resolve_harness(&self, name: &str) -> impl Future<Output = Result<Option<String>>> + Send {
-        async move {
-            let Some(bytes) = self
-                .get(Column::Harness, &self.key(&["name", name]))
-                .await?
-            else {
-                return Ok(None);
-            };
-            Ok(Some(String::from_utf8(bytes)?))
-        }
-    }
+    fn resolve_harness(&self, name: &str) -> impl Future<Output = Result<Option<String>>> + Send;
 }
 
-impl<T: KVStorage> Harnesses for T {}
+impl<T: KVStorage> Harnesses for T {
+    async fn harness_image(&self, digest: &str) -> Result<Option<Vec<u8>>> {
+        self.get(Column::Harness, &self.key(&["image", digest]))
+            .await
+    }
+
+    async fn put_harness_image(&self, name: &str, bytes: &[u8]) -> Result<String> {
+        let digest = digest(bytes);
+        // The image is immutable under its digest, so re-putting the
+        // same bytes is a no-op and two agents declaring one harness
+        // share the entry. Only the name→digest pointer moves.
+        self.put(Column::Harness, &self.key(&["image", &digest]), bytes)
+            .await?;
+        self.put(
+            Column::Harness,
+            &self.key(&["name", name]),
+            digest.as_bytes(),
+        )
+        .await?;
+        Ok(digest)
+    }
+
+    async fn resolve_harness(&self, name: &str) -> Result<Option<String>> {
+        let Some(bytes) = self
+            .get(Column::Harness, &self.key(&["name", name]))
+            .await?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(String::from_utf8(bytes)?))
+    }
+}
 
 /// Content address for a harness image.
 fn digest(bytes: &[u8]) -> String {
