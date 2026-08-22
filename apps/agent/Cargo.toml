@@ -21,10 +21,12 @@ rustls = ["crabtalk/rustls"]
 crabdb.workspace = true
 crabtalk.workspace = true
 crabup.workspace = true
+proto = { workspace = true, features = ["server"] }
 store.workspace = true
 transport.workspace = true
 
 anyhow.workspace = true
+futures-util.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true

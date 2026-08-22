@@ -1,6 +1,7 @@
 //! The daemon: a store, the runtime over it, and the sockets it answers on.
 
 use crate::backend::{Backend, STORE_PATH};
+use crate::serve;
 use anyhow::Result;
 use crabtalk::CrabTalk;
 use std::{sync::Arc, time::Duration};
@@ -15,8 +16,8 @@ pub async fn start() -> Result<()> {
     let handle = CrabTalk::start(&crabup::CONFIG_DIR, store.clone()).await?;
 
     #[cfg(unix)]
-    let (socket, socket_join) = crabtalk::setup_socket(handle.inner.clone(), &handle.shutdown_tx)?;
-    let (tcp_join, port) = crabtalk::setup_tcp(handle.inner.clone(), &handle.shutdown_tx)?;
+    let (socket, socket_join) = serve::socket(handle.inner.clone(), &handle.shutdown_tx)?;
+    let (tcp_join, port) = serve::tcp(handle.inner.clone(), &handle.shutdown_tx)?;
     std::fs::write(&*transport::TCP_PORT_FILE, port.to_string())?;
 
     handle.wait_until_ready().await?;

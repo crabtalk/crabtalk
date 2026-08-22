@@ -19,7 +19,6 @@ mcp = { workspace = true, default-features = false, features = ["hyper"] }
 proto = { workspace = true, features = ["llm", "server"] }
 runtime.workspace = true
 skill.workspace = true
-transport.workspace = true
 store = { workspace = true, default-features = false }
 
 # crates.io
