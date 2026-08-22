@@ -33,74 +33,72 @@ impl From<&Skill> for SkillSummary {
 }
 
 /// Installed skills.
-///
-/// A skill's identity and its body are separate keys, so "a listing
-/// never reads markdown" is a property of the layout rather than a rule
-/// each backend has to remember.
-pub trait Skills: KVStorage {
+pub trait Skills: Send + Sync + 'static {
     fn list_skills(
         &self,
         limit: usize,
         offset: usize,
-    ) -> impl Future<Output = Result<Vec<SkillSummary>>> + Send {
-        async move {
-            let keys = self
-                .scan_keys(Column::Skill, &self.prefix(&["skill", "meta"]))
-                .await?;
-            let mut out = Vec::new();
-            for key in keys.iter().skip(offset).take(limit) {
-                if let Some(summary) = self.get_json(Column::Skill, key).await? {
-                    out.push(summary);
-                }
-            }
-            Ok(out)
-        }
-    }
+    ) -> impl Future<Output = Result<Vec<SkillSummary>>> + Send;
 
-    fn load_skill(&self, name: &str) -> impl Future<Output = Result<Option<Skill>>> + Send {
-        async move {
-            let key = self.key(&["skill", "body", name]);
-            let Some(bytes) = self.get(Column::Skill, &key).await? else {
-                return Ok(None);
-            };
-            Ok(Some(Skill::from_str(&String::from_utf8(bytes)?)?))
-        }
-    }
+    fn load_skill(&self, name: &str) -> impl Future<Output = Result<Option<Skill>>> + Send;
 
     /// Store a skill from its `SKILL.md`. The markdown is what is kept —
     /// it is the standard's own format, so it round-trips exactly and the
     /// name cannot disagree with the frontmatter it came from.
-    fn put_skill(&self, markdown: &str) -> impl Future<Output = Result<SkillSummary>> + Send {
-        async move {
-            let skill = Skill::from_str(markdown)?;
-            let summary = SkillSummary::from(&skill);
-            self.put(
-                Column::Skill,
-                &self.key(&["skill", "body", &skill.name]),
-                markdown.as_bytes(),
-            )
-            .await?;
-            self.put_json(
-                Column::Skill,
-                &self.key(&["skill", "meta", &skill.name]),
-                &summary,
-            )
-            .await?;
-            Ok(summary)
-        }
-    }
+    fn put_skill(&self, markdown: &str) -> impl Future<Output = Result<SkillSummary>> + Send;
 
-    fn remove_skill(&self, name: &str) -> impl Future<Output = Result<bool>> + Send {
-        async move {
-            let had_meta = self
-                .delete(Column::Skill, &self.key(&["skill", "meta", name]))
-                .await?;
-            let had_body = self
-                .delete(Column::Skill, &self.key(&["skill", "body", name]))
-                .await?;
-            Ok(had_meta || had_body)
-        }
-    }
+    fn remove_skill(&self, name: &str) -> impl Future<Output = Result<bool>> + Send;
 }
 
-impl<T: KVStorage> Skills for T {}
+/// A skill's identity and its body are separate keys, so "a listing
+/// never reads markdown" is a property of the layout.
+impl<T: KVStorage> Skills for T {
+    async fn list_skills(&self, limit: usize, offset: usize) -> Result<Vec<SkillSummary>> {
+        let keys = self
+            .scan_keys(Column::Skill, &self.prefix(&["skill", "meta"]))
+            .await?;
+        let mut out = Vec::new();
+        for key in keys.iter().skip(offset).take(limit) {
+            if let Some(summary) = self.get_json(Column::Skill, key).await? {
+                out.push(summary);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn load_skill(&self, name: &str) -> Result<Option<Skill>> {
+        let key = self.key(&["skill", "body", name]);
+        let Some(bytes) = self.get(Column::Skill, &key).await? else {
+            return Ok(None);
+        };
+        Ok(Some(Skill::from_str(&String::from_utf8(bytes)?)?))
+    }
+
+    async fn put_skill(&self, markdown: &str) -> Result<SkillSummary> {
+        let skill = Skill::from_str(markdown)?;
+        let summary = SkillSummary::from(&skill);
+        self.put(
+            Column::Skill,
+            &self.key(&["skill", "body", &skill.name]),
+            markdown.as_bytes(),
+        )
+        .await?;
+        self.put_json(
+            Column::Skill,
+            &self.key(&["skill", "meta", &skill.name]),
+            &summary,
+        )
+        .await?;
+        Ok(summary)
+    }
+
+    async fn remove_skill(&self, name: &str) -> Result<bool> {
+        let had_meta = self
+            .delete(Column::Skill, &self.key(&["skill", "meta", name]))
+            .await?;
+        let had_body = self
+            .delete(Column::Skill, &self.key(&["skill", "body", name]))
+            .await?;
+        Ok(had_meta || had_body)
+    }
+}

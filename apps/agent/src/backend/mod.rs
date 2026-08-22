@@ -19,8 +19,8 @@ use store::kv::{Column, KVStorage};
 ///
 /// Implements [`KVStorage`] and is therefore already an `Agents`, a
 /// `Sessions`, a `Memory`, a `Skills`, a `Harnesses` and a `TextSearch`
-/// — all of those carry their own bodies, so there is nothing here to
-/// pair up or wrap.
+/// — every one of those is blanket-implemented over the five methods
+/// below, so there is nothing here to pair up or wrap.
 pub struct Backend {
     db: Arc<CrabDb>,
 }

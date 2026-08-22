@@ -1,13 +1,12 @@
 //! What the runtime programs against.
 //!
-//! Five interfaces, every one of them fully written here. A trait is
-//! bounded on the primitives it needs and its methods have bodies, so a
-//! backend implements [`KVStorage`](crate::KVStorage) and
-//! [`TextSearch`](crate::TextSearch) and *is* an `Agents`, a `Sessions`,
-//! a `Memory` — there is nothing to construct and nothing to wire.
-//!
-//! That is the whole design. Five methods stand between a new store and
-//! a working daemon, and everything above them is written once.
+//! Five interfaces, each declared as what a store must answer and
+//! nothing more. Every one is blanket-implemented over
+//! [`KVStorage`](crate::KVStorage), so a backend that supplies the five
+//! primitives *is* an `Agents`, a `Sessions`, a `Memory` — there is
+//! nothing to construct and nothing to wire. A backend whose engine
+//! already models these implements the interfaces directly instead, and
+//! names no key.
 //!
 //! Nothing here returns a collection of bodies. Every listing is
 //! identities or summaries, and the body is a second call for the one
@@ -29,9 +28,6 @@ mod skill;
 ///
 /// Blanket-implemented, like the five it bundles: it exists so
 /// `Config::Storage` names one bound instead of five.
-pub trait Backend: Agents + Sessions + Memory + Skills + Harnesses + Send + Sync + 'static {}
+pub trait Backend: Agents + Sessions + Memory + Skills + Harnesses {}
 
-impl<T> Backend for T where
-    T: Agents + Sessions + Memory + Skills + Harnesses + Send + Sync + 'static
-{
-}
+impl<T> Backend for T where T: Agents + Sessions + Memory + Skills + Harnesses {}
