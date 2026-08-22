@@ -181,6 +181,7 @@ impl<P: Provider + 'static> Agent<P> {
             tool_choice,
             stop_sequences: None,
             thinking,
+            output_config: None,
         }
     }
 

@@ -69,6 +69,7 @@ impl<P: Provider + 'static> super::Agent<P> {
             tool_choice: None,
             stop_sequences: None,
             thinking: None,
+            output_config: None,
         };
         let response = tokio::select! {
             biased;

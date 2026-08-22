@@ -257,6 +257,7 @@ impl<C: Config> Runtime<C> {
                 tool_choice: None,
                 stop_sequences: None,
                 thinking,
+                output_config: None,
             };
 
             let mut response_text = String::new();
